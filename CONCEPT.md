@@ -145,6 +145,8 @@ We want provider adapters for:
 - **GLM** (via Z.ai)
 - **Aleph Alpha** (study required; may be underpowered depending on current state)
 
+We also want first-class support for **private/self-hosted models** (local, adjacent container/node, or remote private server). Practically, this likely means building/packaging a supporting “LLM host” component that can run an inference engine and expose a stable API that Animus can treat like any other provider.
+
 Adapter requirements:
 
 - capability discovery (tool calling, JSON mode, streaming, context limits)

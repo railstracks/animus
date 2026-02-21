@@ -1,5 +1,8 @@
 # Animus
 
+> [!IMPORTANT]
+> Before switching this repository to **public** (if ever), remove **market research / positioning** files and **`CONCEPT.md`** first.
+
 Animus is a planned **agentic framework** intended as a full replacement for OpenClaw.
 
 The goal is to provide **fine-grained control** over cognition (prompt assembly, memory policy, tool execution gates) with an architecture that is:

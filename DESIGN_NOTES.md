@@ -47,6 +47,14 @@ Initial providers we want to support via adapters:
 - **GLM** (via Z.ai)
 - **Aleph Alpha** (requires further study; may be underpowered depending on current state)
 
+We also want first-class support for **private/self-hosted models**:
+
+- hosted locally (same machine)
+- hosted on an adjacent container/node on the same network
+- hosted on a remote private server (self-managed)
+
+This likely implies a companion “LLM host” package/service that can run an inference engine and present a clean adapter surface to Animus.
+
 Notes:
 - Mistral (EU) and Cohere (Canada) are strategically interesting as non-US infrastructure options.
 - Provider adapter design should support capability discovery (tool calling, JSON mode, streaming, context limits) and per-category model assignment.
