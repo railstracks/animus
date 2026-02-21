@@ -50,11 +50,11 @@ Agentische integratie is het verschil tussen **een chatbot iets vragen** en een 
 
 Het kernidee is dat we de *volledige cognitieve pijplijn* end-to-end zelf beheersen:
 
-- **Prompt-samenstelling** als een expliciete, beleidsgestuurde “compileerstap” (niet als ad-hoc tekstplakken).
-- **Geheugen** als een first-class systeem met strikte lees/schrijfregels (om contextvervuiling te verminderen).
+- **Prompt-samenstelling** als een expliciete, beleidsgestuurde “compileerstap” (niet als ad-hoc tekstplakken) — waardoor het een consistente, situatiebewuste persoonlijkheid kan behouden.
+- **Geheugen** als een first-class systeem met strikte lees/schrijfregels (om contextvervuiling te verminderen) — met episodisch geheugen en detail-retrieval via vector-search.
 - **Ontologie-module** als gespecialiseerde geheugencomponent die een groeiende *mentale kaart* bijhoudt van de wereld van het systeem (mensen, projecten, systemen, relaties) voor betere recall en planning.
-- **Tools / integraties** als modulaire componenten, gekoppeld via één stabiele abstractielaag.
-- Optionele, trainbare **“instinct/intuïtie”-modules** (FANN) voor *numerieke* subproblemen (advies, nooit autoriteit).
+- **Tools / integraties** als modulaire componenten, gekoppeld via één stabiele abstractielaag — integraties met bijv. Slack, Gripp, WhatsApp, SAP, financiële markten, enz.
+- Optionele, trainbare **“instinct/intuïtie”-modules** (FANN) voor *numerieke* subproblemen (advies, nooit autoriteit) — interne neurale netwerken trainen op historische data voor voorspellend vermogen.
 
 Animus moet zijn:
 

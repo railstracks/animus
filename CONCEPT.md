@@ -50,11 +50,11 @@ Agentic integration is the difference between **asking a chatbot questions** and
 
 The core idea is to own the *entire cognition pipeline* end-to-end:
 
-- **Prompt assembly** as an explicit, policy-driven compilation step (not an ad-hoc string concatenation).
-- **Memory** as a first-class system with strict read/write rules (to reduce context pollution).
+- **Prompt assembly** as an explicit, policy-driven compilation step (not an ad-hoc string concatenation) — allowing it to maintain a consistent, situationally aware personality.
+- **Memory** as a first-class system with strict read/write rules (to reduce context pollution) — providing episodic memory with vector-search-based detail retrieval.
 - **Ontology module** as a specialized memory component that maintains a growing *mental map* of the system’s world (people, projects, systems, relationships) for better recall and planning.
-- **Tooling / integrations** as modular components connected via a stable abstraction layer.
-- Optional, trainable **“instinct” modules** (FANN) for *numerical* subproblems (advisory signals, never authority).
+- **Tooling / integrations** as modular components connected via a stable abstraction layer — integrations with e.g. Slack, Gripp, WhatsApp, SAP, financial markets, and more.
+- Optional, trainable **“instinct” modules** (FANN) for *numerical* subproblems (advisory signals, never authority) — training internal neural networks on past data to provide predictive ability.
 
 Animus should be:
 
