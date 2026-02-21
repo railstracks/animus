@@ -1,5 +1,41 @@
 # Animus — Concept
 
+## Index
+
+- [Executive summary](#executive-summary)
+- [Concept](#concept)
+- [Components](#components)
+  - [Core](#core)
+  - [Interfaces (external)](#interfaces-external)
+  - [Connectors / secondary system integrations](#connectors--secondary-system-integrations)
+  - [Memory modules](#memory-modules)
+  - [FANN “intuition” integration](#fann-intuition-integration)
+- [Technical Draft](#technical-draft)
+  - [Process layout (suggested)](#process-layout-suggested)
+  - [Languages](#languages)
+  - [Hook protocol](#hook-protocol)
+  - [LLM provider adapters](#llm-provider-adapters)
+  - [Prompt taxonomy / model assignment](#prompt-taxonomy--model-assignment)
+  - [Infrastructure / packaging](#infrastructure--packaging)
+- [Strategic Positioning and the AI Race](#strategic-positioning-and-the-ai-race)
+  - [Rationale](#rationale)
+  - [How design intent supports positioning](#how-design-intent-supports-positioning)
+
+## Executive summary
+
+Animus is a planned **agentic framework** intended as a full replacement for OpenClaw.
+
+In plain terms: it’s a system that lets AI not only “chat”, but also **do work across real tools** (Slack/Web/CLI, later: email/tickets/CRMs), while remaining **controllable, auditable, and safe**.
+
+Design intent:
+
+- **C++ kernel** that owns the cognition loop, prompt assembly, memory policy, and risk gates.
+- **Modular connectors** so Slack/Web/CLI (and later enterprise systems) plug into one abstraction layer.
+- **Multi-provider LLM support** + **private/self-hosted inference** as first-class options.
+- Optional **FANN “instinct” modules** for numerical subproblems (advisory signals, never authority).
+
+---
+
 ## Concept
 
 **Animus** is a planned **agentic framework** intended as a full replacement for OpenClaw.
@@ -188,7 +224,7 @@ If Animus can:
 
 - support **non-US LLM providers** credibly (especially **Mistral** (EU) and **Cohere** (Canada)),
 - provide OpenClaw-esque integration but with a stronger emphasis on **efficiency, security, and context hygiene**,
-- prioritize “serious” connectors and workflows (Slack/Web/CLI; enterprise integrations) over novelty/toy integrations,
+- prioritize “serious” connectors and workflows (Slack/Web/CLI; enterprise integrations) over novelty/toy integrations (e.g. OpenClaw's attention on Discord integration),
 
 …then it becomes a plausible platform for deployment in more conservative environments.
 
