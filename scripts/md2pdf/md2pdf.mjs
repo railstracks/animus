@@ -219,7 +219,15 @@ async function main() {
 
   const browser = await puppeteer.launch({
     headless: 'new',
-    args: ['--no-sandbox']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--no-zygote',
+      '--disable-gpu',
+      '--disable-crash-reporter',
+      '--disable-features=Crashpad'
+    ]
   });
 
   try {
