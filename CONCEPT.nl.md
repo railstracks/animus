@@ -34,6 +34,8 @@ Ontwerpintentie:
 - **Multi-provider LLM-ondersteuning** plus **private/self-hosted inference** als first-class opties.
 - Optionele **FANN-“instinct/intuïtie”-modules** voor numerieke subproblemen (advies-signalen, nooit autoriteit).
 
+Integratie-opties: Animus is ontworpen als een netwerk van **nodes** die de AI-persona hosten. Een centrale node kan worden uitgebreid met extra nodes om meer devices en netwerken te bereiken en nieuwe vaardigheden toe te voegen. Nodes kunnen draaien als programma op een desktopcomputer, als mobiele app op een smartphone, op een private online server (eigen beheer of door ons gehost/verhuurd), op een lokale on‑prem bedrijfsserver, of op een kleine mini‑PC (bijv. een Raspberry‑gebaseerde “home AI node”). De “intuïtie”-laag kan draaien op lokale subsystemen *of* op gehoste ML-services (bijv. Steadyfort).
+
 Wat dit betekent:
 Agentische integratie is het verschil tussen **een chatbot iets vragen** en een **blijvende assistent die in je echte omgeving zit**. In plaats van tekst in een website te plakken, kan de assistent werken *waar het werk al gebeurt* (Slack, documenten, ontwikkelomgevingen, server netwerken, interne tools): context lezen, code en documentatie opstellen, checks draaien, tickets aanmaken/updaten en workflows coördineren — met duidelijke approvals, permissies en audit trails.
 
@@ -50,6 +52,7 @@ Het kernidee is dat we de *volledige cognitieve pijplijn* end-to-end zelf beheer
 
 - **Prompt-samenstelling** als een expliciete, beleidsgestuurde “compileerstap” (niet als ad-hoc tekstplakken).
 - **Geheugen** als een first-class systeem met strikte lees/schrijfregels (om contextvervuiling te verminderen).
+- **Ontologie-module** als gespecialiseerde geheugencomponent die een groeiende *mentale kaart* bijhoudt van de wereld van het systeem (mensen, projecten, systemen, relaties) voor betere recall en planning.
 - **Tools / integraties** als modulaire componenten, gekoppeld via één stabiele abstractielaag.
 - Optionele, trainbare **“instinct/intuïtie”-modules** (FANN) voor *numerieke* subproblemen (advies, nooit autoriteit).
 

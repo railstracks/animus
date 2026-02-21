@@ -34,6 +34,8 @@ Design intent:
 - **Multi-provider LLM support** + **private/self-hosted inference** as first-class options.
 - Optional **FANN “instinct” modules** for numerical subproblems (advisory signals, never authority).
 
+Integration options: Animus is designed as a network of **nodes** that host the AI persona. A central node can be extended with additional nodes to expand reach into more devices and networks and add new abilities. Nodes can run as a desktop program, a smartphone app, a private online server (self-owned or rented from us), a local on-prem company server, or a small mini‑PC (e.g., a Raspberry-based “home AI node”). The “intuition” layer can be powered by local subsystems *or* hosted ML services (e.g., Steadyfort).
+
 What this means:
 Agentic integration is the difference between **asking a chatbot questions** and having a **persistent assistant embedded in your real environment**. Instead of pasting text into a website, the assistant can work *where the work already happens* (Slack, docs, development environments, server networks, internal tools): it reads context, drafts artifacts, runs checks, opens/updates tickets, and coordinates workflows — with clear approvals, permissions, and audit trails.
 
@@ -50,6 +52,7 @@ The core idea is to own the *entire cognition pipeline* end-to-end:
 
 - **Prompt assembly** as an explicit, policy-driven compilation step (not an ad-hoc string concatenation).
 - **Memory** as a first-class system with strict read/write rules (to reduce context pollution).
+- **Ontology module** as a specialized memory component that maintains a growing *mental map* of the system’s world (people, projects, systems, relationships) for better recall and planning.
 - **Tooling / integrations** as modular components connected via a stable abstraction layer.
 - Optional, trainable **“instinct” modules** (FANN) for *numerical* subproblems (advisory signals, never authority).
 
