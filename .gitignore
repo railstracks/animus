@@ -1,0 +1,22 @@
+# Build artifacts
+/build/
+/cmake-build-*/
+/CMakeFiles/
+/CMakeCache.txt
+/CTestTestfile.cmake
+/Makefile
+/cmake_install.cmake
+/install_manifest.txt
+
+# Output
+/dist/
+/bin/
+
+# IDE/editor
+/.vscode/
+/.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
