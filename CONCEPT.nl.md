@@ -34,6 +34,12 @@ Ontwerpintentie:
 - **Multi-provider LLM-ondersteuning** plus **private/self-hosted inference** als first-class opties.
 - Optionele **FANN-“instinct/intuïtie”-modules** voor numerieke subproblemen (advies-signalen, nooit autoriteit).
 
+Wat dit betekent:
+Agentische integratie is het verschil tussen **een chatbot iets vragen** en een **blijvende assistent die in je echte omgeving zit**. In plaats van tekst in een website te plakken, kan de assistent werken *waar het werk al gebeurt* (Slack, documenten, code, servers, interne tools): context lezen, concepten en documentatie opstellen, checks draaien, tickets aanmaken/updaten en workflows coördineren — met duidelijke approvals, permissies en audit trails.
+
+- **Op kantoor:** management ziet een altijd-aan “operations brain” dat meetings omzet in briefings, briefings in tickets, tickets in uitlevering, en incidenten in gecoördineerde respons — terwijl mensen eindverantwoordelijk blijven.
+- **Thuis:** een Jarvis-achtige assistent kan je devices en services coördineren (telefoon, agenda, auto, domotica), proactief voorbereiden wat je nodig hebt (samenvattingen, reminders, budgetten) en kleine integraties/scripts maken wanneer er een nieuw systeem verschijnt — zonder dat jij zelf de lijm hoeft te zijn.
+
 ---
 
 ## Concept
