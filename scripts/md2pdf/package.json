@@ -1,0 +1,14 @@
+{
+  "name": "@animus/md2pdf",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "animus-md2pdf": "./md2pdf.mjs"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "marked": "^12.0.2",
+    "puppeteer": "^24.1.0",
+    "yargs": "^17.7.2"
+  }
+}

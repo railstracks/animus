@@ -12,6 +12,12 @@
 /dist/
 /bin/
 
+# Generated exports
+/exports/
+
+# Node
+node_modules/
+
 # IDE/editor
 /.vscode/
 /.idea/

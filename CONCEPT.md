@@ -35,10 +35,10 @@ Design intent:
 - Optional **FANN “instinct” modules** for numerical subproblems (advisory signals, never authority).
 
 What this means:
-Agentic integration is the difference between **asking a chatbot questions** and having a **persistent assistant embedded in your real environment**. Instead of pasting text into a website, the assistant can work *where the work already happens* (Slack, docs, repos, servers, internal tools): it reads context, drafts artifacts, runs checks, opens/updates tickets, and coordinates workflows — with clear approvals, permissions, and audit trails.
+Agentic integration is the difference between **asking a chatbot questions** and having a **persistent assistant embedded in your real environment**. Instead of pasting text into a website, the assistant can work *where the work already happens* (Slack, docs, development environments, server networks, internal tools): it reads context, drafts artifacts, runs checks, opens/updates tickets, and coordinates workflows — with clear approvals, permissions, and audit trails.
 
 - **In an office:** leadership sees an always-on “operations brain” that turns meetings into briefs, briefs into tickets, tickets into tracked delivery, and incidents into coordinated response — while keeping humans accountable for final decisions.
-- **At home:** a Jarvis-style assistant can coordinate your devices and services (phone, calendar, car, home automation), proactively prepare what you need (summaries, reminders, budgets), and create small integrations/scripts when a new tool appears — without you becoming the glue.
+- **At home:** a Jarvis-style assistant can coordinate your devices and services (phone, email, retail accounts, calendar, car, home automation), proactively prepare what you need (summaries, reminders, budgets), and create small integrations/scripts when a new tool appears — without you becoming the glue.
 
 ---
 
