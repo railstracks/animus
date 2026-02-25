@@ -32,13 +32,25 @@ target_include_directories(animus_sdk INTERFACE
 
 add_library(animus_core
   src/core/Jobs.cpp
+  src/kernel/module/DynamicLibrary.cpp
+  src/kernel/module/ModuleLoader.cpp
 )
 
 target_include_directories(animus_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Internal kernel-only headers live under src/.
+target_include_directories(animus_core PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
 target_link_libraries(animus_core PUBLIC animus_sdk)
+
+# dlopen/dlsym on Linux
+if(UNIX AND NOT APPLE)
+  target_link_libraries(animus_core PRIVATE dl)
+endif()
 
 target_compile_features(animus_core PUBLIC cxx_std_20)
 
