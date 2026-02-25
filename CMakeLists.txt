@@ -30,42 +30,47 @@ target_include_directories(animus_sdk INTERFACE
 # Core Library
 # ============================================================================
 
-add_library(animus_core
+add_library(animus_kernel
   src/core/Jobs.cpp
   src/kernel/module/DynamicLibrary.cpp
   src/kernel/module/ModuleLoader.cpp
 )
 
-target_include_directories(animus_core PUBLIC
+target_include_directories(animus_kernel PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # Internal kernel-only headers live under src/.
-target_include_directories(animus_core PRIVATE
+target_include_directories(animus_kernel PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(animus_core PUBLIC animus_sdk)
+target_link_libraries(animus_kernel PUBLIC animus_sdk)
 
 # dlopen/dlsym on Linux
 if(UNIX AND NOT APPLE)
-  target_link_libraries(animus_core PRIVATE dl)
+  target_link_libraries(animus_kernel PRIVATE dl)
 endif()
 
-target_compile_features(animus_core PUBLIC cxx_std_20)
+target_compile_features(animus_kernel PUBLIC cxx_std_20)
 
 # ============================================================================
 # Main Executable
 # ============================================================================
 
-add_executable(animus
+add_executable(animusd
   src/main.cpp
 )
 
-target_link_libraries(animus PRIVATE animus_core)
+# Host app needs access to kernel-only headers for now.
+target_include_directories(animusd PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(animusd PRIVATE animus_kernel)
 
 # Keep outputs predictable across generators
-set_target_properties(animus PROPERTIES
+set_target_properties(animusd PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
 )
 
@@ -80,7 +85,7 @@ if(ANIMUS_BUILD_TESTS)
       tests/JobsTests.cpp
     )
 
-    target_link_libraries(animus_jobs_tests PRIVATE animus_core)
+    target_link_libraries(animus_jobs_tests PRIVATE animus_kernel)
 
     set_target_properties(animus_jobs_tests PROPERTIES
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
@@ -88,3 +93,21 @@ if(ANIMUS_BUILD_TESTS)
 
     add_test(NAME JobsTests COMMAND animus_jobs_tests)
 endif()
+
+# ============================================================================
+# Example module (smoke test for the loader)
+# ============================================================================
+
+add_library(animus_module_example_hello SHARED
+  modules/example/hello/hello_module.cpp
+)
+
+target_link_libraries(animus_module_example_hello PRIVATE animus_sdk)
+
+# Expose exports in the module.
+target_compile_definitions(animus_module_example_hello PRIVATE ANIMUS_SDK_BUILDING_DLL)
+
+set_target_properties(animus_module_example_hello PROPERTIES
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/modules"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/modules"
+)

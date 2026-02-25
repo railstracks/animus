@@ -14,18 +14,32 @@ The goal is to provide **fine-grained control** over cognition (prompt assembly,
 
 ## Structure (current)
 
-This repo currently contains a minimal C++/CMake terminal app scaffold.
+This repo currently contains a minimal C++/CMake scaffold with:
 
-- `src/main.cpp` — CLI entry point
-- `CMakeLists.txt` — build definition
+- a small job system library
+- a stability-first **module ABI** (`animus-sdk` headers)
+- a minimal **module loader**
+- a hello-world example module
+
+Key paths:
+
+- `include/animus_sdk/` — stable module ABI headers
+- `src/core/` — core components (currently: JobSystem)
+- `src/kernel/module/` — module loader
+- `modules/example/hello/` — example shared library module
 - `dist/bin/` — build output location (local)
+- `dist/modules/` — module output location (local)
 
 ## Build
 
 ```bash
 cmake -S . -B build
 cmake --build build
-./dist/bin/animus --help
+./dist/bin/animusd --help
+
+# Smoke tests
+./dist/bin/animusd --test-jobs
+./dist/bin/animusd --load-hello-module
 ```
 
 ## Status
