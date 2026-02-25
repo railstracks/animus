@@ -5,16 +5,29 @@
 
 #include "kernel/module/ModuleManager.h"
 
+#include "animus_kernel/DefaultSessionRouter.h"
+#include "animus_kernel/InMemorySessionStore.h"
+#include "animus_kernel/SessionManager.h"
+
 namespace animus::kernel {
 
-AgentKernel::AgentKernel() : m_moduleManager(nullptr) {
+AgentKernel::AgentKernel() : m_moduleManager(nullptr), m_sessionManager(nullptr) {
     m_moduleManager = new module::ModuleManager();
+
+    // Default session layer: in-memory store + metadata-derived routing.
+    m_sessionManager = new SessionManager(
+        std::make_unique<InMemorySessionStore>(),
+        std::make_unique<DefaultSessionRouter>());
 }
 
 AgentKernel::~AgentKernel() {
     Stop();
+
     delete m_moduleManager;
     m_moduleManager = nullptr;
+
+    delete m_sessionManager;
+    m_sessionManager = nullptr;
 }
 
 bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
@@ -81,6 +94,10 @@ bool AgentKernel::IsRunning() const {
 
 jobs::JobSystem& AgentKernel::Jobs() {
     return m_jobs;
+}
+
+SessionManager& AgentKernel::Sessions() {
+    return *m_sessionManager;
 }
 
 } // namespace animus::kernel

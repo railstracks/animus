@@ -36,6 +36,10 @@ add_library(animus_kernel
   src/kernel/module/DynamicLibrary.cpp
   src/kernel/module/ModuleLoader.cpp
   src/kernel/module/ModuleManager.cpp
+  src/kernel/session/Session.cpp
+  src/kernel/session/InMemorySessionStore.cpp
+  src/kernel/session/DefaultSessionRouter.cpp
+  src/kernel/session/SessionManager.cpp
 )
 
 target_include_directories(animus_kernel PUBLIC
@@ -109,6 +113,18 @@ if(ANIMUS_BUILD_TESTS)
     set_tests_properties(ModuleLoaderTests PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
+
+    add_executable(animus_session_tests
+      tests/SessionTests.cpp
+    )
+
+    target_link_libraries(animus_session_tests PRIVATE animus_kernel)
+
+    set_target_properties(animus_session_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+
+    add_test(NAME SessionTests COMMAND animus_session_tests)
 endif()
 
 # ============================================================================

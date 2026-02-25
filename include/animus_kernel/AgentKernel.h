@@ -10,6 +10,7 @@ class ModuleManager;
 }
 
 namespace animus::kernel {
+class SessionManager;
 
 // AgentKernel is the always-on core runtime.
 //
@@ -28,11 +29,13 @@ public:
     bool IsRunning() const;
 
     jobs::JobSystem& Jobs();
+    SessionManager& Sessions();
 
 private:
     KernelConfig m_config{};
     jobs::JobSystem m_jobs;
-    module::ModuleManager* m_moduleManager; // pimpl-ish (kept simple for now)
+    module::ModuleManager* m_moduleManager;   // pimpl-ish (kept simple for now)
+    SessionManager* m_sessionManager;         // storage-agnostic session layer
     bool m_running{false};
 };
 
