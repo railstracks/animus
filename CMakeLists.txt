@@ -32,8 +32,10 @@ target_include_directories(animus_sdk INTERFACE
 
 add_library(animus_kernel
   src/core/Jobs.cpp
+  src/kernel/AgentKernel.cpp
   src/kernel/module/DynamicLibrary.cpp
   src/kernel/module/ModuleLoader.cpp
+  src/kernel/module/ModuleManager.cpp
 )
 
 target_include_directories(animus_kernel PUBLIC
@@ -60,11 +62,6 @@ target_compile_features(animus_kernel PUBLIC cxx_std_20)
 
 add_executable(animusd
   src/main.cpp
-)
-
-# Host app needs access to kernel-only headers for now.
-target_include_directories(animusd PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_link_libraries(animusd PRIVATE animus_kernel)

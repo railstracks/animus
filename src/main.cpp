@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "animus/Jobs.h"
-#include "kernel/module/ModuleLoader.h"
+#include "animus_kernel/AgentKernel.h"
 
 static void print_help(const char* argv0) {
   std::cout
@@ -16,9 +16,13 @@ static void print_help(const char* argv0) {
     << "Job system:\n"
     << "  --test-jobs\n"
     << "\n"
-    << "Modules (DLL/.so):\n"
+    << "Kernel/modules (DLL/.so):\n"
     << "  --load-module <path>\n"
-    << "  --load-hello-module   (loads dist/modules/<hello module>)\n";
+    << "  --load-hello-module\n"
+    << "  --module-dir <dir>\n"
+    << "  --allow-module <id>\n"
+    << "  --allow-all-modules\n"
+    << "  --deny-all-modules\n";
 }
 
 static std::string SharedLibraryFilenameForBase(const std::string& baseName) {
@@ -29,21 +33,6 @@ static std::string SharedLibraryFilenameForBase(const std::string& baseName) {
 #else
   return std::string("lib") + baseName + ".so";
 #endif
-}
-
-static void HostLog(void* /*host_ctx*/, animus_log_level_t level, animus_string_view message) {
-  const char* lvl = "INFO";
-  switch (level) {
-    case ANIMUS_LOG_DEBUG: lvl = "DEBUG"; break;
-    case ANIMUS_LOG_INFO: lvl = "INFO"; break;
-    case ANIMUS_LOG_WARN: lvl = "WARN"; break;
-    case ANIMUS_LOG_ERROR: lvl = "ERROR"; break;
-    default: break;
-  }
-
-  std::cerr << "[module:" << lvl << "] "
-            << std::string(message.data ? message.data : "", message.size)
-            << "\n";
 }
 
 static int RunJobsSmokeTest() {
@@ -65,38 +54,11 @@ static int RunJobsSmokeTest() {
   return counter.load() == 10 ? 0 : 1;
 }
 
-static int LoadModules(const std::vector<std::string>& modulePaths) {
-  animus_host_vtable_t host{};
-  host.struct_size = sizeof(animus_host_vtable_t);
-  host.log = &HostLog;
-
-  animus::kernel::module::ModuleLoader loader;
-  std::vector<std::unique_ptr<animus::kernel::module::LoadedModule>> loaded;
-
-  for (const auto& path : modulePaths) {
-    std::string err;
-    auto mod = loader.Load(path, &host, nullptr, &err);
-    if (!mod) {
-      std::cerr << "Failed to load module: " << path << "\n";
-      std::cerr << "  error: " << err << "\n";
-      return 1;
-    }
-
-    const auto* d = mod->descriptor;
-    std::cout << "Loaded module id='"
-              << std::string(d->id.data, d->id.size)
-              << "' from " << path << "\n";
-
-    loaded.push_back(std::move(mod));
-  }
-
-  std::cout << "Module load complete. Loaded " << loaded.size() << " module(s).\n";
-  return 0;
-}
-
 int main(int argc, char** argv) {
   bool testJobs = false;
-  std::vector<std::string> modulesToLoad;
+  bool wantsKernel = false;
+
+  animus::kernel::KernelConfig cfg;
 
   for (int i = 1; i < argc; i++) {
     const std::string arg = argv[i];
@@ -120,14 +82,49 @@ int main(int argc, char** argv) {
         std::cerr << "--load-module requires a path\n";
         return 2;
       }
-      modulesToLoad.push_back(argv[++i]);
+      cfg.modulePaths.push_back(argv[++i]);
+      wantsKernel = true;
       continue;
     }
 
     if (arg == "--load-hello-module") {
       const std::string base = "animus_module_example_hello";
       const std::string filename = SharedLibraryFilenameForBase(base);
-      modulesToLoad.push_back(std::string("dist/modules/") + filename);
+      cfg.modulePaths.push_back(std::string("dist/modules/") + filename);
+      wantsKernel = true;
+      continue;
+    }
+
+    if (arg == "--module-dir") {
+      if (i + 1 >= argc) {
+        std::cerr << "--module-dir requires a directory path\n";
+        return 2;
+      }
+      cfg.moduleDirs.push_back(argv[++i]);
+      wantsKernel = true;
+      continue;
+    }
+
+    if (arg == "--allow-module") {
+      if (i + 1 >= argc) {
+        std::cerr << "--allow-module requires a module id\n";
+        return 2;
+      }
+      cfg.allowModuleIds.push_back(argv[++i]);
+      cfg.allowAllModulesByDefault = false;
+      wantsKernel = true;
+      continue;
+    }
+
+    if (arg == "--allow-all-modules") {
+      cfg.allowAllModulesByDefault = true;
+      wantsKernel = true;
+      continue;
+    }
+
+    if (arg == "--deny-all-modules") {
+      cfg.allowAllModulesByDefault = false;
+      wantsKernel = true;
       continue;
     }
 
@@ -140,8 +137,21 @@ int main(int argc, char** argv) {
     return RunJobsSmokeTest();
   }
 
-  if (!modulesToLoad.empty()) {
-    return LoadModules(modulesToLoad);
+  if (wantsKernel) {
+    if (cfg.moduleDirs.empty()) {
+      cfg.moduleDirs.push_back("dist/modules");
+    }
+
+    animus::kernel::AgentKernel kernel;
+    std::string err;
+    if (!kernel.Start(cfg, &err)) {
+      std::cerr << "Kernel start failed: " << err << "\n";
+      return 1;
+    }
+
+    std::cout << "Kernel started. Loaded modules from configured paths/dirs.\n";
+    kernel.Stop();
+    return 0;
   }
 
   std::cout << "Animus: hello. (kernel scaffold with job system + module loader)\n";
