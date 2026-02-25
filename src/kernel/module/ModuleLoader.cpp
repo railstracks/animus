@@ -15,24 +15,37 @@ LoadedModule::~LoadedModule() {
     // library closes itself
 }
 
+static constexpr std::size_t kMinDescriptorSize =
+    offsetof(animus_module_descriptor_t, version_patch) + sizeof(uint32_t);
+
+static constexpr std::size_t kMinHostVtableSize =
+    offsetof(animus_host_vtable_t, log) + sizeof(void*);
+
 static bool DescriptorLooksSane(const animus_module_descriptor_t* d) {
     if (!d) {
         return false;
     }
-    if (d->struct_size < sizeof(animus_module_descriptor_t)) {
-        // We currently require the full size; we can relax this later.
+
+    // ABI rule: structs may be extended by appending fields.
+    // Therefore, accept older (smaller) descriptors as long as the prefix we
+    // rely on is present.
+    if (d->struct_size < kMinDescriptorSize) {
         return false;
     }
-    if (!d->id.data || d->id.size == 0) {
+
+    if (d->module_api_version == 0u) {
         return false;
     }
+
+    if (!d->id.data || d->id.size == 0u) {
+        return false;
+    }
+
     return true;
 }
 
-std::unique_ptr<LoadedModule> ModuleLoader::Load(
+std::unique_ptr<LoadedModule> ModuleLoader::LoadLibrary(
     const std::string& path,
-    const animus_host_vtable_t* host,
-    void* host_ctx,
     std::string* error) {
 
     auto out = std::make_unique<LoadedModule>();
@@ -88,20 +101,72 @@ std::unique_ptr<LoadedModule> ModuleLoader::Load(
         return nullptr;
     }
 
-    // Instantiate module.
-    animus_module_handle_t h = createFn(host, host_ctx);
+    out->descriptor = d;
+    out->create = createFn;
+    out->destroy = destroyFn;
+
+    return out;
+}
+
+bool ModuleLoader::CreateInstance(
+    LoadedModule& module,
+    const animus_host_vtable_t* host,
+    void* host_ctx,
+    std::string* error) {
+
+    if (!module.IsValid()) {
+        if (error) {
+            *error = "module not valid";
+        }
+        return false;
+    }
+
+    if (module.handle != nullptr) {
+        if (error) {
+            *error = "module already instantiated";
+        }
+        return false;
+    }
+
+    if (host && host->struct_size < kMinHostVtableSize) {
+        if (error) {
+            *error = "host vtable too small";
+        }
+        return false;
+    }
+
+    animus_module_handle_t h = module.create(host, host_ctx);
     if (!h) {
         if (error) {
             *error = "module create returned null";
         }
+        return false;
+    }
+
+    module.handle = h;
+    return true;
+}
+
+std::unique_ptr<LoadedModule> ModuleLoader::Load(
+    const std::string& path,
+    const animus_host_vtable_t* host,
+    void* host_ctx,
+    std::string* error) {
+
+    auto mod = LoadLibrary(path, error);
+    if (!mod) {
         return nullptr;
     }
 
-    out->descriptor = d;
-    out->handle = h;
-    out->destroy = destroyFn;
+    std::string createErr;
+    if (!CreateInstance(*mod, host, host_ctx, &createErr)) {
+        if (error) {
+            *error = createErr;
+        }
+        return nullptr;
+    }
 
-    return out;
+    return mod;
 }
 
 } // namespace animus::kernel::module

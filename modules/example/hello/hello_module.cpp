@@ -1,5 +1,6 @@
 #include "animus_sdk/module_api.h"
 
+#include <cstddef>
 #include <cstring>
 #include <new>
 
@@ -31,8 +32,9 @@ static void LogIfPossible(const animus_host_vtable_t* host, void* host_ctx, anim
     if (!host) {
         return;
     }
-    if (host->struct_size < sizeof(animus_host_vtable_t)) {
-        // Current version expects full vtable size.
+    const uint32_t minSize =
+        static_cast<uint32_t>(offsetof(animus_host_vtable_t, log) + sizeof(host->log));
+    if (host->struct_size < minSize) {
         return;
     }
     if (!host->log) {

@@ -11,8 +11,11 @@ namespace animus::kernel::module {
 struct LoadedModule {
     DynamicLibrary library;
     const animus_module_descriptor_t* descriptor{nullptr};
-    animus_module_handle_t handle{nullptr};
+
+    animus_module_create_fn create{nullptr};
     animus_module_destroy_fn destroy{nullptr};
+
+    animus_module_handle_t handle{nullptr};
 
     LoadedModule() = default;
     LoadedModule(const LoadedModule&) = delete;
@@ -23,15 +26,26 @@ struct LoadedModule {
 
     ~LoadedModule();
 
-    bool IsValid() const { return descriptor != nullptr && destroy != nullptr; }
+    bool IsValid() const { return descriptor != nullptr && create != nullptr && destroy != nullptr; }
+    bool IsInstantiated() const { return handle != nullptr; }
 };
 
 class ModuleLoader {
 public:
-    // Loads a single module from an explicit shared library path.
-    //
-    // On success, returns a LoadedModule that will destroy the module instance and unload
-    // the library on destruction.
+    // Loads a module shared library and validates its descriptor/symbols.
+    // Does NOT instantiate the module.
+    std::unique_ptr<LoadedModule> LoadLibrary(
+        const std::string& path,
+        std::string* error);
+
+    // Instantiates a loaded module.
+    bool CreateInstance(
+        LoadedModule& module,
+        const animus_host_vtable_t* host,
+        void* host_ctx,
+        std::string* error);
+
+    // Convenience wrapper: LoadLibrary() + CreateInstance().
     std::unique_ptr<LoadedModule> Load(
         const std::string& path,
         const animus_host_vtable_t* host,
