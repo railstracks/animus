@@ -92,3 +92,79 @@ Explore integrating a trainable "intuition" layer using **FANN**, but only for s
 - Treat outputs as *advisory* signals, never authority.
 - Good candidates: urgency scoring, routing, action ranking, risk estimation.
 - Requires feedback + evaluation harness to avoid untrustworthy drift.
+
+## LLM Provider Interfaces as DLLs (2026-02-23)
+
+Design principle: **LLM provider interfaces should be implemented as separate DLLs**, not built into the core kernel. This prepares Animus for:
+
+- **Third-party extensions** — users can add their own providers without modifying the core
+- **Clean separation** — the kernel remains provider-agnostic
+- **Hot-swapping** — providers can be updated/added without rebuilding the kernel
+- **Sandboxed failures** — a bad provider DLL doesn't necessarily crash the whole agent
+
+### Implementation notes
+
+- Provider DLLs should expose a well-defined C ABI for maximum compatibility
+- Kernel loads providers dynamically at runtime (with configurable search paths)
+- Each provider implements: initialization, capability discovery, request/response, streaming, error handling, teardown
+- Provider selection by name/config; kernel routes prompts to the appropriate DLL
+- Consider versioning the interface so future kernel versions can evolve the API gracefully
+
+### SDK and documentation
+
+We should produce:
+
+- **SDK package** — headers, import libraries, example provider implementations (C++, C, maybe Rust/Go bindings if feasible)
+- **Documentation** — interface contract, lifecycle, error handling, memory ownership rules, thread safety, logging hooks
+- **Reference implementations** — at least one production-ready provider (e.g., OpenAI-compatible HTTP) included as both a working DLL and source example
+
+### Security considerations
+
+- DLL loading must be path-controlled (no arbitrary loading from user-controlled directories)
+- Consider signing requirements for production environments
+- Document the trust model: a provider DLL has significant access (outbound network, potentially secrets)
+
+### Concurrency model
+
+Thread safety boundaries need careful consideration:
+
+- **Within a single agent interaction (chain-of-thought):** Tool calls should generally be **blocking/sequential** to preserve reasoning coherence. The agent's cognitive loop is not naturally parallel—each step depends on the previous.
+- **Across agent interactions (multi-user):** LLM invocations and their ensuing action chains **can and should be parallelized**. This is the critical use case: in organizational deployments with multiple concurrent users, each user's session runs independently.
+
+The LLM interface layer should therefore support:
+
+- **Concurrent requests** from multiple agent sessions
+- **Per-session isolation** (one user's chain-of-thought doesn't block another's)
+- **Optional parallel tool calls** within a single session if/when we identify safe opportunities (e.g., independent read-only lookups)
+
+This implies the provider DLL interface must be thread-safe, or the kernel must manage a pool of provider instances with proper isolation.
+
+## Webhooks and HTTP Integration (2026-02-24)
+
+For external integrations that require HTTP endpoints or real-time WebSocket connections, we'll use a **Ruby-based scripted HTTP server** rather than baking this into the C++ kernel.
+
+### Technology choices
+
+- **Sinatra** — Lightweight DSL for HTTP webhooks and REST endpoints
+- **EventMachine** — Async I/O for WebSocket server/client connections
+
+### Integration pattern
+
+The Ruby HTTP layer will inject events directly into Animus via the CLI interface:
+
+```
+External Service → HTTP/WebSocket → Ruby (Sinatra/EM) → CLI → Kernel
+```
+
+This keeps the C++ kernel focused on cognition while allowing flexible, scriptable integrations.
+
+### Rationale
+
+- **Scriptability**: Ruby layer can be modified without recompiling the kernel
+- **Rapid iteration**: Sinatra/EventMachine are mature, well-understood in this stack
+- **Separation of concerns**: Kernel handles cognition; Ruby handles HTTP/WebSocket plumbing
+- **Hook ecosystem**: Consistent with the hook-based extensibility model
+
+### Scope
+
+This is early-stage; many facets to flesh out (authentication, rate limiting, event routing). For now, we're laying the foundation and will expand as needed.
