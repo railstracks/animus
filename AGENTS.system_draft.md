@@ -220,7 +220,24 @@ Registries should support:
 
 ---
 
-## 8) AgentNetwork (future, treat as a security boundary)
+## 8) Modules / plugins (DLLs) — stability-first
+
+Animus is intended to be split into multiple C++ projects, with optional capabilities added as **modules** (shared libraries).
+
+Key point: the module boundary is an **ABI boundary**.
+
+Design stance (agreed): prioritize **stability** over short-term implementation convenience.
+
+- Prefer **C ABI factories** for module discovery + lifetime.
+- Avoid passing STL types / exceptions across the boundary.
+- Enforce explicit ownership rules + version negotiation.
+
+Detailed design and proposed repo layout live in:
+- `AGENTS.modules_draft.md`
+
+---
+
+## 9) AgentNetwork (future, treat as a security boundary)
 
 Goals:
 - synchronize memory
@@ -239,7 +256,7 @@ A clean model: `ToolExecutor` routes to a `ToolBackend`:
 
 ---
 
-## 9) Relationship sketch (high-level)
+## 10) Relationship sketch (high-level)
 
 - `AgentKernel`
   - `JobSystem`
@@ -256,7 +273,7 @@ A clean model: `ToolExecutor` routes to a `ToolBackend`:
 
 ---
 
-## 10) Open questions (to resolve early)
+## 11) Open questions (to resolve early)
 
 - Do we keep a separate concept of **Session** (long-lived conversation state) distinct from ChainInstance (single activation)?
 - Exact XML schema and validation rules.

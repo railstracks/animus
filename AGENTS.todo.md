@@ -23,7 +23,25 @@
 
 ---
 
-## Milestone 1 — Kernel skeleton + module lifecycle
+## Milestone 1 — Module SDK/ABI + module loader (stability-first)
+
+- [ ] Create `animus-sdk` (module API) target:
+  - [ ] define `ANIMUS_MODULE_API_VERSION`
+  - [ ] define module descriptor (`animus_module_descriptor_t`)
+  - [ ] define C ABI factory exports (get_descriptor/create/destroy)
+  - [ ] define the kernel-host surface (`animus_host_vtable_t`) (logging/config/registry registration)
+  - [ ] document ABI rules (no STL/exceptions across boundary; explicit ownership)
+- [ ] Implement kernel module loader:
+  - [ ] load shared libraries from configured search paths
+  - [ ] verify API version compatibility
+  - [ ] obtain descriptor + instantiate module
+  - [ ] register module-provided components into registries
+  - [ ] audit log which modules were loaded (id/version/hash)
+- [ ] Add minimal module allowlisting config (even if permissive initially)
+
+---
+
+## Milestone 2 — Kernel skeleton + module lifecycle
 
 - [ ] Implement `AgentKernel` startup/shutdown:
   - [ ] owns `jobs::JobSystem`
@@ -33,7 +51,7 @@
 
 ---
 
-## Milestone 2 — Agent model + policy gates (minimum viable)
+## Milestone 3 — Agent model + policy gates (minimum viable)
 
 - [ ] Implement `Agent`:
   - [ ] identity + settings (provider selection, streaming policy)
@@ -44,7 +62,7 @@
 
 ---
 
-## Milestone 3 — Connector abstraction + event dispatch
+## Milestone 4 — Connector abstraction + event dispatch
 
 - [ ] Split connector responsibilities:
   - [ ] `IEventSource` (produces `IncomingEvent`)
@@ -56,7 +74,7 @@
 
 ---
 
-## Milestone 4 — ChainRunner + ChainInstance (core loop, stubbed execution)
+## Milestone 5 — ChainRunner + ChainInstance (core loop, stubbed execution)
 
 - [ ] Define `ChainInstance` state:
   - [ ] ids: chain_id, agent_id, conversation/session id, connector id
@@ -73,7 +91,7 @@
 
 ---
 
-## Milestone 5 — Prompt pipeline (deterministic + testable)
+## Milestone 6 — Prompt pipeline (deterministic + testable)
 
 - [ ] Implement:
   - [ ] `PromptPolicy` / `PromptTemplate`
@@ -83,7 +101,7 @@
 
 ---
 
-## Milestone 6 — LLM registry + first provider
+## Milestone 7 — LLM registry + first provider
 
 - [ ] Define `ILLMClient` interface.
 - [ ] Implement `LLMRegistry`.
@@ -93,7 +111,7 @@
 
 ---
 
-## Milestone 7 — XML schema + parsing + validation
+## Milestone 8 — XML schema + parsing + validation
 
 - [ ] Specify the XML response schema:
   - [ ] `<tool_call>` (tool id, args, optional resource_key)
@@ -104,7 +122,7 @@
 
 ---
 
-## Milestone 8 — Tool system + parallel execution batches
+## Milestone 9 — Tool system + parallel execution batches
 
 - [ ] Define `ITool` interface + `ToolRegistry`.
 - [ ] Implement `ToolExecutor`:
@@ -115,7 +133,7 @@
 
 ---
 
-## Milestone 9 — Memory manager + first modules
+## Milestone 10 — Memory manager + first modules
 
 - [ ] Implement `Memory` manager:
   - [ ] module registry and per-agent configuration
@@ -127,14 +145,14 @@
 
 ---
 
-## Milestone 10 — Scheduler events
+## Milestone 11 — Scheduler events
 
 - [ ] Implement `Scheduler` as an `IEventSource`.
 - [ ] Support “run job X every N” → emits IncomingEvent to an agent.
 
 ---
 
-## Milestone 11 — AgentNetwork (stub → secure remote execution)
+## Milestone 12 — AgentNetwork (stub → secure remote execution)
 
 - [ ] Create `AgentNetwork` as a separate subsystem (even if initially disabled).
 - [ ] Implement a remote ToolBackend (no job sharing yet).
@@ -142,7 +160,7 @@
 
 ---
 
-## Milestone 12 — Hardening
+## Milestone 13 — Hardening
 
 - [ ] Cancellation semantics end-to-end (queued + in-flight best-effort).
 - [ ] Timeouts + retry policy.
