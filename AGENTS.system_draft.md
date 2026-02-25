@@ -52,6 +52,22 @@ Proposed direction:
 - `InMemorySessionStore` implementation
 - `RedisSessionStore` implementation (future)
 
+### 2.2 Session routing (default metadata; configurable)
+
+By default, Session identity is derived from connector metadata (e.g. Slack channel + thread, WhatsApp conversation id).
+
+However, we also want **Session routing** so that a single IncomingEvent can:
+- map to a different “primary” Session than the raw metadata would suggest, and/or
+- include *additional* Sessions as read-only context sources (multi-session context assembly)
+
+Proposed direction:
+- `ISessionRouter` (or `SessionRoutingPolicy`) that takes an `IncomingEvent` and returns a `SessionContextSet`:
+  - `primary_session_id`
+  - `context_session_ids[]` (optional additional sessions)
+
+Important default safety stance:
+- writes (new messages, summaries, compactions) go only to the **primary** Session unless explicitly configured otherwise (avoid cross-session contamination).
+
 ---
 
 ## 3) ChainInstance: canonical flow

@@ -16,6 +16,11 @@
   - [ ] `ChainRunner`
 - [x] Maintain a separate **Session** class (long-lived conversation object). A `ChainInstance` is one activation within a Session.
 - [ ] Define Session keying strategy (user/channel/thread ids) and `ISessionStore` interface.
+- [ ] Define Session routing:
+  - [ ] `ISessionRouter` / `SessionRoutingPolicy` (IncomingEvent → primary + additional context sessions)
+  - [ ] default router: derive primary Session from connector metadata
+  - [ ] rule system for advanced routing (future): allow linking/including multiple Sessions as context
+  - [ ] define write policy (default: write only to primary Session)
 - [x] Set initial default budgets (refine later as per-provider/per-tool caps):
   - [x] `maxChainSteps = 20`
   - [x] `maxToolCallsPerChain = 10`
