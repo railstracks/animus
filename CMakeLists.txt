@@ -17,6 +17,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ============================================================================
+# SDK (stable module ABI boundary)
+# ============================================================================
+
+add_library(animus_sdk INTERFACE)
+
+target_include_directories(animus_sdk INTERFACE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# ============================================================================
 # Core Library
 # ============================================================================
 
@@ -27,6 +37,8 @@ add_library(animus_core
 target_include_directories(animus_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+target_link_libraries(animus_core PUBLIC animus_sdk)
 
 target_compile_features(animus_core PUBLIC cxx_std_20)
 
