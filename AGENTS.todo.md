@@ -14,12 +14,14 @@
   - [ ] `IncomingEvent`
   - [ ] `ChainInstance`
   - [ ] `ChainRunner`
-- [ ] Decide whether **Session** exists as a long-lived conversation object (distinct from ChainInstance).
-- [ ] Define global budgets:
-  - [ ] max chain steps
-  - [ ] max tool calls per chain
-  - [ ] timeouts (LLM / tool / terminal)
-  - [ ] token budgets per prompt
+- [x] Maintain a separate **Session** class (long-lived conversation object). A `ChainInstance` is one activation within a Session.
+- [ ] Define Session keying strategy (user/channel/thread ids) and `ISessionStore` interface.
+- [x] Set initial default budgets (refine later as per-provider/per-tool caps):
+  - [x] `maxChainSteps = 20`
+  - [x] `maxToolCallsPerChain = 10`
+  - [x] `timeoutSeconds = 1800` (LLM / tool / terminal)
+  - [x] `tokenBudgetPerPrompt = 200_000`
+- [ ] Define conversation history **compaction** policy (when/where/how) and a potential LLM-driven `ConversationCompactor` sub-prompt.
 
 ---
 
@@ -47,7 +49,13 @@
   - [ ] owns `jobs::JobSystem`
   - [ ] holds registries (tools, llms, connectors, agents)
   - [ ] module init/shutdown (`IModule`)
-- [ ] Add basic logging + tracing scaffolding (chain_id, agent_id, connector, timestamps).
+- [ ] Implement Session primitives:
+  - [ ] `Session` (long-lived, groups multiple ChainInstances)
+  - [ ] `SessionManager` (resolve/create/load)
+  - [ ] `ISessionStore` interface
+  - [ ] `InMemorySessionStore` default implementation
+  - [ ] (future) `RedisSessionStore` implementation for cross-node sync
+- [ ] Add basic logging + tracing scaffolding (session_id, chain_id, agent_id, connector, timestamps).
 
 ---
 
@@ -98,6 +106,10 @@
   - [ ] `PromptAssembler`
   - [ ] `PromptInstance` (text + metadata)
 - [ ] Add connector-provided abbreviated context insertion.
+- [ ] Add conversation history compaction:
+  - [ ] `ConversationCompactor` (optional LLM-driven sub-prompt)
+  - [ ] store compaction outputs in `Session` (e.g. rolling summary) with provenance
+  - [ ] policy: when to compact (token pressure / time / turn count)
 
 ---
 

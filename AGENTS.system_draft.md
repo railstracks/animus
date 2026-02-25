@@ -17,6 +17,7 @@
 - **AgentKernel**: always-on core runtime. Owns core services (job system, registries, scheduler) and wires modules.
 - **Agent**: configuration + policy + capabilities for a persona/worker (LLM settings, tool permissions, memory config, workspace).
 - **IncomingEvent**: a normalized stimulus that can activate an agent (Slack message, webhook, Redis/Rabbit event, scheduled tick, CLI request, …).
+- **Session**: long-lived conversational container. A Session groups multiple ChainInstances, and abstracts where session state is stored (in-memory now; Redis sync later).
 - **ChainInstance**: one complete activation run from event → response (with possible tool/terminal loops).
 - **ChainRunner**: executes a ChainInstance’s step loop.
 - **PromptInstance**: the fully assembled prompt string plus metadata (sources, token estimates, budgets).
@@ -29,8 +30,8 @@
 Animus runs a **passive base** which:
 
 1. receives events from multiple sources (webhooks, Redis, RabbitMQ, UI connectors, scheduler)
-2. dispatches each event to an agent
-3. runs a **ChainInstance** for that activation
+2. resolves (or creates) a **Session** and dispatches the event to an Agent
+3. runs a **ChainInstance** for that activation (associated with the Session)
 4. produces outward side effects:
    - tool calls
    - terminal commands
@@ -38,6 +39,18 @@ Animus runs a **passive base** which:
 5. (optionally) writes memory and emits tracing/metrics
 
 Key design choice: model the activation explicitly as a **ChainInstance** so that cancellation, timeouts, tracing, and concurrency are straightforward.
+
+### 2.1 Sessions (long-lived state)
+
+- A **Session** represents a long-lived conversational context spanning multiple ChainInstances.
+- A Session should be **storage-agnostic**:
+  - default: in-memory store (fast, local)
+  - future: Redis-backed store to synchronize Session state across Animus nodes
+
+Proposed direction:
+- `ISessionStore` interface
+- `InMemorySessionStore` implementation
+- `RedisSessionStore` implementation (future)
 
 ---
 
@@ -50,6 +63,8 @@ A ChainInstance is the “cognition + action” loop for one IncomingEvent.
 For each step (bounded by max steps / budgets):
 
 1. **Context assembly**
+   - pull Session conversation state (recent turns, summaries)
+   - compact conversation history as needed (optionally via an LLM sub-prompt / "ConversationCompactor")
    - pull memory context (ontology, vector search, episodic)
    - pull connector-provided abbreviated context insertion (e.g. Slack thread excerpt)
    - include tool/channel availability summary (from registries)
@@ -134,6 +149,8 @@ Prefer **composition + registries** over inheritance.
 AgentKernel owns “always-on” services:
 - `jobs::JobSystem`
 - `Scheduler`
+- `SessionManager` (creates/loads Sessions)
+- `ISessionStore` (default in-memory; future Redis-backed)
 - `ConnectorRegistry` (Slack/Rabbit/Redis/Webhooks/CLI)
 - `LLMRegistry`
 - `ToolRegistry`
@@ -261,6 +278,8 @@ A clean model: `ToolExecutor` routes to a `ToolBackend`:
 - `AgentKernel`
   - `JobSystem`
   - `Scheduler`
+  - `SessionManager` → `Session`
+    - `ISessionStore` (InMemory now; Redis later)
   - `AgentRegistry` → `Agent`
   - `ConnectorRegistry` → `IEventSource` / `IChannelSink`
   - `ToolRegistry` → `ITool`
@@ -269,13 +288,19 @@ A clean model: `ToolExecutor` routes to a `ToolBackend`:
   - `ChainRunner`
 
 - `ChainRunner`
-  - creates/runs `ChainInstance` per `IncomingEvent`
+  - creates/runs `ChainInstance` per `IncomingEvent` (associated with a `Session`)
 
 ---
 
 ## 11) Open questions (to resolve early)
 
-- Do we keep a separate concept of **Session** (long-lived conversation state) distinct from ChainInstance (single activation)?
+- Session storage/sync details:
+  - `ISessionStore` interface shape
+  - session keying (user/channel/thread ids)
+  - Redis synchronization/conflict strategy (future)
+- Conversation compaction policy:
+  - when to compact
+  - how summaries are stored (in Session vs episodic memory)
 - Exact XML schema and validation rules.
 - Streaming semantics (what can be emitted before validation completes).
 - Tool parallelization policy and conflict detection (`resource_key`).
