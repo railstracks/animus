@@ -36,6 +36,7 @@ add_library(animus_kernel
   src/kernel/module/DynamicLibrary.cpp
   src/kernel/module/ModuleLoader.cpp
   src/kernel/module/ModuleManager.cpp
+  src/kernel/session/ConversationCompactor.cpp
   src/kernel/session/Session.cpp
   src/kernel/session/InMemorySessionStore.cpp
   src/kernel/session/DefaultSessionRouter.cpp
