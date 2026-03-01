@@ -1,6 +1,6 @@
-# AGENTS.todo.md — Blueprint-to-Implementation Plan (Draft)
+# AGENTS.todo.md — Blueprint-to-Implementation Plan
 
-> Status: **planning / rough order**.
+> Status: **active development**.
 >
 > Goal: iteratively realize the architecture described in `AGENTS.system_draft.md` while keeping the codebase shippable and testable at each step.
 
@@ -8,59 +8,64 @@
 
 ## Milestone 0 — Align on naming + invariants
 
-- [ ] Confirm core runtime nouns:
-  - [ ] `AgentKernel`
-  - [ ] `Agent`
-  - [ ] `IncomingEvent`
-  - [ ] `ChainInstance`
-  - [ ] `ChainRunner`
+- [x] Confirm core runtime nouns:
+  - [x] `AgentKernel`
+  - [x] `Agent`
+  - [x] `IncomingEvent`
+  - [x] `ChainInstance`
+  - [x] `ChainRunner`
 - [x] Maintain a separate **Session** class (long-lived conversation object). A `ChainInstance` is one activation within a Session.
-- [ ] Define Session keying strategy (user/channel/thread ids) and `ISessionStore` interface.
-- [ ] Define Session routing:
-  - [ ] `ISessionRouter` / `SessionRoutingPolicy` (IncomingEvent → primary + additional context sessions)
-  - [ ] default router: derive primary Session from connector metadata
+- [x] Define Session keying strategy (user/channel/thread ids) and `ISessionStore` interface.
+- [x] Define Session routing:
+  - [x] `ISessionRouter` / `SessionRoutingPolicy` (IncomingEvent → primary + additional context sessions)
+  - [x] default router: derive primary Session from connector metadata
   - [ ] rule system for advanced routing (future): allow linking/including multiple Sessions as context
-  - [ ] define write policy (default: write only to primary Session)
+  - [ ] define write policy (default: write only to primary Session) — *documented, not enforced*
 - [x] Set initial default budgets (refine later as per-provider/per-tool caps):
   - [x] `maxChainSteps = 20`
   - [x] `maxToolCallsPerChain = 10`
   - [x] `timeoutSeconds = 1800` (LLM / tool / terminal)
   - [x] `tokenBudgetPerPrompt = 200_000`
-- [ ] Define conversation history **compaction** policy (when/where/how) and a potential LLM-driven `ConversationCompactor` sub-prompt.
+- [ ] Define conversation history **compaction** policy (when/where/how) and a potential LLM-driven `ConversationCompactor` sub-prompt. — *documented, not implemented*
 
 ---
 
-## Milestone 1 — Module SDK/ABI + module loader (stability-first)
+## Milestone 1 — Module SDK/ABI + module loader (stability-first) ✅
 
-- [ ] Create `animus-sdk` (module API) target:
-  - [ ] define `ANIMUS_MODULE_API_VERSION`
-  - [ ] define module descriptor (`animus_module_descriptor_t`)
-  - [ ] define C ABI factory exports (get_descriptor/create/destroy)
-  - [ ] define the kernel-host surface (`animus_host_vtable_t`) (logging/config/registry registration)
-  - [ ] document ABI rules (no STL/exceptions across boundary; explicit ownership)
-- [ ] Implement kernel module loader:
-  - [ ] load shared libraries from configured search paths
-  - [ ] verify API version compatibility
-  - [ ] obtain descriptor + instantiate module
-  - [ ] register module-provided components into registries
-  - [ ] audit log which modules were loaded (id/version/hash)
-- [ ] Add minimal module allowlisting config (even if permissive initially)
+- [x] Create `animus-sdk` (module API) target:
+  - [x] define `ANIMUS_MODULE_API_VERSION`
+  - [x] define module descriptor (`animus_module_descriptor_t`)
+  - [x] define C ABI factory exports (get_descriptor/create/destroy)
+  - [x] define the kernel-host surface (`animus_host_vtable_t`) (logging/config/registry registration)
+  - [x] document ABI rules (no STL/exceptions across boundary; explicit ownership)
+- [x] Implement kernel module loader:
+  - [x] load shared libraries from configured search paths
+  - [x] verify API version compatibility
+  - [x] obtain descriptor + instantiate module
+  - [x] register module-provided components into registries (stub slots only)
+  - [x] audit log which modules were loaded (id/version/path)
+- [x] Add minimal module allowlisting config (default-allow in dev, explicit allowlist supported)
+
+**Implemented in commits:** `e27bf38`, `389c690`, `d5590e4`, `db1681a`
 
 ---
 
-## Milestone 2 — Kernel skeleton + module lifecycle
+## Milestone 2 — Kernel skeleton + module lifecycle ✅
 
-- [ ] Implement `AgentKernel` startup/shutdown:
-  - [ ] owns `jobs::JobSystem`
-  - [ ] holds registries (tools, llms, connectors, agents)
-  - [ ] module init/shutdown (`IModule`)
-- [ ] Implement Session primitives:
-  - [ ] `Session` (long-lived, groups multiple ChainInstances)
-  - [ ] `SessionManager` (resolve/create/load)
-  - [ ] `ISessionStore` interface
-  - [ ] `InMemorySessionStore` default implementation
+- [x] Implement `AgentKernel` startup/shutdown:
+  - [x] owns `jobs::JobSystem`
+  - [x] holds registries (tools, llms, connectors, agents) — *stub slots only*
+  - [x] module init/shutdown via `ModuleManager`
+- [x] Implement Session primitives:
+  - [x] `Session` (long-lived, groups multiple ChainInstances)
+  - [x] `SessionManager` (resolve/create/load)
+  - [x] `ISessionStore` interface
+  - [x] `InMemorySessionStore` default implementation
   - [ ] (future) `RedisSessionStore` implementation for cross-node sync
-- [ ] Add basic logging + tracing scaffolding (session_id, chain_id, agent_id, connector, timestamps).
+- [x] Add basic logging + tracing scaffolding (session_id, chain_id, agent_id, connector, timestamps).
+- [x] Tests: `JobsTests`, `ModuleLoaderTests`, `SessionTests` (3 total)
+
+**Implemented in commits:** `3673a88`, `01b4c0d`, `e0a19fe`, `46d0772`
 
 ---
 
@@ -131,7 +136,7 @@
 ## Milestone 8 — XML schema + parsing + validation
 
 - [ ] Specify the XML response schema:
-  - [ ] `<tool_call>` (tool id, args, optional resource_key)
+  - [ ] `<tool_call tool_id=…>` (tool id, args, optional resource_key)
   - [ ] `<terminal_command>`
   - [ ] `<channel_response channel=…>`
 - [ ] Implement `ActionPlanParser` (robust errors).
@@ -165,7 +170,7 @@
 ## Milestone 11 — Scheduler events
 
 - [ ] Implement `Scheduler` as an `IEventSource`.
-- [ ] Support “run job X every N” → emits IncomingEvent to an agent.
+- [ ] Support "run job X every N" → emits IncomingEvent to an agent.
 
 ---
 
