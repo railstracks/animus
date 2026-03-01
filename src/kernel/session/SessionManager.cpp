@@ -1,5 +1,6 @@
 #include "animus_kernel/SessionManager.h"
 
+#include <unordered_set>
 #include <utility>
 
 namespace animus::kernel {
@@ -17,7 +18,13 @@ SessionContextSet SessionManager::Resolve(const IncomingEvent& event) {
     out.primary = SessionAccess(m_store->GetOrCreate(routing.primary),
                                 SessionAccessMode::ReadWrite);
 
+    std::unordered_set<std::string> loadedContextKeys;
     for (const auto& k : routing.context) {
+        const std::string serialized = k.ToString();
+        if (!loadedContextKeys.insert(serialized).second) {
+            continue;
+        }
+
         out.context.emplace_back(m_store->GetOrCreate(k),
                                  SessionAccessMode::ReadOnly);
     }

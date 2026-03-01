@@ -1,5 +1,8 @@
 #include "animus_kernel/DefaultSessionRouter.h"
 
+#include <unordered_set>
+#include <utility>
+
 namespace animus::kernel {
 
 static std::string GetMeta(const IncomingEvent& e, const char* key) {
@@ -8,6 +11,10 @@ static std::string GetMeta(const IncomingEvent& e, const char* key) {
         return {};
     }
     return it->second;
+}
+
+DefaultSessionRouter::DefaultSessionRouter(std::vector<SessionRoutingRule> rules)
+    : m_rules(std::move(rules)) {
 }
 
 SessionRoutingResult DefaultSessionRouter::Route(const IncomingEvent& event) {
@@ -32,8 +39,21 @@ SessionRoutingResult DefaultSessionRouter::Route(const IncomingEvent& event) {
         r.primary.thread_id = GetMeta(event, "thread_ts");
     }
 
-    // Session routing for additional context sessions will be implemented later.
-    // For now: no additional session contexts.
+    std::unordered_set<std::string> seenContextKeys;
+    seenContextKeys.insert(r.primary.ToString());
+
+    for (const auto& rule : m_rules) {
+        if (!rule.Matches(event)) {
+            continue;
+        }
+
+        SessionKey contextKey = rule.ResolveContext(event);
+        const std::string serialized = contextKey.ToString();
+        if (seenContextKeys.insert(serialized).second) {
+            r.context.push_back(std::move(contextKey));
+        }
+    }
+
     return r;
 }
 

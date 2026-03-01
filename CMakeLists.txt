@@ -39,6 +39,7 @@ add_library(animus_kernel
   src/kernel/session/Session.cpp
   src/kernel/session/InMemorySessionStore.cpp
   src/kernel/session/DefaultSessionRouter.cpp
+  src/kernel/session/SessionRoutingRule.cpp
   src/kernel/session/SessionManager.cpp
 )
 
