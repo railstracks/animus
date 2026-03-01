@@ -14,10 +14,12 @@ SessionContextSet SessionManager::Resolve(const IncomingEvent& event) {
     SessionContextSet out{};
 
     const SessionRoutingResult routing = m_router->Route(event);
-    out.primary = m_store->GetOrCreate(routing.primary);
+    out.primary = SessionAccess(m_store->GetOrCreate(routing.primary),
+                                SessionAccessMode::ReadWrite);
 
     for (const auto& k : routing.context) {
-        out.context.push_back(m_store->GetOrCreate(k));
+        out.context.emplace_back(m_store->GetOrCreate(k),
+                                 SessionAccessMode::ReadOnly);
     }
 
     return out;

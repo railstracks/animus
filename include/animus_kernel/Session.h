@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -29,6 +30,11 @@ struct SessionTurn {
     std::uint64_t unix_ms{0};
 };
 
+enum class SessionAccessMode {
+    ReadWrite,
+    ReadOnly
+};
+
 // Session groups multiple ChainInstances (activations) under a long-lived context.
 class Session {
 public:
@@ -49,6 +55,30 @@ private:
     SessionKey m_key{};
     std::vector<SessionTurn> m_turns;
     std::string m_summary;
+};
+
+class SessionAccess {
+public:
+    SessionAccess() = default;
+    SessionAccess(std::shared_ptr<Session> session, SessionAccessMode mode);
+
+    SessionAccessMode Mode() const;
+    explicit operator bool() const;
+
+    SessionId Id() const;
+    const SessionKey& Key() const;
+    const std::vector<SessionTurn>& Turns() const;
+    const std::string& Summary() const;
+
+    void AddTurn(SessionTurn turn);
+    void SetSummary(std::string summary);
+
+private:
+    Session& RequireSession() const;
+    void EnsureWritable(const char* action) const;
+
+    std::shared_ptr<Session> m_session;
+    SessionAccessMode m_mode{SessionAccessMode::ReadOnly};
 };
 
 } // namespace animus::kernel
