@@ -11,8 +11,8 @@
 namespace animus::kernel {
 
 struct SessionContextSet {
-    std::shared_ptr<Session> primary;
-    std::vector<std::shared_ptr<Session>> context;
+    SessionAccess primary;
+    std::vector<SessionAccess> context;
 };
 
 class SessionManager {

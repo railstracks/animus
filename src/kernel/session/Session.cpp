@@ -1,5 +1,6 @@
 #include "animus_kernel/Session.h"
 
+#include <stdexcept>
 #include <sstream>
 
 namespace animus::kernel {
@@ -38,6 +39,58 @@ void Session::SetSummary(std::string summary) {
 
 const std::string& Session::Summary() const {
     return m_summary;
+}
+
+SessionAccess::SessionAccess(std::shared_ptr<Session> session, SessionAccessMode mode)
+    : m_session(std::move(session)), m_mode(mode) {
+}
+
+SessionAccessMode SessionAccess::Mode() const {
+    return m_mode;
+}
+
+SessionAccess::operator bool() const {
+    return static_cast<bool>(m_session);
+}
+
+SessionId SessionAccess::Id() const {
+    return RequireSession().Id();
+}
+
+const SessionKey& SessionAccess::Key() const {
+    return RequireSession().Key();
+}
+
+const std::vector<SessionTurn>& SessionAccess::Turns() const {
+    return RequireSession().Turns();
+}
+
+const std::string& SessionAccess::Summary() const {
+    return RequireSession().Summary();
+}
+
+void SessionAccess::AddTurn(SessionTurn turn) {
+    EnsureWritable("AddTurn");
+    RequireSession().AddTurn(std::move(turn));
+}
+
+void SessionAccess::SetSummary(std::string summary) {
+    EnsureWritable("SetSummary");
+    RequireSession().SetSummary(std::move(summary));
+}
+
+Session& SessionAccess::RequireSession() const {
+    if (!m_session) {
+        throw std::runtime_error("Session access violation: missing session");
+    }
+    return *m_session;
+}
+
+void SessionAccess::EnsureWritable(const char* action) const {
+    if (m_mode == SessionAccessMode::ReadOnly) {
+        throw std::runtime_error(std::string("Session access violation: ") + action
+                                 + " on read-only session");
+    }
 }
 
 } // namespace animus::kernel
