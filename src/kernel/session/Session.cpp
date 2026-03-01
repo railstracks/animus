@@ -1,7 +1,7 @@
 #include "animus_kernel/Session.h"
 
-#include <stdexcept>
 #include <sstream>
+#include <stdexcept>
 
 namespace animus::kernel {
 
@@ -26,11 +26,42 @@ const SessionKey& Session::Key() const {
 }
 
 void Session::AddTurn(SessionTurn turn) {
+    if (turn.turn_id == 0) {
+        turn.turn_id = m_nextTurnId++;
+    } else if (turn.turn_id >= m_nextTurnId) {
+        m_nextTurnId = turn.turn_id + 1;
+    }
     m_turns.push_back(std::move(turn));
 }
 
 const std::vector<SessionTurn>& Session::Turns() const {
     return m_turns;
+}
+
+void Session::TrimOldestTurns(std::size_t count) {
+    if (count >= m_turns.size()) {
+        m_turns.clear();
+        return;
+    }
+
+    m_turns.erase(m_turns.begin(), m_turns.begin() + static_cast<std::ptrdiff_t>(count));
+}
+
+void Session::SetCompactionSummary(SessionTurn summary_turn) {
+    if (summary_turn.turn_id == 0) {
+        summary_turn.turn_id = m_nextTurnId++;
+    } else if (summary_turn.turn_id >= m_nextTurnId) {
+        m_nextTurnId = summary_turn.turn_id + 1;
+    }
+    summary_turn.is_summary = true;
+    m_compactionSummary = std::move(summary_turn);
+}
+
+const SessionTurn* Session::GetCompactionSummary() const {
+    if (!m_compactionSummary.has_value()) {
+        return nullptr;
+    }
+    return &m_compactionSummary.value();
 }
 
 void Session::SetSummary(std::string summary) {
@@ -65,6 +96,10 @@ const std::vector<SessionTurn>& SessionAccess::Turns() const {
     return RequireSession().Turns();
 }
 
+const SessionTurn* SessionAccess::GetCompactionSummary() const {
+    return RequireSession().GetCompactionSummary();
+}
+
 const std::string& SessionAccess::Summary() const {
     return RequireSession().Summary();
 }
@@ -72,6 +107,16 @@ const std::string& SessionAccess::Summary() const {
 void SessionAccess::AddTurn(SessionTurn turn) {
     EnsureWritable("AddTurn");
     RequireSession().AddTurn(std::move(turn));
+}
+
+void SessionAccess::TrimOldestTurns(std::size_t count) {
+    EnsureWritable("TrimOldestTurns");
+    RequireSession().TrimOldestTurns(count);
+}
+
+void SessionAccess::SetCompactionSummary(SessionTurn summary_turn) {
+    EnsureWritable("SetCompactionSummary");
+    RequireSession().SetCompactionSummary(std::move(summary_turn));
 }
 
 void SessionAccess::SetSummary(std::string summary) {
