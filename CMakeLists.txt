@@ -50,6 +50,12 @@ add_library(animus_kernel
   src/kernel/session/SessionManager.cpp
   src/kernel/llm/LLMProviderBase.cpp
   src/kernel/llm/LLMProviderRegistry.cpp
+  src/kernel/llm/OpenAICompat.cpp
+  src/kernel/llm/OpenAIProvider.cpp
+  src/kernel/llm/OpenAICodexProvider.cpp
+  src/kernel/llm/ZaiProvider.cpp
+  src/kernel/llm/OllamaProvider.cpp
+  src/kernel/llm/CohereProvider.cpp
 )
 
 target_include_directories(animus_kernel PUBLIC
