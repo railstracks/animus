@@ -23,6 +23,10 @@ node_modules/
 /.idea/
 *.swp
 
+# Credentials / secrets
+config/providers.json
+config/*.local.json
+
 # OS
 .DS_Store
 Thumbs.db
