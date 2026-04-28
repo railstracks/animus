@@ -1,4 +1,4 @@
-# Ticket 015 — Chain Execution Pipeline
+# Ticket 016 — Chain Execution Pipeline
 
 **Priority:** P0 (blocks 005, makes compaction functional)
 **Status:** Open

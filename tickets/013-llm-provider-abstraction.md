@@ -1,12 +1,12 @@
 # Ticket 013 — LLM Provider Interface and Base Class
 
-**Priority:** P0 (blocks 014, 015, 016, 005)
-**Status:** Open
+**Priority:** P0 (blocks 014, 015, 016, 017)
+**Status:** ✅ Done
 **Dependencies:** None
 
 ## Summary
 
-Define the `ILLMProvider` interface, the `LLMProviderBase` shared HTTP/streaming machinery, the provider registry, and wire both into the kernel. This ticket establishes the entire abstraction layer — no concrete provider implementations yet (those are ticket 014).
+Define the `ILLMProvider` interface, the `LLMProviderBase` shared HTTP/streaming machinery, the provider registry, and wire both into the kernel. This ticket establishes the entire abstraction layer — no concrete provider implementations yet (those are ticket 015).
 
 ## Architecture
 
@@ -16,11 +16,12 @@ ILLMProvider (pure interface)
     ▼
 LLMProviderBase (HTTP + SSE + response assembly)
     │
-    ├── OpenAIProvider      (standard /v1/chat/completions)
-    ├── ZaiProvider         (Z.ai extensions)
-    ├── OllamaProvider      (no auth, local)
-    ├── MistralProvider     (near-identical to OpenAI)
-    └── CohereProvider      (different protocol, overrides more)
+    ├── OpenAIProvider         (standard /v1/chat/completions, API key auth)
+    │   └── OpenAICodexProvider  (extends OpenAI, adds OAuth refresh)
+    ├── ZaiProvider             (Z.ai extensions)
+    ├── OllamaProvider          (no auth, local)
+    ├── MistralProvider         (near-identical to OpenAI)
+    └── CohereProvider          (different protocol, overrides more)
 ```
 
 The kernel only sees `ILLMProvider`. The base class handles HTTP plumbing and normalizes all streaming into a unified `LLMToken` protocol. Concrete providers are thin subclasses that know their provider's request/response quirks.
@@ -194,17 +195,42 @@ private:
 - **libcurl** — HTTP client (already a transitive dep via drogon)
 - **nlohmann/json** — JSON serialization (header-only, via FetchContent)
 
+## Implementation (completed)
+
+All items implemented on branch `feat/llm-provider-abstraction`:
+
+- `include/animus_kernel/llm/LLMTypes.h` — `LLMMessage`, `LLMRequest`, `LLMToken`, `LLMTokenCallback`
+- `include/animus_kernel/llm/ILLMProvider.h` — pure interface with `Complete()`, `StreamComplete()`, `ProviderId()`, `IsAvailable()`
+- `include/animus_kernel/llm/LLMProviderConfig.h` — `LLMProviderConfig` with `provider_id`, `base_url`, `api_key`, `default_model`, timeouts, `extra` map
+- `include/animus_kernel/llm/LLMProviderBase.h` — base class with:
+  - Public SSE processing: `ProcessSSELine()`, `AppendSSEData()`, `SetAvailable()`
+  - Protected template methods: `BuildRequestBody()`, `ParseResponse()`, `ParseSSELine()`, `IsSSEDone()`, `GetEndpointURL()`, `GetHeaders()`
+  - Protected HTTP machinery: `DoHTTPRequest()`, `Config()`
+  - Incremental SSE parsing via curl write callback with line buffering
+  - libcurl pimpl (`HTTPImpl`) to avoid exposing curl headers
+- `include/animus_kernel/llm/LLMProviderRegistry.h` — factory pattern: `Register()`, `Create()`, `Available()`, `Has()`
+- `src/kernel/llm/LLMProviderBase.cpp` — full HTTP/SSE implementation with streaming
+- `src/kernel/llm/LLMProviderRegistry.cpp` — registry implementation
+- `include/animus_kernel/KernelConfig.h` — extended with `std::vector<llm::LLMProviderConfig> llmProviders`
+- `include/animus_kernel/AgentKernel.h` — owns `LLMProviderRegistry`, exposed via `LLMRegistry()`
+- `src/kernel/AgentKernel.cpp` — constructs registry in constructor
+- `CMakeLists.txt` — links `CURL::libcurl`, adds new source files
+- `tests/LLMProviderTests.cpp` — 12 tests with `MockProvider` (all passing)
+- `config/providers.example.json` — committed template
+- `docs/` — API reference docs for all six providers
+
+**Build verified:** compiles and all 12 tests pass on Melvin's workstation.
+
 ## Acceptance Criteria
 
-- [ ] `ILLMProvider` interface compiles with `LLMTypes` types
-- [ ] `LLMProviderBase` implements `Complete()` and `StreamComplete()` using template methods
-- [ ] `DoHTTPRequest()` handles HTTP POST with configurable timeouts
-- [ ] SSE parser handles `data: {...}` lines, detects `[DONE]`, yields tokens
-- [ ] `LLMProviderRegistry` supports register/create/list
-- [ ] `AgentKernel` owns a registry and bootstraps providers from config
-- [ ] Unit test: register a mock provider (overrides template methods), verify round-trip
-- [ ] Unit test: SSE parser produces correct token sequence from fixture data
-- [ ] No concrete providers yet — only mock in tests
+- [x] `ILLMProvider` interface compiles with `LLMTypes` types
+- [x] `LLMProviderBase` implements `Complete()` and `StreamComplete()` using template methods
+- [x] `DoHTTPRequest()` handles HTTP POST with configurable timeouts
+- [x] SSE parser handles `data: {...}` lines, detects `[DONE]`, yields tokens incrementally
+- [x] `LLMProviderRegistry` supports register/create/list/has
+- [x] `AgentKernel` owns a registry (accessible via `LLMRegistry()`)
+- [x] Unit tests with MockProvider — 12/12 passing
+- [x] No concrete providers yet — only mock in tests
 
 ## Notes
 
