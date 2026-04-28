@@ -16,6 +16,7 @@
 #include "animus_kernel/llm/LLMProviderConfig.h"
 #include "animus_kernel/llm/LLMProviderRegistry.h"
 #include "animus_kernel/llm/LLMTypes.h"
+#include "animus_kernel/KernelConfig.h"
 
 using namespace animus::kernel::llm;
 
@@ -331,7 +332,7 @@ void TestKernelConfigWithLLMProviders() {
   TEST("KernelConfig accepts LLM provider configs");
 
   animus::kernel::KernelConfig cfg;
-  llm::LLMProviderConfig provCfg;
+  animus::kernel::llm::LLMProviderConfig provCfg;
   provCfg.provider_id = "mock";
   provCfg.base_url = "http://localhost:9999";
   provCfg.default_model = "test-model";

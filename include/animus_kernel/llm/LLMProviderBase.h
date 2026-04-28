@@ -45,6 +45,23 @@ public:
 
   bool IsAvailable() const override;
 
+  // ---------------------------------------------------------------------------
+  // SSE processing (public for use by streaming callback, not for external use)
+  // ---------------------------------------------------------------------------
+
+  /// Parse a line as SSE data and invoke token callback if content found.
+  /// Strips "data: " prefix, handles [DONE], delegates to ParseSSELine().
+  /// Returns true if stream should stop ([DONE] received).
+  bool ProcessSSELine(const std::string& line, std::string& accumulated,
+                      LLMTokenCallback& callback);
+
+  /// Append raw SSE data, parse complete lines, set done=true on [DONE].
+  /// Used by the streaming curl write callback.
+  void AppendSSEData(const char* data, size_t len, bool* done);
+
+  /// Mark provider as (un)available (e.g. after auth failure).
+  void SetAvailable(bool available);
+
 protected:
   // ---------------------------------------------------------------------------
   // Template methods — concrete providers override these
@@ -74,7 +91,7 @@ protected:
   virtual std::vector<std::pair<std::string, std::string>> GetHeaders() const;
 
   // ---------------------------------------------------------------------------
-  // Shared machinery
+  // Shared HTTP machinery
   // ---------------------------------------------------------------------------
 
   /// Execute an HTTP POST request.
@@ -96,9 +113,6 @@ protected:
 
   /// Access the provider configuration from subclasses.
   const LLMProviderConfig& Config() const { return m_config; }
-
-  /// Mark provider as (un)available (e.g. after auth failure).
-  void SetAvailable(bool available);
 
 private:
   LLMProviderConfig m_config;

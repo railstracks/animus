@@ -20,7 +20,7 @@ struct LLMProviderBase::HTTPImpl {
   std::string responseBody;
   std::string errorBuffer;
 
-  // For streaming: the owning base class parses SSE lines
+  // For streaming
   LLMTokenCallback tokenCallback;
   std::string sseBuffer;     // partial line buffer
   std::string accumulated;   // accumulated response content
@@ -36,73 +36,20 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
   return totalSize;
 }
 
-// Write callback for streaming: feed chunks into SSE line buffer,
-// parse complete lines immediately.
-//
-// The userp is a pointer to a struct that holds the base class pointer
-// and the impl, so we can call ParseSSELine/IsSSEDone incrementally.
-struct StreamContext {
+// Streaming context — only carries pointers to the base class.
+// All state lives in the provider's HTTPImpl; access is via public methods.
+struct StreamWriteContext {
   LLMProviderBase* provider;
-  LLMProviderBase::HTTPImpl* impl;
   bool done{false};
 };
 
 size_t StreamWriteCallback(void* contents, size_t size, size_t nmemb,
                            void* userp) {
   size_t totalSize = size * nmemb;
-  auto* ctx = static_cast<StreamContext*>(userp);
+  auto* ctx = static_cast<StreamWriteContext*>(userp);
   if (ctx->done) return totalSize;
-
-  ctx->impl->sseBuffer.append(static_cast<char*>(contents), totalSize);
-
-  // Parse complete lines from the buffer
-  std::string& buf = ctx->impl->sseBuffer;
-  size_t pos = 0;
-  while (pos < buf.size()) {
-    size_t eol = buf.find('\n', pos);
-    if (eol == std::string::npos) break; // incomplete line, wait for more
-
-    std::string line = buf.substr(pos, eol - pos);
-    pos = eol + 1;
-
-    // Skip empty lines (SSE separators)
-    if (line.empty() || line == "\r") continue;
-
-    // Check for stream end
-    if (ctx->provider->IsSSEDone(line)) {
-      ctx->done = true;
-      break;
-    }
-
-    // Strip "data: " prefix if present
-    std::string data = line;
-    if (data.size() > 6 && data.substr(0, 6) == "data: ") {
-      data = data.substr(6);
-    } else if (data.size() > 5 && data.substr(0, 5) == "data:") {
-      data = data.substr(5);
-    }
-
-    // Trim whitespace
-    while (!data.empty() && (data.back() == '\r' || data.back() == ' ')) {
-      data.pop_back();
-    }
-
-    if (data.empty()) continue;
-
-    auto token = ctx->provider->ParseSSELine(data);
-    if (token.has_value()) {
-      ctx->impl->accumulated += token->content;
-      if (ctx->impl->tokenCallback) {
-        ctx->impl->tokenCallback(token.value());
-      }
-    }
-  }
-
-  // Remove processed data from buffer
-  if (pos > 0) {
-    buf.erase(0, pos);
-  }
-
+  ctx->provider->AppendSSEData(static_cast<const char*>(contents), totalSize,
+                               &ctx->done);
   return totalSize;
 }
 
@@ -228,6 +175,67 @@ void LLMProviderBase::SetAvailable(bool available) {
 }
 
 // ---------------------------------------------------------------------------
+// SSE processing
+// ---------------------------------------------------------------------------
+
+bool LLMProviderBase::ProcessSSELine(const std::string& line,
+                                     std::string& accumulated,
+                                     LLMTokenCallback& callback) {
+  // Skip empty lines (SSE separators)
+  if (line.empty() || line == "\r") return false;
+
+  // Check for stream end
+  if (IsSSEDone(line)) return true;
+
+  // Strip "data: " prefix if present
+  std::string data = line;
+  if (data.size() > 6 && data.substr(0, 6) == "data: ") {
+    data = data.substr(6);
+  } else if (data.size() > 5 && data.substr(0, 5) == "data:") {
+    data = data.substr(5);
+  }
+
+  // Trim trailing whitespace
+  while (!data.empty() && (data.back() == '\r' || data.back() == ' ')) {
+    data.pop_back();
+  }
+
+  if (data.empty()) return false;
+
+  auto token = ParseSSELine(data);
+  if (token.has_value()) {
+    accumulated += token->content;
+    if (callback) {
+      callback(token.value());
+    }
+  }
+  return false;
+}
+
+void LLMProviderBase::AppendSSEData(const char* data, size_t len, bool* done) {
+  m_http->sseBuffer.append(data, len);
+
+  std::string& buf = m_http->sseBuffer;
+  size_t pos = 0;
+  while (pos < buf.size()) {
+    size_t eol = buf.find('\n', pos);
+    if (eol == std::string::npos) break; // incomplete line
+
+    std::string line = buf.substr(pos, eol - pos);
+    pos = eol + 1;
+
+    if (ProcessSSELine(line, m_http->accumulated, m_http->tokenCallback)) {
+      *done = true;
+      break;
+    }
+  }
+
+  if (pos > 0) {
+    buf.erase(0, pos);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Shared HTTP machinery
 // ---------------------------------------------------------------------------
 
@@ -292,7 +300,7 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
     m_http->accumulated.clear();
     m_http->responseBody.clear();
 
-    StreamContext ctx{this, m_http, false};
+    StreamWriteContext ctx{this, false};
 
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, StreamWriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
