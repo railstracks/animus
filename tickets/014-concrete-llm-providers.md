@@ -6,7 +6,7 @@
 
 ## Summary
 
-Implement five concrete LLM providers as subclasses of `LLMProviderBase`. Four share the OpenAI `/v1/chat/completions` protocol and only override request building and minor parsing. Cohere has its own protocol and overrides more of the base class.
+Implement six concrete LLM providers as subclasses of `LLMProviderBase`. Five share the OpenAI `/v1/chat/completions` protocol and only override request building and minor parsing. Cohere has its own protocol and overrides more of the base class. OpenAI-Codex shares the OpenAI protocol but adds OAuth token refresh.
 
 ## Providers
 
@@ -59,6 +59,22 @@ Reference docs: `docs/mistral/api-reference.md`
 - **Overrides:** Near-identical to OpenAI. Standard `/v1/chat/completions` shape.
 - **Future:** FIM endpoint (`/v1/fim/completions`) for code completion, OCR endpoint
 
+### OpenAI-Codex Provider (`OpenAICodexProvider`)
+
+Reference docs: `docs/openai-codex/api-reference.md`
+
+- **Base URL:** `https://api.openai.com/v1` (same as OpenAI)
+- **Endpoint:** `/chat/completions` (identical to OpenAI)
+- **Auth:** OAuth 2.0 — reads `config/auth.json` for JWT access token, refresh token, and expiry
+- **Models:** `gpt-4o`, `gpt-4o-mini` (ChatGPT subscription models)
+- **Token refresh:** `POST https://auth.openai.com/oauth/token` with `grant_type=refresh_token`, client ID `app_EMoamEEZ73f0CkXaXp7hrann`
+- **Overrides from base:**
+  - Reads OAuth credentials from separate `auth_file` (not `api_key`)
+  - Before each request: checks token expiry, refreshes if <5min remaining
+  - After refresh: persists updated tokens back to `auth_file`
+  - On 401: refreshes and retries once
+- **Note:** Request/response format is identical to OpenAI. Only auth lifecycle differs.
+
 ### Cohere Provider (`CohereProvider`)
 
 Reference docs: `docs/cohere/api-reference.md`
@@ -89,28 +105,38 @@ Reference docs: `docs/cohere/api-reference.md`
 Each provider is a thin subclass:
 
 ```cpp
-// Example: OpenAIProvider (simplest case)
+// OpenAIProvider — simplest case, static API key
 class OpenAIProvider : public LLMProviderBase {
 public:
     explicit OpenAIProvider(const LLMProviderConfig& config)
         : LLMProviderBase(config) {}
-
     std::string ProviderId() const override { return "openai"; }
-
 protected:
     std::string BuildRequestBody(const LLMRequest& request) const override;
     LLMMessage ParseResponse(const std::string& body, std::string* error) const override;
     std::optional<LLMToken> ParseSSELine(const std::string& line) const override;
 };
 
-// Example: CohereProvider (needs deeper overrides)
+// OpenAICodexProvider — same protocol, OAuth refresh lifecycle
+class OpenAICodexProvider : public OpenAIProvider {
+public:
+    explicit OpenAICodexProvider(const LLMProviderConfig& config);
+    std::string ProviderId() const override { return "openai-codex"; }
+    // Override Complete/StreamComplete to add token refresh before request
+    LLMMessage Complete(const LLMRequest& request, std::string* error) override;
+    LLMMessage StreamComplete(const LLMRequest& request, LLMTokenCallback cb, std::string* error) override;
+private:
+    bool EnsureTokenValid(std::string* error);
+    bool RefreshToken(std::string* error);
+    void PersistTokens() const;
+};
+
+// CohereProvider — needs deeper overrides
 class CohereProvider : public LLMProviderBase {
 public:
     explicit CohereProvider(const LLMProviderConfig& config)
         : LLMProviderBase(config) {}
-
     std::string ProviderId() const override { return "cohere"; }
-
 protected:
     std::string GetEndpointURL() const override;  // /chat, not /chat/completions
     std::string BuildRequestBody(const LLMRequest& request) const override;
@@ -124,21 +150,24 @@ protected:
 
 ```cpp
 // In LLMProviderRegistry bootstrap or kernel startup:
-registry.Register("openai", [](auto& cfg) { return std::make_unique<OpenAIProvider>(cfg); });
-registry.Register("zai",    [](auto& cfg) { return std::make_unique<ZaiProvider>(cfg); });
-registry.Register("ollama", [](auto& cfg) { return std::make_unique<OllamaProvider>(cfg); });
-registry.Register("mistral",[](auto& cfg) { return std::make_unique<MistralProvider>(cfg); });
-registry.Register("cohere", [](auto& cfg) { return std::make_unique<CohereProvider>(cfg); });
+registry.Register("openai",       [](auto& cfg) { return std::make_unique<OpenAIProvider>(cfg); });
+registry.Register("openai-codex", [](auto& cfg) { return std::make_unique<OpenAICodexProvider>(cfg); });
+registry.Register("zai",          [](auto& cfg) { return std::make_unique<ZaiProvider>(cfg); });
+registry.Register("ollama",       [](auto& cfg) { return std::make_unique<OllamaProvider>(cfg); });
+registry.Register("mistral",      [](auto& cfg) { return std::make_unique<MistralProvider>(cfg); });
+registry.Register("cohere",       [](auto& cfg) { return std::make_unique<CohereProvider>(cfg); });
 ```
 
 ### Files to create
 
 - `include/animus_kernel/llm/OpenAIProvider.h`
+- `include/animus_kernel/llm/OpenAICodexProvider.h`
 - `include/animus_kernel/llm/ZaiProvider.h`
 - `include/animus_kernel/llm/OllamaProvider.h`
 - `include/animus_kernel/llm/MistralProvider.h`
 - `include/animus_kernel/llm/CohereProvider.h`
 - `src/kernel/llm/OpenAIProvider.cpp`
+- `src/kernel/llm/OpenAICodexProvider.cpp`
 - `src/kernel/llm/ZaiProvider.cpp`
 - `src/kernel/llm/OllamaProvider.cpp`
 - `src/kernel/llm/MistralProvider.cpp`
@@ -149,6 +178,7 @@ registry.Register("cohere", [](auto& cfg) { return std::make_unique<CohereProvid
 Each provider gets a unit test with mock HTTP responses (fixture data, not real network):
 
 - `tests/OpenAIProviderTests.cpp` — request building, response parsing, SSE parsing
+- `tests/OpenAICodexProviderTests.cpp` — OAuth refresh lifecycle (mock token endpoint), token persistence
 - `tests/ZaiProviderTests.cpp` — thinking field injection, response parsing
 - `tests/OllamaProviderTests.cpp` — no-auth headers, options mapping
 - `tests/MistralProviderTests.cpp` — request/response round-trip (very similar to OpenAI)
@@ -156,7 +186,8 @@ Each provider gets a unit test with mock HTTP responses (fixture data, not real 
 
 ## Acceptance Criteria
 
-- [ ] All five providers compile and implement `ILLMProvider` via `LLMProviderBase`
+- [ ] All six providers compile and implement `ILLMProvider` via `LLMProviderBase`
+- [ ] `OpenAICodexProvider` extends `OpenAIProvider` and adds OAuth refresh lifecycle
 - [ ] OpenAI/Z.ai/Ollama/Mistral share `ParseSSELine()` logic (extracted to shared helper if needed)
 - [ ] Cohere overrides SSE parsing with its own event format
 - [ ] Each provider registered in the factory and creatable from config
@@ -166,6 +197,7 @@ Each provider gets a unit test with mock HTTP responses (fixture data, not real 
 
 ## Notes
 
+- `OpenAICodexProvider` subclasses `OpenAIProvider` rather than `LLMProviderBase` directly — same protocol, just adds token refresh. The refresh uses `POST https://auth.openai.com/oauth/token` with `grant_type=refresh_token`. Refresh tokens rotate, so the provider must write back to `config/auth.json` after each refresh.
 - The OpenAI/Z.ai/Ollama/Mistral providers share so much that their `BuildRequestBody()` implementations could delegate to a shared `BuildOpenAIRequestBody()` helper. Worth doing if the duplication gets noticeable.
 - Cohere is the proof point that the template method architecture works — if it fits cleanly, the design is right.
 - Mistral is almost identical to OpenAI. Consider whether it even needs its own class or if the config alone differentiates it. (Having it explicit is cleaner for future FIM/OCR features.)
