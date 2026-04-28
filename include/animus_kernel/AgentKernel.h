@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
 #include "animus/Jobs.h"
@@ -7,6 +8,10 @@
 
 namespace animus::kernel::module {
 class ModuleManager;
+}
+
+namespace animus::kernel::llm {
+class LLMProviderRegistry;
 }
 
 namespace animus::kernel {
@@ -31,11 +36,15 @@ public:
     jobs::JobSystem& Jobs();
     SessionManager& Sessions();
 
+    /// Access the LLM provider registry.
+    llm::LLMProviderRegistry& LLMRegistry();
+
 private:
     KernelConfig m_config{};
     jobs::JobSystem m_jobs;
     module::ModuleManager* m_moduleManager;   // pimpl-ish (kept simple for now)
     SessionManager* m_sessionManager;         // storage-agnostic session layer
+    std::unique_ptr<llm::LLMProviderRegistry> m_llmRegistry;
     bool m_running{false};
 };
 

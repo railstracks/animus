@@ -8,10 +8,14 @@
 #include "animus_kernel/DefaultSessionRouter.h"
 #include "animus_kernel/InMemorySessionStore.h"
 #include "animus_kernel/SessionManager.h"
+#include "animus_kernel/llm/LLMProviderRegistry.h"
 
 namespace animus::kernel {
 
-AgentKernel::AgentKernel() : m_moduleManager(nullptr), m_sessionManager(nullptr) {
+AgentKernel::AgentKernel()
+    : m_moduleManager(nullptr),
+      m_sessionManager(nullptr),
+      m_llmRegistry(std::make_unique<llm::LLMProviderRegistry>()) {
     m_moduleManager = new module::ModuleManager();
 
     // Default session layer: in-memory store + metadata-derived routing.
@@ -98,6 +102,10 @@ jobs::JobSystem& AgentKernel::Jobs() {
 
 SessionManager& AgentKernel::Sessions() {
     return *m_sessionManager;
+}
+
+llm::LLMProviderRegistry& AgentKernel::LLMRegistry() {
+    return *m_llmRegistry;
 }
 
 } // namespace animus::kernel

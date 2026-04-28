@@ -168,3 +168,32 @@ This keeps the C++ kernel focused on cognition while allowing flexible, scriptab
 ### Scope
 
 This is early-stage; many facets to flesh out (authentication, rate limiting, event routing). For now, we're laying the foundation and will expand as needed.
+
+## IRC Interface (2026-03-12)
+
+IRC is a planned external interface, but there are specific design pitfalls to avoid based on observations from the current OpenClaw IRC implementation.
+
+### Observed problems in OpenClaw
+
+1. **No debounce timer** — messages are processed immediately upon arrival
+2. **Messages processed most-recent-first** — queue ordering is reversed
+
+These combine to create a specific failure mode: when IRC clients split long messages across multiple PRIVMSGs (which most do), the pieces arrive in rapid succession but get processed in reverse order. The final fragment is parsed first, followed by earlier fragments, completely breaking message coherence.
+
+### Required design: Debounce + concatenate
+
+The IRC interface must:
+
+- **Debounce incoming messages** — wait a short window (e.g., 100-300ms) after each message to see if more arrive
+- **Buffer within the window** — collect all messages that arrive during the debounce period
+- **Reconstruct original order** — concatenate buffered messages in correct chronological order
+- **Submit as single prompt** — deliver the assembled message to the kernel as one coherent input
+
+This is essentially a "message coalescing" pattern, similar to how terminals handle rapid input or how editors batch file change events.
+
+### Implementation considerations
+
+- Debounce timer should be configurable (IRC latency varies by network)
+- Need to handle edge cases: very long delays between fragments, timestamp-based ordering if server provides them
+- May need to detect "natural" message boundaries (e.g., user sent two distinct messages vs. one split message) — heuristics or explicit markers could help
+- Logging should show both raw fragments and reconstructed message for debugging

@@ -17,6 +17,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ============================================================================
+# Dependencies
+# ============================================================================
+
+find_package(CURL REQUIRED)
+
+# ============================================================================
 # SDK (stable module ABI boundary)
 # ============================================================================
 
@@ -42,6 +48,8 @@ add_library(animus_kernel
   src/kernel/session/DefaultSessionRouter.cpp
   src/kernel/session/SessionRoutingRule.cpp
   src/kernel/session/SessionManager.cpp
+  src/kernel/llm/LLMProviderBase.cpp
+  src/kernel/llm/LLMProviderRegistry.cpp
 )
 
 target_include_directories(animus_kernel PUBLIC
@@ -53,7 +61,7 @@ target_include_directories(animus_kernel PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(animus_kernel PUBLIC animus_sdk)
+target_link_libraries(animus_kernel PUBLIC animus_sdk CURL::libcurl)
 
 # dlopen/dlsym on Linux
 if(UNIX AND NOT APPLE)
@@ -127,6 +135,20 @@ if(ANIMUS_BUILD_TESTS)
     )
 
     add_test(NAME SessionTests COMMAND animus_session_tests)
+
+    # --- LLM Provider Tests ---
+
+    add_executable(animus_llm_provider_tests
+      tests/LLMProviderTests.cpp
+    )
+
+    target_link_libraries(animus_llm_provider_tests PRIVATE animus_kernel)
+
+    set_target_properties(animus_llm_provider_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+
+    add_test(NAME LLMProviderTests COMMAND animus_llm_provider_tests)
 endif()
 
 # ============================================================================

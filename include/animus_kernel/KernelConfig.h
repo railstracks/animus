@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "animus/Jobs.h"
+#include "animus_kernel/llm/LLMProviderConfig.h"
 
 namespace animus::kernel {
 
@@ -22,6 +23,9 @@ struct KernelConfig {
     // - If allowModuleIds is empty: allowAllModulesByDefault decides.
     std::vector<std::string> allowModuleIds;
     bool allowAllModulesByDefault{true};
+
+    // LLM providers
+    std::vector<llm::LLMProviderConfig> llmProviders;
 };
 
 } // namespace animus::kernel
