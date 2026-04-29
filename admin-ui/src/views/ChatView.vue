@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import MarkdownIt from 'markdown-it';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import { useI18n } from 'vue-i18n';
 
 import { apiGet, readAdminToken, writeAdminToken } from '../lib/api';
 import { connectJsonWebSocket } from '../lib/ws';
@@ -64,7 +63,6 @@ interface WsEnvelope {
 }
 
 const NEW_SESSION_KEY = '__new__';
-const { t } = useI18n();
 
 const markdown = new MarkdownIt({
   html: false,
@@ -111,7 +109,7 @@ const activeContext = computed<SessionContextState>(() => {
     contextBySession.value[key] ?? {
       layers: [],
       tools: [],
-      note: '',
+      note: 'No context loaded yet.',
       tokenBudgetConfigured: 0,
       tokenBudgetConsumed: 0,
       tokenBudgetRemaining: 0
@@ -119,10 +117,8 @@ const activeContext = computed<SessionContextState>(() => {
   );
 });
 
-const wsStateLabel = computed(() => t(`chat.status.${wsState.value}`));
-
 const sessionItems = computed(() => {
-  const base = [{ title: t('chat.newSession'), value: 'new' }];
+  const base = [{ title: 'New Session', value: 'new' }];
   const mapped = sessions.value
     .slice()
     .sort((a, b) => b.last_active_unix_ms - a.last_active_unix_ms)
@@ -255,8 +251,12 @@ function connectSocket(): void {
       }
     },
     onError: () => {
-      lastWsError.value = t('chat.errors.websocket');
+      lastWsError.value = 'WebSocket error';
     },
+    onMessage: (payload) => {
+      handleSocketMessage(payload);
+    }
+  });
 }
 
 function stopGenerating(): void {
@@ -273,10 +273,6 @@ function stopGenerating(): void {
       const msg = bucket.find((item) => item.id === streamingId);
       if (msg) {
         msg.streaming = false;
-        msg.interrupted = true;
-      }
-      delete streamingMessageIdBySession.value[sid];
-    }
         msg.interrupted = true;
       }
       delete streamingMessageIdBySession.value[sid];
@@ -318,6 +314,10 @@ async function loadSessionContext(sessionId: string): Promise<void> {
     tools: Array.isArray(payload.tools_available) ? payload.tools_available : [],
     note: payload.note ?? '',
     tokenBudgetConfigured: payload.token_budget_state?.configured_token_budget_per_prompt ?? 0,
+    tokenBudgetConsumed: payload.token_budget_state?.consumed_tokens ?? 0,
+    tokenBudgetRemaining: payload.token_budget_state?.remaining_tokens ?? 0
+  };
+}
 
 async function switchSession(value: string): Promise<void> {
   if (value === 'new') {
@@ -517,19 +517,6 @@ async function sendMessage(): Promise<void> {
   const key = currentSessionKey.value;
   pushMessage(key, {
     id: `user-${nowUnixMs()}`,
-    pushMessage(currentSessionKey.value, {
-      id: `system-${nowUnixMs()}`,
-      role: 'system',
-      content: 'WebSocket is not connected yet. Please try again.',
-      content: t('chat.errors.websocketNotConnected'),
-      createdUnixMs: nowUnixMs()
-    });
-    return;
-  }
-
-  const key = currentSessionKey.value;
-  pushMessage(key, {
-    id: `user-${nowUnixMs()}`,
     role: 'user',
     content,
     createdUnixMs: nowUnixMs()
@@ -617,6 +604,19 @@ async function onSessionSelectionChanged(): Promise<void> {
           </div>
 
           <article
+            v-for="message in activeMessages"
+            :key="message.id"
+            class="message-row"
+            :class="[`role-${message.role}`]"
+          >
+            <div class="bubble">
+              <div v-if="message.role === 'assistant'" class="markdown-body" v-html="renderMessageMarkdown(message)" />
+              <div v-else class="plain-text">{{ message.content }}</div>
+              <div class="meta">
+                <span v-if="message.streaming">streaming…</span>
+                <span v-else-if="message.interrupted">stopped</span>
+                <span v-else>{{ new Date(message.createdUnixMs).toLocaleTimeString() }}</span>
+              </div>
             </div>
           </article>
         </div>

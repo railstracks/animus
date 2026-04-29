@@ -28,6 +28,8 @@ public:
 
     std::size_t LoadedCount() const;
 
+    std::vector<kernel::KernelConfig::InterfaceModuleInfo> ListLoadedInterfaceModules() const;
+
 private:
     bool IsAllowed(const kernel::KernelConfig& config, const std::string& moduleId) const;
 
