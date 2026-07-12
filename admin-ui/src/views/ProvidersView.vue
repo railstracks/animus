@@ -69,12 +69,18 @@ const formData = ref({
   base_url: '',
   default_model: '',
   default_context_window: 128000,
-  model_context_windows_json: '{}',
   auth_type: 'api_key',
   api_key: '',
   auth_file: '',
   concurrency: 1,
 });
+
+interface ModelContextEntry {
+  model: string;
+  contextWindow: number | null;
+}
+const modelContextEntries = ref<ModelContextEntry[]>([]);
+const refreshingModel = ref('');
 
 const availableModels = ref<string[]>([]);
 const modelsLoading = ref(false);
@@ -317,6 +323,50 @@ function onProviderTypeChange(id: string) {
   fetchModelsForType(id);
 }
 
+function addModelContextEntry() {
+  modelContextEntries.value.push({ model: '', contextWindow: null });
+}
+
+async function refreshModelCapabilities(entry: ModelContextEntry) {
+  if (!entry.model || !formData.value.provider_id) return;
+  refreshingModel.value = entry.model;
+  try {
+    const result = await apiGet<{
+      capabilities: { context_length: number };
+      fetched: boolean;
+    }>(`/api/v1/providers/${formData.value.provider_id}/capabilities?model=${encodeURIComponent(entry.model)}`);
+    if (result.fetched && result.capabilities?.context_length > 0) {
+      entry.contextWindow = result.capabilities.context_length;
+      successMsg.value = t('providers.form.capabilitiesRefreshed', { model: entry.model, context: entry.contextWindow.toLocaleString() });
+    }
+  } catch (e: any) {
+    error.value = e.message || t('providers.form.capabilitiesRefreshFailed');
+  } finally {
+    refreshingModel.value = '';
+  }
+}
+
+function modelContextEntriesToRecord(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const entry of modelContextEntries.value) {
+    const model = entry.model?.trim();
+    if (!model) continue;
+    const cw = Number(entry.contextWindow);
+    if (Number.isFinite(cw) && cw > 0) {
+      out[model] = Math.floor(cw);
+    }
+  }
+  return out;
+}
+
+function loadModelContextEntries(map: Record<string, number> | undefined) {
+  modelContextEntries.value = [];
+  if (!map) return;
+  for (const [model, cw] of Object.entries(map)) {
+    modelContextEntries.value.push({ model, contextWindow: cw });
+  }
+}
+
 async function fetchModelsForType(providerType: string) {
   availableModels.value = [];
   modelsError.value = '';
@@ -439,12 +489,12 @@ function openCreate() {
     base_url: firstType.baseUrl,
     default_model: firstType.defaultModel,
     default_context_window: 128000,
-    model_context_windows_json: '{}',
     auth_type: firstType.authType,
     api_key: '',
     auth_file: firstType.authType === 'oauth' ? 'config/auth.json' : '',
     concurrency: 1,
   };
+  modelContextEntries.value = [];
   showForm.value = true;
 }
 
@@ -464,12 +514,12 @@ function openEdit(p: ProviderInfo) {
     base_url: p.base_url,
     default_model: p.default_model,
     default_context_window: p.default_context_window || 128000,
-    model_context_windows_json: JSON.stringify(p.model_context_windows || {}, null, 2),
     auth_type: p.auth_type,
     concurrency: p.concurrency || 1,
     api_key: '',
     auth_file: p.auth_file || '',
   };
+  loadModelContextEntries(p.model_context_windows);
   fetchModelsForExisting(p);
   showForm.value = true;
   if (p.auth_type === 'oauth') {
@@ -490,26 +540,12 @@ function closeForm() {
 
 async function submitForm() {
   try {
-    let modelContextWindows: Record<string, number> = {};
-    try {
-      const parsed = JSON.parse(formData.value.model_context_windows_json || '{}');
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        for (const [modelId, value] of Object.entries(parsed)) {
-          const num = Number(value);
-          if (!Number.isFinite(num) || num <= 0) continue;
-          modelContextWindows[modelId] = Math.floor(num);
-        }
-      }
-    } catch (_e: any) {
-      error.value = t('providers.form.modelContextWindowsInvalid');
-      return;
-    }
+    const modelContextWindows = modelContextEntriesToRecord();
 
     const payload: Record<string, unknown> = {
       ...formData.value,
       model_context_windows: modelContextWindows,
     };
-    delete payload.model_context_windows_json;
     // On edit: don't send empty api_key — preserve the stored key
     if (!isNew.value && (!payload.api_key || (payload.api_key as string).trim() === '')) {
       delete payload.api_key;
@@ -531,26 +567,12 @@ async function submitForm() {
 
 async function saveAndContinue() {
   try {
-    let modelContextWindows: Record<string, number> = {};
-    try {
-      const parsed = JSON.parse(formData.value.model_context_windows_json || '{}');
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        for (const [modelId, value] of Object.entries(parsed)) {
-          const num = Number(value);
-          if (!Number.isFinite(num) || num <= 0) continue;
-          modelContextWindows[modelId] = Math.floor(num);
-        }
-      }
-    } catch (_e: any) {
-      error.value = t('providers.form.modelContextWindowsInvalid');
-      return;
-    }
+    const modelContextWindows = modelContextEntriesToRecord();
 
     const payload: Record<string, unknown> = {
       ...formData.value,
       model_context_windows: modelContextWindows,
     };
-    delete payload.model_context_windows_json;
     if (!isNew.value && (!payload.api_key || (payload.api_key as string).trim() === '')) {
       delete payload.api_key;
     }
@@ -685,7 +707,7 @@ onBeforeUnmount(() => {
     </v-card-text>
 
     <!-- Provider Create/Edit Dialog -->
-    <v-dialog v-model="showForm" max-width="560">
+    <v-dialog v-model="showForm" max-width="640">
       <v-card>
         <v-card-title>
           {{ isNew ? t('providers.form.createTitle') : t('providers.form.editTitle') }}
@@ -736,14 +758,58 @@ onBeforeUnmount(() => {
             min="1"
           />
 
-          <v-textarea
-            v-model="formData.model_context_windows_json"
-            :label="t('providers.form.modelContextWindows')"
-            :hint="t('providers.form.modelContextWindowsHint')"
-            persistent-hint
-            rows="3"
-            auto-grow
-          />
+          <div class="model-context-section">
+            <div class="d-flex align-center justify-space-between mb-2">
+              <span class="text-subtitle-2">{{ t('providers.form.modelContextWindows') }}</span>
+              <v-btn size="x-small" variant="text" @click="addModelContextEntry">
+                <v-icon start size="small">mdi-plus</v-icon>
+                {{ t('providers.form.addModel') }}
+              </v-btn>
+            </div>
+            <p class="text-caption text-medium-emphasis mb-2">
+              {{ t('providers.form.modelContextWindowsHint') }}
+            </p>
+            <div v-if="modelContextEntries.length === 0" class="text-caption text-medium-emphasis pa-2">
+              {{ t('providers.form.noModelOverrides') }}
+            </div>
+            <div v-for="(entry, idx) in modelContextEntries" :key="idx" class="model-context-row">
+              <v-combobox
+                v-model="entry.model"
+                :items="availableModels"
+                :label="t('providers.form.modelName')"
+                density="compact"
+                hide-details
+                class="model-context-name"
+              />
+              <v-text-field
+                v-model.number="entry.contextWindow"
+                :label="t('providers.form.contextSize')"
+                type="number"
+                min="1"
+                density="compact"
+                hide-details
+                class="model-context-value"
+              />
+              <v-btn
+                size="x-small"
+                variant="text"
+                :loading="refreshingModel === entry.model"
+                :disabled="!entry.model"
+                @click="refreshModelCapabilities(entry)"
+                :title="t('providers.form.refreshCapabilities')"
+              >
+                <v-icon size="small">mdi-refresh</v-icon>
+              </v-btn>
+              <v-btn
+                size="x-small"
+                variant="text"
+                color="error"
+                @click="modelContextEntries.splice(idx, 1)"
+              >
+                <v-icon size="small">mdi-delete</v-icon>
+              </v-btn>
+            </div>
+          </div>
 
           <v-select v-model="formData.auth_type"
             :label="t('providers.form.authType')"
@@ -867,5 +933,25 @@ onBeforeUnmount(() => {
   padding: 8px;
   background: rgba(0, 0, 0, 0.02);
   word-break: break-word;
+}
+
+.model-context-section {
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+
+.model-context-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.model-context-name {
+  flex: 1 1 50%;
+}
+
+.model-context-value {
+  flex: 0 0 120px;
 }
 </style>
