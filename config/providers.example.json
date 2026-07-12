@@ -1,0 +1,34 @@
+{
+  "default_provider": "openai-codex",
+  "providers": {
+    "openai-codex": {
+      "auth_file": "config/auth.json",
+      "base_url": "https://api.openai.com/v1",
+      "default_model": "gpt-4o"
+    },
+    "openai": {
+      "api_key": "",
+      "base_url": "https://api.openai.com/v1",
+      "default_model": "gpt-4o"
+    },
+    "zai": {
+      "api_key": "",
+      "base_url": "https://api.z.ai/api/paas/v4",
+      "default_model": "glm-5.1"
+    },
+    "ollama": {
+      "base_url": "http://localhost:11434/v1",
+      "default_model": "llama3"
+    },
+    "cohere": {
+      "api_key": "",
+      "base_url": "https://api.cohere.com/v2",
+      "default_model": "command-r-plus"
+    },
+    "mistral": {
+      "api_key": "",
+      "base_url": "https://api.mistral.ai/v1",
+      "default_model": "mistral-large-latest"
+    }
+  }
+}

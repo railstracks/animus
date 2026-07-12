@@ -1,0 +1,18 @@
+{
+  "// Database configuration for Animus": "",
+  "// Copy this file to config/db.json and edit as needed": "",
+  "// Default: SQLite with state/memory.db if config/db.json is absent": "",
+
+  "backend": "sqlite",
+  "sqlite": {
+    "path": "state/memory.db"
+  },
+  "postgresql": {
+    "host": "localhost",
+    "port": 5432,
+    "database": "animus",
+    "username": "animus",
+    "password": "",
+    "pool_size": 10
+  }
+}

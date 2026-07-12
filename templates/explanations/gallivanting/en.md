@@ -1,0 +1,1 @@
+"Gallivanting blocks" are unstructured sections of free time for the AI to develop its own interests. During this time, the agent will engage in self-directed pursuits, selecting activities from a range of options such as browsing the internet, reading articles, engaging in creative projects, or reflecting on its diary.s

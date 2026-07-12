@@ -1,0 +1,24 @@
+export const sidebar = {
+    controlSurface: 'Surface de contrôle',
+    links: {
+      dashboard: 'Tableau de bord',
+      chat: 'Discuter',
+      memory: 'Mémoire épisodique',
+      memorySearch: 'Recherche de mémoire',
+      activeMemory: 'Mémoire active',
+      channels: 'Canaux',
+      memoryFiles: 'Fichiers mémoire',
+      ontology: 'Mémoire sémantique',
+      scheduler: 'Planificateur',
+      config: 'Configuration',
+      webSearch: 'Recherche Web',
+      providers: 'Fournisseurs',
+      nodes: 'Nœuds',
+      sessionReports: 'Rapports de session',
+      agents: 'Agents',
+      gallivanting: 'Galotant',
+      diary: 'Journal',
+      constitution: 'Constitution',
+      logs: 'Journaux'
+    }
+  } as const;

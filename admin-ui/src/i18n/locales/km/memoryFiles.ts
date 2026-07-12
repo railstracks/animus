@@ -1,0 +1,105 @@
+export const memoryFiles = {
+    title: 'ឯកសារអង្គចងចាំ',
+    subtitle: 'រក្សាទុកវត្ថុបុរាណអត្ថបទ និងស្វែងរកតាមដែនអង្គចងចាំ។',
+    common: {
+      yes: 'បាទ',
+      no: 'ទេ'
+    },
+    actions: {
+      refresh: 'ធ្វើឱ្យស្រស់',
+      open: 'បើក',
+      delete: 'លុប',
+      process: 'ជួរសម្រាប់ដំណើរការ',
+      import: 'នាំចូល',
+      importBatch: 'នាំចូលបាច់',
+      saveMetadata: 'រក្សាទុកទិន្នន័យមេតា',
+      search: 'ស្វែងរក'
+    },
+    fields: {
+      sourcePath: 'ប្រភពផ្លូវ',
+      fileType: 'ប្រភេទឯកសារ',
+      contentMutable: 'មាតិកាអាចផ្លាស់ប្តូរបាន។',
+      agentId: 'លេខសម្គាល់ភ្នាក់ងារ',
+      status: 'ស្ថានភាព',
+      agentFilter: 'ត្រងតាមភ្នាក់ងារ',
+      allAgents: 'ភ្នាក់ងារទាំងអស់។',
+      superseded: 'ជំនួស',
+      content: 'មាតិកា'
+    },
+    types: {
+      all: 'គ្រប់ប្រភេទ',
+      expanded_memory: 'ពង្រីកអង្គចងចាំ',
+      session_log: 'កំណត់ហេតុសម័យ',
+      daily_note: 'កំណត់ចំណាំប្រចាំថ្ងៃ',
+      bootstrap_file: 'ឯកសារ Bootstrap',
+      journal: 'ទិនានុប្បវត្តិ',
+      external_doc: 'ឯកសារខាងក្រៅ'
+    },
+    stats: {
+      title: 'ស្ថិតិ'
+    },
+    list: {
+      title: 'បញ្ជីឯកសារ',
+      typeFilter: 'ប្រភេទតម្រង',
+      limit: 'ដែនកំណត់',
+      offset: 'អុហ្វសិត',
+      columns: {
+        id: 'លេខសម្គាល់',
+        type: 'ប្រភេទ',
+        sourcePath: 'ប្រភពផ្លូវ',
+        contentMutable: 'អាចផ្លាស់ប្តូរបាន។',
+        agentId: 'លេខសម្គាល់ភ្នាក់ងារ',
+      status: 'ស្ថានភាព',
+      agentFilter: 'ត្រងតាមភ្នាក់ងារ',
+      allAgents: 'ភ្នាក់ងារទាំងអស់។',
+        superseded: 'ជំនួស',
+        importedAt: 'នាំចូល',
+        actions: 'សកម្មភាព'
+      },
+      status: {
+        unprocessed: 'មិនទាន់កែច្នៃ',
+        processed: 'ដំណើរការ'
+      }
+    },
+    import: {
+      singleTitle: 'នាំចូលឯកសារ',
+      selectFile: 'ជ្រើសរើសឯកសារ',
+      selected: 'បានជ្រើសរើស',
+      batchTitle: 'ការនាំចូលបាច់',
+      selectFiles: 'ជ្រើសរើសឯកសារ',
+      filesSelected: 'ឯកសារដែលបានជ្រើសរើស'
+    },
+    detail: {
+      title: 'ឯកសារលម្អិត',
+      empty: 'ជ្រើសរើសឯកសារពីបញ្ជីដើម្បីពិនិត្យ និងកែសម្រួលទិន្នន័យមេតា។',
+      createdAt: 'បានបង្កើត',
+      importedAt: 'នាំចូល',
+      contentTitle: 'មាតិកា',
+      contentImmutableNotice: 'ការកែសម្រួលខ្លឹមសារត្រូវបានបិទ ដោយសារឯកសារនេះត្រូវបានសម្គាល់ថាមិនអាចផ្លាស់ប្តូរបាន។'
+    },
+    search: {
+      title: 'ការស្វែងរកបង្រួបបង្រួម',
+      query: 'សំណួរស្វែងរក',
+      limit: 'ដែនកំណត់',
+      relevance: 'ភាពពាក់ព័ន្ធ',
+      empty: 'មិនទាន់មានលទ្ធផលស្វែងរកនៅឡើយទេ។',
+      domains: {
+        observation: 'ការសង្កេត',
+        observations: 'ការសង្កេត',
+        ontology: 'Ontology',
+        memory_file: 'ឯកសារ',
+        sessions: 'វគ្គ'
+      }
+    },
+    errors: {
+      loadFiles: 'បានបរាជ័យក្នុងការផ្ទុកឯកសារអង្គចងចាំ។',
+      loadDetail: 'បរាជ័យក្នុងការផ្ទុកឯកសារលម្អិត។',
+      importRequired: 'ជ្រើសរើសឯកសារដើម្បីនាំចូល។',
+      importSingle: 'បានបរាជ័យក្នុងការនាំចូលឯកសារអង្គចងចាំ។',
+      batchRequired: 'ជ្រើសរើសឯកសារយ៉ាងហោចណាស់មួយសម្រាប់ការនាំចូលជាបាច់។',
+      importBatch: 'បានបរាជ័យក្នុងការនាំចូលបន្ទុកជាបាច់។',
+      updateMetadata: 'បរាជ័យក្នុងការធ្វើបច្ចុប្បន្នភាពទិន្នន័យមេតា។',
+      delete: 'បរាជ័យក្នុងការលុបឯកសារអង្គចងចាំ។',
+      search: 'ការស្វែងរកអង្គចងចាំបានបរាជ័យ។'
+    }
+  } as const;
