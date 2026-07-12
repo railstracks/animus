@@ -157,6 +157,12 @@ protected:
                 std::string* responseBody,
                 std::string* error);
 
+  int DoHTTPPost(const std::string& url,
+                 const std::string& body,
+                 const std::vector<std::pair<std::string, std::string>>& headers,
+                 std::string* responseBody,
+                 std::string* error);
+
   /// Access the provider configuration from subclasses.
   const LLMProviderConfig& Config() const { return m_config; }
 

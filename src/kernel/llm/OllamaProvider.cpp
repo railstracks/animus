@@ -169,6 +169,47 @@ bool OllamaProvider::FetchCapabilities(const std::string& modelId) {
   if (found) {
     std::cerr << "[ollama] Model '" << modelId << "' found in local models" << std::endl;
 
+    // Query /api/show to get model info including context length.
+    // The Ollama /api/show endpoint is separate from the OpenAI-compatible /v1/models.
+    // base_url is "https://ollama.com/v1" — strip "/v1" to get the native API base.
+    std::string nativeBase = Config().base_url;
+    if (nativeBase.size() >= 3 && nativeBase.substr(nativeBase.size() - 3) == "/v1") {
+      nativeBase = nativeBase.substr(0, nativeBase.size() - 3);
+    }
+    std::string showUrl = nativeBase + "/api/show";
+    std::string showBody = "{\"model\":\"" + modelId + "\"}";
+    std::vector<pair<string, std::string>> showHeaders;
+    showHeaders.emplace_back("Content-Type", "application/json");
+    showHeaders.emplace_back("Accept", "application/json");
+
+    std::string showResponse;
+    std::string showError;
+    int showStatus = DoHTTPPost(showUrl, showBody, showHeaders, &showResponse, &showError);
+    if (showStatus == 200 && !showResponse.empty()) {
+      Json::Value showRoot;
+      Json::CharReaderBuilder showBuilder;
+      std::string showParseErrors;
+      std::istringstream showStream(showResponse);
+      if (Json::parseFromStream(showBuilder, showStream, &showRoot, &showParseErrors)) {
+        const Json::Value& modelInfo = showRoot["model_info"];
+        if (modelInfo.isObject()) {
+          std::string arch = modelInfo["general.architecture"].asString();
+          if (!arch.empty()) {
+            std::string ctxKey = arch + ".context_length";
+            const Json::Value& ctxVal = modelInfo[ctxKey];
+            if (ctxVal.isNumeric() && ctxVal.asUInt64() > 0) {
+              m_capabilities.context_length = static_cast<std::uint32_t>(ctxVal.asUInt64());
+              std::cerr << "[ollama] Context length for '" << modelId
+                        << "': " << m_capabilities.context_length << std::endl;
+            }
+          }
+        }
+      }
+    } else {
+      std::cerr << "[ollama] /api/show failed (HTTP " << showStatus
+                << "): " << showError << std::endl;
+    }
+
     // Vision capability detection: Ollama doesn't expose modality in /v1/models.
     // Check known vision model families by prefix/pattern.
     // This is conservative — models not in this list won't be blocked if the

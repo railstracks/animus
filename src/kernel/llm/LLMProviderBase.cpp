@@ -518,6 +518,73 @@ int LLMProviderBase::DoHTTPGet(
   return static_cast<int>(httpCode);
 }
 
+int LLMProviderBase::DoHTTPPost(
+    const std::string& url,
+    const std::string& body,
+    const std::vector<std::pair<std::string, std::string>>& headers,
+    std::string* responseBody,
+    std::string* error) {
+  if (!m_http || !m_http->easy) {
+    if (error) *error = "Curl handle not initialized";
+    return 0;
+  }
+
+  CURL* curl = m_http->easy;
+  curl_easy_reset(curl);
+
+  if (m_http->headers) {
+    curl_slist_free_all(m_http->headers);
+    m_http->headers = nullptr;
+  }
+
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_POST, 1L);
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE,
+                   static_cast<curl_off_t>(body.size()));
+
+  for (const auto& [key, value] : headers) {
+    std::string header = key + ": " + value;
+    m_http->headers =
+        curl_slist_append(m_http->headers, header.c_str());
+  }
+  if (m_http->headers) {
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, m_http->headers);
+  }
+
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS,
+                   static_cast<long>(m_config.connect_timeout_ms));
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS,
+                   static_cast<long>(m_config.connect_timeout_ms) * 2L);
+
+  char errbuf[CURL_ERROR_SIZE] = {};
+  curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+
+  m_http->responseBody.clear();
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &m_http->responseBody);
+
+  std::cerr << "[llm] POST " << url << std::endl;
+
+  CURLcode res = curl_easy_perform(curl);
+  if (res != CURLE_OK) {
+    if (error) {
+      *error = std::string(errbuf[0] ? errbuf : curl_easy_strerror(res));
+    }
+    return 0;
+  }
+
+  long httpCode = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+  if (responseBody) {
+    *responseBody = m_http->responseBody;
+  }
+
+  std::cerr << "[llm] POST " << url << " -> " << httpCode << std::endl;
+  return static_cast<int>(httpCode);
+}
+
 // ---------------------------------------------------------------------------
 // GetVisionModelIds — default implementation
 // ---------------------------------------------------------------------------
