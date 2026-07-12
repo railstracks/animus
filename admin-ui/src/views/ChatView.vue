@@ -197,6 +197,12 @@ function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
+function formatTokenK(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1_000) return Math.round(n / 1_000) + 'K';
+  return String(n);
+}
+
 // Provider/model selection state
 interface ProviderOption {
   id: string;
@@ -1492,7 +1498,7 @@ watch(sessionSearch, () => {
               :title="`${formatNumber(tokenEstimate.estimated_tokens)} / ${formatNumber(tokenEstimate.context_window)} tokens (${tokenPercent}%) — system: ${formatNumber(tokenEstimate.breakdown.system_prompt)}, turns: ${formatNumber(tokenEstimate.breakdown.session_turns)}, draft: ${formatNumber(tokenEstimate.breakdown.draft_message)}`"
             >
               <div class="token-gauge-bar" :style="{ width: tokenPercent + '%' }" :data-level="tokenLevel"></div>
-              <span class="token-gauge-label">{{ tokenPercent }}%</span>
+              <span class="token-gauge-label">{{ formatTokenK(tokenEstimate.estimated_tokens) }} / {{ formatTokenK(tokenEstimate.context_window) }} ({{ tokenPercent }}%)</span>
             </div>
             <span class="status-chip" :data-state="wsState">{{ wsStateLabel }}</span>
             <v-btn
@@ -1878,7 +1884,7 @@ watch(sessionSearch, () => {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  min-width: 90px;
+  min-width: 160px;
   height: 18px;
   position: relative;
 }
