@@ -68,6 +68,11 @@ public:
     std::vector<SessionTurn>& MutableTurns();
     void TrimOldestTurns(std::size_t count);
 
+    // Message count — uses override if set (for paginated listings),
+    // otherwise falls back to in-memory turn count.
+    std::size_t MessageCount() const;
+    void SetMessageCountOverride(std::size_t count);
+
     void SetCompactionSummary(SessionTurn summary_turn);
     const SessionTurn* GetCompactionSummary() const;
     void SetSummary(std::string summary);
@@ -101,6 +106,7 @@ private:
     std::string m_agentId{"default"};
     std::string m_providerId;
     std::string m_sessionType;
+    std::optional<std::size_t> m_messageCountOverride;
 };
 
 class SessionAccess {

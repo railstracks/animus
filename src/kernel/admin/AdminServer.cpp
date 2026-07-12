@@ -348,7 +348,7 @@ Json::Value BuildSessionSummaryJson(const Session& session) {
     out["source"] = session.Key().connector;
     out["conversation_id"] = session.Key().conversation_id;
     out["thread_id"] = session.Key().thread_id;
-    out["message_count"] = static_cast<Json::UInt64>(session.Turns().size());
+    out["message_count"] = static_cast<Json::UInt64>(session.MessageCount());
     out["created_unix_ms"] = static_cast<Json::UInt64>(session.CreatedUnixMs());
     out["last_active_unix_ms"] = static_cast<Json::UInt64>(session.LastActiveUnixMs());
     out["status"] = session.IsTerminated() ? "terminated" : "active";
@@ -610,18 +610,22 @@ std::uint32_t AdminServer::ResolveProviderContextWindow(
     const ProviderState& state,
     const std::string& modelId,
     std::uint32_t fallback) {
+    // 1. Per-model override (highest priority — user-explicit or discovered)
     if (!modelId.empty()) {
         auto it = state.modelContextWindows.find(modelId);
         if (it != state.modelContextWindows.end() && it->second > 0U) {
             return it->second;
         }
     }
+    // 2. Provider default context window (manual config)
     if (state.defaultContextWindow > 0U) {
         return state.defaultContextWindow;
     }
+    // 3. Provider-level capabilities from discovery (may be for a different model)
     if (state.capabilities.context_length > 0) {
         return static_cast<std::uint32_t>(state.capabilities.context_length);
     }
+    // 4. Hard fallback
     return fallback;
 }
 

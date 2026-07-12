@@ -47,7 +47,8 @@ public:
         const std::string& id,
         const llm::ProviderCapabilities& capabilities,
         ProviderState* updated,
-        std::string* error);
+        std::string* error,
+        const std::string& modelId = "");
 
     int GetProviderConcurrency(const std::string& providerId) const;
     std::optional<llm::LLMProviderConfig> GetProviderConfig(const std::string& providerId) const;

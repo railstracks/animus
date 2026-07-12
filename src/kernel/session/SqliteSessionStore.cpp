@@ -542,16 +542,18 @@ ISessionStore::ListPage SqliteSessionStore::ListPaginated(
 
     if (search.empty()) {
         sql =
-            "SELECT id, connector, conversation_id, thread_id, provider_id, summary, "
-            "       agent_id, created_at_unix_ms, last_active_unix_ms, terminated, session_type "
-            "FROM sessions ORDER BY last_active_unix_ms DESC LIMIT ? OFFSET ?";
+            "SELECT s.id, s.connector, s.conversation_id, s.thread_id, s.provider_id, s.summary, "
+            "       s.agent_id, s.created_at_unix_ms, s.last_active_unix_ms, s.terminated, s.session_type, "
+            "       (SELECT COUNT(*) FROM session_turns t WHERE t.session_id = s.id) AS turn_count "
+            "FROM sessions s ORDER BY s.last_active_unix_ms DESC LIMIT ? OFFSET ?";
         countSql = "SELECT COUNT(*) FROM sessions";
     } else {
         // DISTINCT because multiple turns in one session may match.
         sql =
             "SELECT DISTINCT s.id, s.connector, s.conversation_id, s.thread_id, "
             "       s.provider_id, s.summary, s.agent_id, "
-            "       s.created_at_unix_ms, s.last_active_unix_ms, s.terminated, s.session_type "
+            "       s.created_at_unix_ms, s.last_active_unix_ms, s.terminated, s.session_type, "
+            "       (SELECT COUNT(*) FROM session_turns t WHERE t.session_id = s.id) AS turn_count "
             "FROM sessions s "
             "LEFT JOIN session_turns t ON s.id = t.session_id "
             "WHERE t.content LIKE ? "
@@ -603,6 +605,7 @@ ISessionStore::ListPage SqliteSessionStore::ListPaginated(
                 session->MarkTerminated();
             }
             session->SetSessionType(stmt->ColumnText(10));
+            session->SetMessageCountOverride(static_cast<std::size_t>(stmt->ColumnInt64(11)));
 
             page.sessions.push_back(session);
         }

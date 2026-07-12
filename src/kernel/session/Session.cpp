@@ -82,6 +82,17 @@ void Session::TrimOldestTurns(std::size_t count) {
     m_lastActiveUnixMs = NowUnixMs();
 }
 
+std::size_t Session::MessageCount() const {
+    if (m_messageCountOverride.has_value()) {
+        return *m_messageCountOverride;
+    }
+    return m_turns.size();
+}
+
+void Session::SetMessageCountOverride(std::size_t count) {
+    m_messageCountOverride = count;
+}
+
 void Session::SetCompactionSummary(SessionTurn summary_turn) {
     if (summary_turn.turn_id == 0) {
         summary_turn.turn_id = m_nextTurnId++;

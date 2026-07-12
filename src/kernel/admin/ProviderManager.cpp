@@ -303,7 +303,8 @@ bool ProviderManager::UpdateProviderCapabilities(
     const std::string& id,
     const llm::ProviderCapabilities& capabilities,
     ProviderState* updated,
-    std::string* error) {
+    std::string* error,
+    const std::string& modelId) {
     std::lock_guard<std::mutex> lock(m_providerMutex);
     auto it = FindProviderLocked(id);
     if (it == m_providersByName.end()) {
@@ -311,6 +312,17 @@ bool ProviderManager::UpdateProviderCapabilities(
         return false;
     }
     it->second.capabilities = capabilities;
+
+    // Populate per-model context window from capability discovery,
+    // but never overwrite a manual value the user may have set.
+    if (!modelId.empty() && capabilities.context_length > 0U) {
+        auto mcwIt = it->second.modelContextWindows.find(modelId);
+        if (mcwIt == it->second.modelContextWindows.end() || mcwIt->second == 0U) {
+            it->second.modelContextWindows[modelId] =
+                static_cast<std::uint32_t>(capabilities.context_length);
+        }
+    }
+
     if (updated) {
         *updated = it->second;
     }
@@ -956,7 +968,7 @@ bool ProviderManager::RefreshProviderCapabilities(
 
     ProviderState updated;
     std::string capErr;
-    if (!UpdateProviderCapabilities(id, caps, &updated, &capErr)) {
+    if (!UpdateProviderCapabilities(id, caps, &updated, &capErr, modelId)) {
         if (error) *error = capErr.empty() ? "failed to update provider capabilities" : capErr;
         return false;
     }
