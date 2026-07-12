@@ -81,6 +81,7 @@ interface ModelContextEntry {
 }
 const modelContextEntries = ref<ModelContextEntry[]>([]);
 const refreshingModel = ref('');
+const discoveringModels = ref(false);
 
 const availableModels = ref<string[]>([]);
 const modelsLoading = ref(false);
@@ -325,6 +326,38 @@ function onProviderTypeChange(id: string) {
 
 function addModelContextEntry() {
   modelContextEntries.value.push({ model: '', contextWindow: null });
+}
+
+async function discoverModels() {
+  if (!formData.value.provider_id) return;
+  discoveringModels.value = true;
+  error.value = '';
+  try {
+    const data = await apiGet<{ models: string[]; fetched: boolean }>(
+      `/api/v1/providers/${formData.value.provider_id}/models`
+    );
+    if (Array.isArray(data.models)) {
+      availableModels.value = [...data.models].sort();
+      // Create entries for models not already in the list
+      const existing = new Set(modelContextEntries.value.map(e => e.model?.trim()).filter(Boolean));
+      for (const model of data.models) {
+        if (!existing.has(model)) {
+          modelContextEntries.value.push({ model, contextWindow: null });
+        }
+      }
+      // Sequentially discover context sizes for entries that don't have one
+      for (const entry of modelContextEntries.value) {
+        if (entry.contextWindow == null && entry.model?.trim()) {
+          await refreshModelCapabilities(entry);
+        }
+      }
+      successMsg.value = t('providers.form.modelsDiscovered', { count: data.models.length });
+    }
+  } catch (e: any) {
+    error.value = e.message || t('providers.form.discoverFailed');
+  } finally {
+    discoveringModels.value = false;
+  }
 }
 
 async function refreshModelCapabilities(entry: ModelContextEntry) {
@@ -761,10 +794,16 @@ onBeforeUnmount(() => {
           <div class="model-context-section">
             <div class="d-flex align-center justify-space-between mb-2">
               <span class="text-subtitle-2">{{ t('providers.form.modelContextWindows') }}</span>
-              <v-btn size="x-small" variant="text" @click="addModelContextEntry">
-                <v-icon start size="small">mdi-plus</v-icon>
-                {{ t('providers.form.addModel') }}
-              </v-btn>
+              <div class="d-flex ga-1">
+                <v-btn size="x-small" variant="text" @click="discoverModels" :loading="discoveringModels" :disabled="!formData.provider_id">
+                  <v-icon start size="small">mdi-cloud-download</v-icon>
+                  {{ t('providers.form.discoverModels') }}
+                </v-btn>
+                <v-btn size="x-small" variant="text" @click="addModelContextEntry">
+                  <v-icon start size="small">mdi-plus</v-icon>
+                  {{ t('providers.form.addModel') }}
+                </v-btn>
+              </div>
             </div>
             <p class="text-caption text-medium-emphasis mb-2">
               {{ t('providers.form.modelContextWindowsHint') }}
