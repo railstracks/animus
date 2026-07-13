@@ -624,7 +624,7 @@ onMounted(() => {
                       <div class="text-caption text-medium-emphasis mb-1">Tools included:</div>
                       <div class="d-flex flex-wrap ga-1">
                         <v-chip
-                          v-for="toolName in (t('templates.templates.' + selectedTemplate + '.tools') as string[])"
+                          v-for="toolName in (tm('templates.templates.' + selectedTemplate + '.tools') as string[])"
                           :key="toolName"
                           size="x-small" variant="tonal" color="primary"
                         >{{ toolName }}</v-chip>
