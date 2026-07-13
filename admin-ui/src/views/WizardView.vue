@@ -27,7 +27,7 @@ interface ToolDef {
 // ---------------------------------------------------------------------------
 
 const step = ref(0);
-const steps = ['Language', 'Provider', 'Agent', 'Tools', 'Charter', 'Memory'];
+const steps = ['Language', 'Template', 'Provider', 'Agent', 'Tools', 'Charter', 'Memory'];
 const loading = ref(false);
 const error = ref('');
 const existingProviders = ref<ProviderInfo[]>([]);
@@ -44,6 +44,66 @@ const selectedLocale = ref<SupportedLocale>(i18n.global.locale.value as Supporte
 
 function selectLocale() {
   setLocale(selectedLocale.value);
+  nextStep();
+}
+
+// ---------------------------------------------------------------------------
+// Template selection (Stage 1)
+// ---------------------------------------------------------------------------
+
+type TemplateKey =
+  | 'personalAssistant' | 'tutor' | 'wellnessCompanion' | 'homeAutomation' | 'gamemaster'
+  | 'officeSupport' | 'communityManagement' | 'researchAssistant'
+  | 'developmentAssistant' | 'networkAutomation' | 'autonomousConstruct' | 'integratedAI';
+
+const selectedCategory = ref<string>('');
+const selectedTemplate = ref<TemplateKey | ''>('');
+
+const categoryList = computed(() => [
+  { key: 'personal', ...t('templates.categories.personal') },
+  { key: 'enterprise', ...t('templates.categories.enterprise') },
+  { key: 'advanced', ...t('templates.categories.advanced') },
+] as { key: string; title: string; description: string }[]);
+
+const templateList = computed(() => {
+  if (!selectedCategory.value) return [];
+  const all: TemplateKey[] = [
+    'personalAssistant', 'tutor', 'wellnessCompanion', 'homeAutomation', 'gamemaster',
+    'officeSupport', 'communityManagement', 'researchAssistant',
+    'developmentAssistant', 'networkAutomation', 'autonomousConstruct', 'integratedAI',
+  ];
+  return all
+    .map(k => ({ key: k, ...t(`templates.templates.${k}`) }) as { key: TemplateKey; name: string; category: string; description: string; tools: string[]; systemPrompt: string })
+    .filter(tpl => tpl.category === selectedCategory.value);
+});
+
+function selectCategory(cat: string) {
+  selectedCategory.value = cat;
+  selectedTemplate.value = '';
+}
+
+function selectTemplate(tpl: TemplateKey) {
+  selectedTemplate.value = tpl;
+}
+
+function applyTemplate() {
+  if (!selectedTemplate.value) { nextStep(); return; }
+  const tpl = t(`templates.templates.${selectedTemplate.value}`) as any;
+  // Pre-fill agent form with template defaults
+  if (tpl.name && !agentForm.value.name) {
+    agentForm.value.name = tpl.name;
+  }
+  agentForm.value.identity = tpl.systemPrompt || '';
+  agentForm.value.description = tpl.description || '';
+  // Pre-select tools from template
+  if (tpl.tools && Array.isArray(tpl.tools)) {
+    enabledTools.value = [...tpl.tools];
+  }
+  nextStep();
+}
+
+function skipTemplate() {
+  selectedTemplate.value = '';
   nextStep();
 }
 
@@ -503,9 +563,98 @@ onMounted(() => {
             </div>
 
             <!-- ======================================================== -->
-            <!-- Stage 1: Provider                                        -->
+            <!-- Stage 1: Template                                       -->
             <!-- ======================================================== -->
             <div v-if="step === 1">
+              <h3 class="text-h6 mb-2">{{ t('templates.wizard.stepTitle') }}</h3>
+              <p class="text-body-2 text-medium-emphasis mb-5">{{ t('templates.wizard.stepHint') }}</p>
+
+              <!-- Category selection -->
+              <div v-if="!selectedCategory" class="d-flex flex-column ga-3 mb-4">
+                <v-card
+                  v-for="cat in categoryList" :key="cat.key"
+                  variant="outlined" rounded="lg"
+                  class="template-category-card"
+                  @click="selectCategory(cat.key)"
+                >
+                  <v-card-text>
+                    <div class="d-flex align-start ga-3">
+                      <v-icon
+                        :icon="cat.key === 'personal' ? 'mdi-home-account' : cat.key === 'enterprise' ? 'mdi-domain' : 'mdi-robot-industrial'"
+                        size="24" class="mt-1"
+                      />
+                      <div>
+                        <div class="text-subtitle-1 font-weight-medium mb-1">{{ cat.title }}</div>
+                        <div class="text-body-2 text-medium-emphasis">{{ cat.description }}</div>
+                      </div>
+                    </div>
+                  </v-card-text>
+                </v-card>
+              </div>
+
+              <!-- Template selection within category -->
+              <template v-else>
+                <div class="d-flex align-center mb-4">
+                  <v-btn variant="text" size="small" prepend-icon="mdi-arrow-left"
+                    @click="selectedCategory = ''; selectedTemplate = ''">
+                    {{ t('templates.categories.' + selectedCategory + '.title') }}
+                  </v-btn>
+                </div>
+
+                <div v-if="!selectedTemplate" class="d-flex flex-column ga-2 mb-4">
+                  <v-card
+                    v-for="tpl in templateList" :key="tpl.key"
+                    variant="outlined" rounded="lg"
+                    class="template-option-card"
+                    @click="selectTemplate(tpl.key)"
+                  >
+                    <v-card-text>
+                      <div class="text-subtitle-1 font-weight-medium mb-1">{{ tpl.name }}</div>
+                      <div class="text-body-2 text-medium-emphasis">{{ tpl.description }}</div>
+                    </v-card-text>
+                  </v-card>
+                </div>
+
+                <!-- Template detail -->
+                <div v-else>
+                  <v-card variant="outlined" rounded="lg" class="mb-4">
+                    <v-card-text>
+                      <div class="text-h6 font-weight-medium mb-2">{{ t('templates.templates.' + selectedTemplate + '.name') }}</div>
+                      <p class="text-body-2 text-medium-emphasis mb-3">{{ t('templates.templates.' + selectedTemplate + '.description') }}</p>
+                      <div class="text-caption text-medium-emphasis mb-1">Tools included:</div>
+                      <div class="d-flex flex-wrap ga-1">
+                        <v-chip
+                          v-for="toolName in (t('templates.templates.' + selectedTemplate + '.tools') as string[])"
+                          :key="toolName"
+                          size="x-small" variant="tonal" color="primary"
+                        >{{ toolName }}</v-chip>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </div>
+              </template>
+
+              <div class="d-flex justify-space-between mt-4">
+                <v-btn variant="text" @click="skipWizard">Skip for now</v-btn>
+                <div class="d-flex ga-2">
+                  <v-btn v-if="selectedCategory" variant="text" @click="skipTemplate">
+                    {{ t('templates.wizard.blank') }}
+                  </v-btn>
+                  <v-btn
+                    v-if="selectedCategory && selectedTemplate"
+                    color="primary"
+                    @click="applyTemplate"
+                  >
+                    {{ t('templates.wizard.useTemplate') }}
+                  </v-btn>
+                </div>
+              </div>
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- Stage 2: Provider                                        -->
+            <!-- ======================================================== -->
+            <div v-if="step === 2">
               <h3 class="text-h6 mb-3">LLM Provider</h3>
               <p class="text-body-2 text-medium-emphasis mb-4">
                 Animus needs an LLM provider to generate responses. If you've already configured one, skip ahead.
@@ -555,10 +704,9 @@ onMounted(() => {
               </div>
             </div>
 
+            <!-- Stage 3 was step 2 (Agent), now step 3 -->
             <!-- ======================================================== -->
-            <!-- Stage 2: Agent Basics                                    -->
-            <!-- ======================================================== -->
-            <div v-if="step === 2">
+            <div v-if="step === 3">
               <h3 class="text-h6 mb-3">Agent Identity</h3>
               <p class="text-body-2 text-medium-emphasis mb-4">
                 Give your agent an identity. Everything here can be refined later from the Agents panel.
@@ -622,10 +770,9 @@ onMounted(() => {
               </div>
             </div>
 
+            <!-- Stage 4 was step 3 (Tools), now step 4 -->
             <!-- ======================================================== -->
-            <!-- Stage 3: Tools                                           -->
-            <!-- ======================================================== -->
-            <div v-if="step === 3">
+            <div v-if="step === 4">
               <h3 class="text-h6 mb-3">Tool Selection</h3>
               <p class="text-body-2 text-medium-emphasis mb-4">
                 Choose which tools your agent can use. Sensible defaults are pre-selected.
@@ -659,10 +806,9 @@ onMounted(() => {
               </div>
             </div>
 
+            <!-- Stage 5 was step 4 (Charter), now step 5 -->
             <!-- ======================================================== -->
-            <!-- Stage 4: Charter                                         -->
-            <!-- ======================================================== -->
-            <div v-if="step === 4">
+            <div v-if="step === 5">
               <!-- Charter choice sub-stage -->
               <div v-if="charterChoice === 'none' || charterChoice === 'create'">
                 <!-- Intro -->
@@ -772,10 +918,9 @@ onMounted(() => {
               </div>
             </div>
 
+            <!-- Stage 6 was step 5 (Memory), now step 6 -->
             <!-- ======================================================== -->
-            <!-- Stage 5: Memory                                          -->
-            <!-- ======================================================== -->
-            <div v-if="step === 5">
+            <div v-if="step === 6">
               <h3 class="text-h6 mb-3">Memory Configuration</h3>
               <p class="text-body-2 text-medium-emphasis mb-4">
                 Animus uses a multi-layer memory architecture. These defaults work well for most setups.
@@ -814,10 +959,9 @@ onMounted(() => {
               </div>
             </div>
 
+            <!-- Done was step 6, now step 7 -->
             <!-- ======================================================== -->
-            <!-- Done                                                     -->
-            <!-- ======================================================== -->
-            <div v-if="step === 6" class="text-center py-8">
+            <div v-if="step === 7" class="text-center py-8">
               <v-icon size="64" color="success" class="mb-4">mdi-check-circle</v-icon>
               <h3 class="text-h5 mb-2">You're all set!</h3>
               <p class="text-body-1 text-medium-emphasis mb-1">
@@ -873,5 +1017,21 @@ onMounted(() => {
 .charter-option-selected {
   border-color: rgb(var(--v-theme-primary));
   background: rgba(var(--v-theme-primary), 0.05);
+}
+
+.template-category-card {
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.template-category-card:hover {
+  border-color: rgb(var(--v-theme-primary));
+}
+
+.template-option-card {
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.template-option-card:hover {
+  border-color: rgb(var(--v-theme-primary));
 }
 </style>
