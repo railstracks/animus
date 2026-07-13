@@ -19,7 +19,7 @@ public:
   explicit ZaiCodingProvider(const LLMProviderConfig& config)
       : ZaiProvider(config) {}
 
-  std::string ProviderId() const override { return "zai-coding"; }
+  std::string ProviderId() const override { return "zai-coder"; }
 };
 
 } // namespace animus::kernel::llm
