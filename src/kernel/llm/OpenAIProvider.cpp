@@ -100,7 +100,7 @@ std::optional<LLMToken> OpenAIProvider::ParseSSELine(
 // ---------------------------------------------------------------------------
 
 bool OpenAIProvider::FetchCapabilities(const std::string& modelId) {
-  // Start with base defaults
+  // Start with base defaults + model list fetch (/v1/models)
   bool ok = LLMProviderBase::FetchCapabilities(modelId);
 
   // OpenAI vision detection from model name

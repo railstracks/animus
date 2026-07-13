@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <json/json.h>
 
 // libcurl
 #include <curl/curl.h>
@@ -242,6 +243,54 @@ bool LLMProviderBase::FetchCapabilities(const std::string& modelId) {
   m_capabilities.supports_tool_choice = true;
   m_capabilities.supports_reasoning = true;
   m_capabilities.supports_streaming = true;
+
+  // Fetch model list from /v1/models (OpenAI-compatible endpoint).
+  // All OpenAI-compatible providers support this endpoint. Providers with
+  // their own native APIs (Ollama, Cohere, Codex) override FetchCapabilities
+  // fully and don't call this base.
+  if (!Config().base_url.empty()) {
+    std::string modelsUrl = Config().base_url + "/models";
+    auto headers = GetHeaders();
+
+    std::string responseBody;
+    std::string httpError;
+    int status = DoHTTPGet(modelsUrl, headers, &responseBody, &httpError);
+
+    if (status == 200 && !responseBody.empty()) {
+      Json::Value root;
+      Json::CharReaderBuilder builder;
+      std::string parseErrors;
+      std::istringstream stream(responseBody);
+      if (Json::parseFromStream(builder, stream, &root, &parseErrors)) {
+        const Json::Value& data = root["data"];
+        if (data.isArray()) {
+          m_capabilities.raw_features.clear();
+          for (Json::ArrayIndex i = 0; i < data.size(); ++i) {
+            const Json::Value& model = data[i];
+            std::string id = model["id"].asString();
+            if (!id.empty()) {
+              m_capabilities.raw_features.push_back(id);
+            }
+            // Capture context_length if the provider includes it
+            // (OpenRouter and some others do; standard OpenAI doesn't).
+            if (id == modelId) {
+              const Json::Value& ctxVal = model["context_length"];
+              if (ctxVal.isNumeric() && ctxVal.asUInt64() > 0) {
+                m_capabilities.context_length =
+                    static_cast<std::uint32_t>(ctxVal.asUInt64());
+              }
+            }
+          }
+          std::cerr << "[llm] Fetched " << m_capabilities.raw_features.size()
+                    << " models from " << modelsUrl << std::endl;
+        }
+      }
+    } else {
+      std::cerr << "[llm] /v1/models fetch failed (HTTP " << status
+                << "): " << httpError << std::endl;
+    }
+  }
+
   return true;
 }
 

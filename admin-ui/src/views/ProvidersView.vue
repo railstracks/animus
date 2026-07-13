@@ -44,6 +44,7 @@ const knownProviderTypes: { id: string; label: string; baseUrl: string; defaultM
   { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-5.2', authType: 'api_key' },
   { id: 'openai-codex', label: 'OpenAI Codex', baseUrl: 'https://chatgpt.com/backend-api/codex', defaultModel: 'gpt-5.4', authType: 'oauth' },
   { id: 'zai', label: 'Z.AI (GLM)', baseUrl: 'https://api.z.ai/api/paas/v4', defaultModel: 'glm-5.1', authType: 'api_key' },
+  { id: 'zai-coder', label: 'Z.AI Coder', baseUrl: 'https://api.z.ai/api/paas/v4/coder', defaultModel: 'glm-5.1', authType: 'api_key' },
   { id: 'ollama', label: 'Ollama', baseUrl: 'https://ollama.com/v1', defaultModel: 'llama3', authType: 'api_key' },
   { id: 'cohere', label: 'Cohere', baseUrl: 'https://api.cohere.com/v2', defaultModel: 'command-a-03-2025', authType: 'api_key' },
   { id: 'mistral', label: 'Mistral', baseUrl: 'https://api.mistral.ai/v1', defaultModel: 'mistral-large-latest', authType: 'api_key' },
