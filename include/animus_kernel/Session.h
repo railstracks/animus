@@ -28,6 +28,7 @@ struct SessionTurn {
     std::uint64_t unix_ms{0};
     bool is_summary{false};
     std::vector<SessionTurnId> compacted_from;
+    bool is_compacted{false};  // True if this turn has been folded into a compaction summary (kept in DB, excluded from prompts)
 
     // Tool call trace
     std::vector<ToolCall> tool_calls;    // Tool calls made in this turn
@@ -67,6 +68,7 @@ public:
     const std::vector<SessionTurn>& Turns() const;
     std::vector<SessionTurn>& MutableTurns();
     void TrimOldestTurns(std::size_t count);
+    void MarkTurnCompacted(SessionTurnId turnId);
 
     // Message count — uses override if set (for paginated listings),
     // otherwise falls back to in-memory turn count.
@@ -128,6 +130,7 @@ public:
 
     void AddTurn(SessionTurn turn);
     void TrimOldestTurns(std::size_t count);
+    void MarkTurnCompacted(SessionTurnId turnId);
     void SetCompactionSummary(SessionTurn summary_turn);
     void SetSummary(std::string summary);
     void SetAgentId(std::string agentId);

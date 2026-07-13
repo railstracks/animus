@@ -27,8 +27,8 @@ static void WriteTurns(IDataStore& store, SessionId sessionId, const std::vector
             "INSERT INTO session_turns "
             "(session_id, turn_id, role, content, unix_ms, is_summary, compacted_from, "
             " thinking_content, tool_calls, tool_call_id, tool_name, "
-            " intake_processed, intake_processed_at_unix_ms, token_count) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+            " intake_processed, intake_processed_at_unix_ms, token_count, is_compacted) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
         if (!stmt) continue;
         stmt->BindInt64(1, sessionId);
         stmt->BindInt64(2, t.turn_id);
@@ -66,6 +66,7 @@ static void WriteTurns(IDataStore& store, SessionId sessionId, const std::vector
         stmt->BindInt(12, t.intake_processed ? 1 : 0);
         stmt->BindInt64(13, static_cast<int64_t>(t.intake_processed_at_unix_ms));
         stmt->BindInt64(14, static_cast<int64_t>(t.token_count));
+        stmt->BindInt(15, t.is_compacted ? 1 : 0);
 
         stmt->Step();
     }
@@ -75,7 +76,7 @@ static void LoadTurns(IDataStore& store, Session& session) {
     auto stmt = store.Prepare(
         "SELECT turn_id, role, content, unix_ms, is_summary, compacted_from, "
         "       thinking_content, tool_calls, tool_call_id, tool_name, "
-        "       intake_processed, intake_processed_at_unix_ms, token_count "
+        "       intake_processed, intake_processed_at_unix_ms, token_count, is_compacted "
         "FROM session_turns WHERE session_id=? ORDER BY turn_id ASC");
     if (!stmt) return;
     stmt->BindInt64(1, session.Id());
@@ -131,6 +132,7 @@ static void LoadTurns(IDataStore& store, Session& session) {
         turn.token_count = stmt->IsColumnNull(12)
             ? 0
             : static_cast<std::size_t>(stmt->ColumnInt64(12));
+        turn.is_compacted = !stmt->IsColumnNull(13) && stmt->ColumnInt64(13) != 0;
 
         session.AddTurn(std::move(turn));
     }
@@ -186,6 +188,7 @@ static std::shared_ptr<Session> SessionFromJson(const Json::Value& root) {
             turn.content  = tv["content"].asString();
             turn.unix_ms  = tv["unix_ms"].asUInt64();
             turn.is_summary = tv.get("is_summary", false).asBool();
+            turn.is_compacted = tv.get("is_compacted", false).asBool();
             turn.thinking_content = tv.get("thinking_content", "").asString();
             turn.tool_call_id = tv.get("tool_call_id", "").asString();
             turn.tool_name    = tv.get("tool_name", "").asString();
@@ -279,7 +282,8 @@ void SqliteSessionStore::EnsureSchema() {
             tool_call_id TEXT NOT NULL DEFAULT '',
             tool_name TEXT NOT NULL DEFAULT '',
             intake_processed INTEGER NOT NULL DEFAULT 0,
-            intake_processed_at_unix_ms INTEGER NOT NULL DEFAULT 0
+            intake_processed_at_unix_ms INTEGER NOT NULL DEFAULT 0,
+            is_compacted INTEGER NOT NULL DEFAULT 0
         );
     )");
 
@@ -314,6 +318,10 @@ void SqliteSessionStore::EnsureSchema() {
     // Migration v4: add token_count column to session_turns for caching.
     if (!HasColumn("session_turns", "token_count"))
         m_store->Exec("ALTER TABLE session_turns ADD COLUMN token_count INTEGER NOT NULL DEFAULT 0");
+    // Migration v5b: add is_compacted column to session_turns.
+    // Compacted turns are kept in DB (for consolidation + audit) but excluded from prompts.
+    if (!HasColumn("session_turns", "is_compacted"))
+        m_store->Exec("ALTER TABLE session_turns ADD COLUMN is_compacted INTEGER NOT NULL DEFAULT 0");
     // Migration v5: fix timestamp columns on PostgreSQL (INTEGER → BIGINT).
     // SQLite stores INTEGER as 64-bit natively, so no migration needed there.
     if (m_store->Dialect() == DataStoreDialect::PostgreSQL) {

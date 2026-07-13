@@ -82,6 +82,15 @@ void Session::TrimOldestTurns(std::size_t count) {
     m_lastActiveUnixMs = NowUnixMs();
 }
 
+void Session::MarkTurnCompacted(SessionTurnId turnId) {
+    for (auto& t : m_turns) {
+        if (t.turn_id == turnId) {
+            t.is_compacted = true;
+        }
+    }
+    m_lastActiveUnixMs = NowUnixMs();
+}
+
 std::size_t Session::MessageCount() const {
     if (m_messageCountOverride.has_value()) {
         return *m_messageCountOverride;
@@ -193,6 +202,11 @@ void SessionAccess::AddTurn(SessionTurn turn) {
 void SessionAccess::TrimOldestTurns(std::size_t count) {
     EnsureWritable("TrimOldestTurns");
     RequireSession().TrimOldestTurns(count);
+}
+
+void SessionAccess::MarkTurnCompacted(SessionTurnId turnId) {
+    EnsureWritable("MarkTurnCompacted");
+    RequireSession().MarkTurnCompacted(turnId);
 }
 
 void SessionAccess::SetCompactionSummary(SessionTurn summary_turn) {

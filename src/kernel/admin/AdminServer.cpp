@@ -363,6 +363,7 @@ Json::Value BuildSessionTurnJson(const SessionTurn& turn) {
     out["content"] = turn.content;
     out["unix_ms"] = static_cast<Json::UInt64>(turn.unix_ms);
     out["is_summary"] = turn.is_summary;
+    out["is_compacted"] = turn.is_compacted;
     out["thinking_content"] = turn.thinking_content;
     out["tool_call_id"] = turn.tool_call_id;
     out["tool_name"] = turn.tool_name;

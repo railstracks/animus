@@ -73,6 +73,7 @@ PromptAssemblyResult PromptAssembler::Build(
     // 3. Session history
     for (const auto& turn : turns) {
         if (turn.is_summary) continue;
+        if (turn.is_compacted) continue;
 
         // Skip thinking-only turns (turns with no content and no tool_calls).
         // thinking_content is a display-only property — never sent to the LLM.
@@ -109,6 +110,7 @@ PromptAssemblyResult PromptAssembler::Build(
     // Compute session turn tokens (already assembled above)
     for (const auto& turn : turns) {
         if (turn.is_summary) continue;
+        if (turn.is_compacted) continue;
         if (turn.content.empty() && turn.tool_calls.empty()) continue;
         if (turn.token_count > 0) {
             result.session_turns_tokens += turn.token_count + 4;

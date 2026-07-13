@@ -172,12 +172,12 @@ CompactionResult CompactionService::DoCompact(
         return {true, "", {}, 0};
     }
 
-    // Gather turns to compact (skip summary turns, they're already compressed)
+    // Gather turns to compact (skip summary turns and already-compacted turns)
     std::vector<SessionTurn> turnsToCompact;
     SessionTurnId lastTurnId = 0;
     for (std::size_t i = 0; i < compactEnd; ++i) {
         const auto& turn = turns[i];
-        if (turn.is_summary) continue;
+        if (turn.is_summary || turn.is_compacted) continue;
         turnsToCompact.push_back(turn);
         lastTurnId = turn.turn_id;
     }
@@ -232,28 +232,31 @@ CompactionResult CompactionService::DoCompact(
 
     StoreCompaction(entry);
 
-    // Replace compacted turns with a summary turn in the session.
-    // This tells PromptAssembler to skip them (is_summary check in Build)
-    // and prevents the compacted turns from being re-sent to the LLM.
+    // Build the compaction summary turn.
+    // compacted_from records which original turns were folded in.
     SessionTurn summaryTurn;
     summaryTurn.role = "system";
     summaryTurn.content = summaryText;
     summaryTurn.is_summary = true;
     summaryTurn.unix_ms = entry.created_at_unix_ms;
     for (std::size_t i = 0; i < compactEnd; ++i) {
-        if (!turns[i].is_summary) {
+        if (!turns[i].is_summary && !turns[i].is_compacted) {
             summaryTurn.compacted_from.push_back(turns[i].turn_id);
+        }
+    }
+
+    // Mark the compacted turns so PromptAssembler skips them.
+    // We keep them in the session (and DB) so consolidation can still process them.
+    for (std::size_t i = 0; i < compactEnd; ++i) {
+        if (!turns[i].is_summary && !turns[i].is_compacted) {
+            session.MarkTurnCompacted(turns[i].turn_id);
         }
     }
 
     // Set the compaction summary on the session object
     session.SetCompactionSummary(summaryTurn);
 
-    // Remove the compacted turns from the session's turn list so they
-    // don't get re-persisted and re-sent. The summary replaces them.
-    session.TrimOldestTurns(compactEnd);
-
-    // Persist the session (including compaction summary)
+    // Persist the session (including compaction summary + compacted flags)
     m_sessions->GetStore().FlushSession(session.Id());
 
     return {true, "", entry, turnsToCompact.size()};
