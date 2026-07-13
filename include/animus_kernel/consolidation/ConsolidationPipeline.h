@@ -37,6 +37,10 @@ using ConsolidationLLMCallback = std::function<std::string(
     const std::string& systemPrompt,
     const std::string& userPrompt)>;
 
+// Context window resolver — returns the effective context window (in tokens)
+// for an agent, accounting for provider defaults, model overrides, and agent-level caps.
+using ContextWindowResolver = std::function<std::size_t(const std::string& agentId)>;
+
 // ============================================================================
 // ConsolidationPipeline — orchestrates intake, layer consolidation,
 //                          and perspective revision
@@ -47,7 +51,7 @@ public:
     struct Config {
         // Intake
         bool intake_enabled{true};
-        int intake_batch_size{50};
+        int intake_batch_size{200};
         double intake_min_weight{0.1};
         std::string intake_cron_expr{"*/5 * * * *"};  // cron for intake poll (default every 5 min)
 
@@ -117,6 +121,7 @@ public:
 
     // Dependency injection (optional, set after construction)
     void SetMemoryFileStore(memory::MemoryFileStore* store) { m_memoryFileStore = store; }
+    void SetContextWindowResolver(ContextWindowResolver resolver) { m_contextWindowResolver = std::move(resolver); }
 
     // Lifecycle — Start registers cron jobs with the scheduler, Stop cancels them
     bool Start(Scheduler* scheduler, std::string* error);
@@ -191,6 +196,7 @@ private:
     SessionManager* m_sessionManager;
     AgentStore* m_agentStore;
     ConsolidationLLMCallback m_llmCallback;
+    ContextWindowResolver m_contextWindowResolver;
     Config m_config;
     Scheduler* m_scheduler{nullptr};
     std::vector<std::string> m_registeredScheduleIds;

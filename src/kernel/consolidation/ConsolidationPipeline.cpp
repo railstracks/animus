@@ -2,6 +2,7 @@
 #include "animus_kernel/IDataStore.h"
 #include "animus_kernel/SessionManager.h"
 #include "animus_kernel/MemoryFileStore.h"
+#include "animus_kernel/TokenEstimate.h"
 #include "animus_kernel/scheduler/Scheduler.h"
 
 #include <chrono>
@@ -492,69 +493,123 @@ int64_t ConsolidationPipeline::IntakeFromSessions(
         std::string* error) {
     if (!m_sessionManager) return 0;
 
-    // Query unprocessed turns directly from DB (not in-memory cache).
-    // This ensures turns from sessions created before the last daemon restart
-    // are also visible to the intake pipeline.
-    auto pending = m_sessionManager->GetUnprocessedTurns(
-        agentId, m_config.intake_batch_size);
-
-    if (pending.empty()) return 0;
-
-    // Count observations before the LLM run so we can measure what was created
+    // Resolve intake prompt (agent-level → layer-level → global default)
     auto targetLayer = m_memoryStore->GetLayer(targetLayerId);
-    const int64_t obsBefore = targetLayer
-        ? static_cast<int64_t>(m_memoryStore->ListObservationsForLayer(targetLayer->id).size())
-        : 0;
-
-    // Build the user prompt with raw turn content for the agent to analyze
-    std::ostringstream userPrompt;
-    userPrompt << "Agent: " << agentId << "\n\n";
-    userPrompt << "Recent session turns:\n\n";
-    for (const auto& turn : pending) {
-        userPrompt << "[" << turn.role << "] " << turn.content << "\n\n";
-    }
-    userPrompt << "\nReview the turns above. For each lasting observation worth keeping, "
-               << "call the consolidation tool with action \"create\" and provide "
-               << "params: {text, tags, weight, layer, agent_id}.\n";
-
     std::string intakePrompt = m_config.intake_prompt;
-    // Agent-level intake prompt overrides the global default
     if (m_agentStore) {
         auto agent = m_agentStore->GetById(agentId);
         if (agent && !agent->intake_prompt.empty()) {
             intakePrompt = agent->intake_prompt;
         }
     }
-    // Fall back to layer-level prompt for backward compatibility
     if (intakePrompt == m_config.intake_prompt && targetLayer && !targetLayer->consolidation_intake_prompt.empty()) {
         intakePrompt = targetLayer->consolidation_intake_prompt;
     }
 
-    std::string llmResponse;
-    try {
-        llmResponse = m_llmCallback(agentId, intakePrompt, userPrompt.str());
-    } catch (const std::exception& e) {
-        if (error) *error = std::string("LLM callback failed: ") + e.what();
-        return 0;
+    // Resolve context window for token budgeting.
+    // Default to 128K if no resolver is wired (conservative).
+    std::size_t contextWindow = 128000;
+    if (m_contextWindowResolver) {
+        contextWindow = m_contextWindowResolver(agentId);
+    }
+    // Use 50% of context window for intake batches — leaves room for system prompt,
+    // tool definitions, and the LLM's response (tool calls to create observations).
+    const std::size_t batchTokenBudget = contextWindow / 2;
+
+    int64_t totalCreated = 0;
+
+    // Process unprocessed turns in sequential batches, each fitting within
+    // the token budget. This ensures we stay current with memory consolidation
+    // even when many turns have accumulated.
+    while (true) {
+        // Fetch a generous pool of pending turns (we'll select from these by token budget)
+        auto pending = m_sessionManager->GetUnprocessedTurns(
+            agentId, m_config.intake_batch_size);
+
+        if (pending.empty()) break;
+
+        // Accumulate turns into the prompt until we hit the token budget
+        std::ostringstream userPrompt;
+        userPrompt << "Agent: " << agentId << "\n\n";
+        userPrompt << "Recent session turns:\n\n";
+
+        std::vector<SessionTurnId> batchIds;
+        std::size_t batchTokens = 0;
+        std::size_t batchCount = 0;
+
+        for (const auto& turn : pending) {
+            std::size_t turnTokens = turn.token_count;
+            if (turnTokens == 0) {
+                turnTokens = TokenEstimate::Estimate(turn.content);
+            }
+            // +4 for message overhead (role tag, newlines)
+            turnTokens += 4;
+
+            // If adding this turn would exceed budget and we already have turns,
+            // stop here and process this batch. The remaining turns will be
+            // picked up in the next iteration of the outer loop.
+            if (batchCount > 0 && batchTokens + turnTokens > batchTokenBudget) {
+                break;
+            }
+
+            userPrompt << "[" << turn.role << "] " << turn.content << "\n\n";
+            batchIds.push_back(turn.turn_id);
+            batchTokens += turnTokens;
+            ++batchCount;
+        }
+
+        if (batchCount == 0) {
+            // Single turn exceeds budget — process it alone to avoid infinite loop
+            const auto& turn = pending[0];
+            userPrompt << "[" << turn.role << "] " << turn.content << "\n\n";
+            batchIds.push_back(turn.turn_id);
+            batchCount = 1;
+        }
+
+        userPrompt << "\nReview the turns above. For each lasting observation worth keeping, "
+                   << "call the consolidation tool with action \"create\" and provide "
+                   << "params: {text, tags, weight, layer, agent_id}.\n";
+
+        // Count observations before the LLM run
+        const int64_t obsBefore = targetLayer
+            ? static_cast<int64_t>(m_memoryStore->ListObservationsForLayer(targetLayer->id).size())
+            : 0;
+
+        // Send batch to LLM
+        std::string llmResponse;
+        try {
+            llmResponse = m_llmCallback(agentId, intakePrompt, userPrompt.str());
+        } catch (const std::exception& e) {
+            if (error) *error = std::string("LLM callback failed: ") + e.what();
+            // Don't mark turns as processed on failure — they'll be retried next cycle
+            break;
+        }
+
+        // Count observations created by this batch
+        const int64_t obsAfter = targetLayer
+            ? static_cast<int64_t>(m_memoryStore->ListObservationsForLayer(targetLayer->id).size())
+            : 0;
+        totalCreated += std::max<int64_t>(0, obsAfter - obsBefore);
+
+        // Mark this batch's turns as processed
+        m_sessionManager->MarkTurnsProcessed(batchIds);
+
+        // If we processed fewer turns than we fetched, the remaining unprocessed
+        // turns will be picked up in the next outer-loop iteration.
+        // If we processed all fetched turns and there might be more in the DB,
+        // the loop continues and fetches the next batch.
+        if (batchCount < pending.size()) {
+            // We hit the token budget before exhausting the pool — continue to next batch
+            continue;
+        }
+        // We processed all fetched turns. If the DB had exactly intake_batch_size
+        // turns, there might be more. If it had fewer, we're done.
+        if (static_cast<int>(pending.size()) < m_config.intake_batch_size) {
+            break;
+        }
     }
 
-    // The agent creates observations via tool calls during the LLM session,
-    // not via JSON in the text response. Count what was created.
-    const int64_t obsAfter = targetLayer
-        ? static_cast<int64_t>(m_memoryStore->ListObservationsForLayer(targetLayer->id).size())
-        : 0;
-    const int64_t created = std::max<int64_t>(0, obsAfter - obsBefore);
-
-    // Mark all pending turns as processed — they've been presented to the agent
-    // regardless of whether the agent chose to create observations from them.
-    std::vector<SessionTurnId> processedIds;
-    processedIds.reserve(pending.size());
-    for (const auto& turn : pending) {
-        processedIds.push_back(turn.turn_id);
-    }
-    m_sessionManager->MarkTurnsProcessed(processedIds);
-
-    return created;
+    return totalCreated;
 }
 
 int64_t ConsolidationPipeline::ReconcileOntologyFromObservations(

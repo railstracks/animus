@@ -848,6 +848,17 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             cfg.intake_cron_expr = "*/5 * * * *";
             m_consolidation->Configure(cfg);
             m_consolidation->SetMemoryFileStore(m_memoryFileStore);
+            m_consolidation->SetContextWindowResolver([this](const std::string& aid) -> std::size_t {
+                std::string providerId, model;
+                if (m_agentStore) {
+                    auto agent = m_agentStore->GetById(aid);
+                    if (agent) {
+                        if (!agent->default_provider.empty()) providerId = agent->default_provider;
+                        if (!agent->default_model.empty()) model = agent->default_model;
+                    }
+                }
+                return ResolveContextWindow(aid, providerId, model);
+            });
         }
         {
             std::string consErr;
