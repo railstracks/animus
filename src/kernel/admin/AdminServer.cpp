@@ -609,24 +609,56 @@ using namespace adminserver_internal;
 std::uint32_t AdminServer::ResolveProviderContextWindow(
     const ProviderState& state,
     const std::string& modelId,
-    std::uint32_t fallback) {
-    // 1. Per-model override (highest priority — user-explicit or discovered)
+    std::uint32_t fallback,
+    std::uint32_t agentContextWindow) {
+    // Collect all applicable context window limits, then take the minimum.
+    // This ensures a cap set at any level (model, provider, agent) is always
+    // respected — e.g. an agent-level 200k cap takes effect even if the model
+    // supports 1M.
+    std::uint32_t best = fallback;
+
+    bool haveAny = false;
+
+    // 1. Per-model override (user-explicit or discovered via capability refresh)
     if (!modelId.empty()) {
         auto it = state.modelContextWindows.find(modelId);
         if (it != state.modelContextWindows.end() && it->second > 0U) {
-            return it->second;
+            best = it->second;
+            haveAny = true;
         }
     }
+
     // 2. Provider default context window (manual config)
     if (state.defaultContextWindow > 0U) {
-        return state.defaultContextWindow;
+        if (haveAny) {
+            best = std::min(best, state.defaultContextWindow);
+        } else {
+            best = state.defaultContextWindow;
+            haveAny = true;
+        }
     }
+
     // 3. Provider-level capabilities from discovery (may be for a different model)
-    if (state.capabilities.context_length > 0) {
-        return static_cast<std::uint32_t>(state.capabilities.context_length);
+    if (state.capabilities.context_length > 0U) {
+        std::uint32_t cap = static_cast<std::uint32_t>(state.capabilities.context_length);
+        if (haveAny) {
+            best = std::min(best, cap);
+        } else {
+            best = cap;
+            haveAny = true;
+        }
     }
-    // 4. Hard fallback
-    return fallback;
+
+    // 4. Agent-level context window (overruling cap for token efficiency)
+    if (agentContextWindow > 0U) {
+        if (haveAny) {
+            best = std::min(best, agentContextWindow);
+        } else {
+            best = agentContextWindow;
+        }
+    }
+
+    return best;
 }
 
 AdminServer::AdminServer() = default;
@@ -926,17 +958,24 @@ void AdminServer::SyncIrcInterfaces() {
 
                     std::string model = hasProviderState ? providerState.defaultModel : "";
                     std::size_t contextWindow = 128000;
+                    std::uint32_t agentCtxWindow = 0;
                     if (m_agentStore && !session->AgentId().empty()) {
                         auto agent = m_agentStore->GetById(session->AgentId());
                         if (agent && !agent->default_model.empty()) {
                             model = agent->default_model;
+                        }
+                        if (agent && agent->context_window > 0) {
+                            agentCtxWindow = agent->context_window;
                         }
                     }
                     if (hasProviderState) {
                         contextWindow = ResolveProviderContextWindow(
                             providerState,
                             model,
-                            static_cast<std::uint32_t>(contextWindow));
+                            static_cast<std::uint32_t>(contextWindow),
+                            agentCtxWindow);
+                    } else if (agentCtxWindow > 0) {
+                        contextWindow = std::min(contextWindow, static_cast<std::size_t>(agentCtxWindow));
                     }
                     if (model.empty()) {
                         model = "gpt-4o";

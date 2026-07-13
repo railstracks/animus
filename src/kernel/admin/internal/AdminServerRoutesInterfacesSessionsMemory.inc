@@ -725,23 +725,24 @@
                     hasProviderState = true;
                     if (model.empty()) model = providerState.defaultModel;
                 }
+                // Resolve agent context window for min-of-all clamp
+                std::uint32_t agentCtxWindow = 0;
                 if (server->m_agentStore && !session->AgentId().empty()) {
                     auto ag = server->m_agentStore->GetById(session->AgentId());
                     if (model.empty() && ag && !ag->default_model.empty()) {
                         model = ag->default_model;
                     }
+                    if (ag && ag->context_window > 0) {
+                        agentCtxWindow = ag->context_window;
+                    }
                 }
                 if (hasProviderState) {
                     contextWindow = AdminServer::ResolveProviderContextWindow(
                         providerState, model,
-                        static_cast<std::uint32_t>(contextWindow));
-                }
-                // Clamp to agent's context_window if set (acts as upper bound)
-                if (server->m_agentStore && !session->AgentId().empty()) {
-                    auto ag2 = server->m_agentStore->GetById(session->AgentId());
-                    if (ag2 && ag2->context_window > 0) {
-                        contextWindow = std::min(contextWindow, static_cast<std::size_t>(ag2->context_window));
-                    }
+                        static_cast<std::uint32_t>(contextWindow),
+                        agentCtxWindow);
+                } else if (agentCtxWindow > 0) {
+                    contextWindow = std::min(contextWindow, static_cast<std::size_t>(agentCtxWindow));
                 }
                 if (model.empty()) model = "gpt-4o";
 

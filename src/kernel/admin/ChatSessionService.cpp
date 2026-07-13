@@ -222,24 +222,25 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                     }
                 }
             }
+            // Resolve agent context window for min-of-all clamp
+            std::uint32_t agentCtxWindow = 0;
             if (agentStore && !session->AgentId().empty()) {
                 auto agent = agentStore->GetById(session->AgentId());
                 if (model.empty() && agent && !agent->default_model.empty()) {
                     model = agent->default_model;
+                }
+                if (agent && agent->context_window > 0) {
+                    agentCtxWindow = agent->context_window;
                 }
             }
             if (hasProviderState) {
                 contextWindow = AdminServer::ResolveProviderContextWindow(
                     providerState,
                     model,
-                    static_cast<std::uint32_t>(contextWindow));
-            }
-            // Clamp to agent's context_window if set (acts as upper bound)
-            if (agentStore && !session->AgentId().empty()) {
-                auto agent = agentStore->GetById(session->AgentId());
-                if (agent && agent->context_window > 0) {
-                    contextWindow = std::min(contextWindow, static_cast<std::size_t>(agent->context_window));
-                }
+                    static_cast<std::uint32_t>(contextWindow),
+                    agentCtxWindow);
+            } else if (agentCtxWindow > 0) {
+                contextWindow = std::min(contextWindow, static_cast<std::size_t>(agentCtxWindow));
             }
             if (model.empty()) {
                 model = "gpt-4o";

@@ -119,7 +119,8 @@ public:
     static std::uint32_t ResolveProviderContextWindow(
         const ProviderState& state,
         const std::string& modelId,
-        std::uint32_t fallback);
+        std::uint32_t fallback,
+        std::uint32_t agentContextWindow = 0);
 
     // Config (public for WebSocket controller access in same TU)
     KernelConfig::AdminServerConfig m_config{};
