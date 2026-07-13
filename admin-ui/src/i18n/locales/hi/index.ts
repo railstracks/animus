@@ -15,6 +15,7 @@ import { agents } from './agents'
 import { activeMemory } from './activeMemory'
 import { channels } from './channels'
 import { charter } from './charter'
+import { templates } from './templates'
 
 export const hi = {
   app,
@@ -34,4 +35,5 @@ export const hi = {
   activeMemory,
   channels,
   charter,
+  templates,
 } as const;

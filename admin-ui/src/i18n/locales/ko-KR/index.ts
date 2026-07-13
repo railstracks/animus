@@ -15,6 +15,7 @@ import { agents } from './agents'
 import { activeMemory } from './activeMemory'
 import { channels } from './channels'
 import { charter } from './charter'
+import { templates } from './templates'
 
 export const koKR = {
   app,
@@ -34,4 +35,5 @@ export const koKR = {
   activeMemory,
   channels,
   charter,
+  templates,
 } as const;
