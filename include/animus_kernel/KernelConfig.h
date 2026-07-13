@@ -118,6 +118,7 @@ struct KernelConfig {
         bool persistToDisk{true};
         std::string providersFilePath;  // resolved from configDir
         std::string authFilePath;      // resolved from configDir
+        std::string modelContextSizesPath;  // static fallback table (configDir/model_context_sizes.json)
     };
 
     struct WebConfig {

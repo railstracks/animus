@@ -194,6 +194,7 @@ static void ResolvePaths(animus::kernel::KernelConfig& cfg,
   // config-dir paths
   cfg.providerStorage.providersFilePath = (cfg.configDir / "providers.json").string();
   cfg.providerStorage.authFilePath = (cfg.configDir / "auth.json").string();
+  cfg.providerStorage.modelContextSizesPath = (cfg.configDir / "model_context_sizes.json").string();
 
   // data-dir paths
   if (cfg.sqlite_path.empty()) {

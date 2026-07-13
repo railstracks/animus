@@ -113,6 +113,12 @@ private:
         ProviderState* stateOut,
         std::string* error) const;
 
+    // Static fallback table: model name -> context window size.
+    // Loaded from model_context_sizes.json at startup.
+    std::unordered_map<std::string, std::uint32_t> m_staticContextSizes;
+    void LoadStaticContextSizes();
+    std::uint32_t LookupStaticContextWindow(const std::string& modelId) const;
+
     KernelConfig::ProviderConfigStorage m_providerStorage{};
     std::string m_defaultProvider;
     std::unordered_map<std::string, ProviderState> m_providersByName;

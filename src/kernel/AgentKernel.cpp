@@ -254,7 +254,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         reg.Register("zai", [](const LLMProviderConfig& cfg) {
             return std::make_unique<ZaiProvider>(cfg);
         });
-        reg.Register("zai-coding", [](const LLMProviderConfig& cfg) {
+        reg.Register("zai-coder", [](const LLMProviderConfig& cfg) {
             return std::make_unique<ZaiCodingProvider>(cfg);
         });
         reg.Register("ollama", [](const LLMProviderConfig& cfg) {

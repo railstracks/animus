@@ -27,6 +27,56 @@ std::string MaskSecret(const std::string& value) {
 void ProviderManager::Configure(const KernelConfig::ProviderConfigStorage& storage) {
     std::lock_guard<std::mutex> lock(m_providerMutex);
     m_providerStorage = storage;
+    LoadStaticContextSizes();
+}
+
+void ProviderManager::LoadStaticContextSizes() {
+    m_staticContextSizes.clear();
+    if (m_providerStorage.modelContextSizesPath.empty()) return;
+
+    std::ifstream file(m_providerStorage.modelContextSizesPath);
+    if (!file.is_open()) {
+        std::cerr << "[provider] No static context sizes file at "
+                  << m_providerStorage.modelContextSizesPath << " (ok, skipping)\n";
+        return;
+    }
+
+    Json::Value root;
+    Json::CharReaderBuilder builder;
+    std::string parseErrors;
+    if (!Json::parseFromStream(builder, file, &root, &parseErrors)) {
+        std::cerr << "[provider] Failed to parse model_context_sizes.json: " << parseErrors << "\n";
+        return;
+    }
+
+    for (const auto& modelId : root.getMemberNames()) {
+        const auto& v = root[modelId];
+        if ((v.isUInt() || v.isInt()) && v.asUInt() > 0) {
+            m_staticContextSizes[modelId] = v.asUInt();
+        }
+    }
+    std::cerr << "[provider] Loaded " << m_staticContextSizes.size()
+              << " static context size entries\n";
+}
+
+std::uint32_t ProviderManager::LookupStaticContextWindow(
+    const std::string& modelId) const {
+    if (modelId.empty()) return 0;
+
+    // Direct lookup
+    auto it = m_staticContextSizes.find(modelId);
+    if (it != m_staticContextSizes.end()) return it->second;
+
+    // Try suffix matching for vendor-prefixed names.
+    // e.g. provider returns "deepseek/deepseek-v4-flash" -> try "deepseek-v4-flash"
+    auto slashPos = modelId.find('/');
+    if (slashPos != std::string::npos && slashPos + 1 < modelId.size()) {
+        std::string suffix = modelId.substr(slashPos + 1);
+        it = m_staticContextSizes.find(suffix);
+        if (it != m_staticContextSizes.end()) return it->second;
+    }
+
+    return 0;
 }
 
 bool ProviderManager::LoadFromDisk(std::string* error) {
@@ -663,8 +713,8 @@ bool ProviderManager::ValidateProviderPayload(
             return false;
         }
         const std::uint32_t value = context.asUInt();
-        if (value == 0U || value > 4000000U) {
-            if (error) *error = "default_context_window must be between 1 and 4000000";
+        if (value == 0U || value > 50000000U) {
+            if (error) *error = "default_context_window must be between 1 and 50000000";
             return false;
         }
     }
@@ -681,8 +731,8 @@ bool ProviderManager::ValidateProviderPayload(
                 return false;
             }
             const std::uint32_t parsed = value.asUInt();
-            if (parsed == 0U || parsed > 4000000U) {
-                if (error) *error = "model_context_windows values must be between 1 and 4000000";
+            if (parsed == 0U || parsed > 50000000U) {
+                if (error) *error = "model_context_windows values must be between 1 and 50000000";
                 return false;
             }
         }
@@ -963,7 +1013,19 @@ bool ProviderManager::RefreshProviderCapabilities(
     if (fetchedOut) {
         *fetchedOut = ok;
     }
-    const auto& caps = baseProvider->GetCapabilities();
+    auto caps = baseProvider->GetCapabilities();  // copy — may mutate
+
+    // If the provider didn't return a context_length, fall back to the
+    // static lookup table (built from OpenRouter's published model data).
+    if (caps.context_length == 0U) {
+        std::uint32_t fallback = LookupStaticContextWindow(modelId);
+        if (fallback > 0U) {
+            caps.context_length = fallback;
+            std::cerr << "[provider] Context window for '" << modelId
+                      << "' from static lookup: " << fallback << "\n";
+        }
+    }
+
     *capabilitiesOut = caps;
 
     ProviderState updated;
