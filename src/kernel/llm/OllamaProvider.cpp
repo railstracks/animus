@@ -178,7 +178,7 @@ bool OllamaProvider::FetchCapabilities(const std::string& modelId) {
     }
     std::string showUrl = nativeBase + "/api/show";
     std::string showBody = "{\"model\":\"" + modelId + "\"}";
-    std::vector<pair<string, std::string>> showHeaders;
+    std::vector<std::pair<std::string, std::string>> showHeaders;
     showHeaders.emplace_back("Content-Type", "application/json");
     showHeaders.emplace_back("Accept", "application/json");
 
