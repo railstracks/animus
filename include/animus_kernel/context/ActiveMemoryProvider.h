@@ -1,6 +1,7 @@
 #pragma once
 
 #include "animus_kernel/ContextProviderRegistry.h"
+#include "animus_kernel/TokenEstimate.h"
 
 namespace animus::kernel {
 
@@ -83,9 +84,9 @@ private:
                            const SessionAccess& session,
                            const std::vector<std::string>& keywords) const;
 
-    // Token estimation helper (4 chars ≈ 1 token)
+    // Token estimation — delegates to the shared utility
     static std::size_t EstimateTokens(const std::string& text) {
-        return text.size() / 4 + 1;
+        return TokenEstimate::Estimate(text);
     }
 
     const memory::MemoryStore* m_memoryStore;

@@ -1,13 +1,13 @@
 #include "animus_kernel/PromptAssembler.h"
 #include "animus_kernel/Session.h"
+#include "animus_kernel/TokenEstimate.h"
 
 #include <chrono>
 
 namespace animus::kernel {
 
 std::size_t TokenEstimator::Estimate(const std::string& text) const {
-    if (text.empty()) return 0;
-    return text.size() / 3 + 1;
+    return TokenEstimate::Estimate(text);
 }
 
 std::size_t TokenEstimator::EstimateTurns(const std::vector<SessionTurn>& turns) const {

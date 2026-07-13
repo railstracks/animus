@@ -1,4 +1,5 @@
 #include "animus_kernel/Session.h"
+#include "animus_kernel/TokenEstimate.h"
 
 #include <chrono>
 #include <sstream>
@@ -58,6 +59,12 @@ void Session::AddTurn(SessionTurn turn) {
         turn.turn_id = m_nextTurnId++;
     } else if (turn.turn_id >= m_nextTurnId) {
         m_nextTurnId = turn.turn_id + 1;
+    }
+    // Populate token_count cache if not already set.
+    // This ensures every turn in the DB has a reliable token estimate
+    // for budget-aware operations (consolidation intake, context gauge).
+    if (turn.token_count == 0) {
+        turn.token_count = TokenEstimate::Estimate(turn.content);
     }
     m_lastActiveUnixMs = (turn.unix_ms != 0) ? turn.unix_ms : NowUnixMs();
     m_turns.push_back(std::move(turn));

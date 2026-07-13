@@ -55,6 +55,7 @@ public:
         SessionTurnId turn_id{0};
         std::string role;
         std::string content;
+        std::size_t token_count{0};
     };
     virtual std::vector<UnprocessedTurn> GetUnprocessedTurns(
         const std::string& agentId, int limit) = 0;

@@ -3,6 +3,7 @@
 #include "animus_kernel/CompactionService.h"
 #include "animus_kernel/ISessionStore.h"
 #include "animus_kernel/SessionManager.h"
+#include "animus_kernel/TokenEstimate.h"
 #include <iostream>
 #include "animus_kernel/PromptAssembler.h"
 #include "animus_kernel/IDataStore.h"
@@ -17,10 +18,7 @@ namespace animus::kernel {
 // ============================================================================
 
 std::size_t CompactionService::EstimateTokens(const std::string& text) {
-    if (text.empty()) return 0;
-    // Rough estimate: ~3.3 chars per token for English/mixed content.
-    // Slightly more generous than PromptAssembler's /3 to avoid under-estimating.
-    return text.size() / 3 + 1;
+    return TokenEstimate::Estimate(text);
 }
 
 // ============================================================================
