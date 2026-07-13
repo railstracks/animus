@@ -6,7 +6,7 @@ import { apiGet, apiRequest } from '../lib/api';
 import { LocaleSelectItems, setLocale, type SupportedLocale, i18n } from '../i18n';
 
 const router = useRouter();
-const { t } = useI18n();
+const { t, tm } = useI18n();
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,9 +60,9 @@ const selectedCategory = ref<string>('');
 const selectedTemplate = ref<TemplateKey | ''>('');
 
 const categoryList = computed(() => [
-  { key: 'personal', ...t('templates.categories.personal') },
-  { key: 'enterprise', ...t('templates.categories.enterprise') },
-  { key: 'advanced', ...t('templates.categories.advanced') },
+  { key: 'personal', ...tm('templates.categories.personal') },
+  { key: 'enterprise', ...tm('templates.categories.enterprise') },
+  { key: 'advanced', ...tm('templates.categories.advanced') },
 ] as { key: string; title: string; description: string }[]);
 
 const templateList = computed(() => {
@@ -73,7 +73,7 @@ const templateList = computed(() => {
     'developmentAssistant', 'networkAutomation', 'autonomousConstruct', 'integratedAI',
   ];
   return all
-    .map(k => ({ key: k, ...t(`templates.templates.${k}`) }) as { key: TemplateKey; name: string; category: string; description: string; tools: string[]; systemPrompt: string })
+    .map(k => ({ key: k, ...tm(`templates.templates.${k}`) }) as { key: TemplateKey; name: string; category: string; description: string; tools: string[]; systemPrompt: string })
     .filter(tpl => tpl.category === selectedCategory.value);
 });
 
@@ -88,7 +88,7 @@ function selectTemplate(tpl: TemplateKey) {
 
 function applyTemplate() {
   if (!selectedTemplate.value) { nextStep(); return; }
-  const tpl = t(`templates.templates.${selectedTemplate.value}`) as any;
+  const tpl = tm(`templates.templates.${selectedTemplate.value}`) as any;
   // Pre-fill agent form with template defaults
   if (tpl.name && !agentForm.value.name) {
     agentForm.value.name = tpl.name;
