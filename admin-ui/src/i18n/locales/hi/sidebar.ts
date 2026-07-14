@@ -14,6 +14,7 @@ export const sidebar = {
       providers: 'प्रदाता',
       nodes: 'नोड्स',
       sessionReports: 'सत्र रिपोर्ट',
+      promptLogs: 'प्रॉम्प्ट लॉग',
       agents: 'एजेंट',
       gallivanting: 'वीरतापूर्ण',
       diary: 'डायरी',

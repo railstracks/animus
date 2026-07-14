@@ -1237,6 +1237,7 @@ void AdminServer::RegisterHandlersOnce() {
         RegisterRoutesChannels();
         RegisterRoutesNodes();
         RegisterRoutesSearch();
+        RegisterRoutesPromptLogs();
     });
 }
 

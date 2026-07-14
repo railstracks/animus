@@ -73,4 +73,8 @@ void AdminServer::RegisterRoutesSearch() {
 #include "kernel/admin/internal/AdminServerRoutesSearch.inc"
 }
 
+void AdminServer::RegisterRoutesPromptLogs() {
+#include "kernel/admin/internal/AdminServerRoutesPromptLogs.inc"
+}
+
 } // namespace animus::kernel

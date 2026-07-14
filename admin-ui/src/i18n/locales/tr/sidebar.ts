@@ -14,6 +14,7 @@ export const sidebar = {
       providers: 'Sağlayıcılar',
       nodes: 'Düğümler',
       sessionReports: 'Oturum Raporları',
+      promptLogs: 'Prompt Günlükleri',
       agents: 'Temsilciler',
       gallivanting: 'Galvanting',
       diary: 'Günlük',

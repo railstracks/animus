@@ -14,6 +14,7 @@ export const sidebar = {
       providers: 'ספקים',
       nodes: 'צמתים',
       sessionReports: 'דוחות מושב',
+      promptLogs: 'יומני פרומפט',
       agents: 'סוכנים',
       gallivanting: 'גליבנט',
       diary: 'יומן',

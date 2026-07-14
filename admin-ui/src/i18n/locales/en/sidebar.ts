@@ -15,6 +15,7 @@ export const sidebar = {
       webSearch: 'Web Search',
       nodes: 'Nodes',
       sessionReports: 'Session Reports',
+      promptLogs: 'Prompt Logs',
       agents: 'Agents',
       gallivanting: 'Gallivanting',
       diary: 'Diary',

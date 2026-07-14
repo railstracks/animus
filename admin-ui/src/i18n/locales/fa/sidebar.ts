@@ -14,6 +14,7 @@ export const sidebar = {
       providers: 'ارائه دهندگان',
       nodes: 'گره ها',
       sessionReports: 'گزارش های جلسه',
+      promptLogs: 'لاگ‌های پرامپت',
       agents: 'عوامل',
       gallivanting: 'گالیوانتینگ',
       diary: 'دفتر خاطرات',

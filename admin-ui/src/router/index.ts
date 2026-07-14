@@ -19,6 +19,7 @@ import SchedulerView from '../views/SchedulerView.vue';
 import ActiveMemoryView from '../views/ActiveMemoryView.vue';
 import NodesView from '../views/NodesView.vue';
 import SessionReportsView from '../views/SessionReportsView.vue';
+import PromptLogsView from '../views/PromptLogsView.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -41,7 +42,8 @@ const router = createRouter({
     { path: '/gallivanting', name: 'gallivanting', component: GallivantingView },
     { path: '/active-memory', name: 'active-memory', component: ActiveMemoryView },
     { path: '/nodes', name: 'nodes', component: NodesView },
-    { path: '/session-reports', name: 'session-reports', component: SessionReportsView }
+    { path: '/session-reports', name: 'session-reports', component: SessionReportsView },
+    { path: '/prompt-logs', name: 'prompt-logs', component: PromptLogsView }
   ]
 });
 

@@ -14,6 +14,7 @@ export const sidebar = {
       providers: '공급자',
       nodes: '노드',
       sessionReports: '세션 보고서',
+      promptLogs: '프롬프트 로그',
       agents: '에이전트',
       gallivanting: '갈리반팅',
       diary: '일기',

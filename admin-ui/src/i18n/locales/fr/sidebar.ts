@@ -15,6 +15,7 @@ export const sidebar = {
       providers: 'Fournisseurs',
       nodes: 'Nœuds',
       sessionReports: 'Rapports de session',
+      promptLogs: 'Journaux de Prompts',
       agents: 'Agents',
       gallivanting: 'Galotant',
       diary: 'Journal',

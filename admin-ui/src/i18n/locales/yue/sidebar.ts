@@ -14,6 +14,7 @@ export const sidebar = {
       providers: '供應商',
       nodes: '節點',
       sessionReports: '會議報告',
+      promptLogs: '提示詞日誌',
       agents: '代理商',
       gallivanting: '加利萬廷',
       diary: '日記',

@@ -18,6 +18,7 @@ const links = [
   { titleKey: 'sidebar.links.webSearch', path: '/web-search', icon: 'mdi-magnify' },
   { titleKey: 'sidebar.links.nodes', path: '/nodes', icon: 'mdi-lan' },
   { titleKey: 'sidebar.links.sessionReports', path: '/session-reports', icon: 'mdi-file-document-multiple-outline' },
+  { titleKey: 'sidebar.links.promptLogs', path: '/prompt-logs', icon: 'mdi-chart-line-variant' },
   { titleKey: 'sidebar.links.agents', path: '/agents', icon: 'mdi-account-group' },
   { titleKey: 'sidebar.links.gallivanting', path: '/gallivanting', icon: 'mdi-walk' },
   { titleKey: 'sidebar.links.diary', path: '/diary', icon: 'mdi-notebook' },

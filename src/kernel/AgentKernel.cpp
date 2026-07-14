@@ -359,6 +359,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         m_promptLogStore = new PromptLogStore(m_dataStore);
         m_chainRunner->SetPromptLogStore(m_promptLogStore);
         m_chainRunner->SetPromptLogLevel(ParsePromptLogLevel(config.promptLogLevel));
+        m_adminServer->SetPromptLogStore(m_promptLogStore);
 
         // --- Context Provider Registry ---
         m_contextRegistry = new ContextProviderRegistry();

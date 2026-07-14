@@ -14,6 +14,7 @@ export const sidebar = {
       providers: 'مقدمي الخدمات',
       nodes: 'العقد',
       sessionReports: 'تقارير الجلسة',
+      promptLogs: 'سجلات المطالبات',
       agents: 'الوكلاء',
       gallivanting: 'الركض',
       diary: 'يوميات',

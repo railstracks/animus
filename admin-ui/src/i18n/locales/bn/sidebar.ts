@@ -14,6 +14,7 @@ export const sidebar = {
       providers: 'প্রদানকারী',
       nodes: 'নোড',
       sessionReports: 'সেশন রিপোর্ট',
+      promptLogs: 'প্রম্পট লগ',
       agents: 'এজেন্ট',
       gallivanting: 'গ্যালিভেন্টিং',
       diary: 'ডায়েরি',

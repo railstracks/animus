@@ -14,6 +14,7 @@ export const sidebar = {
       providers: 'Nhà cung cấp',
       nodes: 'Nút',
       sessionReports: 'Báo cáo phiên',
+      promptLogs: 'Nhật ký Prompt',
       agents: 'Đại lý',
       gallivanting: 'ga lăng',
       diary: 'Nhật ký',

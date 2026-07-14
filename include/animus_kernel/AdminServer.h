@@ -58,6 +58,7 @@ class SessionNotesStore;
 class SessionReportStore;
 class ContextProviderRegistry;
 class SessionTagsStore;
+class PromptLogStore;
 
 class AdminServer {
 public:
@@ -178,6 +179,7 @@ public:
     void SetScheduler(Scheduler* scheduler) { m_scheduler = scheduler; }
     void SetDiaryStore(DiaryStore* store) { m_diaryManager.Configure(store); }
     void SetGallivantingStore(GallivantingStore* store) { m_gallivantingStore = store; }
+    void SetPromptLogStore(PromptLogStore* store) { m_promptLogStore = store; }
     void SetScriptStore(ScriptStore* store) { m_scriptStore = store; }
     void SetLuaScriptDir(const std::string& dir) { m_luaScriptDir = dir; }
     void SetChannelsTool(ChannelsTool* tool) { m_channelsTool = tool; }
@@ -214,6 +216,7 @@ public:
     ConstitutionManager m_constitutionManager{};
     DiaryManager m_diaryManager{};
     GallivantingStore* m_gallivantingStore{nullptr};
+    PromptLogStore* m_promptLogStore{nullptr};
     ScriptStore* m_scriptStore{nullptr};
     std::string m_luaScriptDir{"state/lua"};
     ChannelsTool* m_channelsTool{nullptr};
@@ -246,6 +249,7 @@ private:
     void RegisterRoutesChannels();
     void RegisterRoutesNodes();
     void RegisterRoutesSearch();
+    void RegisterRoutesPromptLogs();
     void SyncIrcInterfaces();
     void RefreshChatSessionServiceDependencies();
 

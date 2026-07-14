@@ -14,6 +14,7 @@ export const sidebar = {
       providers: 'Masu bayarwa',
       nodes: 'Nodes',
       sessionReports: 'Rahoton Zama',
+      promptLogs: 'Tarihin Prompt',
       agents: 'Wakilai',
       gallivanting: 'Gallivanting',
       diary: 'Diary',

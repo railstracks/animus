@@ -14,6 +14,7 @@ export const sidebar = {
       providers: 'អ្នកផ្តល់សេវា',
       nodes: 'ថ្នាំង',
       sessionReports: 'របាយការណ៍សម័យ',
+      promptLogs: 'កំណត់ហេតុប្រអប់បញ្ជា',
       agents: 'ភ្នាក់ងារ',
       gallivanting: 'រំភើបចិត្ត',
       diary: 'កំណត់ហេតុប្រចាំថ្ងៃ',

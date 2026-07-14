@@ -14,6 +14,7 @@ export const sidebar = {
       providers: 'Провайдеры',
       nodes: 'Узлы',
       sessionReports: 'Отчеты о сеансах',
+      promptLogs: "Журнал промптов",
       agents: 'Агенты',
       gallivanting: 'Неистовый',
       diary: 'Дневник',
