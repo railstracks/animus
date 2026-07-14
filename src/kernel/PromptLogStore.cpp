@@ -171,11 +171,11 @@ std::vector<PromptLogEntry> PromptLogStore::QueryByAgent(
         if (!stmt->IsColumnNull(2)) e.session_id = stmt->ColumnInt64(2);
         e.provider = stmt->ColumnText(3);
         e.model = stmt->ColumnText(4);
-        e.prompt_tokens = stmt->ColumnInt(5);
-        e.completion_tokens = stmt->ColumnInt(6);
-        e.total_tokens = stmt->ColumnInt(7);
-        e.latency_ms = stmt->ColumnInt(8);
-        e.chain_step = stmt->ColumnInt(9);
+        e.prompt_tokens = stmt->ColumnInt64(5);
+        e.completion_tokens = stmt->ColumnInt64(6);
+        e.total_tokens = stmt->ColumnInt64(7);
+        e.latency_ms = stmt->ColumnInt64(8);
+        e.chain_step = stmt->ColumnInt64(9);
         e.created_at = stmt->ColumnText(10);
         if (!stmt->IsColumnNull(11)) e.prompt_content = stmt->ColumnText(11);
         if (!stmt->IsColumnNull(12)) e.response_content = stmt->ColumnText(12);
@@ -216,10 +216,10 @@ PromptLogStore::TokenUsageSummary PromptLogStore::GetUsageSummary(
     if (!to_iso.empty())   stmt->BindText(idx++, to_iso);
 
     if (stmt->Step()) {
-        summary.total_calls = stmt->ColumnInt(0);
-        summary.total_prompt_tokens = stmt->ColumnInt(1);
-        summary.total_completion_tokens = stmt->ColumnInt(2);
-        summary.total_tokens = stmt->ColumnInt(3);
+        summary.total_calls = stmt->ColumnInt64(0);
+        summary.total_prompt_tokens = stmt->ColumnInt64(1);
+        summary.total_completion_tokens = stmt->ColumnInt64(2);
+        summary.total_tokens = stmt->ColumnInt64(3);
         summary.avg_latency_ms = stmt->ColumnDouble(4);
     }
 
