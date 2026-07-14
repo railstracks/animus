@@ -156,6 +156,8 @@ const formData = ref({
   nextcloud_group_mention_trigger: '',
   // Common: message batching (Ticket 114)
   min_response_interval: 0,
+  // Common: interjection (Ticket 115)
+  allow_interjection: true,
 });
 
 const isNew = computed(() => editing.value == null);
@@ -259,6 +261,7 @@ function resetForm(): void {
     nextcloud_respond_in_group_on_mention: true,
     nextcloud_group_mention_trigger: '',
     min_response_interval: 0,
+    allow_interjection: true,
   };
 }
 
@@ -568,6 +571,7 @@ function openEdit(item: ChannelInfo): void {
 
   // Load common fields (Ticket 114)
   formData.value.min_response_interval = Number(cfg.min_response_interval ?? 0);
+  formData.value.allow_interjection = cfg.allow_interjection !== false; // default true
 
   // Reset WhatsApp QR state
   qrUrl.value = '';
@@ -724,6 +728,7 @@ async function submitForm(): Promise<void> {
     const config = buildConfig();
     // Add common fields that apply to all channel types (Ticket 114)
     config.min_response_interval = Number(formData.value.min_response_interval) || 0;
+    config.allow_interjection = formData.value.allow_interjection === true;
     if (isNew.value) {
       await apiRequest('POST', '/api/v1/channels', {
         name: formData.value.name,
@@ -1135,6 +1140,17 @@ onMounted(async () => {
               hint="Seconds between responses. 0 = immediate. Incoming messages during the wait are batched."
               density="comfortable"
               class="mb-2"
+            />
+
+            <!-- Common: allow interjection (Ticket 115) -->
+            <v-switch
+              v-model="formData.allow_interjection"
+              :label="t('channels.form.allowInterjection')"
+              color="primary"
+              hint="When enabled, new messages are injected into the agent's active processing. Disable for community channels."
+              density="comfortable"
+              class="mb-2"
+              inset
             />
           </v-card-text>
           <v-card-actions>

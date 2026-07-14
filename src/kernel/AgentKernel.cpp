@@ -998,6 +998,9 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 ExecuteChannelDispatch(sessionKey, concatenatedMessage, replyTarget);
             });
 
+        // Wire MessageQueue into ChainRunner for interjection support
+        m_chainRunner->SetMessageQueue(m_messageQueue.get());
+
         auto dispatch = [this](const std::string& agentId,
                                const std::string& sessionKey,
                                const std::string& message,
@@ -1021,6 +1024,17 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
 
                 // Check if a chain is currently active on this session
                 std::string queueKey = "channel:" + sessionKey;
+
+                // Set interjection mode from channel config (Ticket 115)
+                // Default: enabled. Community channels may disable it.
+                bool allowInterjection = true;
+                if (m_channelManager) {
+                    auto ch = m_channelManager->GetChannel(replyTarget.channel_name);
+                    if (ch) {
+                        allowInterjection = ch->config.get("allow_interjection", true).asBool();
+                    }
+                }
+                m_messageQueue->SetInterjectionEnabled(queueKey, allowInterjection);
 
                 // Always push to queue — the queue handles the logic:
                 // - If chain is active: accumulate (will be flushed when chain ends)

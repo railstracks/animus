@@ -340,6 +340,22 @@ ChainResult ChainRunner::ExecuteOnSession(
             result.response = userVisibleText;
         }
 
+        // Interjection: check for messages that arrived during chain execution
+        if (shouldContinue && m_messageQueue) {
+            const auto& queueKey = session.Key().connector;
+            if (m_messageQueue->HasPending(queueKey)) {
+                std::string injected = m_messageQueue->DrainInterjection(queueKey);
+                if (!injected.empty()) {
+                    SessionTurn interjectionTurn;
+                    interjectionTurn.role = "user";
+                    interjectionTurn.content = injected;
+                    interjectionTurn.unix_ms = NowUnixMs();
+                    session.AddTurn(std::move(interjectionTurn));
+                    std::cerr << "[chain] Injected interjection: " << injected.size() << " chars" << std::endl;
+                }
+            }
+        }
+
         if (!shouldContinue) {
             if (result.response.empty() && !response.content.empty()) {
                 result.response = response.content;
@@ -590,6 +606,23 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
             std::cerr << "[chain] tool call budget exhausted (" << totalToolCalls
                       << "/" << resolvedMaxToolCallsPerChain << ")" << std::endl;
             shouldContinue = false;
+        }
+
+        // Interjection: check for messages that arrived during chain execution
+        if (shouldContinue && m_messageQueue) {
+            const auto& queueKey = session.Key().connector;
+            if (m_messageQueue->HasPending(queueKey)) {
+                std::string injected = m_messageQueue->DrainInterjection(queueKey);
+                if (!injected.empty()) {
+                    SessionTurn interjectionTurn;
+                    interjectionTurn.role = "user";
+                    interjectionTurn.content = injected;
+                    interjectionTurn.unix_ms = NowUnixMs();
+                    session.AddTurn(std::move(interjectionTurn));
+                    std::cerr << "[chain/stream] Injected interjection: "
+                              << injected.size() << " chars" << std::endl;
+                }
+            }
         }
 
         if (!shouldContinue) {

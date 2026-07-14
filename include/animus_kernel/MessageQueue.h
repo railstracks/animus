@@ -61,6 +61,15 @@ public:
     // Check if a session has pending messages.
     bool HasPending(const std::string& sessionKey) const;
 
+    // Enable/disable interjection for a session.
+    // When enabled, ChainRunner drains pending messages between chain steps.
+    void SetInterjectionEnabled(const std::string& sessionKey, bool enabled);
+
+    // Drain pending messages for interjection (returns empty string if
+    // interjection is disabled or no messages pending).
+    // Formats with interjection header.
+    std::string DrainInterjection(const std::string& sessionKey);
+
     // Get pending count for a session.
     std::size_t PendingCount(const std::string& sessionKey) const;
 
@@ -81,6 +90,7 @@ private:
         std::chrono::steady_clock::time_point timer_deadline;
         bool chain_active{false};
         bool timer_running{false};
+        bool allow_interjection{false};
         int interval_seconds{0};
     };
 

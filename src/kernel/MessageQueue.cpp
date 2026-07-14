@@ -87,6 +87,25 @@ std::string MessageQueue::Drain(const std::string& sessionKey) {
     return result;
 }
 
+void MessageQueue::SetInterjectionEnabled(const std::string& sessionKey, bool enabled) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto& state = m_sessions[sessionKey];
+    state.allow_interjection = enabled;
+}
+
+std::string MessageQueue::DrainInterjection(const std::string& sessionKey) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_sessions.find(sessionKey);
+    if (it == m_sessions.end() || !it->second.allow_interjection || it->second.messages.empty()) {
+        return "";
+    }
+    std::string body = ConcatenateMessages(it->second.messages);
+    it->second.messages.clear();
+    // Don't clear timer_running — the chain is still active;
+    // NotifyChainEnd will handle cooldown after chain completes.
+    return "[New messages arrived while you were working:]\n" + body;
+}
+
 void MessageQueue::NotifyChainStart(const std::string& sessionKey) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto& state = m_sessions[sessionKey];

@@ -16,6 +16,7 @@
 #include "animus_kernel/SessionNotesStore.h"
 #include "animus_kernel/ContextProviderRegistry.h"
 #include "animus_kernel/NodeManager.h"
+#include "animus_kernel/MessageQueue.h"
 
 #include "animus_kernel/llm/LLMProviderConfig.h"
 
@@ -115,6 +116,9 @@ public:
     void SetContextRegistry(ContextProviderRegistry* registry) { m_contextRegistry = registry; }
     void SetNodeManager(NodeManager* nm) { m_nodeManager = nm; }
 
+    // Set the message queue for interjection (injecting messages into active chains).
+    void SetMessageQueue(MessageQueue* mq) { m_messageQueue = mq; }
+
     // Configuration
     void SetReasoningEnabled(bool enabled);
     bool IsReasoningEnabled() const { return m_reasoningEnabled; }
@@ -199,6 +203,9 @@ private:
 
     // Node manager for remote tool execution (may be null if not set)
     NodeManager* m_nodeManager{nullptr};
+
+    // Message queue for interjection (may be null if not set)
+    MessageQueue* m_messageQueue{nullptr};
 
     // Thinking mode (replaces old reasoning mode)
     bool m_reasoningEnabled{false};
