@@ -17,6 +17,7 @@
 #include "animus_kernel/lua/FilesystemScriptLoader.h"
 #include "animus_kernel/AgentConfigStore.h"
 #include "animus_kernel/ChannelManager.h"
+#include "animus_kernel/MessageQueue.h"
 
 namespace animus::kernel {
 
@@ -85,6 +86,16 @@ private:
     void SendAutoReply(const ChannelManager::ReplyTarget& target,
                        const std::string& text);
 
+    /// Execute a channel dispatch: run the LLM chain on the session and send the reply.
+    /// Used by both the direct dispatch path and the MessageQueue flush callback.
+    void ExecuteChannelDispatch(
+        const std::string& sessionKey,
+        const std::string& message,
+        const ChannelManager::ReplyTarget& replyTarget);
+
+    /// Read min_response_interval from a channel's config. Returns 0 if not set.
+    int GetChannelInterval(const std::string& channelName) const;
+
     /// Resolve the effective context window for an agent: provider window
     /// clamped to the agent's configured context_window if set.
     std::size_t ResolveContextWindow(const std::string& agentId,
@@ -132,6 +143,9 @@ private:
     AgentConfigStore* m_configStore{nullptr};          // persistent agent config (key-value)
     ChannelsTool* m_channelsTool{nullptr};                    // composite social tool
     ChannelManager* m_channelManager{nullptr};             // unified channel management
+    std::unique_ptr<MessageQueue> m_messageQueue;            // per-session message batching queue
+    std::mutex m_pendingReplyTargetsMutex;                   // guards m_pendingReplyTargets
+    std::unordered_map<std::string, ChannelManager::ReplyTarget> m_pendingReplyTargets;
     std::chrono::steady_clock::time_point m_startedAt{};
     bool m_running{false};
 };

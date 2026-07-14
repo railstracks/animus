@@ -117,6 +117,7 @@ AgentKernel::~AgentKernel() {
     Stop();
 
     delete m_channelManager; m_channelManager = nullptr;
+    if (m_messageQueue) { m_messageQueue->Shutdown(); m_messageQueue.reset(); }
     delete m_consolidation; m_consolidation = nullptr;
     delete m_chainRunner;
     m_chainRunner = nullptr;
@@ -976,6 +977,27 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
     // --- Channel Manager (Ticket 056) ---
     // Unified management for all communication channels (IRC, Telegram, VK, etc.)
     {
+        // Create the message queue first — the dispatch lambda captures it.
+        // The flush callback retrieves the stored ReplyTarget and calls ExecuteChannelDispatch.
+        m_messageQueue = std::make_unique<MessageQueue>(
+            [this](const std::string& queueKey, const std::string& concatenatedMessage) {
+                // Retrieve the stored ReplyTarget for this session
+                ChannelManager::ReplyTarget replyTarget;
+                {
+                    std::lock_guard<std::mutex> lock(m_pendingReplyTargetsMutex);
+                    auto it = m_pendingReplyTargets.find(queueKey);
+                    if (it != m_pendingReplyTargets.end()) {
+                        replyTarget = it->second;
+                    }
+                }
+                // Strip the "channel:" prefix to get the session key
+                std::string sessionKey = queueKey;
+                if (sessionKey.size() > 8 && sessionKey.substr(0, 8) == "channel:") {
+                    sessionKey = sessionKey.substr(8);
+                }
+                ExecuteChannelDispatch(sessionKey, concatenatedMessage, replyTarget);
+            });
+
         auto dispatch = [this](const std::string& agentId,
                                const std::string& sessionKey,
                                const std::string& message,
@@ -984,6 +1006,53 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             std::cerr << "[channels:dispatch] agentId=" << agentId
                       << " sessionKey=" << sessionKey
                       << " type=" << sessionType << std::endl;
+
+            // Check if this channel has a minimum response interval configured
+            const int interval = GetChannelInterval(replyTarget.channel_name);
+
+            if (interval > 0 && m_messageQueue) {
+                // Determine sender label — empty for DM channels, populated for community
+                // Heuristic: if sessionType is "chat" and it's a DM channel (IRC nick,
+                // Telegram private, Discord DM), sender is empty. For group channels,
+                // we'd need the sender name from the channel adapter.
+                // For now, use empty sender — channel adapters that want sender labels
+                // can be updated to pass the sender name through the dispatch callback.
+                std::string sender;  // TODO: channel adapters should provide this
+
+                // Check if a chain is currently active on this session
+                std::string queueKey = "channel:" + sessionKey;
+
+                // Always push to queue — the queue handles the logic:
+                // - If chain is active: accumulate (will be flushed when chain ends)
+                // - If no chain and no timer: set timer, accumulate
+                // - If timer running: accumulate
+                // - If max queued hit: force flush
+                // The flush callback will call ExecuteChannelDispatch.
+                // But we need to preserve the ReplyTarget for the flush callback...
+                // Store it in a per-session map.
+                {
+                    std::lock_guard<std::mutex> lock(m_pendingReplyTargetsMutex);
+                    m_pendingReplyTargets[queueKey] = replyTarget;
+                }
+
+                auto now = std::chrono::system_clock::now();
+                auto unixMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now.time_since_epoch()).count();
+
+                m_messageQueue->Push(queueKey, sender, message,
+                    static_cast<std::uint64_t>(unixMs),
+                    interval,
+                    50);  // max queued — TODO: read from channel config
+
+                // If no chain is active and no timer is running, the Push already
+                // started a timer. When it fires, the flush callback will execute.
+                // If a chain IS active, the message will be flushed when the chain ends
+                // and the cooldown expires.
+                return;
+            }
+
+            // No interval configured — dispatch directly (existing behavior)
+            // Ensure the session has the right agent assigned
             SessionKey key{"channel:" + sessionKey, ""};
             auto session = m_sessionManager->GetOrCreate(key);
             if (!session) return;
@@ -999,88 +1068,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                           << session->AgentId() << ", skipping dispatch" << std::endl;
             }
 
-            // Resolve provider — same logic as IRC dispatch in AdminServer
-            std::string providerId = session->ProviderId();
-            if (providerId.empty() && m_agentStore && !session->AgentId().empty()) {
-                auto agent = m_agentStore->GetById(session->AgentId());
-                if (agent && !agent->default_provider.empty()) {
-                    providerId = agent->default_provider;
-                }
-            }
-            if (providerId.empty() && m_adminServer) {
-                providerId = m_adminServer->GetDefaultProviderId();
-            }
-            if (providerId.empty()) {
-                std::cerr << "[channels:dispatch] No provider resolved for agentId="
-                          << agentId << " — dropping message" << std::endl;
-                return;
-            }
-
-            std::string registryKey = providerId;
-            ProviderState providerState;
-            bool hasProviderState = false;
-            if (m_adminServer) {
-                auto ps = m_adminServer->GetProvider(providerId);
-                if (ps) {
-                    providerState = *ps;
-                    hasProviderState = true;
-                    registryKey = providerState.providerType.empty()
-                        ? providerState.providerId : providerState.providerType;
-                }
-            }
-
-            // Throttle
-            SlotGuard throttleGuard;
-            if (m_providerThrottle) {
-                throttleGuard = m_providerThrottle->Acquire(providerId);
-            }
-
-            std::string model = hasProviderState ? providerState.defaultModel : "";
-            if (m_agentStore && !session->AgentId().empty()) {
-                auto agent = m_agentStore->GetById(session->AgentId());
-                if (agent && !agent->default_model.empty()) {
-                    model = agent->default_model;
-                }
-            }
-            std::size_t contextWindow = ResolveContextWindow(session->AgentId(), providerId, model);
-            if (model.empty()) {
-                model = "gpt-4o";
-            }
-
-            const std::string identity = m_config.agent.identity;
-            m_jobs.EnqueueInLane(
-                ::animus::jobs::JobLane::Cognition,
-                [this, session, message, identity, registryKey, providerId, model, contextWindow, replyTarget]() {
-                    auto sessionAccess = SessionAccess(session, SessionAccessMode::ReadWrite);
-                    auto result = m_chainRunner->ExecuteOnSession(
-                        sessionAccess,
-                        message,
-                        identity,
-                        registryKey,
-                        providerId,
-                        model,
-                        contextWindow);
-                    if (result.success && m_sessionManager) {
-                        m_sessionManager->FlushSession(session->Id());
-
-                        // Trigger compaction if needed
-                        if (result.triggered_compaction && m_compactionService) {
-                            m_compactionService->CompactIfNeeded(
-                                session->Id(),
-                                identity,
-                                registryKey,
-                                model,
-                                contextWindow);
-                        }
-                    }
-                    if (!result.success) {
-                        std::cerr << "[channels:dispatch] LLM execution failed: "
-                                  << result.error << std::endl;
-                    }
-                    if (result.success && !result.response.empty()) {
-                        SendAutoReply(replyTarget, result.response);
-                    }
-                });
+            ExecuteChannelDispatch(sessionKey, message, replyTarget);
         };
 
         m_channelManager = new ChannelManager(
@@ -1115,6 +1103,115 @@ void AgentKernel::SendAutoReply(const ChannelManager::ReplyTarget& target,
                                    const std::string& text) {
     if (!m_channelManager) return;
     m_channelManager->SendReply(target, text);
+}
+
+int AgentKernel::GetChannelInterval(const std::string& channelName) const {
+    if (!m_channelManager) return 0;
+    auto ch = m_channelManager->GetChannel(channelName);
+    if (!ch) return 0;
+    return ch->config.get("min_response_interval", 0).asInt();
+}
+
+void AgentKernel::ExecuteChannelDispatch(
+        const std::string& sessionKey,
+        const std::string& message,
+        const ChannelManager::ReplyTarget& replyTarget) {
+    SessionKey key{"channel:" + sessionKey, ""};
+    auto session = m_sessionManager->GetOrCreate(key);
+    if (!session) return;
+
+    // Resolve provider
+    std::string providerId = session->ProviderId();
+    if (providerId.empty() && m_agentStore && !session->AgentId().empty()) {
+        auto agent = m_agentStore->GetById(session->AgentId());
+        if (agent && !agent->default_provider.empty()) {
+            providerId = agent->default_provider;
+        }
+    }
+    if (providerId.empty() && m_adminServer) {
+        providerId = m_adminServer->GetDefaultProviderId();
+    }
+    if (providerId.empty()) {
+        std::cerr << "[channels:dispatch] No provider resolved for sessionKey="
+                  << sessionKey << " — dropping message" << std::endl;
+        return;
+    }
+
+    std::string registryKey = providerId;
+    ProviderState providerState;
+    bool hasProviderState = false;
+    if (m_adminServer) {
+        auto ps = m_adminServer->GetProvider(providerId);
+        if (ps) {
+            providerState = *ps;
+            hasProviderState = true;
+            registryKey = providerState.providerType.empty()
+                ? providerState.providerId : providerState.providerType;
+        }
+    }
+
+    SlotGuard throttleGuard;
+    if (m_providerThrottle) {
+        throttleGuard = m_providerThrottle->Acquire(providerId);
+    }
+
+    std::string model = hasProviderState ? providerState.defaultModel : "";
+    if (m_agentStore && !session->AgentId().empty()) {
+        auto agent = m_agentStore->GetById(session->AgentId());
+        if (agent && !agent->default_model.empty()) {
+            model = agent->default_model;
+        }
+    }
+    std::size_t contextWindow = ResolveContextWindow(session->AgentId(), providerId, model);
+    if (model.empty()) {
+        model = "gpt-4o";
+    }
+
+    const std::string identity = m_config.agent.identity;
+    const int interval = GetChannelInterval(replyTarget.channel_name);
+
+    // Notify queue that a chain is starting (cancels any pending timer)
+    if (m_messageQueue && interval > 0) {
+        m_messageQueue->NotifyChainStart("channel:" + sessionKey);
+    }
+
+    m_jobs.EnqueueInLane(
+        ::animus::jobs::JobLane::Cognition,
+        [this, session, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval]() {
+            auto sessionAccess = SessionAccess(session, SessionAccessMode::ReadWrite);
+            auto result = m_chainRunner->ExecuteOnSession(
+                sessionAccess,
+                message,
+                identity,
+                registryKey,
+                providerId,
+                model,
+                contextWindow);
+            if (result.success && m_sessionManager) {
+                m_sessionManager->FlushSession(session->Id());
+
+                if (result.triggered_compaction && m_compactionService) {
+                    m_compactionService->CompactIfNeeded(
+                        session->Id(),
+                        identity,
+                        registryKey,
+                        model,
+                        contextWindow);
+                }
+            }
+            if (!result.success) {
+                std::cerr << "[channels:dispatch] LLM execution failed: "
+                          << result.error << std::endl;
+            }
+            if (result.success && !result.response.empty()) {
+                SendAutoReply(replyTarget, result.response);
+            }
+
+            // Notify queue that the chain has ended — starts cooldown if interval > 0
+            if (m_messageQueue && interval > 0) {
+                m_messageQueue->NotifyChainEnd("channel:" + sessionKey, interval);
+            }
+        });
 }
 
 std::size_t AgentKernel::ResolveContextWindow(const std::string& agentId,

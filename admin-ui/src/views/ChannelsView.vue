@@ -154,6 +154,8 @@ const formData = ref({
   nextcloud_respond_in_dm: true,
   nextcloud_respond_in_group_on_mention: true,
   nextcloud_group_mention_trigger: '',
+  // Common: message batching (Ticket 114)
+  min_response_interval: 0,
 });
 
 const isNew = computed(() => editing.value == null);
@@ -256,6 +258,7 @@ function resetForm(): void {
     nextcloud_respond_in_dm: true,
     nextcloud_respond_in_group_on_mention: true,
     nextcloud_group_mention_trigger: '',
+    min_response_interval: 0,
   };
 }
 
@@ -336,20 +339,21 @@ function loadIrcConfig(cfg: Record<string, any>): void {
 
 function buildConfig(): Record<string, unknown> {
   const type = formData.value.type;
+  let cfg: Record<string, unknown> = {};
   if (type === 'irc') return buildIrcConfig();
   if (type === 'telegram') {
-    const cfg: Record<string, unknown> = { agent_id: formData.value.agent_id || 'default' };
+    cfg = { agent_id: formData.value.agent_id || 'default' };
     if (formData.value.telegram_bot_token) cfg.access_token = formData.value.telegram_bot_token;
     return cfg;
   }
   if (type === 'vk') {
-    const cfg: Record<string, unknown> = { agent_id: formData.value.agent_id || 'default' };
+    cfg = { agent_id: formData.value.agent_id || 'default' };
     if (formData.value.vk_access_token) cfg.access_token = formData.value.vk_access_token;
     cfg.group_id = formData.value.vk_group_id;
     return cfg;
   }
   if (type === 'bluesky') {
-    const cfg: Record<string, unknown> = {
+    cfg = {
       handle: formData.value.bluesky_handle,
       pds: formData.value.bluesky_pds,
       agent_id: formData.value.agent_id || 'default',
@@ -358,14 +362,15 @@ function buildConfig(): Record<string, unknown> {
     return cfg;
   }
   if (type === 'mastodon') {
-    return {
+    cfg = {
       handle: formData.value.mastodon_handle,
       instance: formData.value.mastodon_instance,
       agent_id: formData.value.agent_id || 'default',
     };
+    return cfg;
   }
   if (type === 'email') {
-    const cfg: Record<string, unknown> = {
+    cfg = {
       backend: 'agentmail',
       agent_id: formData.value.agent_id || 'default',
       inbox_id: formData.value.email_inbox_id,
@@ -375,7 +380,7 @@ function buildConfig(): Record<string, unknown> {
     return cfg;
   }
   if (type === 'twitter') {
-    const cfg: Record<string, unknown> = {
+    cfg = {
       tier: formData.value.twitter_tier || 'free',
       agent_id: formData.value.agent_id || 'default',
     };
@@ -386,7 +391,7 @@ function buildConfig(): Record<string, unknown> {
     return cfg;
   }
   if (type === 'discord') {
-    const cfg: Record<string, unknown> = {
+    cfg = {
       agent_id: formData.value.agent_id || 'default',
       respond_to_dm: String(formData.value.discord_respond_to_dm),
       respond_to_mentions: String(formData.value.discord_respond_to_mentions),
@@ -399,7 +404,7 @@ function buildConfig(): Record<string, unknown> {
     return cfg;
   }
   if (type === 'slack') {
-    const cfg: Record<string, unknown> = {
+    cfg = {
       agent_id: formData.value.agent_id || 'default',
       respond_to_mentions: String(formData.value.slack_respond_to_mentions),
       respond_to_all_messages: String(formData.value.slack_respond_to_all_messages),
@@ -413,22 +418,18 @@ function buildConfig(): Record<string, unknown> {
     return cfg;
   }
   if (type === 'whatsapp') {
-    const cfg: Record<string, unknown> = {
-      agent_id: formData.value.agent_id || 'default',
-    };
+    cfg = { agent_id: formData.value.agent_id || 'default' };
     if (formData.value.whatsapp_auth_dir) cfg.auth_dir = formData.value.whatsapp_auth_dir;
     return cfg;
   }
   if (type === 'moltbook') {
-    const cfg: Record<string, unknown> = {
-      agent_id: formData.value.agent_id || 'default',
-    };
+    cfg = { agent_id: formData.value.agent_id || 'default' };
     if (formData.value.moltbook_api_key) cfg.api_key = formData.value.moltbook_api_key;
     if (moltbookRegResult.value?.agent_name) cfg.agent_name = moltbookRegResult.value.agent_name;
     return cfg;
   }
   if (type === 'nextcloud') {
-    const cfg: Record<string, unknown> = {
+    cfg = {
       agent_id: formData.value.agent_id || 'default',
       server_url: formData.value.nextcloud_server_url.trim(),
       username: formData.value.nextcloud_username.trim(),
@@ -446,7 +447,7 @@ function buildConfig(): Record<string, unknown> {
     }
     return cfg;
   }
-  return {};
+  return cfg;
 }
 
 // ---------------------------------------------------------------------------
@@ -564,6 +565,9 @@ function openEdit(item: ChannelInfo): void {
     }
     formData.value.agent_id = String(cfg.agent_id ?? 'default');
   }
+
+  // Load common fields (Ticket 114)
+  formData.value.min_response_interval = Number(cfg.min_response_interval ?? 0);
 
   // Reset WhatsApp QR state
   qrUrl.value = '';
@@ -718,6 +722,8 @@ async function submitForm(): Promise<void> {
   successMsg.value = '';
   try {
     const config = buildConfig();
+    // Add common fields that apply to all channel types (Ticket 114)
+    config.min_response_interval = Number(formData.value.min_response_interval) || 0;
     if (isNew.value) {
       await apiRequest('POST', '/api/v1/channels', {
         name: formData.value.name,
@@ -1119,6 +1125,17 @@ onMounted(async () => {
                 Nextcloud Talk authenticates as a regular user via app password. The agent monitors conversations via OCS API long-polling. Create a dedicated user account for the agent.
               </v-alert>
             </template>
+
+            <!-- Common: minimum response interval (Ticket 114) -->
+            <v-divider class="my-3" />
+            <v-text-field
+              v-model="formData.min_response_interval"
+              :label="t('channels.form.minResponseInterval')"
+              type="number"
+              hint="Seconds between responses. 0 = immediate. Incoming messages during the wait are batched."
+              density="comfortable"
+              class="mb-2"
+            />
           </v-card-text>
           <v-card-actions>
             <v-spacer />

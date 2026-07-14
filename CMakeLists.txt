@@ -338,6 +338,7 @@ add_library(animus_kernel
   src/kernel/social/SocialEventPoller.cpp
   src/kernel/social/TelegramBotApi.cpp
   src/kernel/ChannelManager.cpp
+  src/kernel/MessageQueue.cpp
             src/kernel/DiscordGatewayLoop.cpp
             src/kernel/whatsapp/WABinary.cpp
             src/kernel/whatsapp/WhatsAppCryptoHelpers.cpp
