@@ -1,4 +1,5 @@
 #include "animus_kernel/PromptLogStore.h"
+#include "animus_kernel/IDataStore.h"
 #include "animus_kernel/SchemaHelpers.h"
 
 #include <iostream>
@@ -36,37 +37,69 @@ PromptLogStore::PromptLogStore(IDataStore* store)
 }
 
 void PromptLogStore::EnsureSchema() {
-    schema::CreateTable(m_store, R"(
-        CREATE TABLE IF NOT EXISTS prompt_logs (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            agent_id        TEXT NOT NULL DEFAULT '',
-            session_id      INTEGER,
-            provider        TEXT NOT NULL DEFAULT '',
-            model           TEXT NOT NULL DEFAULT '',
-            prompt_tokens   INTEGER NOT NULL DEFAULT 0,
-            completion_tokens INTEGER NOT NULL DEFAULT 0,
-            total_tokens    INTEGER NOT NULL DEFAULT 0,
-            latency_ms      INTEGER NOT NULL DEFAULT 0,
-            chain_step      INTEGER NOT NULL DEFAULT 0,
-            created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-            prompt_content  TEXT,
-            response_content TEXT,
-            tool_calls      TEXT,
-            tool_results    TEXT
-        );
-    )");
+    if (!m_store) return;
 
-    // Index for agent + time range queries
-    schema::CreateTable(m_store, R"(
-        CREATE INDEX IF NOT EXISTS idx_prompt_logs_agent_time
-        ON prompt_logs(agent_id, created_at);
-    )");
+    if (m_store->Dialect() == DataStoreDialect::PostgreSQL) {
+        schema::CreateTable(m_store, R"(
+            CREATE TABLE IF NOT EXISTS prompt_logs (
+                id              SERIAL PRIMARY KEY,
+                agent_id        TEXT NOT NULL DEFAULT '',
+                session_id      BIGINT,
+                provider        TEXT NOT NULL DEFAULT '',
+                model           TEXT NOT NULL DEFAULT '',
+                prompt_tokens   INTEGER NOT NULL DEFAULT 0,
+                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                total_tokens    INTEGER NOT NULL DEFAULT 0,
+                latency_ms      INTEGER NOT NULL DEFAULT 0,
+                chain_step      INTEGER NOT NULL DEFAULT 0,
+                created_at      TEXT NOT NULL DEFAULT (to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+                prompt_content  TEXT,
+                response_content TEXT,
+                tool_calls      TEXT,
+                tool_results    TEXT
+            );
+        )");
 
-    // Index for session queries
-    schema::CreateTable(m_store, R"(
-        CREATE INDEX IF NOT EXISTS idx_prompt_logs_session
-        ON prompt_logs(session_id);
-    )");
+        schema::CreateTable(m_store, R"(
+            CREATE INDEX IF NOT EXISTS idx_prompt_logs_agent_time
+            ON prompt_logs(agent_id, created_at);
+        )");
+
+        schema::CreateTable(m_store, R"(
+            CREATE INDEX IF NOT EXISTS idx_prompt_logs_session
+            ON prompt_logs(session_id);
+        )");
+    } else {
+        schema::CreateTable(m_store, R"(
+            CREATE TABLE IF NOT EXISTS prompt_logs (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id        TEXT NOT NULL DEFAULT '',
+                session_id      INTEGER,
+                provider        TEXT NOT NULL DEFAULT '',
+                model           TEXT NOT NULL DEFAULT '',
+                prompt_tokens   INTEGER NOT NULL DEFAULT 0,
+                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                total_tokens    INTEGER NOT NULL DEFAULT 0,
+                latency_ms      INTEGER NOT NULL DEFAULT 0,
+                chain_step      INTEGER NOT NULL DEFAULT 0,
+                created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                prompt_content  TEXT,
+                response_content TEXT,
+                tool_calls      TEXT,
+                tool_results    TEXT
+            );
+        )");
+
+        schema::CreateTable(m_store, R"(
+            CREATE INDEX IF NOT EXISTS idx_prompt_logs_agent_time
+            ON prompt_logs(agent_id, created_at);
+        )");
+
+        schema::CreateTable(m_store, R"(
+            CREATE INDEX IF NOT EXISTS idx_prompt_logs_session
+            ON prompt_logs(session_id);
+        )");
+    }
 }
 
 void PromptLogStore::Log(
