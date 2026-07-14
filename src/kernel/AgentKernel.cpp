@@ -1177,7 +1177,7 @@ void AgentKernel::ExecuteChannelDispatch(
 
     m_jobs.EnqueueInLane(
         ::animus::jobs::JobLane::Cognition,
-        [this, session, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval]() {
+        [this, session, sessionKey, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval]() {
             auto sessionAccess = SessionAccess(session, SessionAccessMode::ReadWrite);
             auto result = m_chainRunner->ExecuteOnSession(
                 sessionAccess,
