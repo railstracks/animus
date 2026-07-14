@@ -32,6 +32,8 @@ export const channels = {
       name: '頻道名稱',
       type: '通道類型',
       agent: '代理人',
+      minResponseInterval: '最短回應間隔（秒）',
+      allowInterjection: '允許插話',
       irc: {
         host: 'IRC伺服器',
         port: '港口',

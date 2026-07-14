@@ -32,6 +32,8 @@ export const channels = {
       name: 'اسم القناة',
       type: 'نوع القناة',
       agent: 'وكيل',
+      minResponseInterval: 'الحد الأدنى لفاصل الاستجابة (ثوانٍ)',
+      allowInterjection: 'السماح بالتدخل',
       irc: {
         host: 'خادم آي آر سي',
         port: 'ميناء',

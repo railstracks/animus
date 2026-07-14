@@ -32,6 +32,8 @@ export const channels = {
       name: 'চ্যানেলের নাম',
       type: 'চ্যানেলের ধরন',
       agent: 'এজেন্ট',
+      minResponseInterval: 'ন্যূনতম প্রতিক্রিয়া ব্যবধান (সেকেন্ড)',
+      allowInterjection: 'ক্ষেপণের অনুমতি দিন',
       irc: {
         host: 'আইআরসি সার্ভার',
         port: 'বন্দর',

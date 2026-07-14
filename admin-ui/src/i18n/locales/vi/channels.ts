@@ -32,6 +32,8 @@ export const channels = {
       name: 'Tên kênh',
       type: 'Loại kênh',
       agent: 'đại lý',
+      minResponseInterval: 'Khoảng thời gian phản hồi tối thiểu (giây)',
+      allowInterjection: 'Cho phép chèn',
       irc: {
         host: 'Máy chủ IRC',
         port: 'Cảng',

@@ -32,6 +32,8 @@ export const channels = {
       name: 'שם הערוץ',
       type: 'סוג ערוץ',
       agent: 'סוכן',
+      minResponseInterval: 'מרווח תגובה מינימלי (שניות)',
+      allowInterjection: 'אפשר התערבות',
       irc: {
         host: 'שרת IRC',
         port: 'נמל',

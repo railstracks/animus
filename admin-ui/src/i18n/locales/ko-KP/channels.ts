@@ -32,6 +32,8 @@ export const channels = {
       name: '채널 이름',
       type: '채널 유형',
       agent: '대리인',
+      minResponseInterval: '최소 응답 간격 (초)',
+      allowInterjection: '삽입 허용',
       irc: {
         host: 'IRC 서버',
         port: '항구',

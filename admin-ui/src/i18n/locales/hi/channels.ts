@@ -32,6 +32,8 @@ export const channels = {
       name: 'चैनल का नाम',
       type: 'चैनल प्रकार',
       agent: 'एजेंट',
+      minResponseInterval: 'न्यूनतम प्रतिक्रिया अंतराल (सेकंड)',
+      allowInterjection: 'क्षेपण की अनुमति दें',
       irc: {
         host: 'आईआरसी सर्वर',
         port: 'बंदरगाह',

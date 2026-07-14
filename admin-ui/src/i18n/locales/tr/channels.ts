@@ -32,6 +32,8 @@ export const channels = {
       name: 'Kanal Adı',
       type: 'Kanal Tipi',
       agent: 'Temsilci',
+      minResponseInterval: 'En düşük yanıt aralığı (saniye)',
+      allowInterjection: 'Araya girmeye izin ver',
       irc: {
         host: 'IRC Sunucusu',
         port: 'Liman',

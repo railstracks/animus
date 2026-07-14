@@ -32,6 +32,8 @@ export const channels = {
       name: '频道名称',
       type: '通道类型',
       agent: '代理',
+      minResponseInterval: '最短回复间隔（秒）',
+      allowInterjection: '允许插话',
       irc: {
         host: 'IRC服务器',
         port: '港口',

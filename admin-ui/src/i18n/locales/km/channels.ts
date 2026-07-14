@@ -32,6 +32,8 @@ export const channels = {
       name: 'ឈ្មោះឆានែល',
       type: 'ប្រភេទឆានែល',
       agent: 'ភ្នាក់ងារ',
+      minResponseInterval: 'ចន្លោះពេលឆ្លើយតបអប្បបរមា (វិនាទី)',
+      allowInterjection: 'អនុញ្ញាតឱ្យចូលទៅជួយ',
       irc: {
         host: 'ម៉ាស៊ីនមេ IRC',
         port: 'ច្រក',

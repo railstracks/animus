@@ -32,6 +32,8 @@ export const channels = {
       name: 'نام کانال',
       type: 'نوع کانال',
       agent: 'عامل',
+      minResponseInterval: 'حداقل فاصله پاسخ (ثانیه)',
+      allowInterjection: 'اجازه مداخله',
       irc: {
         host: 'سرور IRC',
         port: 'بندر',

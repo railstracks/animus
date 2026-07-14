@@ -32,6 +32,8 @@ export const channels = {
       name: 'Sunan tashar',
       type: 'Nau\'in Tashoshi',
       agent: 'Wakili',
+      minResponseInterval: 'Mafi ƙarancin lokacin amsa (daƙiƙa)',
+      allowInterjection: 'Ba da izinin shiga tsakani',
       irc: {
         host: 'Sabar IRC',
         port: 'Port',

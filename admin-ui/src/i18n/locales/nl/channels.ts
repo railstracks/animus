@@ -32,6 +32,8 @@ export const channels = {
     name: 'Kanaalnaam',
     type: 'Kanaaltype',
     agent: 'Agent',
+    minResponseInterval: 'Minimale antwoordinterval (seconden)',
+    allowInterjection: 'Onderbrekingen toestaan',
     irc: {
       host: 'IRC-server',
       port: 'Poort',

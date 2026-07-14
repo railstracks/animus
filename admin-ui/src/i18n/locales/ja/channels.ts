@@ -32,6 +32,8 @@ export const channels = {
       name: 'チャンネル名',
       type: 'チャンネルタイプ',
       agent: 'エージェント',
+      minResponseInterval: '最小応答間隔（秒）',
+      allowInterjection: '割り込みを許可',
       irc: {
         host: 'IRCサーバー',
         port: '港',
