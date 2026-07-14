@@ -651,19 +651,17 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                             : std::vector{agentId};
                     }
                     for (const auto& curAgent : targetAgents) {
-                        SessionKey key{
-                            "consolidation:" + sessionSubtype + ":" + curAgent,
-                            ""
-                        };
+                        // Unique session per consolidation run (timestamp suffix)
+                        // so each run starts fresh without delete-and-recreate.
+                        // ConsolidationTool uses substring matching on the key
+                        // (find("consolidation:intake:")), so the timestamp suffix
+                        // doesn't break mode detection.
+                        std::string consKey = "consolidation:" + sessionSubtype + ":" + curAgent
+                            + ":" + std::to_string(
+                                std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch()).count());
 
-                        // Delete previous consolidation session for this key
-                        // so each run starts fresh (not accumulating turns forever)
-                        {
-                            auto existing = m_sessionManager->GetOrCreate(key);
-                            if (existing && !existing->Turns().empty()) {
-                                m_sessionManager->DeleteById(existing->Id());
-                            }
-                        }
+                        SessionKey key{ consKey, "" };
 
                         auto session = m_sessionManager->GetOrCreate(key);
                         if (!session) continue;
@@ -820,15 +818,13 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
 
                 // Create a consolidation session with proper type so only
                 // consolidation-safe tools are available (no email, social, http, etc.)
-                SessionKey key{"consolidation:intake:" + agentId, ""};
-
-                // Delete previous session to avoid accumulating turns across runs
-                {
-                    auto existing = m_sessionManager->GetOrCreate(key);
-                    if (existing && !existing->Turns().empty()) {
-                        m_sessionManager->DeleteById(existing->Id());
-                    }
-                }
+                // Unique key per run (timestamp suffix) — no delete-and-recreate needed.
+                SessionKey key{
+                    "consolidation:intake:" + agentId + ":" + std::to_string(
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count()),
+                    ""
+                };
 
                 auto session = m_sessionManager->GetOrCreate(key);
                 if (!session) return "{}";
