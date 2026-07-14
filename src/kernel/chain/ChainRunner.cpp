@@ -1062,11 +1062,11 @@ std::vector<llm::LLMToolDef> ChainRunner::GetToolDefinitionsForSession(
     // Default path: agent whitelist + session type filter
     auto agentDefs = GetToolDefinitionsForAgent(agent_id);
 
-    // No session type filter needed — return agent-filtered set as-is.
-    if (session_type.empty()) return agentDefs;
-
     // Filter: include tools with no session_types restriction, plus tools
     // explicitly available for this session type.
+    // This applies even when session_type is empty — tools that opt into
+    // specific session types (e.g. consolidation) should never appear in
+    // untyped sessions.
     std::vector<llm::LLMToolDef> defs;
     for (const auto& def : agentDefs) {
         // Look up the original ToolDefinition to check session_types

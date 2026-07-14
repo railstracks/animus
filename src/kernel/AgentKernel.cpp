@@ -712,15 +712,30 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 return;
             }
 
-            SessionKey key{
-                "scheduled:" + tag + ":" + agentId,
-                ""  // no thread
-            };
+            // Gallivanting sessions get a fresh session each trigger so
+            // exploration isn't contaminated by prior gallivanting context.
+            // The session type is set to "gallivanting" for tool filtering.
+            std::string sessionTag = tag;
+            bool isGallivanting = (tag == "gallivanting");
+
+            std::string connector;
+            if (isGallivanting) {
+                connector = "gallivanting:" + agentId + ":" + std::to_string(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
+            } else {
+                connector = "scheduled:" + tag + ":" + agentId;
+            }
+
+            SessionKey key{ connector, "" };
             auto session = m_sessionManager->GetOrCreate(key);
             if (!session) return;
 
             if (session->AgentId().empty()) {
                 session->SetAgentId(agentId);
+            }
+            if (isGallivanting && session->SessionType().empty()) {
+                session->SetSessionType("gallivanting");
             }
 
             std::string providerId = session->ProviderId();
