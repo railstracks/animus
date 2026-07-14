@@ -9,6 +9,9 @@
 
 namespace animus::kernel {
 
+// Forward declaration for log level
+enum class PromptLogLevel;
+
 // KernelConfig is the host-facing configuration surface for bootstrapping the kernel.
 struct KernelConfig {
     struct AdminServerConfig {
@@ -243,6 +246,11 @@ struct KernelConfig {
     std::string lua_script_dir;  // resolved from dataDir / "lua"
     bool lua_load_from_db{true};               // also load from DB (backward compat)
     bool lua_filesystem_overrides_db{true};    // filesystem scripts override DB on name conflict
+
+    // Prompt logging level: "none", "default", "full"
+    // Default: metadata only (tokens, model, provider, latency)
+    // Full: also stores prompt/response content and tool calls (EU AI Act compliance)
+    std::string promptLogLevel{"default"};
 };
 
 } // namespace animus::kernel

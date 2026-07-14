@@ -1,10 +1,13 @@
 #include "animus_kernel/llm/LLMProviderBase.h"
 
 #include <cstring>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <json/json.h>
+
+#include "animus_kernel/llm/OpenAICompat.h"
 
 // libcurl
 #include <curl/curl.h>
@@ -94,9 +97,11 @@ LLMMessage LLMProviderBase::Complete(const LLMRequest& request,
     return {};
   }
 
-  // Reset accumulated tool calls and finish reason
+  // Reset accumulated tool calls, finish reason, and token usage
   m_lastToolCalls.clear();
   m_lastFinishReason.clear();
+  m_lastPromptTokens = 0;
+  m_lastCompletionTokens = 0;
   m_toolCallAccumulator = SSEToolCallAccumulator{};
 
   std::string body = BuildRequestBody(request);
@@ -115,6 +120,10 @@ LLMMessage LLMProviderBase::Complete(const LLMRequest& request,
   // Parse tool calls and finish reason from the complete response
   ParseToolCallsFromResponse(responseStr, m_lastToolCalls, m_lastFinishReason);
 
+  // Extract token usage from the response body
+  m_lastPromptTokens = std::atoi(openai_compat::ExtractJsonNumber(responseStr, "prompt_tokens").c_str());
+  m_lastCompletionTokens = std::atoi(openai_compat::ExtractJsonNumber(responseStr, "completion_tokens").c_str());
+
   return ParseResponse(responseStr, error);
 }
 
@@ -126,9 +135,11 @@ LLMMessage LLMProviderBase::StreamComplete(const LLMRequest& request,
     return {};
   }
 
-  // Reset accumulated tool calls, finish reason, and tool call accumulator
+  // Reset accumulated tool calls, finish reason, and token usage
   m_lastToolCalls.clear();
   m_lastFinishReason.clear();
+  m_lastPromptTokens = 0;
+  m_lastCompletionTokens = 0;
   m_toolCallAccumulator = SSEToolCallAccumulator{};
 
   // Build a streaming request (force stream=true)
@@ -150,8 +161,11 @@ LLMMessage LLMProviderBase::StreamComplete(const LLMRequest& request,
         m_lastFinishReason = token.finish_reason;
       }
 
+      // Capture token usage (sent in the final SSE chunk by most providers)
+      if (token.prompt_tokens > 0) m_lastPromptTokens = token.prompt_tokens;
+      if (token.completion_tokens > 0) m_lastCompletionTokens = token.completion_tokens;
+
       // Capture any inline tool calls from final tokens
-      // (Some providers send complete tool calls in the final chunk)
       if (!token.tool_calls.empty()) {
         for (const auto& tc : token.tool_calls) {
           m_lastToolCalls.push_back(tc);
@@ -165,6 +179,8 @@ LLMMessage LLMProviderBase::StreamComplete(const LLMRequest& request,
       if (!token.finish_reason.empty()) {
         m_lastFinishReason = token.finish_reason;
       }
+      if (token.prompt_tokens > 0) m_lastPromptTokens = token.prompt_tokens;
+      if (token.completion_tokens > 0) m_lastCompletionTokens = token.completion_tokens;
       if (!token.tool_calls.empty()) {
         for (const auto& tc : token.tool_calls) {
           m_lastToolCalls.push_back(tc);

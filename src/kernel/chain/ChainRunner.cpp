@@ -300,8 +300,11 @@ ChainResult ChainRunner::ExecuteOnSession(
         toolResultMessages.clear();
 
         // Call LLM (non-streaming)
+        auto llmCallStart = std::chrono::steady_clock::now();
         std::string llmErr;
         auto response = CallLLM(*provider, assembly.request, {}, &llmErr);
+        auto llmCallEnd = std::chrono::steady_clock::now();
+        int llmLatencyMs = static_cast<int>(std::chrono::duration<double, std::milli>(llmCallEnd - llmCallStart).count());
         if (!llmErr.empty()) {
             result.error = llmErr;
             result.elapsed_ms = std::chrono::duration<double, std::milli>(
@@ -311,6 +314,13 @@ ChainResult ChainRunner::ExecuteOnSession(
 
         result.prompt_tokens += response.prompt_tokens;
         result.completion_tokens += response.completion_tokens;
+
+        // Log LLM call if prompt logging is enabled
+        if (m_promptLogStore && m_promptLogLevel != PromptLogLevel::None) {
+            LogPromptCall(session.AgentId(), session.Id(),
+                          resolvedProvider, resolvedModel,
+                          response, assembly.request, step, llmLatencyMs);
+        }
 
         // Deliver thinking content to callback
         if (!response.thinking_content.empty() && m_thinkingCallback) {
@@ -532,8 +542,11 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         }
 
         // Call LLM (streaming)
+        auto llmCallStart = std::chrono::steady_clock::now();
         std::string llmErr;
         auto response = CallLLM(*provider, assembly.request, stepTokenCallback, &llmErr);
+        auto llmCallEnd = std::chrono::steady_clock::now();
+        int llmLatencyMs = static_cast<int>(std::chrono::duration<double, std::milli>(llmCallEnd - llmCallStart).count());
         if (!llmErr.empty()) {
             result.error = llmErr;
             result.elapsed_ms = std::chrono::duration<double, std::milli>(
@@ -543,6 +556,13 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
 
         result.prompt_tokens += response.prompt_tokens;
         result.completion_tokens += response.completion_tokens;
+
+        // Log LLM call if prompt logging is enabled
+        if (m_promptLogStore && m_promptLogLevel != PromptLogLevel::None) {
+            LogPromptCall(session.AgentId(), session.Id(),
+                          resolvedProvider, resolvedModel,
+                          response, assembly.request, step, llmLatencyMs);
+        }
 
         // Diagnostic: log what the LLM returned
         std::cerr << "[chain] LLM response: content_len=" << response.content.size()
@@ -663,12 +683,14 @@ llm::LLMResponse ChainRunner::CallLLM(
         response.content = msg.content;
         response.thinking_content = msg.thinking_content;
 
-        // Retrieve tool calls accumulated during streaming
+        // Retrieve tool calls and token usage accumulated during streaming
         auto* baseProvider = dynamic_cast<llm::LLMProviderBase*>(&provider);
         if (baseProvider) {
             const auto& llmCalls = baseProvider->GetLastToolCalls();
             response.tool_calls = llmCalls;
             response.finish_reason = baseProvider->GetLastFinishReason();
+            response.prompt_tokens = baseProvider->GetLastPromptTokens();
+            response.completion_tokens = baseProvider->GetLastCompletionTokens();
         }
     } else {
         // Non-streaming
@@ -681,7 +703,7 @@ llm::LLMResponse ChainRunner::CallLLM(
         response.content = msg.content;
         response.thinking_content = msg.thinking_content;
 
-        // Parse tool calls from the complete response body.
+        // Parse tool calls and token usage from the complete response body.
         auto* baseProvider = dynamic_cast<llm::LLMProviderBase*>(&provider);
         if (baseProvider) {
             const auto& lastCalls = baseProvider->GetLastToolCalls();
@@ -692,6 +714,8 @@ llm::LLMResponse ChainRunner::CallLLM(
             if (!lastReason.empty()) {
                 response.finish_reason = lastReason;
             }
+            response.prompt_tokens = baseProvider->GetLastPromptTokens();
+            response.completion_tokens = baseProvider->GetLastCompletionTokens();
         }
     }
 
@@ -1130,6 +1154,71 @@ std::unique_ptr<llm::ILLMProvider> ChainRunner::CreateProvider(
     }
 
     return provider;
+}
+
+// ============================================================================
+// Prompt logging helper
+// ============================================================================
+
+void ChainRunner::LogPromptCall(
+    const std::string& agent_id,
+    int64_t session_id,
+    const std::string& provider,
+    const std::string& model,
+    const llm::LLMResponse& response,
+    const llm::LLMRequest& request,
+    int chain_step,
+    int latency_ms) {
+
+    if (!m_promptLogStore || m_promptLogLevel == PromptLogLevel::None) return;
+
+    // Build content strings only at Full level
+    std::string promptContent;
+    std::string responseContent;
+    std::string toolCallsJson;
+    std::string toolResultsJson;
+
+    if (m_promptLogLevel == PromptLogLevel::Full) {
+        // Assemble prompt content from request messages
+        for (const auto& msg : request.messages) {
+            promptContent += "{" + msg.role + "} ";
+            promptContent += msg.content;
+            if (!msg.content.empty() && msg.content.back() != '\n')
+                promptContent += '\n';
+        }
+
+        responseContent = response.content;
+
+        // Serialize tool calls to JSON array
+        if (!response.tool_calls.empty()) {
+            Json::Value calls(Json::arrayValue);
+            for (const auto& tc : response.tool_calls) {
+                Json::Value call(Json::objectValue);
+                call["id"] = tc.id;
+                call["name"] = tc.name;
+                call["arguments"] = tc.arguments;
+                calls.append(call);
+            }
+            Json::StreamWriterBuilder wb;
+            wb["indentation"] = "";
+            toolCallsJson = Json::writeString(wb, calls);
+        }
+    }
+
+    m_promptLogStore->Log(
+        m_promptLogLevel,
+        agent_id,
+        session_id,
+        provider,
+        model,
+        response.prompt_tokens,
+        response.completion_tokens,
+        latency_ms,
+        chain_step,
+        promptContent,
+        responseContent,
+        toolCallsJson,
+        toolResultsJson);
 }
 
 } // namespace animus::kernel

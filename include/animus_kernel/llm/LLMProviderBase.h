@@ -57,6 +57,12 @@ public:
   /// Get finish reason from the last StreamComplete call.
   std::string GetLastFinishReason() const { return m_lastFinishReason; }
 
+  /// Get prompt token count from the last LLM call (streaming or non-streaming).
+  int GetLastPromptTokens() const { return m_lastPromptTokens; }
+
+  /// Get completion token count from the last LLM call.
+  int GetLastCompletionTokens() const { return m_lastCompletionTokens; }
+
   // ---------------------------------------------------------------------------
   // Capabilities
   // ---------------------------------------------------------------------------
@@ -173,9 +179,11 @@ private:
   LLMProviderConfig m_config;
   bool m_available{true};
 
-  // Accumulated tool calls and finish reason from the last streaming call
+  // Accumulated tool calls, finish reason, and token usage from the last call
   std::vector<LLMToolCall> m_lastToolCalls;
   std::string m_lastFinishReason;
+  int m_lastPromptTokens{0};
+  int m_lastCompletionTokens{0};
 
   // SSE tool call accumulator — assembles delta fragments across chunks
   SSEToolCallAccumulator m_toolCallAccumulator;

@@ -20,6 +20,8 @@
 
 #include "animus_kernel/llm/LLMProviderConfig.h"
 
+#include "animus_kernel/PromptLogStore.h"
+
 namespace animus::kernel {
 
 class SessionManager;
@@ -135,6 +137,10 @@ public:
     void SetMaxChainSteps(std::uint32_t steps) { m_maxChainSteps = steps; }
     void SetMaxToolCallsPerChain(std::uint32_t max) { m_maxToolCallsPerChain = max; }
 
+    // Set the prompt log store for LLM call logging.
+    void SetPromptLogStore(PromptLogStore* store) { m_promptLogStore = store; }
+    void SetPromptLogLevel(PromptLogLevel level) { m_promptLogLevel = level; }
+
     // Access the provider registry (for compaction summary generation, etc.)
     llm::LLMProviderRegistry& GetProviders() { return m_providers; }
     const ProviderConfigLookup& GetConfigLookup() const { return m_configLookup; }
@@ -156,6 +162,17 @@ private:
         llm::LLMRequest& request,
         llm::LLMTokenCallback tokenCallback,
         std::string* error);
+
+    /// Log an LLM call to the prompt log store (if enabled).
+    void LogPromptCall(
+        const std::string& agent_id,
+        int64_t session_id,
+        const std::string& provider,
+        const std::string& model,
+        const llm::LLMResponse& response,
+        const llm::LLMRequest& request,
+        int chain_step,
+        int latency_ms);
 
     // Process a parsed LLM response: store turns, execute tools.
     // thinkingContent: accumulated native thinking text (may be empty).
@@ -221,6 +238,10 @@ private:
     // Chain budgets
     std::uint32_t m_maxChainSteps{200};
     std::uint32_t m_maxToolCallsPerChain{100};
+
+    // Prompt logging
+    PromptLogStore* m_promptLogStore{nullptr};
+    PromptLogLevel m_promptLogLevel{PromptLogLevel::Default};
 };
 
 } // namespace animus::kernel

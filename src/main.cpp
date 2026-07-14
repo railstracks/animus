@@ -91,6 +91,7 @@ static void print_help(const char* argv0) {
     << "Paths:\n"
     << "  --config-dir <path>              Directory for configuration files\n"
     << "  --data-dir <path>                Directory for runtime state\n"
+    << "  --prompt-log-level <level>       Prompt logging: none, default, full (default: default)\n"
     << "\n"
     << "Node mode:\n"
     << "  --node                          Run as external node (no LLM/scheduler/channels)\n"
@@ -238,6 +239,7 @@ static bool ParseArg(int argc, char** argv, int& i,
                      std::string& dbConfigPath,
                      std::string& configDirFlag,
                      std::string& dataDirFlag,
+                     std::string& promptLogLevelFlag,
                      bool& wantsKernel, bool& runKernel, bool& daemonMode,
                      bool& nodeMode, std::string& nodeServerUrl,
                      std::string& nodeToken, std::string& nodeName,
@@ -426,6 +428,11 @@ static bool ParseArg(int argc, char** argv, int& i,
   if (arg == "--data-dir") {
     if (i + 1 >= argc) { std::cerr << "--data-dir requires a directory path\n"; std::exit(2); }
     dataDirFlag = argv[++i];
+    return true;
+  }
+  if (arg == "--prompt-log-level") {
+    if (i + 1 >= argc) { std::cerr << "--prompt-log-level requires a value (none, default, full)\n"; std::exit(2); }
+    promptLogLevelFlag = argv[++i];
     return true;
   }
 
@@ -627,6 +634,7 @@ int main(int argc, char** argv) {
   std::string dbConfigPath;
   std::string configDirFlag;
   std::string dataDirFlag;
+  std::string promptLogLevelFlag;
   std::string nodeServerUrl;
   std::string nodeToken;
   std::string nodeName;
@@ -644,7 +652,7 @@ int main(int argc, char** argv) {
     }
 
     if (!ParseArg(argc, argv, i, cfg, dbConfigPath,
-                   configDirFlag, dataDirFlag,
+                   configDirFlag, dataDirFlag, promptLogLevelFlag,
                    wantsKernel, runKernel, daemonMode,
                    nodeMode, nodeServerUrl, nodeToken, nodeName, nodeTools)) {
       std::cerr << "Unknown argument: " << arg << "\n\n";
@@ -655,6 +663,11 @@ int main(int argc, char** argv) {
 
   // Resolve config-dir and data-dir paths
   ResolvePaths(cfg, configDirFlag, dataDirFlag);
+
+  // Apply prompt log level override
+  if (!promptLogLevelFlag.empty()) {
+    cfg.promptLogLevel = promptLogLevelFlag;
+  }
 
   // Load database config from file if specified (or try config-dir default)
   animus::kernel::DatabaseConfig dbConfig;

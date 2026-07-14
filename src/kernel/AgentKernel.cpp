@@ -66,6 +66,7 @@
 #include "animus_kernel/SessionNotesStore.h"
 #include "animus_kernel/SessionReportStore.h"
 #include "animus_kernel/SessionTagsStore.h"
+#include "animus_kernel/PromptLogStore.h"
 #include "animus_kernel/ContextProviderRegistry.h"
 #include "animus_kernel/context/IdentityProvider.h"
 #include "animus_kernel/context/SessionNotesProvider.h"
@@ -139,6 +140,7 @@ AgentKernel::~AgentKernel() {
     delete m_sessionReportStore; m_sessionReportStore = nullptr;
     delete m_contextRegistry; m_contextRegistry = nullptr;
     delete m_sessionTagsStore; m_sessionTagsStore = nullptr;
+    delete m_promptLogStore; m_promptLogStore = nullptr;
 
     delete m_moduleManager;
     m_moduleManager = nullptr;
@@ -352,6 +354,11 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // --- Session Tags Store (keywords for ontology retrieval) ---
         m_sessionTagsStore = new SessionTagsStore(m_dataStore);
         m_adminServer->SetSessionTagsStore(m_sessionTagsStore);
+
+        // --- Prompt Log Store (LLM call logging for benchmarking/audit) ---
+        m_promptLogStore = new PromptLogStore(m_dataStore);
+        m_chainRunner->SetPromptLogStore(m_promptLogStore);
+        m_chainRunner->SetPromptLogLevel(ParsePromptLogLevel(config.promptLogLevel));
 
         // --- Context Provider Registry ---
         m_contextRegistry = new ContextProviderRegistry();

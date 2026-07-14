@@ -48,6 +48,7 @@ class ScriptStore;
 class ChannelsTool;
 class ContextProviderRegistry;
 class SessionTagsStore;
+class PromptLogStore;
 
 // AgentKernel is the always-on core runtime.
 //
@@ -135,6 +136,7 @@ private:
     SessionReportStore* m_sessionReportStore{nullptr}; // per-session temporal reports
     ContextProviderRegistry* m_contextRegistry{nullptr}; // prompt assembly providers
     SessionTagsStore* m_sessionTagsStore{nullptr}; // session tag keywords
+    PromptLogStore* m_promptLogStore{nullptr}; // LLM call logging
     Scheduler* m_scheduler{nullptr};              // cron-like schedule subsystem
     ConsolidationPipeline* m_consolidation{nullptr}; // memory consolidation pipeline
     std::unordered_map<std::string, std::unique_ptr<LuaState>> m_luaStates; // per-agent Lua VMs
