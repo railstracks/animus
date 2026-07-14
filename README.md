@@ -4,7 +4,7 @@ Animus is a **C++ agent framework** — a modular, efficient runtime for AI agen
 
 ## Why Animus
 
-- **Lightweight**: ~64 MB baseline RAM (kernel + admin server) plus embeddings model usage. Deployable on constrained hardware (Raspberry Pi, small VPS).
+- **Lightweight**: ~64 MB baseline RAM (kernel + admin server) excluding embeddings model usage. Deployable on constrained hardware (Raspberry Pi, small VPS).
 - **Performant**: C++ kernel with native multithreading and async I/O. Drogon HTTP framework.
 - **Secure**: Default-deny tool sandboxing, SSRF protection, TLS verification, per-agent permissions.
 - **Multi-tenant**: Multiple agents on a single substrate — each with their own config, memory, tools, sessions.
