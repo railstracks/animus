@@ -35,7 +35,7 @@ const error = ref('');
 const successMsg = ref('');
 const channels = ref<ChannelInfo[]>([]);
 const agents = ref<AgentInfo[]>([]);
-const selectedAgent = ref('default');
+const selectedAgent = ref('');
 
 const showForm = ref(false);
 const saving = ref(false);
@@ -101,13 +101,13 @@ const formData = ref({
   irc_respond_to_direct_messages: true,
   irc_respond_to_notices: false,
   irc_allowed_dm_users: '',
-  irc_agent_id: 'default',
+  irc_agent_id: '',
   irc_reconnect_enabled: true,
   irc_reconnect_initial_delay_ms: 1000,
   irc_reconnect_max_delay_ms: 60000,
   irc_use_tls: false,
   // Agent association (non-IRC)
-  agent_id: 'default',
+  agent_id: '',
   // Telegram fields
   telegram_bot_token: '',
   // VK fields
@@ -171,13 +171,9 @@ watch(() => formData.value.irc_use_tls, (tls, prev) => {
   }
 });
 
-const agentItems = computed(() => {
-  const items = agents.value.map((a) => ({ title: `${a.name} (${a.id})`, value: a.id }));
-  if (!items.find((i) => i.value === 'default')) {
-    items.unshift({ title: 'default', value: 'default' });
-  }
-  return items;
-});
+const agentItems = computed(() =>
+  agents.value.map((a) => ({ title: `${a.name} (${a.id})`, value: a.id }))
+);
 
 // ---------------------------------------------------------------------------
 // Name generation
@@ -213,12 +209,12 @@ function resetForm(): void {
     irc_respond_to_direct_messages: true,
     irc_respond_to_notices: false,
     irc_allowed_dm_users: '',
-    irc_agent_id: 'default',
+    irc_agent_id: agents.value.length > 0 ? agents.value[0].id : '',
     irc_reconnect_enabled: true,
     irc_reconnect_initial_delay_ms: 1000,
     irc_reconnect_max_delay_ms: 60000,
     irc_use_tls: false,
-    agent_id: 'default',
+    agent_id: agents.value.length > 0 ? agents.value[0].id : '',
     telegram_bot_token: '',
     vk_access_token: '',
     vk_group_id: '',
@@ -301,7 +297,7 @@ function buildIrcConfig(): Record<string, unknown> {
     respond_to_direct_messages: formData.value.irc_respond_to_direct_messages,
     respond_to_notices: formData.value.irc_respond_to_notices,
     allowed_dm_users: allowedDmUsers,
-    agent_id: formData.value.irc_agent_id || 'default',
+    agent_id: formData.value.irc_agent_id || '',
     reconnect: {
       enabled: formData.value.irc_reconnect_enabled,
       initial_delay_ms: Number(formData.value.irc_reconnect_initial_delay_ms || 1000),
@@ -323,7 +319,7 @@ function loadIrcConfig(cfg: Record<string, any>): void {
   formData.value.irc_respond_to_channel_activity = Boolean(cfg.respond_to_channel_activity ?? true);
   formData.value.irc_respond_to_direct_messages = Boolean(cfg.respond_to_direct_messages ?? true);
   formData.value.irc_respond_to_notices = Boolean(cfg.respond_to_notices ?? false);
-  formData.value.irc_agent_id = String(cfg.agent_id ?? 'default');
+  formData.value.irc_agent_id = String(cfg.agent_id ?? '');
 
   const chs: Array<any> = Array.isArray(cfg.channels) ? cfg.channels : [];
   formData.value.irc_channels_multiline = chs
@@ -345,12 +341,12 @@ function buildConfig(): Record<string, unknown> {
   let cfg: Record<string, unknown> = {};
   if (type === 'irc') return buildIrcConfig();
   if (type === 'telegram') {
-    cfg = { agent_id: formData.value.agent_id || 'default' };
+    cfg = { agent_id: formData.value.agent_id || '' };
     if (formData.value.telegram_bot_token) cfg.access_token = formData.value.telegram_bot_token;
     return cfg;
   }
   if (type === 'vk') {
-    cfg = { agent_id: formData.value.agent_id || 'default' };
+    cfg = { agent_id: formData.value.agent_id || '' };
     if (formData.value.vk_access_token) cfg.access_token = formData.value.vk_access_token;
     cfg.group_id = formData.value.vk_group_id;
     return cfg;
@@ -359,7 +355,7 @@ function buildConfig(): Record<string, unknown> {
     cfg = {
       handle: formData.value.bluesky_handle,
       pds: formData.value.bluesky_pds,
-      agent_id: formData.value.agent_id || 'default',
+      agent_id: formData.value.agent_id || '',
     };
     if (formData.value.bluesky_app_password) cfg.app_password = formData.value.bluesky_app_password;
     return cfg;
@@ -368,14 +364,14 @@ function buildConfig(): Record<string, unknown> {
     cfg = {
       handle: formData.value.mastodon_handle,
       instance: formData.value.mastodon_instance,
-      agent_id: formData.value.agent_id || 'default',
+      agent_id: formData.value.agent_id || '',
     };
     return cfg;
   }
   if (type === 'email') {
     cfg = {
       backend: 'agentmail',
-      agent_id: formData.value.agent_id || 'default',
+      agent_id: formData.value.agent_id || '',
       inbox_id: formData.value.email_inbox_id,
       polling_wait: Number(formData.value.email_polling_wait) || 25,
     };
@@ -385,7 +381,7 @@ function buildConfig(): Record<string, unknown> {
   if (type === 'twitter') {
     cfg = {
       tier: formData.value.twitter_tier || 'free',
-      agent_id: formData.value.agent_id || 'default',
+      agent_id: formData.value.agent_id || '',
     };
     if (formData.value.twitter_client_id) cfg.client_id = formData.value.twitter_client_id;
     if (formData.value.twitter_client_secret) cfg.client_secret = formData.value.twitter_client_secret;
@@ -395,7 +391,7 @@ function buildConfig(): Record<string, unknown> {
   }
   if (type === 'discord') {
     cfg = {
-      agent_id: formData.value.agent_id || 'default',
+      agent_id: formData.value.agent_id || '',
       respond_to_dm: String(formData.value.discord_respond_to_dm),
       respond_to_mentions: String(formData.value.discord_respond_to_mentions),
     };
@@ -408,7 +404,7 @@ function buildConfig(): Record<string, unknown> {
   }
   if (type === 'slack') {
     cfg = {
-      agent_id: formData.value.agent_id || 'default',
+      agent_id: formData.value.agent_id || '',
       respond_to_mentions: String(formData.value.slack_respond_to_mentions),
       respond_to_all_messages: String(formData.value.slack_respond_to_all_messages),
       threaded_replies: String(formData.value.slack_threaded_replies),
@@ -421,19 +417,19 @@ function buildConfig(): Record<string, unknown> {
     return cfg;
   }
   if (type === 'whatsapp') {
-    cfg = { agent_id: formData.value.agent_id || 'default' };
+    cfg = { agent_id: formData.value.agent_id || '' };
     if (formData.value.whatsapp_auth_dir) cfg.auth_dir = formData.value.whatsapp_auth_dir;
     return cfg;
   }
   if (type === 'moltbook') {
-    cfg = { agent_id: formData.value.agent_id || 'default' };
+    cfg = { agent_id: formData.value.agent_id || '' };
     if (formData.value.moltbook_api_key) cfg.api_key = formData.value.moltbook_api_key;
     if (moltbookRegResult.value?.agent_name) cfg.agent_name = moltbookRegResult.value.agent_name;
     return cfg;
   }
   if (type === 'nextcloud') {
     cfg = {
-      agent_id: formData.value.agent_id || 'default',
+      agent_id: formData.value.agent_id || '',
       server_url: formData.value.nextcloud_server_url.trim(),
       username: formData.value.nextcloud_username.trim(),
       respond_in_dm: String(formData.value.nextcloud_respond_in_dm),
@@ -474,6 +470,13 @@ async function loadAgents(): Promise<void> {
   try {
     const data = await apiGet<{ agents: AgentInfo[] }>('/api/v1/agents');
     agents.value = Array.isArray(data.agents) ? data.agents : [];
+    // Auto-select first agent for forms if none selected
+    const firstId = agents.value.length > 0 ? agents.value[0].id : '';
+    if (firstId) {
+      if (!selectedAgent.value) selectedAgent.value = firstId;
+      if (!formData.value.irc_agent_id) formData.value.irc_agent_id = firstId;
+      if (!formData.value.agent_id) formData.value.agent_id = firstId;
+    }
   } catch {
     agents.value = [];
   }
@@ -498,32 +501,32 @@ function openEdit(item: ChannelInfo): void {
     loadIrcConfig(cfg);
   } else if (type === 'telegram') {
     formData.value.telegram_bot_token = ''; // Never prefill tokens
-    formData.value.agent_id = String(cfg.agent_id ?? 'default');
+    formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'vk') {
     formData.value.vk_access_token = '';
     formData.value.vk_group_id = cfg.group_id || '';
-    formData.value.agent_id = String(cfg.agent_id ?? 'default');
+    formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'bluesky') {
     formData.value.bluesky_handle = cfg.handle || '';
     formData.value.bluesky_app_password = '';
     formData.value.bluesky_pds = cfg.pds || 'https://bsky.social';
-    formData.value.agent_id = String(cfg.agent_id ?? 'default');
+    formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'mastodon') {
     formData.value.mastodon_handle = cfg.handle || '';
     formData.value.mastodon_instance = cfg.instance || '';
-    formData.value.agent_id = String(cfg.agent_id ?? 'default');
+    formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'email') {
     formData.value.email_api_key = '';
     formData.value.email_inbox_id = cfg.inbox_id || '';
     formData.value.email_polling_wait = Number(cfg.polling_wait) || 25;
-    formData.value.agent_id = String(cfg.agent_id ?? 'default');
+    formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'twitter') {
     formData.value.twitter_client_id = cfg.client_id || '';
     formData.value.twitter_client_secret = ''; // Never prefill secrets
     formData.value.twitter_access_token = ''; // Never prefill tokens
     formData.value.twitter_refresh_token = '';
     formData.value.twitter_tier = cfg.tier || 'free';
-    formData.value.agent_id = String(cfg.agent_id ?? 'default');
+    formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'discord') {
     formData.value.discord_bot_token = '';
     formData.value.discord_application_id = cfg.application_id || '';
@@ -531,7 +534,7 @@ function openEdit(item: ChannelInfo): void {
     formData.value.discord_monitored_channels = monitored.join('\n');
     formData.value.discord_respond_to_dm = Boolean(cfg.respond_to_dm ?? true);
     formData.value.discord_respond_to_mentions = Boolean(cfg.respond_to_mentions ?? true);
-    formData.value.agent_id = String(cfg.agent_id ?? 'default');
+    formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'slack') {
     formData.value.slack_bot_token = '';
     formData.value.slack_app_token = cfg.app_token ? '' : ''; // Never prefill
@@ -540,13 +543,13 @@ function openEdit(item: ChannelInfo): void {
     formData.value.slack_respond_to_mentions = Boolean(cfg.respond_to_mentions ?? true);
     formData.value.slack_respond_to_all_messages = Boolean(cfg.respond_to_all_messages ?? false);
     formData.value.slack_threaded_replies = Boolean(cfg.threaded_replies ?? true);
-    formData.value.agent_id = String(cfg.agent_id ?? 'default');
+    formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'whatsapp') {
     formData.value.whatsapp_auth_dir = cfg.auth_dir || '/tmp/wa-auth';
-    formData.value.agent_id = String(cfg.agent_id ?? 'default');
+    formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'moltbook') {
     formData.value.moltbook_api_key = ''; // Never prefill keys
-    formData.value.agent_id = String(cfg.agent_id ?? 'default');
+    formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'nextcloud') {
     formData.value.nextcloud_server_url = String(cfg.server_url ?? '');
     formData.value.nextcloud_username = String(cfg.username ?? '');
@@ -566,7 +569,7 @@ function openEdit(item: ChannelInfo): void {
     } else {
       formData.value.nextcloud_watch_tokens = '';
     }
-    formData.value.agent_id = String(cfg.agent_id ?? 'default');
+    formData.value.agent_id = String(cfg.agent_id ?? '');
   }
 
   // Load common fields (Ticket 114)
