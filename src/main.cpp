@@ -694,6 +694,8 @@ int main(int argc, char** argv) {
     }
   }
   if (!logFilePath.empty()) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
     fs::path logPath(logFilePath);
     if (logPath.is_relative()) {
       logPath = cfg.dataDir / "log" / logPath;
