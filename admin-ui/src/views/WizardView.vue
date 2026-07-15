@@ -346,7 +346,7 @@ function nextStep() {
 }
 
 function prevStep() {
-  if (step.value > 1) step.value--;
+  if (step.value > 0) step.value--;
 }
 
 function skipWizard() {
@@ -635,7 +635,7 @@ onMounted(() => {
               </template>
 
               <div class="d-flex justify-space-between mt-4">
-                <v-btn variant="text" @click="skipWizard">Skip for now</v-btn>
+                <v-btn variant="text" @click="prevStep">Back</v-btn>
                 <div class="d-flex ga-2">
                   <v-btn v-if="selectedCategory" variant="text" @click="skipTemplate">
                     {{ t('templates.wizard.blank') }}
@@ -696,7 +696,10 @@ onMounted(() => {
               </template>
 
               <div class="d-flex justify-space-between mt-6">
-                <v-btn variant="text" @click="skipWizard">Skip for now</v-btn>
+                <div class="d-flex ga-2">
+                  <v-btn variant="text" @click="prevStep">Back</v-btn>
+                  <v-btn variant="text" @click="skipWizard">Skip for now</v-btn>
+                </div>
                 <v-btn color="primary" :loading="loading" :disabled="!canAdvanceProvider"
                   @click="createProviderAndAdvance">
                   {{ hasProvider ? 'Next' : 'Create Provider &amp; Next' }}

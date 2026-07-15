@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { apiGet, apiRequest } from '../lib/api';
 
 const { t } = useI18n();
+const router = useRouter();
+
+function goToWizard() { router.push('/wizard'); }
 
 // ---------------------------------------------------------------------------
 // Types
@@ -462,6 +466,9 @@ watch(
       <div>
         <v-btn variant="text" size="small" @click="loadAgents" :loading="loading">
           {{ t('agents.actions.refresh') }}
+        </v-btn>
+        <v-btn variant="text" size="small" prepend-icon="mdi-auto-fix" @click="goToWizard">
+          Setup Wizard
         </v-btn>
         <v-btn color="primary" size="small" @click="openCreate">
           {{ t('agents.actions.add') }}
