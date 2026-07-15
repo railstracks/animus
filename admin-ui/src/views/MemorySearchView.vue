@@ -28,7 +28,7 @@ interface SearchResult {
 const { t } = useI18n();
 
 const agents = ref<Agent[]>([]);
-const selectedAgentId = ref<string>('0');
+const selectedAgentId = ref<string>('');
 const query = ref('');
 const loading = ref(false);
 const error = ref('');
@@ -91,6 +91,9 @@ async function loadAgents(): Promise<void> {
   try {
     const payload = await apiGet<{ agents: Agent[] }>('/api/v1/agents');
     agents.value = payload.agents ?? [];
+    if (agents.value.length > 0 && !selectedAgentId.value) {
+      selectedAgentId.value = agents.value[0].id;
+    }
   } catch {
     agents.value = [];
   }
@@ -160,7 +163,7 @@ onMounted(() => {
       <v-col cols="12" md="4">
         <v-select
           v-model="selectedAgentId"
-          :items="[{ title: 'Default Agent', value: '0' }, ...agents.map(a => ({ title: a.name, value: a.id }))]"
+          :items="agents.map(a => ({ title: a.name, value: a.id }))"
           item-title="title"
           item-value="value"
           :label="t('memorySearch.agentLabel')"

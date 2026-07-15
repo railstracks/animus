@@ -71,10 +71,9 @@ const agentFilterItems = computed(() => [
   ...agents.value.map(a => ({ title: a.name, value: a.numeric_id || 0 }))
 ]);
 
-const agentImportItems = computed(() => [
-  { title: 'Default (0)', value: 0 },
-  ...agents.value.map(a => ({ title: a.name, value: a.numeric_id || 0 }))
-]);
+const agentImportItems = computed(() =>
+  agents.value.map(a => ({ title: a.name, value: a.numeric_id || 0 }))
+);
 
 const typeFilter = ref('all');
 const limit = ref(100);
@@ -105,6 +104,7 @@ const metadataForm = ref({
 
 const searchQuery = ref('');
 const searchLimit = ref(20);
+const searchAgentId = ref<number>(0);
 const domainObservations = ref(true);
 const domainOntology = ref(true);
 const domainFiles = ref(true);
@@ -231,6 +231,13 @@ async function loadAgents(): Promise<void> {
   try {
     const data = await apiGet<{ agents: Agent[] }>('/api/v1/agents');
     agents.value = data.agents ?? [];
+    // Auto-select first real agent for import forms
+    if (agents.value.length > 0) {
+      const firstId = agents.value[0].numeric_id || 0;
+      if (singleImport.value.agent_id === 0) singleImport.value.agent_id = firstId;
+      if (metadataForm.value.agent_id === 0) metadataForm.value.agent_id = firstId;
+      if (searchAgentId.value === 0) searchAgentId.value = firstId;
+    }
   } catch {
     agents.value = [];
   }
@@ -288,7 +295,7 @@ async function importSingleFile(): Promise<void> {
     clearSingleFile();
     singleImport.value.file_type = 'external_doc';
     singleImport.value.content_mutable = true;
-    singleImport.value.agent_id = 0;
+    singleImport.value.agent_id = agents.value.length > 0 ? (agents.value[0].numeric_id || 0) : 0;
     singleImport.value.superseded = false;
     await refreshAll();
   } catch (e) {
@@ -337,10 +344,10 @@ async function importBatch(): Promise<void> {
       const content = await readFileText(file);
       filesPayload.push({
         source_path: file.name,
-        file_type: 'external_doc',
-        content_mutable: true,
-        agent_id: 0,
-        superseded: false,
+        file_type: metadataForm.value.file_type,
+        content_mutable: metadataForm.value.content_mutable,
+        agent_id: metadataForm.value.agent_id,
+        superseded: metadataForm.value.superseded,
         content
       });
     }
@@ -410,6 +417,7 @@ async function runSearch(): Promise<void> {
     const payload = await apiRequest<SearchResponse>('POST', '/api/v1/memory/search', {
       query: searchQuery.value,
       limit: searchLimit.value,
+      agent_id: String(searchAgentId.value),
       domains: {
         observations: domainObservations.value,
         ontology: domainOntology.value,
@@ -654,6 +662,32 @@ watch(selectedAgentId, () => {
             class="mb-2"
             @change="onBatchFilesSelected"
           />
+          <v-row dense class="mb-2">
+            <v-col cols="12" sm="6">
+              <v-select
+                v-model="metadataForm.agent_id"
+                :items="agentImportItems"
+                item-title="title"
+                item-value="value"
+                :label="t('memoryFiles.fields.agentId')"
+                density="comfortable"
+                variant="outlined"
+                hide-details
+              />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-select
+                v-model="metadataForm.file_type"
+                :items="typeOptions.filter((x) => x.value !== 'all')"
+                item-title="title"
+                item-value="value"
+                :label="t('memoryFiles.fields.fileType')"
+                density="comfortable"
+                variant="outlined"
+                hide-details
+              />
+            </v-col>
+          </v-row>
           <div v-if="batchFiles.length > 0" class="mb-3">
             <div class="text-caption text-medium-emphasis mb-1">
               {{ batchFiles.length }} {{ t('memoryFiles.import.filesSelected') }}
@@ -772,6 +806,16 @@ watch(selectedAgentId, () => {
       <v-card variant="outlined" min-height="360">
         <v-card-title>{{ t('memoryFiles.search.title') }}</v-card-title>
         <v-card-text>
+          <v-select
+            v-model="searchAgentId"
+            :items="agentImportItems"
+            item-title="title"
+            item-value="value"
+            :label="t('memoryFiles.fields.agentId')"
+            density="comfortable"
+            variant="outlined"
+            class="mb-2"
+          />
           <v-text-field
             v-model="searchQuery"
             :label="t('memoryFiles.search.query')"
