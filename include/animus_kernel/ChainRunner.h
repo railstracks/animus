@@ -58,6 +58,11 @@ using ChainToolEventCallback = std::function<void(const ToolCall&, const ToolRes
 /// Callback for tool call notifications (fires before execution).
 using ChainToolCallCallback = std::function<void(const ToolCall&)>;
 
+/// Callback fired when the chain produces a user-visible assistant message
+/// at any step (not thinking, not tool calls). Used by channel dispatch to
+/// send intermediate messages immediately rather than only the final response.
+using ChainAssistantMessageCallback = std::function<void(const std::string&)>;
+
 class ChainRunner {
 public:
     ChainRunner(
@@ -151,6 +156,10 @@ public:
     // Set the tool call notification callback — receives ToolCall before execution.
     void SetToolCallCallback(ChainToolCallCallback cb) { m_toolCallCallback = std::move(cb); }
 
+    // Set the assistant message callback — fires for each user-visible assistant
+    // message produced during the chain (not thinking blocks or tool calls).
+    void SetAssistantMessageCallback(ChainAssistantMessageCallback cb) { m_assistantMessageCallback = std::move(cb); }
+
 private:
     std::unique_ptr<llm::ILLMProvider> CreateProvider(
         const std::string& providerId,
@@ -234,6 +243,9 @@ private:
 
     // Tool call notification callback — fires before each tool execution.
     ChainToolCallCallback m_toolCallCallback;
+
+    // Assistant message callback — fires for each user-visible message in the chain.
+    ChainAssistantMessageCallback m_assistantMessageCallback;
 
     // Chain budgets
     std::uint32_t m_maxChainSteps{200};

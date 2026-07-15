@@ -1211,6 +1211,13 @@ void AgentKernel::ExecuteChannelDispatch(
     m_jobs.EnqueueInLane(
         ::animus::jobs::JobLane::Cognition,
         [this, session, sessionKey, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval]() {
+            // Set up per-message callback so each assistant message is sent
+            // to the channel immediately, not just the final response.
+            m_chainRunner->SetAssistantMessageCallback(
+                [this, replyTarget](const std::string& text) {
+                    SendAutoReply(replyTarget, text);
+                });
+
             auto sessionAccess = SessionAccess(session, SessionAccessMode::ReadWrite);
             auto result = m_chainRunner->ExecuteOnSession(
                 sessionAccess,
@@ -1220,6 +1227,9 @@ void AgentKernel::ExecuteChannelDispatch(
                 providerId,
                 model,
                 contextWindow);
+
+            // Clear callback after chain completes
+            m_chainRunner->SetAssistantMessageCallback(nullptr);
             if (result.success && m_sessionManager) {
                 m_sessionManager->FlushSession(session->Id());
 
@@ -1236,9 +1246,10 @@ void AgentKernel::ExecuteChannelDispatch(
                 std::cerr << "[channels:dispatch] LLM execution failed: "
                           << result.error << std::endl;
             }
-            if (result.success && !result.response.empty()) {
-                SendAutoReply(replyTarget, result.response);
-            }
+            // Don't SendAutoReply here — the assistant message callback
+            // already sent each message during the chain.
+            // result.response holds the last message text, but it was already
+            // delivered via the callback.
 
             // Notify queue that the chain has ended — starts cooldown if interval > 0
             if (m_messageQueue && interval > 0) {

@@ -348,6 +348,9 @@ ChainResult ChainRunner::ExecuteOnSession(
 
         if (!userVisibleText.empty()) {
             result.response = userVisibleText;
+            if (m_assistantMessageCallback) {
+                m_assistantMessageCallback(userVisibleText);
+            }
         }
 
         // Interjection: check for messages that arrived during chain execution
@@ -619,6 +622,9 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         }
         if (!userVisibleText.empty()) {
             result.response = userVisibleText;
+            if (m_assistantMessageCallback) {
+                m_assistantMessageCallback(userVisibleText);
+            }
         }
 
         // Check tool budget
