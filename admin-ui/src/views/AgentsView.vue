@@ -59,6 +59,7 @@ interface Agent {
   default_vision_model?: string;
   created_at_unix_ms: number;
   updated_at_unix_ms: number;
+  pad_context: boolean;
 }
 
 interface ProviderInfo {
@@ -107,20 +108,13 @@ const formData = ref({
   max_tool_calls_per_chain: 10,
   timeout_seconds: 1800,
   token_budget_per_prompt: 200000,
-    episodic_token_budget: 10000,
-    semantic_token_budget: 10000,
-    perspectives_token_budget: 3000,
-    memory_file_token_budget: 2500,
+  episodic_token_budget: 10000,
+  semantic_token_budget: 10000,
+  perspectives_token_budget: 3000,
+  memory_file_token_budget: 2500,
   session_report_token_budget: 1500,
-    ambient_context_limit: 5000,
-    consolidation_tool_budget: 30,
-    episodic_token_budget: 10000,
-    semantic_token_budget: 10000,
-    perspectives_token_budget: 3000,
-    memory_file_token_budget: 2500,
-  session_report_token_budget: 1500,
-    ambient_context_limit: 5000,
-    consolidation_tool_budget: 30,
+  ambient_context_limit: 5000,
+  consolidation_tool_budget: 30,
   enabled_tools: [] as string[],
   allowed_nodes: [] as string[],
   tool_configs: {} as Record<string, unknown>,
