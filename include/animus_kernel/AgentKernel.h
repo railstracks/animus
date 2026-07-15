@@ -92,7 +92,8 @@ private:
     void ExecuteChannelDispatch(
         const std::string& sessionKey,
         const std::string& message,
-        const ChannelManager::ReplyTarget& replyTarget);
+        const ChannelManager::ReplyTarget& replyTarget,
+        const std::string& agentId = "");
 
     /// Read min_response_interval from a channel's config. Returns 0 if not set.
     int GetChannelInterval(const std::string& channelName) const;
@@ -147,7 +148,11 @@ private:
     ChannelManager* m_channelManager{nullptr};             // unified channel management
     std::unique_ptr<MessageQueue> m_messageQueue;            // per-session message batching queue
     std::mutex m_pendingReplyTargetsMutex;                   // guards m_pendingReplyTargets
-    std::unordered_map<std::string, ChannelManager::ReplyTarget> m_pendingReplyTargets;
+    struct PendingDispatch {
+        ChannelManager::ReplyTarget replyTarget;
+        std::string agentId;
+    };
+    std::unordered_map<std::string, PendingDispatch> m_pendingReplyTargets;
     std::chrono::steady_clock::time_point m_startedAt{};
     bool m_running{false};
 };

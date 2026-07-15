@@ -105,7 +105,7 @@ private:
     std::vector<SessionTurn> m_turns;
     std::optional<SessionTurn> m_compactionSummary;
     std::string m_summary;
-    std::string m_agentId{"default"};
+    std::string m_agentId;
     std::string m_providerId;
     std::string m_sessionType;
     std::optional<std::size_t> m_messageCountOverride;

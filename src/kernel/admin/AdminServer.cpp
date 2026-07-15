@@ -926,7 +926,8 @@ void AdminServer::SyncIrcInterfaces() {
                     }
                     if (m_agentStore && !session->AgentId().empty()
                         && !m_agentStore->GetById(session->AgentId()).has_value()) {
-                        session->SetAgentId("default");
+                        // Agent not found — clear rather than fallback to "default"
+                        session->SetAgentId("");
                     }
 
                     std::string providerId = session->ProviderId();

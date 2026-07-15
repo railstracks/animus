@@ -1000,13 +1000,15 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // The flush callback retrieves the stored ReplyTarget and calls ExecuteChannelDispatch.
         m_messageQueue = std::make_unique<MessageQueue>(
             [this](const std::string& queueKey, const std::string& concatenatedMessage) {
-                // Retrieve the stored ReplyTarget for this session
+                // Retrieve the stored ReplyTarget and agentId for this session
                 ChannelManager::ReplyTarget replyTarget;
+                std::string agentId;
                 {
                     std::lock_guard<std::mutex> lock(m_pendingReplyTargetsMutex);
                     auto it = m_pendingReplyTargets.find(queueKey);
                     if (it != m_pendingReplyTargets.end()) {
-                        replyTarget = it->second;
+                        replyTarget = it->second.replyTarget;
+                        agentId = it->second.agentId;
                     }
                 }
                 // Strip the "channel:" prefix to get the session key
@@ -1014,7 +1016,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 if (sessionKey.size() > 8 && sessionKey.substr(0, 8) == "channel:") {
                     sessionKey = sessionKey.substr(8);
                 }
-                ExecuteChannelDispatch(sessionKey, concatenatedMessage, replyTarget);
+                ExecuteChannelDispatch(sessionKey, concatenatedMessage, replyTarget, agentId);
             });
 
         // Wire MessageQueue into ChainRunner for interjection support
@@ -1065,7 +1067,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 // Store it in a per-session map.
                 {
                     std::lock_guard<std::mutex> lock(m_pendingReplyTargetsMutex);
-                    m_pendingReplyTargets[queueKey] = replyTarget;
+                    m_pendingReplyTargets[queueKey] = {replyTarget, agentId};
                 }
 
                 auto now = std::chrono::system_clock::now();
@@ -1101,7 +1103,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                           << session->AgentId() << ", skipping dispatch" << std::endl;
             }
 
-            ExecuteChannelDispatch(sessionKey, message, replyTarget);
+            ExecuteChannelDispatch(sessionKey, message, replyTarget, agentId);
         };
 
         m_channelManager = new ChannelManager(
@@ -1148,10 +1150,16 @@ int AgentKernel::GetChannelInterval(const std::string& channelName) const {
 void AgentKernel::ExecuteChannelDispatch(
         const std::string& sessionKey,
         const std::string& message,
-        const ChannelManager::ReplyTarget& replyTarget) {
+        const ChannelManager::ReplyTarget& replyTarget,
+        const std::string& agentId = "") {
     SessionKey key{"channel:" + sessionKey, ""};
     auto session = m_sessionManager->GetOrCreate(key);
     if (!session) return;
+
+    // Ensure the session has the correct agent_id
+    if (!agentId.empty() && session->AgentId().empty()) {
+        session->SetAgentId(agentId);
+    }
 
     // Resolve provider
     std::string providerId = session->ProviderId();
