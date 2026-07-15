@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <set>
 #include <thread>
+#include <vector>
 
 #include "animus_kernel/AgentConfigStore.h"
 #include "animus_kernel/tools/HttpClient.h"
@@ -364,15 +365,21 @@ void ChannelManager::Shutdown() {
         m_pollers.clear();
     }
 
-    // Stop all IRC runtimes
+    // Stop all IRC runtimes — extract under lock, stop outside lock to
+    // avoid holding m_ircMutex while threads join (prevents deadlock if
+    // another thread is waiting on the mutex, e.g. SendIrcPrivmsg).
+    std::vector<std::pair<std::string, std::shared_ptr<IrcInterfaceRuntime>>> toStop;
     {
         std::lock_guard<std::mutex> lock(m_ircMutex);
         for (auto& [name, irc] : m_ircRuntimes) {
             if (irc.runtime) {
-                irc.runtime->Stop();
+                toStop.emplace_back(name, irc.runtime);
             }
         }
         m_ircRuntimes.clear();
+    }
+    for (auto& [name, runtime] : toStop) {
+        runtime->Stop();
     }
 }
 
@@ -870,13 +877,19 @@ void ChannelManager::StartIrcChannel(const ChannelState& state) {
 }
 
 void ChannelManager::StopIrcChannel(const std::string& name) {
-    std::lock_guard<std::mutex> lock(m_ircMutex);
-    auto it = m_ircRuntimes.find(name);
-    if (it != m_ircRuntimes.end() && it->second.runtime) {
-        it->second.runtime->Stop();
+    // Extract runtime under lock, then stop outside lock to avoid blocking
+    // other IRC operations while the thread joins (which may take up to 2s
+    // in poll(), or longer if DNS/connect is stuck).
+    std::shared_ptr<IrcInterfaceRuntime> runtime;
+    {
+        std::lock_guard<std::mutex> lock(m_ircMutex);
+        auto it = m_ircRuntimes.find(name);
+        if (it == m_ircRuntimes.end() || !it->second.runtime) return;
+        runtime = it->second.runtime;
         m_ircRuntimes.erase(it);
-        std::cerr << "[channels] IRC channel stopped: " << name << std::endl;
     }
+    runtime->Stop();
+    std::cerr << "[channels] IRC channel stopped: " << name << std::endl;
 }
 
 void ChannelManager::SyncIrcMessageCallback(

@@ -2,6 +2,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -28,6 +29,15 @@
 namespace {
 
 std::atomic<bool> g_stopRequested{false};
+
+// Returns a human-readable timestamp for log headers.
+static std::string LogTimestamp() {
+  auto now = std::chrono::system_clock::now();
+  std::time_t t = std::chrono::system_clock::to_time_t(now);
+  char buf[32];
+  std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+  return buf;
+}
 
 void HandleSignal(int /*signalNumber*/) {
   g_stopRequested.store(true);
@@ -92,6 +102,7 @@ static void print_help(const char* argv0) {
     << "  --config-dir <path>              Directory for configuration files\n"
     << "  --data-dir <path>                Directory for runtime state\n"
     << "  --prompt-log-level <level>       Prompt logging: none, default, full (default: default)\n"
+    << "  --log-file <path>                Redirect stderr+stdout to file (also: ANIMUS_LOG_FILE env)\n"
     << "\n"
     << "Node mode:\n"
     << "  --node                          Run as external node (no LLM/scheduler/channels)\n"
@@ -240,6 +251,7 @@ static bool ParseArg(int argc, char** argv, int& i,
                      std::string& configDirFlag,
                      std::string& dataDirFlag,
                      std::string& promptLogLevelFlag,
+                     std::string& logFilePath,
                      bool& wantsKernel, bool& runKernel, bool& daemonMode,
                      bool& nodeMode, std::string& nodeServerUrl,
                      std::string& nodeToken, std::string& nodeName,
@@ -433,6 +445,12 @@ static bool ParseArg(int argc, char** argv, int& i,
   if (arg == "--prompt-log-level") {
     if (i + 1 >= argc) { std::cerr << "--prompt-log-level requires a value (none, default, full)\n"; std::exit(2); }
     promptLogLevelFlag = argv[++i];
+    return true;
+  }
+
+  if (arg == "--log-file") {
+    if (i + 1 >= argc) { std::cerr << "--log-file requires a path\n"; std::exit(2); }
+    logFilePath = argv[++i];
     return true;
   }
 
@@ -635,6 +653,7 @@ int main(int argc, char** argv) {
   std::string configDirFlag;
   std::string dataDirFlag;
   std::string promptLogLevelFlag;
+  std::string logFilePath;
   std::string nodeServerUrl;
   std::string nodeToken;
   std::string nodeName;
@@ -653,6 +672,7 @@ int main(int argc, char** argv) {
 
     if (!ParseArg(argc, argv, i, cfg, dbConfigPath,
                    configDirFlag, dataDirFlag, promptLogLevelFlag,
+                   logFilePath,
                    wantsKernel, runKernel, daemonMode,
                    nodeMode, nodeServerUrl, nodeToken, nodeName, nodeTools)) {
       std::cerr << "Unknown argument: " << arg << "\n\n";
@@ -663,6 +683,30 @@ int main(int argc, char** argv) {
 
   // Resolve config-dir and data-dir paths
   ResolvePaths(cfg, configDirFlag, dataDirFlag);
+
+  // Redirect stderr+stdout to log file if requested.
+  // Priority: --log-file flag > ANIMUS_LOG_FILE env > none.
+  // If the path is relative, it is resolved against the data dir.
+  if (logFilePath.empty()) {
+    const char* envLog = std::getenv("ANIMUS_LOG_FILE");
+    if (envLog && *envLog) {
+      logFilePath = envLog;
+    }
+  }
+  if (!logFilePath.empty()) {
+    fs::path logPath(logFilePath);
+    if (logPath.is_relative()) {
+      logPath = cfg.dataDir / "log" / logPath;
+    }
+    fs::create_directories(logPath.parent_path(), ec);
+    FILE* f = std::freopen(logPath.string().c_str(), "a", stderr);
+    if (f) {
+      std::cerr << "--- Log started at " << LogTimestamp() << " ---" << std::endl;
+      // Also duplicate stdout to the same file
+      std::freopen(logPath.string().c_str(), "a", stdout);
+      std::cout << "--- stdout redirected to log ---" << std::endl;
+    }
+  }
 
   // Apply prompt log level override
   if (!promptLogLevelFlag.empty()) {
