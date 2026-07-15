@@ -50,16 +50,31 @@ void MessageQueue::Push(const std::string& sessionKey,
 
         // Safety valve: force flush if max queued exceeded
         bool forceFlush = (maxQueued > 0 && static_cast<int>(state.messages.size()) >= maxQueued);
+
+        // If not force-flushing and no chain/timer active, decide when to fire:
+        if (!forceFlush && !state.chain_active && !state.timer_running && intervalSeconds > 0) {
+            if (!state.has_responded) {
+                // First ever message on this session — no prior response to wait out
+                forceFlush = true;
+            } else {
+                // Interval is measured from the agent's last response, not from
+                // when the message arrived. If enough time has already passed,
+                // fire immediately.
+                auto deadline = state.chain_end_time
+                    + std::chrono::seconds(intervalSeconds);
+                if (deadline <= std::chrono::steady_clock::now()) {
+                    forceFlush = true;
+                } else {
+                    state.timer_deadline = deadline;
+                    state.timer_running = true;
+                    m_cv.notify_all();
+                }
+            }
+        }
+
         if (forceFlush) {
             flushedMsg = ExtractPending(sessionKey);
-        } else if (!state.chain_active && !state.timer_running && intervalSeconds > 0) {
-            // Start timer if no chain is active and no timer running
-            state.timer_deadline = std::chrono::steady_clock::now()
-                + std::chrono::seconds(intervalSeconds);
-            state.timer_running = true;
-            m_cv.notify_all();
         }
-        // else: timer running — keep original deadline
     }
 
     // Call flush callback outside the lock to avoid deadlock
@@ -125,6 +140,7 @@ void MessageQueue::NotifyChainEnd(const std::string& sessionKey, int intervalSec
     auto& state = m_sessions[sessionKey];
     state.chain_active = false;
     state.chain_end_time = std::chrono::steady_clock::now();
+    state.has_responded = true;
     state.interval_seconds = intervalSeconds;
 
     // If there are pending messages, start the cooldown timer

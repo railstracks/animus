@@ -91,6 +91,7 @@ private:
         bool chain_active{false};
         bool timer_running{false};
         bool allow_interjection{false};
+        bool has_responded{false};  // true once the agent has completed at least one chain
         int interval_seconds{0};
     };
 
