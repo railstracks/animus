@@ -5,7 +5,7 @@ import { apiGet, apiRequest } from '../lib/api';
 
 interface AgentSummary {
   id: string;
-  display_name: string;
+  name: string;
 }
 
 interface AgentsResponse {
@@ -44,18 +44,16 @@ const error = ref('');
 
 const schedulerRunning = ref(false);
 const agents = ref<AgentSummary[]>([]);
-const selectedAgentId = ref('system');
+const selectedAgentId = ref('');
 const tagFilter = ref('');
 const includeDisabled = ref(true);
 const schedules = ref<ScheduleItem[]>([]);
 
 const agentItems = computed(() => {
-  const values = new Map<string, string>();
-  values.set('system', 'System (system)');
-  for (const agent of agents.value) {
-    values.set(agent.id, `${agent.display_name} (${agent.id})`);
-  }
-  return Array.from(values.entries()).map(([value, title]) => ({ value, title }));
+  return agents.value.map((a) => ({
+    value: a.id,
+    title: `${a.name} (${a.id})`,
+  }));
 });
 
 const totalCount = computed(() => schedules.value.length);
@@ -100,8 +98,8 @@ async function loadAgents(): Promise<void> {
   try {
     const payload = await apiGet<AgentsResponse>('/api/v1/agents');
     agents.value = payload.agents ?? [];
-    if (!selectedAgentId.value) {
-      selectedAgentId.value = 'system';
+    if (!selectedAgentId.value && agents.value.length > 0) {
+      selectedAgentId.value = agents.value[0].id;
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load agents';

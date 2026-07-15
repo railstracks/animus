@@ -853,9 +853,19 @@
                     if (offset < 0) offset = 0;
                 }
 
-                // Resolve log file path from kernel config
+                // Resolve log file path: check ANIMUS_LOG_FILE env, then dataDir/log/animusd.log
                 namespace fs = std::filesystem;
-                fs::path logPath = server->m_dataDir / "log" / "animusd.log";
+                fs::path logPath;
+                const char* envLog = std::getenv("ANIMUS_LOG_FILE");
+                if (envLog && *envLog) {
+                    logPath = fs::path(envLog);
+                    if (logPath.is_relative()) {
+                        logPath = server->m_dataDir / "log" / logPath;
+                    }
+                }
+                if (logPath.empty() || !fs::exists(logPath)) {
+                    logPath = server->m_dataDir / "log" / "animusd.log";
+                }
                 if (!fs::exists(logPath)) {
                     // Fallback: try legacy path
                     logPath = "dist/log/animusd.log";

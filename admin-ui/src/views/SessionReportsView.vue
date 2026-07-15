@@ -27,6 +27,11 @@ interface FullReport extends SessionReport {
   created_at_unix_ms: number;
 }
 
+interface AgentSummary {
+  id: string;
+  name: string;
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 
 const reports = ref<SessionReport[]>([]);
@@ -36,7 +41,15 @@ const searchQuery = ref('');
 const searchResults = ref<SessionReport[] | null>(null);
 const selectedReport = ref<FullReport | null>(null);
 const detailLoading = ref(false);
-const selectedAgent = ref('default');
+const selectedAgent = ref('');
+const agents = ref<AgentSummary[]>([]);
+
+const agentItems = computed(() => {
+  return agents.value.map((a) => ({
+    value: a.id,
+    title: `${a.name} (${a.id})`,
+  }));
+});
 
 // ── Computed ───────────────────────────────────────────────────────────────
 
@@ -47,7 +60,24 @@ const displayedReports = computed(() => {
 
 // ── Actions ────────────────────────────────────────────────────────────────
 
+async function loadAgents() {
+  try {
+    const data = await apiGet<{ agents: AgentSummary[] }>('/api/v1/agents');
+    agents.value = data.agents ?? [];
+    if (agents.value.length > 0 && !selectedAgent.value) {
+      selectedAgent.value = agents.value[0].id;
+    }
+  } catch {
+    agents.value = [];
+  }
+}
+
 async function fetchReports() {
+  if (!selectedAgent.value) {
+    reports.value = [];
+    loading.value = false;
+    return;
+  }
   loading.value = true;
   error.value = '';
   try {
@@ -175,8 +205,9 @@ function relativeTime(unixMs: number): string {
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 
-onMounted(() => {
-  fetchReports();
+onMounted(async () => {
+  await loadAgents();
+  await fetchReports();
 });
 </script>
 
@@ -218,10 +249,10 @@ onMounted(() => {
         v-model="selectedAgent"
         density="compact"
         variant="outlined"
-        :items="['default']"
+        :items="agentItems"
         hide-details
         label="Agent"
-        style="max-width: 160px;"
+        style="max-width: 200px;"
         @update:model-value="fetchReports"
       />
       <v-btn
