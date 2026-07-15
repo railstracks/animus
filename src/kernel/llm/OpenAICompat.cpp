@@ -294,6 +294,17 @@ LLMMessage ParseResponseWithReasoning(const std::string& body,
 std::optional<LLMToken> ParseSSELineWithReasoning(
     const std::string& line) {
 
+  // Check for usage stats (OpenAI-compatible providers send these in the
+  // final SSE chunk, sometimes as a separate message with empty choices).
+  auto ptStr = ExtractJsonNumber(line, "prompt_tokens");
+  auto ctStr = ExtractJsonNumber(line, "completion_tokens");
+  if (!ptStr.empty() || !ctStr.empty()) {
+    LLMToken token;
+    token.prompt_tokens = std::atoi(ptStr.c_str());
+    token.completion_tokens = std::atoi(ctStr.c_str());
+    return token;
+  }
+
   // Check for reasoning_content (thinking mode)
   auto reasoningContent = ExtractJsonString(line, "reasoning_content");
   if (!reasoningContent.empty()) {
