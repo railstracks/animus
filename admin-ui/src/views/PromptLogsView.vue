@@ -4,6 +4,11 @@ import { apiGet } from '../lib/api';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+interface AgentInfo {
+  id: string;
+  name: string;
+}
+
 interface PromptLogEntry {
   id: number;
   agent_id: string;
@@ -35,7 +40,8 @@ const logs = ref<PromptLogEntry[]>([]);
 const summary = ref<UsageSummary | null>(null);
 const loading = ref(true);
 const error = ref('');
-const selectedAgent = ref('default');
+const agents = ref<AgentInfo[]>([]);
+const selectedAgent = ref('');
 const selectedLog = ref<PromptLogEntry | null>(null);
 const timeRange = ref<'24h' | '7d' | '30d' | 'all'>('24h');
 
@@ -114,6 +120,7 @@ function providerColor(provider: string): string {
 // ── Actions ────────────────────────────────────────────────────────────────
 
 async function fetchData() {
+  if (!selectedAgent.value) return;
   loading.value = true;
   error.value = '';
   try {
@@ -142,7 +149,16 @@ async function fetchData() {
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 
-onMounted(() => {
+onMounted(async () => {
+  try {
+    const res = await apiGet<{ agents: AgentInfo[] }>('/api/v1/agents');
+    agents.value = res.agents ?? [];
+    if (agents.value.length > 0) {
+      selectedAgent.value = agents.value[0].id;
+    }
+  } catch (_) {
+    // ignore — agents will be empty
+  }
   fetchData();
 });
 </script>
@@ -153,6 +169,18 @@ onMounted(() => {
       <h1 class="text-h5 mr-4">Prompt Logs</h1>
       <v-chip size="small" color="primary" variant="tonal">{{ callsCount }}</v-chip>
       <v-spacer />
+
+      <!-- Agent selector -->
+      <v-select
+        v-model="selectedAgent"
+        density="compact"
+        variant="outlined"
+        :items="agents.map(a => ({ title: a.name || a.id, value: a.id }))"
+        hide-details
+        label="Agent"
+        style="max-width: 200px;"
+        @update:model-value="fetchData"
+      />
 
       <!-- Time range selector -->
       <v-btn-toggle v-model="timeRange" mandatory density="compact" variant="outlined" class="mr-2" @update:model-value="fetchData">
