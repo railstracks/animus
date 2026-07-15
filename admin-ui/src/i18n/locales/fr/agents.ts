@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'Désactivé',
     toolCountAll: 'tout',
     cannotDeleteDefault: 'L\'agent par défaut ne peut pas être supprimé.',
+    setupWizard: 'Assistant de configuration',
     actions: {
       refresh: 'Actualiser',
       add: 'Ajouter un agent',

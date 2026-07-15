@@ -18,6 +18,7 @@ export const sidebar = {
       agents: '代理商',
       gallivanting: '加利万廷',
       diary: '日记',
+      webSearch: '网页搜索',
       logs: '日志'
     }
   } as const;

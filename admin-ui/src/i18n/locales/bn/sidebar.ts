@@ -18,6 +18,7 @@ export const sidebar = {
       agents: 'এজেন্ট',
       gallivanting: 'গ্যালিভেন্টিং',
       diary: 'ডায়েরি',
+      webSearch: 'ওয়েব অনুসন্ধান',
       logs: 'লগ'
     }
   } as const;

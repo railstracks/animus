@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: '关闭',
     toolCountAll: '全部',
     cannotDeleteDefault: '默认代理无法删除。',
+    setupWizard: '设置向导',
     actions: {
       refresh: '刷新',
       add: '添加代理',

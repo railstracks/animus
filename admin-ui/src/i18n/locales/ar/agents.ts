@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'إيقاف',
     toolCountAll: 'الكل',
     cannotDeleteDefault: 'لا يمكن حذف الوكيل الافتراضي.',
+    setupWizard: 'معالج الإعداد',
     actions: {
       refresh: 'تحديث',
       add: 'إضافة وكيل',

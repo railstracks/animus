@@ -18,6 +18,7 @@ export const sidebar = {
       agents: 'ភ្នាក់ងារ',
       gallivanting: 'រំភើបចិត្ត',
       diary: 'កំណត់ហេតុប្រចាំថ្ងៃ',
+      webSearch: 'ការស្វែងរកតាមអ៊ិនធឺណិត',
       logs: 'កំណត់ហេតុ'
     }
   } as const;

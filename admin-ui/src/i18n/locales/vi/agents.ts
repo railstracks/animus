@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'Tắt',
     toolCountAll: 'tất cả',
     cannotDeleteDefault: 'Tác nhân mặc định không thể bị xóa.',
+    setupWizard: 'Thuật sĩ thiết lập',
     actions: {
       refresh: 'Làm mới',
       add: 'Thêm đại lý',

@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: '끄기',
     toolCountAll: '모두',
     cannotDeleteDefault: '기본 에이전트는 삭제할 수 없습니다.',
+    setupWizard: '설정 마법사',
     actions: {
       refresh: '새로고침',
       add: '에이전트 추가',

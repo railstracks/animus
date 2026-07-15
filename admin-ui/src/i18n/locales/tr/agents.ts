@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'Kapalı',
     toolCountAll: 'hepsi',
     cannotDeleteDefault: 'Varsayılan aracı silinemez.',
+    setupWizard: 'Kurulum sihirbazı',
     actions: {
       refresh: 'Yenile',
       add: 'Temsilci Ekle',

@@ -18,6 +18,7 @@ export const sidebar = {
       agents: 'Agenci',
       gallivanting: 'Galopowanie',
       diary: 'Pamiętnik',
+      webSearch: 'Wyszukiwanie w sieci',
       logs: 'Dzienniki'
     }
   } as const;

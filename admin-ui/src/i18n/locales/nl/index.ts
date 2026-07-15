@@ -14,6 +14,7 @@ import { agents } from './agents'
 import { activeMemory } from './activeMemory'
 import { channels } from './channels'
 import { charter } from './charter'
+import { webSearch } from './webSearch'
 import { templates } from './templates'
 
 export const nl = {
@@ -33,5 +34,6 @@ export const nl = {
   activeMemory,
   channels,
   charter,
+  webSearch,
   templates,
 } as const;

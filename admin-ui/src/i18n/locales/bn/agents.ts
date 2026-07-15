@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'বন্ধ',
     toolCountAll: 'সব',
     cannotDeleteDefault: 'ডিফল্ট এজেন্ট মুছে ফেলা যাবে না.',
+    setupWizard: 'সেটআপ উইজার্ড',
     actions: {
       refresh: 'রিফ্রেশ',
       add: 'এজেন্ট যোগ করুন',

@@ -18,6 +18,7 @@ export const sidebar = {
       agents: 'Temsilciler',
       gallivanting: 'Galvanting',
       diary: 'Günlük',
+      webSearch: 'Web araması',
       logs: 'Günlükler'
     }
   } as const;

@@ -18,6 +18,7 @@ export const sidebar = {
       agents: 'エージェント',
       gallivanting: '疾走する',
       diary: '日記',
+      webSearch: 'ウェブ検索',
       logs: 'ログ'
     }
   } as const;

@@ -18,6 +18,7 @@ export const sidebar = {
       agents: 'الوكلاء',
       gallivanting: 'الركض',
       diary: 'يوميات',
+      webSearch: 'بحث الويب',
       logs: 'سجلات'
     }
   } as const;

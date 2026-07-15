@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'Вимкнено',
     toolCountAll: 'все',
     cannotDeleteDefault: 'Агента за замовчуванням не можна видалити.',
+    setupWizard: 'Майстер налаштування',
     actions: {
       refresh: 'Оновити',
       add: 'Додати агента',

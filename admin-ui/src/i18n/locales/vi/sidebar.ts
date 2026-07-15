@@ -18,6 +18,7 @@ export const sidebar = {
       agents: 'Đại lý',
       gallivanting: 'ga lăng',
       diary: 'Nhật ký',
+      webSearch: 'Tìm kiếm web',
       logs: 'Nhật ký'
     }
   } as const;

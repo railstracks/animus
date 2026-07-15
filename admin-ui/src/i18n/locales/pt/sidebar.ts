@@ -18,6 +18,7 @@ export const sidebar = {
       agents: 'Agentes',
       gallivanting: 'Galivante',
       diary: 'Diário',
+      webSearch: 'Pesquisa na web',
       logs: 'Registros'
     }
   } as const;

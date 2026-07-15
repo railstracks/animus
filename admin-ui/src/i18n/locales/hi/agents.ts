@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'बंद',
     toolCountAll: 'सब',
     cannotDeleteDefault: 'डिफ़ॉल्ट एजेंट को हटाया नहीं जा सकता.',
+    setupWizard: 'सेटअप विज़ार्ड',
     actions: {
       refresh: 'ताज़ा करें',
       add: 'एजेंट जोड़ें',

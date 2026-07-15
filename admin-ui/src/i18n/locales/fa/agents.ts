@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'خاموش',
     toolCountAll: 'همه',
     cannotDeleteDefault: 'عامل پیش فرض را نمی توان حذف کرد.',
+    setupWizard: 'جادوگر تنظیمات',
     actions: {
       refresh: 'تازه کردن',
       add: 'افزودن نماینده',

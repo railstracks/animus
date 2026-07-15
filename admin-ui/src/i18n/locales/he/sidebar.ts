@@ -18,6 +18,7 @@ export const sidebar = {
       agents: 'סוכנים',
       gallivanting: 'גליבנט',
       diary: 'יומן',
+      webSearch: 'חיפוש באינטרנט',
       logs: 'יומנים'
     }
   } as const;

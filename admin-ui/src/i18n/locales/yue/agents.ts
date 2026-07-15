@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: '離開',
     toolCountAll: '全部',
     cannotDeleteDefault: '預設代理無法刪除。',
+    setupWizard: '設定精靈',
     actions: {
       refresh: '重新整理',
       add: '新增代理',

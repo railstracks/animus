@@ -18,6 +18,7 @@ export const sidebar = {
       agents: '代理商',
       gallivanting: '加利萬廷',
       diary: '日記',
+      webSearch: '網絡搜尋',
       logs: '紀錄'
     }
   } as const;

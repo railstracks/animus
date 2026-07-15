@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'オフ',
     toolCountAll: 'すべて',
     cannotDeleteDefault: 'デフォルトのエージェントは削除できません。',
+    setupWizard: 'セットアップウィザード',
     actions: {
       refresh: 'リフレッシュ',
       add: 'エージェントの追加',

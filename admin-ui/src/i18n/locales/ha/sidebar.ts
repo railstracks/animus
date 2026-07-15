@@ -18,6 +18,7 @@ export const sidebar = {
       agents: 'Wakilai',
       gallivanting: 'Gallivanting',
       diary: 'Diary',
+      webSearch: 'Binciken yanar gizo',
       logs: 'Logs'
     }
   } as const;

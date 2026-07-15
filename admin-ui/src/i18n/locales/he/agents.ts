@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'כבוי',
     toolCountAll: 'הכל',
     cannotDeleteDefault: 'לא ניתן למחוק את סוכן ברירת המחדל.',
+    setupWizard: 'אשף הגדרה',
     actions: {
       refresh: 'רענן',
       add: 'הוסף סוכן',

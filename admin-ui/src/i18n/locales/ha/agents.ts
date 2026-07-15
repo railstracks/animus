@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'Kashe',
     toolCountAll: 'duka',
     cannotDeleteDefault: 'Ba za a iya share tsohuwar wakili ba.',
+    setupWizard: 'Mataimakin saita',
     actions: {
       refresh: 'Sake sabuntawa',
       add: 'Ƙara Wakili',

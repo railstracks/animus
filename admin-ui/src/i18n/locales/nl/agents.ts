@@ -4,6 +4,7 @@ export const agents = {
   reasoningOff: 'Uit',
   toolCountAll: 'alle',
   cannotDeleteDefault: 'De standaardagent kan niet worden verwijderd.',
+    setupWizard: 'Installatiewizard',
   actions: {
     refresh: 'Vernieuwen',
     add: 'Agent toevoegen',

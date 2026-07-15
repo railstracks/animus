@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'បិទ',
     toolCountAll: 'ទាំងអស់។',
     cannotDeleteDefault: 'ភ្នាក់ងារលំនាំដើមមិនអាចលុបបានទេ។',
+    setupWizard: 'អ្នកជួយរៀបចំ',
     actions: {
       refresh: 'ធ្វើឱ្យស្រស់',
       add: 'បន្ថែមភ្នាក់ងារ',

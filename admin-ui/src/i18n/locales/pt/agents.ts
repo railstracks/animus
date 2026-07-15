@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'Desligado',
     toolCountAll: 'tudo',
     cannotDeleteDefault: 'O agente padrão não pode ser excluído.',
+    setupWizard: 'Assistente de configuração',
     actions: {
       refresh: 'Atualizar',
       add: 'Adicionar agente',
