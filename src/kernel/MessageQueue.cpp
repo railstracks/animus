@@ -3,6 +3,7 @@
 #include <chrono>
 #include <iostream>
 #include <sstream>
+#include <utility>
 
 namespace animus::kernel {
 
@@ -35,30 +36,36 @@ void MessageQueue::Push(const std::string& sessionKey,
                         std::uint64_t unixMs,
                         int intervalSeconds,
                         int maxQueued) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::string flushedMsg;
 
-    auto& state = m_sessions[sessionKey];
-    state.interval_seconds = intervalSeconds;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
 
-    // If a chain is active, just accumulate — timer will be set when chain ends.
-    // If no chain is active, set/update the timer.
-    state.messages.push_back({sessionKey, sender, content, unixMs});
+        auto& state = m_sessions[sessionKey];
+        state.interval_seconds = intervalSeconds;
 
-    // Safety valve: force flush if max queued exceeded
-    if (maxQueued > 0 && static_cast<int>(state.messages.size()) >= maxQueued) {
-        FlushSession(sessionKey);
-        return;
+        // If a chain is active, just accumulate — timer will be set when chain ends.
+        // If no chain is active, set/update the timer.
+        state.messages.push_back({sessionKey, sender, content, unixMs});
+
+        // Safety valve: force flush if max queued exceeded
+        bool forceFlush = (maxQueued > 0 && static_cast<int>(state.messages.size()) >= maxQueued);
+        if (forceFlush) {
+            flushedMsg = ExtractPending(sessionKey);
+        } else if (!state.chain_active && !state.timer_running && intervalSeconds > 0) {
+            // Start timer if no chain is active and no timer running
+            state.timer_deadline = std::chrono::steady_clock::now()
+                + std::chrono::seconds(intervalSeconds);
+            state.timer_running = true;
+            m_cv.notify_all();
+        }
+        // else: timer running — keep original deadline
     }
 
-    // Start timer if no chain is active and no timer running
-    if (!state.chain_active && !state.timer_running && intervalSeconds > 0) {
-        state.timer_deadline = std::chrono::steady_clock::now()
-            + std::chrono::seconds(intervalSeconds);
-        state.timer_running = true;
-        m_cv.notify_all();
-    } else if (state.timer_running) {
-        // Already waiting — keep the original deadline (don't extend on each message)
-        // This ensures the interval is measured from the first queued message, not the last.
+    // Call flush callback outside the lock to avoid deadlock
+    // (callback calls ExecuteChannelDispatch which re-enters via NotifyChainStart)
+    if (!flushedMsg.empty() && m_flushCallback) {
+        m_flushCallback(sessionKey, flushedMsg);
     }
 }
 
@@ -167,33 +174,39 @@ void MessageQueue::TimerLoop() {
             }
         }
 
-        // Flush expired sessions (unlock first to avoid holding mutex during callback)
-        lock.unlock();
+        // Flush expired sessions: extract data under lock, then call callbacks
+        // outside the lock to avoid deadlock (callback re-enters via NotifyChainStart).
+        // lock is held here (reacquired by wait_until on wakeup).
+        std::vector<std::pair<std::string, std::string>> toFire;
         for (const auto& key : toFlush) {
-            std::lock_guard<std::mutex> innerLock(m_mutex);
-            FlushSession(key);
+            std::string msg = ExtractPending(key);
+            if (!msg.empty()) {
+                toFire.emplace_back(key, std::move(msg));
+            }
         }
-        lock.lock();
+        lock.unlock();
+
+        for (auto& [key, msg] : toFire) {
+            if (m_flushCallback) {
+                m_flushCallback(key, msg);
+            }
+        }
+        // Loop back: unique_lock is declared fresh each iteration
     }
 }
 
-void MessageQueue::FlushSession(const std::string& sessionKey) {
-    // Caller must hold m_mutex
+// Extracts and clears pending messages for a session.
+// Caller must hold m_mutex. Returns empty string and does nothing if no messages.
+// Does NOT call the flush callback — the caller must invoke it outside the lock
+// to avoid deadlock (the callback may re-enter the queue via NotifyChainStart).
+std::string MessageQueue::ExtractPending(const std::string& sessionKey) {
     auto it = m_sessions.find(sessionKey);
-    if (it == m_sessions.end() || it->second.messages.empty()) return;
+    if (it == m_sessions.end() || it->second.messages.empty()) return "";
 
     std::string concatenated = ConcatenateMessages(it->second.messages);
     it->second.messages.clear();
     it->second.timer_running = false;
-
-    // Release lock before callback to avoid deadlock if callback pushes back
-    // Actually — we can't release here since caller holds the lock.
-    // The flush callback should not re-enter the queue. Copy the data and
-    // call outside the lock in TimerLoop. For the Push() safety valve path,
-    // we accept the risk since the callback goes to EnqueueInLane (async).
-    if (m_flushCallback) {
-        m_flushCallback(sessionKey, concatenated);
-    }
+    return concatenated;
 }
 
 std::string MessageQueue::ConcatenateMessages(const std::vector<QueuedMessage>& msgs) const {

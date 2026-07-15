@@ -96,7 +96,10 @@ private:
 
     void TimerLoop();
     std::string ConcatenateMessages(const std::vector<QueuedMessage>& msgs) const;
-    void FlushSession(const std::string& sessionKey);
+
+    // Extract and clear pending messages for a session (caller must hold m_mutex).
+    // Does NOT call the flush callback — caller must do that outside the lock.
+    std::string ExtractPending(const std::string& sessionKey);
 
     FlushCallback m_flushCallback;
     std::unordered_map<std::string, SessionState> m_sessions;
