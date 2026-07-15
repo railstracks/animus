@@ -4,6 +4,7 @@ export const agents = {
     reasoningOff: 'Off',
     toolCountAll: 'all',
     cannotDeleteDefault: 'The default agent cannot be deleted.',
+    setupWizard: 'Setup Wizard',
     actions: {
       refresh: 'Refresh',
       add: 'Add Agent',

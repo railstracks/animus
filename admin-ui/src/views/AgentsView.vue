@@ -468,7 +468,7 @@ watch(
           {{ t('agents.actions.refresh') }}
         </v-btn>
         <v-btn variant="text" size="small" prepend-icon="mdi-auto-fix" @click="goToWizard">
-          Setup Wizard
+          {{ t('agents.setupWizard') }}
         </v-btn>
         <v-btn color="primary" size="small" @click="openCreate">
           {{ t('agents.actions.add') }}
