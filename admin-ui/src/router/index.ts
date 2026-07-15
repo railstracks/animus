@@ -3,7 +3,6 @@ import { createRouter, createWebHistory } from 'vue-router';
 import AgentsView from '../views/AgentsView.vue';
 import ChatView from '../views/ChatView.vue';
 import WizardView from '../views/WizardView.vue';
-import ConstitutionView from '../views/ConstitutionView.vue';
 import DashboardView from '../views/DashboardView.vue';
 import ChannelsView from '../views/ChannelsView.vue';
 import LogsView from '../views/LogsView.vue';
@@ -36,7 +35,6 @@ const router = createRouter({
     { path: '/web-search', name: 'web-search', component: WebSearchView },
     { path: '/agents', name: 'agents', component: AgentsView },
     { path: '/channels', name: 'channels', component: ChannelsView },
-    { path: '/constitution', name: 'constitution', component: ConstitutionView },
     { path: '/logs', name: 'logs', component: LogsView },
     { path: '/diary', name: 'diary', component: DiaryView },
     { path: '/gallivanting', name: 'gallivanting', component: GallivantingView },

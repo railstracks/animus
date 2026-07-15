@@ -18,7 +18,6 @@ export const sidebar = {
       agents: 'Wakilai',
       gallivanting: 'Gallivanting',
       diary: 'Diary',
-      constitution: 'Tsarin Mulki',
       logs: 'Logs'
     }
   } as const;

@@ -18,7 +18,6 @@ export const sidebar = {
       agents: 'Đại lý',
       gallivanting: 'ga lăng',
       diary: 'Nhật ký',
-      constitution: 'Hiến pháp',
       logs: 'Nhật ký'
     }
   } as const;

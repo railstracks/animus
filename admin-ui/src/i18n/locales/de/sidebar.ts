@@ -19,7 +19,6 @@ export const sidebar = {
       agents: 'Agenten',
       gallivanting: 'Galivantieren',
       diary: 'Tagebuch',
-      constitution: 'Verfassung',
       logs: 'Protokolle'
     }
   } as const;

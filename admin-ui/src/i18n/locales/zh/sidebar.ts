@@ -18,7 +18,6 @@ export const sidebar = {
       agents: '代理商',
       gallivanting: '加利万廷',
       diary: '日记',
-      constitution: '宪法',
       logs: '日志'
     }
   } as const;

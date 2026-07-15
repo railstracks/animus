@@ -22,7 +22,6 @@ const links = [
   { titleKey: 'sidebar.links.agents', path: '/agents', icon: 'mdi-account-group' },
   { titleKey: 'sidebar.links.gallivanting', path: '/gallivanting', icon: 'mdi-walk' },
   { titleKey: 'sidebar.links.diary', path: '/diary', icon: 'mdi-notebook' },
-  { titleKey: 'sidebar.links.constitution', path: '/constitution', icon: 'mdi-scale-balance' },
   { titleKey: 'sidebar.links.logs', path: '/logs', icon: 'mdi-text-box-search-outline' }
 ] as const;
 

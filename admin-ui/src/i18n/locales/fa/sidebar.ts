@@ -18,7 +18,6 @@ export const sidebar = {
       agents: 'عوامل',
       gallivanting: 'گالیوانتینگ',
       diary: 'دفتر خاطرات',
-      constitution: 'قانون اساسی',
       logs: 'سیاههها'
     }
   } as const;

@@ -18,7 +18,6 @@ export const sidebar = {
       agents: 'ភ្នាក់ងារ',
       gallivanting: 'រំភើបចិត្ត',
       diary: 'កំណត់ហេតុប្រចាំថ្ងៃ',
-      constitution: 'រដ្ឋធម្មនុញ្ញ',
       logs: 'កំណត់ហេតុ'
     }
   } as const;

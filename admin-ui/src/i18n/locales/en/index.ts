@@ -9,7 +9,6 @@ import { memoryFiles } from './memoryFiles'
 import { ontology } from './ontology'
 import { providers } from './providers'
 import { config } from './config'
-import { constitution } from './constitution'
 import { logs } from './logs'
 import { agents } from './agents'
 import { activeMemory } from './activeMemory'
@@ -30,7 +29,6 @@ export const en = {
   ontology,
   providers,
   config,
-  constitution,
   logs,
   agents,
   activeMemory,

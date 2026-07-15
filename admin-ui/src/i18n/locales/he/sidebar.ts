@@ -18,7 +18,6 @@ export const sidebar = {
       agents: 'סוכנים',
       gallivanting: 'גליבנט',
       diary: 'יומן',
-      constitution: 'חוקה',
       logs: 'יומנים'
     }
   } as const;

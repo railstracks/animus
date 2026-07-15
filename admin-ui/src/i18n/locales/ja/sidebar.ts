@@ -18,7 +18,6 @@ export const sidebar = {
       agents: 'エージェント',
       gallivanting: '疾走する',
       diary: '日記',
-      constitution: '憲法',
       logs: 'ログ'
     }
   } as const;
