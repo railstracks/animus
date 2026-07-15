@@ -59,7 +59,7 @@ export const agents = {
       episodicTokenBudget: 'Бюджет епізодичної пам\'яті (токени)',
       semanticTokenBudget: 'Бюджет семантичної пам\'яті (токени)',
       perspectivesTokenBudget: 'Бюджет перспектив (токени)',
-      memoryFileTokenBudget: 'Бюджет токенів для файлів пам'яті (токени)',
+      memoryFileTokenBudget: 'Бюджет токенів для файлів пам\'яті (токени)',
       ambientContextLimit: 'Ліміт контексту оточення (файли)',
       sessionReportTokenBudget: 'Бюджет токенів для звітів сесії (токени)',
       consolidationToolBudget: 'Бюджет інструменту консолідації (дзвінки)',
