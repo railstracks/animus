@@ -1151,7 +1151,7 @@ void AgentKernel::ExecuteChannelDispatch(
         const std::string& sessionKey,
         const std::string& message,
         const ChannelManager::ReplyTarget& replyTarget,
-        const std::string& agentId = "") {
+        const std::string& agentId) {
     SessionKey key{"channel:" + sessionKey, ""};
     auto session = m_sessionManager->GetOrCreate(key);
     if (!session) return;
