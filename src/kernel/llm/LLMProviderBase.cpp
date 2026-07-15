@@ -121,8 +121,13 @@ LLMMessage LLMProviderBase::Complete(const LLMRequest& request,
   ParseToolCallsFromResponse(responseStr, m_lastToolCalls, m_lastFinishReason);
 
   // Extract token usage from the response body
-  m_lastPromptTokens = std::atoi(openai_compat::ExtractJsonNumber(responseStr, "prompt_tokens").c_str());
-  m_lastCompletionTokens = std::atoi(openai_compat::ExtractJsonNumber(responseStr, "completion_tokens").c_str());
+  auto ptVal = openai_compat::ExtractJsonNumber(responseStr, "prompt_tokens");
+  auto ctVal = openai_compat::ExtractJsonNumber(responseStr, "completion_tokens");
+  // Ollama native fields
+  if (ptVal.empty()) ptVal = openai_compat::ExtractJsonNumber(responseStr, "prompt_eval_count");
+  if (ctVal.empty()) ctVal = openai_compat::ExtractJsonNumber(responseStr, "eval_count");
+  m_lastPromptTokens = std::atoi(ptVal.c_str());
+  m_lastCompletionTokens = std::atoi(ctVal.c_str());
 
   return ParseResponse(responseStr, error);
 }

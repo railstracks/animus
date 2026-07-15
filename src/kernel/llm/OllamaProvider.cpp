@@ -89,13 +89,19 @@ std::optional<LLMToken> OllamaProvider::ParseSSELine(
     token.tool_calls = ParseToolCalls(line);
   }
 
-  if (content.empty() && !isFinal) {
-    // Check for usage stats
-    auto ptStr = ExtractJsonNumber(line, "prompt_tokens");
-    auto ctStr = ExtractJsonNumber(line, "completion_tokens");
-    if (!ptStr.empty()) token.prompt_tokens = std::stoi(ptStr);
-    if (!ctStr.empty()) token.completion_tokens = std::stoi(ctStr);
-    if (ptStr.empty() && ctStr.empty()) return std::nullopt;
+  // Check for usage stats (may appear in any chunk, including final)
+  // OpenAI-compatible fields
+  auto ptStr = ExtractJsonNumber(line, "prompt_tokens");
+  auto ctStr = ExtractJsonNumber(line, "completion_tokens");
+  // Ollama native fields (prompt_eval_count / eval_count)
+  if (ptStr.empty()) ptStr = ExtractJsonNumber(line, "prompt_eval_count");
+  if (ctStr.empty()) ctStr = ExtractJsonNumber(line, "eval_count");
+  if (!ptStr.empty()) token.prompt_tokens = std::stoi(ptStr);
+  if (!ctStr.empty()) token.completion_tokens = std::stoi(ctStr);
+
+  // If the chunk has no content, no finish reason, and no usage, skip it
+  if (content.empty() && !isFinal && ptStr.empty() && ctStr.empty()) {
+    return std::nullopt;
   }
 
   return token;
