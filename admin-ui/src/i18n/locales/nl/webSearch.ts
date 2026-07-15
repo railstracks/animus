@@ -8,7 +8,7 @@ export const webSearch = {
   defaultCount: 'Standaard aantal resultaten',
   rateLimit: 'Snelheidslimiet (verzoeken/minuut)',
   endpoint: 'Endpoint-URL',
-  endpointHint: 'Alleen voor zelf-gehoste providers (bijv. SearXNG). Leeg laten voor gehoste API's.',
+  endpointHint: 'Alleen voor zelf-gehoste providers (bijv. SearXNG). Leeg laten voor gehoste API\'s.',
   save: 'Configuratie opslaan',
   savedSuccess: 'Configuratie opgeslagen.',
   saveError: 'Opslaan mislukt',

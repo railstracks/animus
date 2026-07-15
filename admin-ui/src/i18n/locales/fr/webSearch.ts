@@ -11,7 +11,7 @@ export const webSearch = {
   endpointHint: 'Uniquement pour les fournisseurs auto-hébergés (ex. SearXNG). Laisser vide pour les APIs hébergées.',
   save: 'Enregistrer la configuration',
   savedSuccess: 'Configuration enregistrée.',
-  saveError: 'Échec de l'enregistrement',
+  saveError: 'Échec de l\'enregistrement',
   testTitle: 'Recherche de test',
   testQueryLabel: 'Requête de test',
   runTest: 'Exécuter la recherche de test',
