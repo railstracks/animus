@@ -701,12 +701,14 @@ int main(int argc, char** argv) {
       logPath = cfg.dataDir / "log" / logPath;
     }
     fs::create_directories(logPath.parent_path(), ec);
-    FILE* f = std::freopen(logPath.string().c_str(), "a", stderr);
-    if (f) {
+    FILE* fErr = std::freopen(logPath.string().c_str(), "a", stderr);
+    if (fErr) {
       std::cerr << "--- Log started at " << LogTimestamp() << " ---" << std::endl;
       // Also duplicate stdout to the same file
-      std::freopen(logPath.string().c_str(), "a", stdout);
-      std::cout << "--- stdout redirected to log ---" << std::endl;
+      FILE* fOut = std::freopen(logPath.string().c_str(), "a", stdout);
+      if (fOut) {
+        std::cout << "--- stdout redirected to log ---" << std::endl;
+      }
     }
   }
 
