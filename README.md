@@ -1,6 +1,13 @@
 # Animus
 
+[![Website](https://img.shields.io/badge/website-animus.steadyfort.com-blue)](https://animus.steadyfort.com/)
+[![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/ruRk76M93n)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+
 Animus is a **C++ agent framework** — a modular, efficient runtime for AI agents with fine-grained control over cognition, memory, tools, and communication.
+
+**🌐 Website:** [animus.steadyfort.com](https://animus.steadyfort.com/)  
+**💬 Discord:** [Join the community](https://discord.gg/ruRk76M93n)
 
 ## Why Animus
 
@@ -264,9 +271,7 @@ docs/                    # Provider API references, platform docs
 
 ## Website
 
-- **Repo:** `railstracks/animus-website` (private)
-- **Stack:** Drogon C++ HTTP framework + Vue SSR frontend
-- **URL:** animus.steadyfort.com
+**[animus.steadyfort.com](https://animus.steadyfort.com/)** — documentation, use cases, and getting started guides.
 
 ## License
 
