@@ -676,7 +676,7 @@ watch(
                 type="number"
               />
               <v-text-field v-model="formData.session_report_token_budget"
-                label="Session Report Token Budget"
+                :label="t('agents.form.sessionReportTokenBudget')"
                 type="number"
                 hint="Max tokens for session reports in active memory"
                 persistent-hint
