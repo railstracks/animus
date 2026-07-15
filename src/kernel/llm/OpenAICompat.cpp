@@ -146,6 +146,13 @@ std::string BuildOpenAIRequestBody(const LLMRequest& request) {
 
   ss << ",\"stream\":" << (request.stream ? "true" : "false");
 
+  // When streaming, request usage stats in the final SSE chunk.
+  // OpenAI-compatible providers (including Ollama /v1) omit usage from
+  // streaming responses unless stream_options.include_usage is set.
+  if (request.stream) {
+    ss << ",\"stream_options\":{\"include_usage\":true}";
+  }
+
   // Add tool definitions if present
   if (!request.tools.empty()) {
     ss << ",\"tools\":[";
