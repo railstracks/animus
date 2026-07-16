@@ -69,7 +69,6 @@ public:
 
 private:
     IDataStore* m_store;
-    std::string GenerateId();
 };
 
 // ============================================================================
