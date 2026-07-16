@@ -91,7 +91,7 @@ export const channels = {
         monitoredChannelsHint: 'Hat başına bir kanal kimliği. Bot sunucuda olmalıdır.',
         respondToDm: 'DM\'lere yanıt verin',
         respondToMentions: 'Bahsedilenlere yanıt verme',
-        dmWhitelistEnabled: 'DM'leri izin verilen kullanıcılarla sınırla',
+        dmWhitelistEnabled: 'DM\'leri izin verilen kullanıcılarla sınırla',
         allowedDmUsers: 'İzin verilen DM kullanıcıları',
         allowedDmUsersHint: 'Discord kullanıcı adları (her satıra bir tane). Sadece bu kullanıcılar bota DM gönderebilir.'
       },
