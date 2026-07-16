@@ -294,6 +294,10 @@ ToolResult ConsolidationTool::HandleCreate(const std::string& arguments, const s
     wb["indentation"] = "";
     result.success = created.id > 0;
     result.output = Json::writeString(wb, out);
+    if (!result.success) {
+        result.error = "Failed to create observation in layer '" + layerName +
+                       "' (db insert returned id=0)";
+    }
     return result;
 }
 

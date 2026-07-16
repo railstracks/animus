@@ -857,7 +857,14 @@ bool ChainRunner::ProcessResponse(
         // Store tool result turn
         SessionTurn toolResultTurn;
         toolResultTurn.role = "tool";
-        toolResultTurn.content = toolResult.success ? toolResult.output : toolResult.error;
+        // When success=false but error is empty, fall back to output so the
+        // LLM sees something informative rather than a blank tool result.
+        if (toolResult.success) {
+            toolResultTurn.content = toolResult.output;
+        } else {
+            toolResultTurn.content = toolResult.error.empty()
+                ? toolResult.output : toolResult.error;
+        }
         toolResultTurn.tool_call_id = call.id;
         toolResultTurn.tool_name = call.name;
         toolResultTurn.unix_ms = NowUnixMs();
