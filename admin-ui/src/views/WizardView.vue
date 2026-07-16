@@ -147,6 +147,7 @@ const agentForm = ref({
   name: '',
   description: '',
   identity: '',
+  avatar: '',
   model_provider: '',
   model_id: '',
   context_window: 128000,
@@ -441,11 +442,24 @@ async function completeWizard() {
   loading.value = true;
   error.value = '';
   try {
+    // 1. Build identity with preamble
+    let finalIdentity = agentForm.value.identity;
+    if (finalIdentity) {
+      const name = agentForm.value.name || 'Assistant';
+      const avatar = agentForm.value.avatar || '';
+      let preamble = `You are ${name}, an AI running on Animus.`;
+      if (avatar) {
+        preamble += `\nYour icon: ${avatar}`;
+      }
+      finalIdentity = preamble + '\n\n' + finalIdentity;
+    }
+
     // 1. Create agent
     const agentPayload: Record<string, unknown> = {
       name: agentForm.value.name,
       description: agentForm.value.description,
-      identity: agentForm.value.identity,
+      identity: finalIdentity,
+      avatar: agentForm.value.avatar || '',
       model: {
         provider: agentForm.value.model_provider,
         model_id: agentForm.value.model_id,
@@ -724,6 +738,11 @@ onMounted(() => {
               <v-text-field v-model="agentForm.description"
                 label="Description (optional)"
                 hint="What does this agent do?"
+                persistent-hint class="mb-3"
+              />
+              <v-text-field v-model="agentForm.avatar"
+                label="Icon / Avatar (emoji or short text)"
+                hint="An emoji or short text representing this agent."
                 persistent-hint class="mb-3"
               />
               <v-textarea v-model="agentForm.identity"
