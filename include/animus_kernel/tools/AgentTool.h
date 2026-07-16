@@ -1,7 +1,10 @@
 #pragma once
 
 #include "animus_kernel/tools/ToolRegistry.h"
+#include "animus_kernel/tools/ToolTypes.h"
 #include "animus_kernel/AgentStore.h"
+
+#include <json/json.h>
 
 namespace animus::kernel {
 

@@ -18,29 +18,29 @@ ToolDefinition AgentTool::GetDefinition() const {
         "You can modify your avatar (icon), description, and identity (system prompt). "
         "Use action \"view\" to see your current settings, "
         "action \"update\" to change them.";
-    def.parameters = R"({
-        "type": "object",
-        "properties": {
-            "action": {
-                "type": "string",
-                "enum": ["view", "update"],
-                "description": "The action to perform."
-            },
-            "avatar": {
-                "type": "string",
-                "description": "New avatar (emoji or short text). For action=update."
-            },
-            "description": {
-                "type": "string",
-                "description": "New description text. For action=update."
-            },
-            "identity": {
-                "type": "string",
-                "description": "New identity / system prompt text. For action=update. May be restricted by operator configuration."
-            }
-        },
-        "required": ["action"]
-    })";
+    def.resultMode = ToolResultMode::deliver_to_model;
+
+    def.parameters.push_back({
+        "action", "string",
+        "The action to perform: view or update",
+        true, "", {"view", "update"}
+    });
+    def.parameters.push_back({
+        "avatar", "string",
+        "New avatar (emoji or short text). For action=update.",
+        false
+    });
+    def.parameters.push_back({
+        "description", "string",
+        "New description text. For action=update.",
+        false
+    });
+    def.parameters.push_back({
+        "identity", "string",
+        "New identity / system prompt text. For action=update. May be restricted by operator configuration.",
+        false
+    });
+
     return def;
 }
 
