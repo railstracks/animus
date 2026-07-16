@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: 'القنوات المراقبة',
         monitoredChannelsHint: 'معرف قناة واحد لكل سطر. يجب أن يكون بوت في الخادم.',
         respondToDm: 'الرد على الرسائل المباشرة',
-        respondToMentions: 'الرد على الإشارات'
+        respondToMentions: 'الرد على الإشارات',
+        dmWhitelistEnabled: 'قصر الرسائل المباشرة على المستخدمين المسموح لهم',
+        allowedDmUsers: 'مستخدمو الرسائل المباشرة المسموح لهم',
+        allowedDmUsersHint: 'أسماء مستخدمي Discord (واحد لكل سطر). يمكن لهؤلاء المستخدمين فقط إرسال رسائل مباشرة للبوت.'
       },
       slack: {
         botToken: 'رمز الروبوت (xoxb-)',

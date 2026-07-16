@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: '監視対象チャンネル',
         monitoredChannelsHint: '1 行に 1 つのチャネル ID。ボットはサーバー内に存在する必要があります。',
         respondToDm: 'DMに返信する',
-        respondToMentions: 'メンションに応答する'
+        respondToMentions: 'メンションに応答する',
+        dmWhitelistEnabled: 'DMを許可されたユーザーに制限',
+        allowedDmUsers: '許可されたDMユーザー',
+        allowedDmUsersHint: 'Discordユーザー名（1行に1つ）。これらのユーザーのみがボットにDMを送信できます。'
       },
       slack: {
         botToken: 'ボットトークン (xoxb-)',

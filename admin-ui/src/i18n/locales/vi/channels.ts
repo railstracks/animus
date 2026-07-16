@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: 'Các kênh được giám sát',
         monitoredChannelsHint: 'Một ID kênh trên mỗi dòng. Bot phải ở trong máy chủ.',
         respondToDm: 'Trả lời DM',
-        respondToMentions: 'Trả lời đề cập'
+        respondToMentions: 'Trả lời đề cập',
+        dmWhitelistEnabled: 'Giới hạn DM cho người dùng được phép',
+        allowedDmUsers: 'Người dùng DM được phép',
+        allowedDmUsersHint: 'Tên người dùng Discord (mỗi dòng một tên). Chỉ những người dùng này mới có thể gửi DM cho bot.'
       },
       slack: {
         botToken: 'Mã thông báo Bot (xoxb-)',

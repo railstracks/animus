@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: 'মনিটর করা চ্যানেল',
         monitoredChannelsHint: 'প্রতি লাইনে একটি চ্যানেল আইডি। বট সার্ভারে থাকতে হবে।',
         respondToDm: 'DMs কে সাড়া দিন',
-        respondToMentions: 'উল্লেখ উত্তর'
+        respondToMentions: 'উল্লেখ উত্তর',
+        dmWhitelistEnabled: 'অনুমোদিত ব্যবহারকারীদের জন্য DM সীমাবদ্ধ করুন',
+        allowedDmUsers: 'অনুমোদিত DM ব্যবহারকারী',
+        allowedDmUsersHint: 'Discord ব্যবহারকারী নাম (প্রতি লাইনে একটি)। শুধুমাত্র এই ব্যবহারকারীরা বটকে DM পাঠাতে পারেন।'
       },
       slack: {
         botToken: 'বট টোকেন (xoxb-)',

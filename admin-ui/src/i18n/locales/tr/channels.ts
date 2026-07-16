@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: 'İzlenen Kanallar',
         monitoredChannelsHint: 'Hat başına bir kanal kimliği. Bot sunucuda olmalıdır.',
         respondToDm: 'DM\'lere yanıt verin',
-        respondToMentions: 'Bahsedilenlere yanıt verme'
+        respondToMentions: 'Bahsedilenlere yanıt verme',
+        dmWhitelistEnabled: 'DM'leri izin verilen kullanıcılarla sınırla',
+        allowedDmUsers: 'İzin verilen DM kullanıcıları',
+        allowedDmUsersHint: 'Discord kullanıcı adları (her satıra bir tane). Sadece bu kullanıcılar bota DM gönderebilir.'
       },
       slack: {
         botToken: 'Bot Jetonu (xoxb-)',

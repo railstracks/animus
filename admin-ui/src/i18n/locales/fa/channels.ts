@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: 'کانال های نظارت شده',
         monitoredChannelsHint: 'یک شناسه کانال در هر خط. ربات باید در سرور باشد.',
         respondToDm: 'به DM ها پاسخ دهید',
-        respondToMentions: 'به ذکرها پاسخ دهید'
+        respondToMentions: 'به ذکرها پاسخ دهید',
+        dmWhitelistEnabled: 'محدود کردن پیام مستقیم به کاربران مجاز',
+        allowedDmUsers: 'کاربران مجاز پیام مستقیم',
+        allowedDmUsersHint: 'نام‌های کاربری Discord (هر خط یک مورد). تنها این کاربران می‌توانند به ربات پیام مستقیم بفرستند.'
       },
       slack: {
         botToken: 'توکن ربات (xoxb-)',

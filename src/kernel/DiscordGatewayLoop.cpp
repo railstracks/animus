@@ -320,6 +320,26 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 }
 
                 if (isDm && respondToDm) {
+                    // DM whitelist check
+                    bool dmWhitelistEnabled = false;
+                    if (state->config.isMember("dm_whitelist_enabled") &&
+                        state->config["dm_whitelist_enabled"].isString() &&
+                        state->config["dm_whitelist_enabled"].asString() == "true") {
+                        dmWhitelistEnabled = true;
+                    }
+                    if (dmWhitelistEnabled &&
+                        state->config.isMember("allowed_dm_users") &&
+                        state->config["allowed_dm_users"].isArray() &&
+                        state->config["allowed_dm_users"].size() > 0) {
+                        bool userAllowed = false;
+                        for (const auto& u : state->config["allowed_dm_users"]) {
+                            if (u.isString() && u.asString() == authorUsername) {
+                                userAllowed = true;
+                                break;
+                            }
+                        }
+                        if (!userAllowed) break;
+                    }
                     shouldDispatch = true;
                 } else if (isMention && respondToMentions) {
                     shouldDispatch = true;

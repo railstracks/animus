@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: 'Контрольовані канали',
         monitoredChannelsHint: 'Один ідентифікатор каналу на рядок. Бот повинен бути на сервері.',
         respondToDm: 'Відповідайте на DM',
-        respondToMentions: 'Відповідайте на згадки'
+        respondToMentions: 'Відповідайте на згадки',
+        dmWhitelistEnabled: 'Обмежити ПП дозволеним користувачам',
+        allowedDmUsers: 'Дозволені користувачі ПП',
+        allowedDmUsersHint: 'Імена користувачів Discord (по одному на рядок). Тільки ці користувачі можуть писати боту в ПП.'
       },
       slack: {
         botToken: 'Токен бота (xoxb-)',

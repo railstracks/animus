@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: '监控频道',
         monitoredChannelsHint: '每行一个通道 ID。机器人必须位于服务器中。',
         respondToDm: '回复 DM',
-        respondToMentions: '回应提及'
+        respondToMentions: '回应提及',
+        dmWhitelistEnabled: '将私信限制为允许的用户',
+        allowedDmUsers: '允许的私信用户',
+        allowedDmUsersHint: 'Discord用户名（每行一个）。只有这些用户可以向机器人发送私信。'
       },
       slack: {
         botToken: '机器人令牌 (xoxb-)',

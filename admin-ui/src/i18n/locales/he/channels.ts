@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: 'ערוצים מנוטרים',
         monitoredChannelsHint: 'מזהה ערוץ אחד בכל שורה. הבוט חייב להיות בשרת.',
         respondToDm: 'הגיבו להודעות DM',
-        respondToMentions: 'הגיבו לאזכורים'
+        respondToMentions: 'הגיבו לאזכורים',
+        dmWhitelistEnabled: 'הגבלת הודעות ישירות למשתמשים מורשים',
+        allowedDmUsers: 'משתמשי הודעות ישירות מורשים',
+        allowedDmUsersHint: 'שמות משתמשים ב-Discord (אחד בכל שורה). רק משתמשים אלה יכולים לשלוח הודעות ישירות לבוט.'
       },
       slack: {
         botToken: 'Bot Token (xoxb-)',

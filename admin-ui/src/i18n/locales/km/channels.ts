@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: 'ប៉ុស្តិ៍ដែលបានត្រួតពិនិត្យ',
         monitoredChannelsHint: 'លេខសម្គាល់ឆានែលមួយក្នុងមួយជួរ។ Bot ត្រូវតែស្ថិតនៅក្នុងម៉ាស៊ីនមេ។',
         respondToDm: 'ឆ្លើយតបទៅ DMs',
-        respondToMentions: 'ឆ្លើយតបទៅនឹងការលើកឡើង'
+        respondToMentions: 'ឆ្លើយតបទៅនឹងការលើកឡើង',
+        dmWhitelistEnabled: 'កំណត់ DM ទៅអ្នកប្រើប្រាស់ដែលបានអនុញ្ញាត',
+        allowedDmUsers: 'អ្នកប្រើប្រាស់ DM ដែលបានអនុញ្ញាត',
+        allowedDmUsersHint: 'ឈ្មោះអ្នកប្រើ Discord (ម្នាក់ក្នុងមួយបន្ទាត់)។ មានតែអ្នកប្រើទាំងនេះទេដែលអាចផ្ញើ DM ទៅ bot ។'
       },
       slack: {
         botToken: 'Bot Token (xoxb-)',

@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: 'Canaux surveillés',
         monitoredChannelsHint: 'Un identifiant de canal par ligne. Le bot doit être sur le serveur.',
         respondToDm: 'Répondre aux DM',
-        respondToMentions: 'Répondre aux mentions'
+        respondToMentions: 'Répondre aux mentions',
+        dmWhitelistEnabled: 'Restreindre les DM aux utilisateurs autorisés',
+        allowedDmUsers: 'Utilisateurs DM autorisés',
+        allowedDmUsersHint: 'Noms d\'utilisateurs Discord (un par ligne). Seuls ces utilisateurs peuvent envoyer des DMs au bot.'
       },
       slack: {
         botToken: 'Jeton de robot (xoxb-)',

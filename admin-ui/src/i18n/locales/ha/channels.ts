@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: 'Tashoshi masu kulawa',
         monitoredChannelsHint: 'ID tasha ɗaya akan kowane layi. Bot dole ne ya kasance a cikin uwar garken.',
         respondToDm: 'Amsa ga DMs',
-        respondToMentions: 'Amsa ga ambaton'
+        respondToMentions: 'Amsa ga ambaton',
+        dmWhitelistEnabled: 'Tsara DM ga masu amfani da aka bada izini',
+        allowedDmUsers: 'Masu amfani da DM da aka bada izini',
+        allowedDmUsersHint: 'Sunayen masu amfani na Discord (daya a kowace layi). Wadannan masu amfani ne kawai za su iya tura DM ga bot.'
       },
       slack: {
         botToken: 'Bot Token (xoxb-)',

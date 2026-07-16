@@ -90,7 +90,10 @@ export const channels = {
         monitoredChannels: '모니터링 채널',
         monitoredChannelsHint: '한 줄에 하나의 채널 ID입니다. 봇이 서버에 있어야 합니다.',
         respondToDm: 'DM에 응답하기',
-        respondToMentions: '멘션에 응답'
+        respondToMentions: '멘션에 응답',
+        dmWhitelistEnabled: '허용된 사용자로 DM 제한',
+        allowedDmUsers: '허용된 DM 사용자',
+        allowedDmUsersHint: 'Discord 사용자 이름 (한 줄에 하나). 이 사용자만 봇에게 DM을 보낼 수 있습니다.'
       },
       slack: {
         botToken: '봇 토큰(xoxb-)',
