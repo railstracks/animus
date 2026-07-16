@@ -57,6 +57,7 @@
 #include "animus_kernel/tools/WebSearchTool.h"
 #include "animus_kernel/tools/DiaryTool.h"
 #include "animus_kernel/tools/AgentTool.h"
+#include "animus_kernel/tools/ProjectTool.h"
 #include "animus_kernel/tools/ConsolidationTool.h"
 #include "animus_kernel/tools/ScheduleTool.h"
 #include "animus_kernel/tools/SessionsTool.h"
@@ -134,6 +135,7 @@ AgentKernel::~AgentKernel() {
     delete m_adminServer;
     m_adminServer = nullptr;
     delete m_agentStore; m_agentStore = nullptr;
+    delete m_projectStore; m_projectStore = nullptr;
     delete m_dataStore; m_dataStore = nullptr;
     delete m_providerThrottle; m_providerThrottle = nullptr;
     delete m_scheduler; m_scheduler = nullptr;
@@ -324,6 +326,9 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
 
         // --- Agent store (SQLite-backed, after MemoryStore so observations table exists) ---
         m_agentStore = new AgentStore(m_dataStore);
+
+        // --- Project store (project/task persistence) ---
+        m_projectStore = new ProjectStore(m_dataStore);
         m_chainRunner->SetAgentStore(m_agentStore);
         m_adminServer->SetMemoryStore(m_memoryStore);
         m_adminServer->SetMemoryFileStore(m_memoryFileStore);
@@ -343,6 +348,9 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
 
         // --- Agent Self-Management Tool (view/update own settings) ---
         m_tools.Register(std::make_unique<AgentTool>(m_agentStore, m_config.agent.allowSelfIdentityEdit));
+
+        // --- Project Tool (persistent multi-step objectives) ---
+        m_tools.Register(std::make_unique<ProjectTool>(m_projectStore));
 
         // --- Consolidation Tool (session-gated: only available during consolidation sessions) ---
         m_tools.Register(std::make_unique<ConsolidationTool>(m_memoryStore, m_ontologyStore, m_sessionManager, m_memoryFileStore, m_agentStore, m_sessionReportStore, m_embeddingService));

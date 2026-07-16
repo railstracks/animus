@@ -18,6 +18,7 @@
 #include "animus_kernel/AgentConfigStore.h"
 #include "animus_kernel/ChannelManager.h"
 #include "animus_kernel/MessageQueue.h"
+#include "animus_kernel/tools/ProjectTool.h"
 
 namespace animus::kernel {
 
@@ -147,6 +148,7 @@ private:
     ChannelsTool* m_channelsTool{nullptr};                    // composite social tool
     ChannelManager* m_channelManager{nullptr};             // unified channel management
     std::unique_ptr<MessageQueue> m_messageQueue;            // per-session message batching queue
+    ProjectStore* m_projectStore{nullptr};             // project/task persistence
     std::mutex m_pendingReplyTargetsMutex;                   // guards m_pendingReplyTargets
     struct PendingDispatch {
         ChannelManager::ReplyTarget replyTarget;
