@@ -454,6 +454,7 @@ Json::Value BuildAgentJson(const KernelConfig::AgentRuntimeConfig& config, std::
 
     out["temperature"] = config.temperature;
     out["identity"] = config.identity;
+    out["allow_self_identity_edit"] = config.allowSelfIdentityEdit;
 
     Json::Value reasoning(Json::objectValue);
     reasoning["enabled"] = config.reasoningEnabled;
@@ -1102,6 +1103,7 @@ bool AdminServer::SaveAgentConfigToDisk(
     root["model"]["api_key"] = config.model.apiKey;
     root["temperature"] = config.temperature;
     root["identity"] = config.identity;
+    root["allow_self_identity_edit"] = config.allowSelfIdentityEdit;
     root["budget"]["max_chain_steps"] = config.budget.maxChainSteps;
     root["budget"]["max_tool_calls_per_chain"] = config.budget.maxToolCallsPerChain;
     root["budget"]["timeout_seconds"] = config.budget.timeoutSeconds;

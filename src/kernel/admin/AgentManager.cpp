@@ -192,6 +192,9 @@ bool AgentManager::ApplyRuntimeConfigPatch(
     if (!ParseStringField(patch, "identity", &config->identity, error)) {
         return false;
     }
+    if (patch.isMember("allow_self_identity_edit")) {
+        config->allowSelfIdentityEdit = patch["allow_self_identity_edit"].asBool();
+    }
 
     if (patch.isMember("budget")) {
         const Json::Value& budget = patch["budget"];

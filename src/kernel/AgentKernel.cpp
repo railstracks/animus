@@ -56,6 +56,7 @@
 #include "animus_kernel/tools/WebFetchTool.h"
 #include "animus_kernel/tools/WebSearchTool.h"
 #include "animus_kernel/tools/DiaryTool.h"
+#include "animus_kernel/tools/AgentTool.h"
 #include "animus_kernel/tools/ConsolidationTool.h"
 #include "animus_kernel/tools/ScheduleTool.h"
 #include "animus_kernel/tools/SessionsTool.h"
@@ -339,6 +340,9 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         m_diaryStore = new DiaryStore(m_dataStore);
         m_adminServer->SetDiaryStore(m_diaryStore);
         m_tools.Register(std::make_unique<DiaryTool>(&m_adminServer->GetDiaryManager()));
+
+        // --- Agent Self-Management Tool (view/update own settings) ---
+        m_tools.Register(std::make_unique<AgentTool>(m_agentStore, m_config.agent.allowSelfIdentityEdit));
 
         // --- Consolidation Tool (session-gated: only available during consolidation sessions) ---
         m_tools.Register(std::make_unique<ConsolidationTool>(m_memoryStore, m_ontologyStore, m_sessionManager, m_memoryFileStore, m_agentStore, m_sessionReportStore, m_embeddingService));

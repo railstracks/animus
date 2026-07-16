@@ -322,6 +322,7 @@ add_library(animus_kernel
   src/kernel/tools/WebSearchTool.cpp
   src/kernel/tools/ConsolidationTool.cpp
   src/kernel/tools/DiaryTool.cpp
+  src/kernel/tools/AgentTool.cpp
   src/kernel/tools/GallivantingTool.cpp
   src/kernel/tools/MemoryTool.cpp
   src/kernel/tools/ScheduleTool.cpp

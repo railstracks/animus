@@ -56,6 +56,9 @@ struct KernelConfig {
         std::string reasoning_effort{"high"}; // Effort level: "none"/"low"/"medium"/"high"/"xhigh"
         std::string reasoningInstruction; // Kept for API compat, no longer injected into prompts
 
+        // Agent self-management
+        bool allowSelfIdentityEdit{true}; // Allow agent to modify its own identity/system prompt
+
     };
 
     struct AgentConfigStorage {
