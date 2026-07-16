@@ -61,6 +61,8 @@ interface Agent {
   allowed_nodes?: string[];
   tool_configs?: Record<string, unknown>;
   default_vision_model?: string;
+  intake_interval?: string;
+  intake_prompt?: string;
   created_at_unix_ms: number;
   updated_at_unix_ms: number;
   pad_context: boolean;
@@ -119,6 +121,8 @@ const formData = ref({
   session_report_token_budget: 1500,
   ambient_context_limit: 5000,
   consolidation_tool_budget: 30,
+  intake_interval: '',
+  intake_prompt: '',
   enabled_tools: [] as string[],
   allowed_nodes: [] as string[],
   tool_configs: {} as Record<string, unknown>,
@@ -273,6 +277,8 @@ function openCreate() {
     session_report_token_budget: 1500,
     ambient_context_limit: 5000,
     consolidation_tool_budget: 30,
+    intake_interval: '',
+    intake_prompt: '',
     enabled_tools: [],
     allowed_nodes: [],
     tool_configs: {},
@@ -312,6 +318,8 @@ function openEdit(a: Agent) {
     ambient_context_limit: a.budget.ambient_context_limit,
     session_report_token_budget: a.budget.session_report_token_budget,
     consolidation_tool_budget: a.budget.consolidation_tool_budget,
+    intake_interval: (a as any).intake_interval || '',
+    intake_prompt: (a as any).intake_prompt || '',
     enabled_tools: [...a.enabled_tools],
     allowed_nodes: [...(a.allowed_nodes || [])],
     tool_configs: JSON.parse(JSON.stringify(a.tool_configs || {})),
@@ -364,6 +372,8 @@ async function submitForm() {
       allowed_nodes: formData.value.allowed_nodes,
       tool_configs: formData.value.tool_configs,
       default_vision_model: formData.value.default_vision_model || '',
+      intake_interval: formData.value.intake_interval || '',
+      intake_prompt: formData.value.intake_prompt || '',
     };
 
     let savedId = formData.value.id;
@@ -684,6 +694,19 @@ watch(
               <v-text-field v-model="formData.consolidation_tool_budget"
                 :label="t('agents.form.consolidationToolBudget')"
                 type="number"
+              />
+              <v-text-field v-model="formData.intake_interval"
+                :label="t('agents.form.intakeInterval')"
+                :hint="t('agents.form.intakeIntervalHint')"
+                persistent-hint
+                placeholder="0 * * * *"
+              />
+              <v-textarea v-model="formData.intake_prompt"
+                :label="t('agents.form.intakePrompt')"
+                :hint="t('agents.form.intakePromptHint')"
+                persistent-hint
+                rows="2"
+                auto-grow
               />
             </v-tabs-window-item>
 

@@ -463,6 +463,7 @@ async function completeWizard() {
         perspectives_token_budget: 3000,
         consolidation_tool_budget: 100,
       },
+      intake_interval: `0 */${Math.max(1, Math.min(24, memoryForm.value.intakeHours))} * * *`,
       enabled_tools: enabledTools.value,
       tool_configs: {},
     };
