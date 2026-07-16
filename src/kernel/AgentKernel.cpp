@@ -487,6 +487,9 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 std::string consolidationPrompt;
                 std::string sessionSubtype;
 
+                std::cerr << "[scheduler] consolidation fired: agent=" << agentId
+                          << " message=" << message << std::endl;
+
                 if (message.find("consolidate:") == 0) {
                     const std::string layerName = message.substr(12);
                     sessionSubtype = "review:" + layerName;
@@ -528,6 +531,8 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                                 std::chrono::duration_cast<std::chrono::milliseconds>(
                                     std::chrono::system_clock::now().time_since_epoch()).count());
                             if (dueForReview.empty()) {
+                                std::cerr << "[scheduler] skipping review: no observations due for layer "
+                                          << layerName << " agent=" << reviewAgentId << std::endl;
                                 return;
                             }
                         }
@@ -544,6 +549,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 } else if (message == "intake" || message.find("intake:") == 0) {
                     // Skip intake if there's no new data to process for any known agent
                     if (m_consolidation && !m_consolidation->HasAnyPendingIntakeData()) {
+                        std::cerr << "[scheduler] skipping intake: no pending data" << std::endl;
                         return;
                     }
                     sessionSubtype = "intake";
@@ -638,6 +644,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 }
                 } else {
                     // Unknown consolidation message — skip
+                    std::cerr << "[scheduler] unknown consolidation message: " << message << std::endl;
                     return;
                 }
 
@@ -673,6 +680,9 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
 
                         auto session = m_sessionManager->GetOrCreate(key);
                         if (!session) continue;
+
+                        std::cerr << "[scheduler] consolidation session created: key=" << consKey
+                                  << " agent=" << curAgent << std::endl;
 
                         session->SetAgentId(curAgent);
                         session->SetSessionType("consolidation");
