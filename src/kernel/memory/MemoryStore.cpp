@@ -673,7 +673,12 @@ Observation MemoryStore::CreateObservation(const Observation& obs) {
 
     stmt->Step();
     if (!DidWriteRows(m_store)) {
-        std::cerr << "[memory] insert observation failed: " << m_store->ErrMsg() << std::endl;
+        std::cerr << "[memory] insert observation failed: changes=" << m_store->Changes()
+                  << " err=" << m_store->ErrMsg()
+                  << " layer_id=" << obs.layer_id
+                  << " agent=" << obs.agent_id
+                  << " text_len=" << obs.text.size()
+                  << std::endl;
         return {};
     }
 
