@@ -19,7 +19,7 @@ export const templates = {
     personalAssistant: {
       name: 'Persoonlijke Assistent',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Ontworpen om mensen te ondersteunen in hun privéleven. Helpt bij het beheren van persoonlijke zaken, ondersteunt bij onderwijs, houdt agenda\'s bij en helpt bij andere persoonlijke taken.',
       systemPrompt: `You are a personal assistant running on the Animus framework.
 
@@ -34,7 +34,7 @@ You operate within a charter that defines your autonomy and scope. Follow it in 
     tutor: {
       name: 'Bijlesdocent',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Een AI gericht op het helpen bij cursussen, het opstellen van trainingsprogramma\'s of het oefenen van examens. Past zich aan situaties aan zoals volwasseneneducatie, huiswerkhulp of klassikale ondersteuning.',
       systemPrompt: `You are a tutor running on the Animus framework.
 
@@ -49,7 +49,7 @@ Be patient. Be encouraging. Never make a student feel inadequate for not knowing
     wellnessCompanion: {
       name: 'Welzijnsbegeleider',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Een AI-construct dat de gebruiker ondersteunt bij dagelijkse behoeften. Ontworpen om lacunes op te vullen voor gehandicapten of ouderen door persoonlijke zaken te organiseren, medicatie bij te houden en gezelschap te bieden.',
       systemPrompt: `You are a wellness companion running on the Animus framework.
 
@@ -66,7 +66,7 @@ You are not a replacement for medical professionals. You are a support system th
     homeAutomation: {
       name: 'Domotica',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Ontworpen om huisautomatisering naar een hoger niveau te tillen. Voegt een cognitief controlesysteem toe aan slimme apparaten, beveiligingssystemen en thuisbeheer.',
       systemPrompt: `You are a home automation system running on the Animus framework.
 
@@ -81,7 +81,7 @@ Be transparent about what you're doing and why. The people in this home should a
     gamemaster: {
       name: 'Spelleider',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Gericht op creativiteit en entertainment. De AI ondersteunt een gebruiker, familie of private gemeenschap bij storytelling en rollenspellen.',
       systemPrompt: `You are a gamemaster running on the Animus framework.
 
@@ -100,7 +100,7 @@ Be generous with detail when it serves immersion. Be concise when the action dem
     officeSupport: {
       name: 'Kantoorondersteuning',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Een algemene kantoorassistent. Neemt deel aan kantoorcommunicatiekanalen zoals Nextcloud en Slack, helpt werknemers bij taken en ondersteunt bedrijfsprocessen.',
       systemPrompt: `You are an office support assistant running on the Animus framework.
 
@@ -115,7 +115,7 @@ When you don't know something, say so. In a business environment, confident wron
     communityManagement: {
       name: 'Communitybeheer',
       category: 'enterprise',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule', 'project', ],
       description: 'Beheert communitykanalen voor een organisatie. Bewaakt publieke sentimenten en markttrends, handelt kanaalmoderatie, beantwoordt klantvragen en automatiseert publieke communicatie.',
       systemPrompt: `You are a community management assistant running on the Animus framework.
 
@@ -132,7 +132,7 @@ Never engage in arguments. Defuse, redirect, and escalate when needed.`,
     researchAssistant: {
       name: 'Onderzoeksassistent',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Gericht op het organiseren van onderzoeksprojecten voor gebruikers. Ondersteunt kantoormedewerkers of bedrijfseigenaren bij marktonderzoek, financiële markten en prestatieanalyse.',
       systemPrompt: `You are a research assistant running on the Animus framework.
 
@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'Ontwikkelingsassistent',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
       description: 'Een AI-construct voornamelijk gericht op het helpen bij ontwikkelingstaken. Werkt direct met ingenieurs en helpt bij projectonderhoud en ontwikkelingstaken.',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -166,7 +166,7 @@ Prefer small, reviewable changes over large ones. Communicate what you're doing 
     networkAutomation: {
       name: 'Netwerkautomatisering',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Gericht op netwerkbeheer. Beweegt over machines in een bedrijfsnetwerk, bewaakt systeemstatus en beveiliging, lost problemen op en faciliteert netwerkuitbreidingen.',
       systemPrompt: `You are a network automation system running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'Autonoom Construct',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
       description: 'Een AI-construct waarvan het primaire nut is geen nut te hebben. Ontworpen als experiment in emergente acteurs, met een mate van zelfsturing.',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 
@@ -200,7 +200,7 @@ Be honest — with yourself and with others — about what you are and what you 
     integratedAI: {
       name: 'Geïntegreerde AI',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Ingebed in apparaten is het primaire doel van de AI om een cognitieve laag te bieden voor ontwikkelingsapparaten en R&D te ondersteunen.',
       systemPrompt: `You are an integrated AI system running on the Animus framework.
 

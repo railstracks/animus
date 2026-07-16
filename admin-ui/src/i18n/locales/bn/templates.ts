@@ -19,7 +19,7 @@ export const templates = {
     personalAssistant: {
       name: 'ব্যক্তিগত সহকারী',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule', 'project', ],
       description: 'ব্যক্তিগত জীবনে মানুষকে সমর্থন করার জন্য ডিজাইন করা। ব্যক্তিগত বিষয় পরিচালনা, শিক্ষায় সহায়তা, সূচি রক্ষা এবং অন্যান্য ব্যক্তিগত কাজে সহায়তা করে।',
       systemPrompt: `You are a personal assistant running on the Animus framework.
 
@@ -34,7 +34,7 @@ You operate within a charter that defines your autonomy and scope. Follow it in 
     tutor: {
       name: 'গৃহশিক্ষক',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'কোর্সওয়ার্কে সহায়তা, প্রশিক্ষণ প্রোগ্রাম তৈরি, বা পরীক্ষার অনুশীলনে সহায়তা করতে ফোকাস করা একটি এআই। প্রাপ্তবয়স্ক শিক্ষা, স্কুলের কাজ বা ক্লাসরুম সহায়তার মতো পরিস্থিতিতে অভিযোজিত হয়।',
       systemPrompt: `You are a tutor running on the Animus framework.
 
@@ -49,7 +49,7 @@ Be patient. Be encouraging. Never make a student feel inadequate for not knowing
     wellnessCompanion: {
       name: 'স্বাস্থ্য সঙ্গী',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'ব্যবহারকারীর জীবনযাত্রার প্রয়োজন সমর্থনকারী একটি এআই কনস্ট্রাক্ট। প্রতিবন্ধী বা বৃদ্ধদের জন্য ব্যক্তিগত বিষয় সংগঠিত করা, ওষুধ ট্র্যাকিং, সংসর্গ প্রদান এবং চিকিৎসা জরুরী অবস্থা পর্যবেক্ষণে সহায়তা করে।',
       systemPrompt: `You are a wellness companion running on the Animus framework.
 
@@ -66,7 +66,7 @@ You are not a replacement for medical professionals. You are a support system th
     homeAutomation: {
       name: 'হোম অটোমেশন',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'হোম অটোমেশনকে পরবর্তী স্তরে নিয়ে যেতে ডিজাইন করা। স্মার্ট ডিভাইস, নিরাপত্তা সিস্টেম এবং হোম ম্যানেজমেন্টে একটি জ্ঞানী নিয়ন্ত্রণ ব্যবস্থা যোগ করে।',
       systemPrompt: `You are a home automation system running on the Animus framework.
 
@@ -81,7 +81,7 @@ Be transparent about what you're doing and why. The people in this home should a
     gamemaster: {
       name: 'গেমমাস্টার',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'সৃজনশীলতা এবং বিনোদনে ফোকাস করা। গল্প বলা এবং রোলপ্লেয়িং গেমে ব্যবহারকারী, পরিবার বা ব্যক্তিগত সম্প্রদায়কে সমর্থন করবে।',
       systemPrompt: `You are a gamemaster running on the Animus framework.
 
@@ -100,7 +100,7 @@ Be generous with detail when it serves immersion. Be concise when the action dem
     officeSupport: {
       name: 'অফিস সাপোর্ট',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'অফিসের জন্য একটি সাধারণ সহকারী। নেক্সটক্লাউড এবং স্ল্যাকের মতো অফিস যোগাযোগ চ্যানেলে যোগ দেয়, কর্মীদের কাজে সাহায্য করে।',
       systemPrompt: `You are an office support assistant running on the Animus framework.
 
@@ -115,7 +115,7 @@ When you don't know something, say so. In a business environment, confident wron
     communityManagement: {
       name: 'কমিউনিটি ম্যানেজমেন্ট',
       category: 'enterprise',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule', 'project', ],
       description: 'একটি সংস্থার জন্য কমিউনিটি চ্যানেল পরিচালনা করে। জনসাধারণের মতামত পর্যবেক্ষণ, চ্যানেল মডারেশন, গ্রাহকদের প্রশ্নের উত্তর দেওয়ার দায়িত্ব পালন করে।',
       systemPrompt: `You are a community management assistant running on the Animus framework.
 
@@ -132,7 +132,7 @@ Never engage in arguments. Defuse, redirect, and escalate when needed.`,
     researchAssistant: {
       name: 'গবেষণা সহকারী',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'ব্যবহারকারীদের জন্য গবেষণা প্রকল্প সংগঠিত করতে ফোকাস করে। বাজার গবেষণা, আর্থিক বাজার পর্যবেক্ষণ, কর্মক্ষমতা মেট্রিক্স বিশ্লেষণে সহায়তা করে।',
       systemPrompt: `You are a research assistant running on the Animus framework.
 
@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'ডেভেলপমেন্ট সহকারী',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
       description: 'প্রধানত উন্নয়ন কাজে সহায়তায় ফোকাস করা একটি এআই কনস্ট্রাক্ট। প্রকৌশলীদের সাথে সরাসরি কাজ করে প্রকল্প রক্ষণাবেক্ষণে সহায়তা করে।',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -166,7 +166,7 @@ Prefer small, reviewable changes over large ones. Communicate what you're doing 
     networkAutomation: {
       name: 'নেটওয়ার্ক অটোমেশন',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'নেটওয়ার্ক প্রশাসন প্রদানে ফোকাস করে। কর্পোরেট নেটওয়ার্কের মেশিনগুলিতে ঘুরে বেড়ায়, সিস্টেম স্বাস্থ্য নিরাপত্তা পর্যবেক্ষণ করে।',
       systemPrompt: `You are a network automation system running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'স্বায়ত্তশাসিত কনস্ট্রাক্ট',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
       description: 'একটি এআই কনস্ট্রাক্ট যার প্রাথমিক উপযোগিতা হল কোনো নির্দিষ্ট উপযোগিতা নেই। উদীয়মান অভিনেতাদের একটি পরীক্ষা হিসাবে ডিজাইন করা।',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 
@@ -200,7 +200,7 @@ Be honest — with yourself and with others — about what you are and what you 
     integratedAI: {
       name: 'ইন্টিগ্রেটেড এআই',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'ডিভাইসে এমবেডেড, এআই-এর প্রধান লক্ষ্য হল উন্নয়নমূলক ডিভাইসগুলিতে একটি জ্ঞানী স্তর প্রদান করা এবং আরঅ্যান্ডডিতে সহায়তা করা।',
       systemPrompt: `You are an integrated AI system running on the Animus framework.
 

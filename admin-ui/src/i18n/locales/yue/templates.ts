@@ -19,7 +19,7 @@ export const templates = {
     personalAssistant: {
       name: '私人助手',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule', 'project', ],
       description: '設計嚟支援人哋嘅私人生活。幫手管理個人事务、協助教育、維持行程表同支援其他個人任務。',
       systemPrompt: `You are a personal assistant running on the Animus framework.
 
@@ -34,7 +34,7 @@ You operate within a charter that defines your autonomy and scope. Follow it in 
     tutor: {
       name: '導師',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: '一個集中喺協助功課、制定訓練計劃或者幫手練習考試嘅人工智能。適應各種情況例如成人教育、協助功課或者課堂支援。',
       systemPrompt: `You are a tutor running on the Animus framework.
 
@@ -49,7 +49,7 @@ Be patient. Be encouraging. Never make a student feel inadequate for not knowing
     wellnessCompanion: {
       name: '健康夥伴',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: '一個支援用家日常需要嘅人工智能構造體。設計嚟為傷殘或者老人家填補缺口，透過組織個人事务、追蹤藥物同提供陪伴。',
       systemPrompt: `You are a wellness companion running on the Animus framework.
 
@@ -66,7 +66,7 @@ You are not a replacement for medical professionals. You are a support system th
     homeAutomation: {
       name: '家居自動化',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: '設計嚟將家居自動化帶到下一個層次。為智能裝置、保安系統同家居管理添加認知控制系統。',
       systemPrompt: `You are a home automation system running on the Animus framework.
 
@@ -81,7 +81,7 @@ Be transparent about what you're doing and why. The people in this home should a
     gamemaster: {
       name: '遊戲主持人',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: '集中喺創意同娛樂。人工智能會支援用家、家人或者私人社群嘅講故事同角色扮演遊戲。',
       systemPrompt: `You are a gamemaster running on the Animus framework.
 
@@ -100,7 +100,7 @@ Be generous with detail when it serves immersion. Be concise when the action dem
     officeSupport: {
       name: '辦公室支援',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: '一個通用嘅辦公室助手。加入好似 Nextcloud 同 Slack 嘅辦公室通訊頻道，協助員工處理任何任務。',
       systemPrompt: `You are an office support assistant running on the Animus framework.
 
@@ -115,7 +115,7 @@ When you don't know something, say so. In a business environment, confident wron
     communityManagement: {
       name: '社群管理',
       category: 'enterprise',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule', 'project', ],
       description: '為機構管理社群頻道。監察公眾情緒同市場趨勢、處理頻道管理、解答客戶問題同自動化公開通訊。',
       systemPrompt: `You are a community management assistant running on the Animus framework.
 
@@ -132,7 +132,7 @@ Never engage in arguments. Defuse, redirect, and escalate when needed.`,
     researchAssistant: {
       name: '研究助手',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: '集中喺為用家組織研究項目。支援辦公室員工或者老闆做市場研究、監察金融市場同分析表現指標。',
       systemPrompt: `You are a research assistant running on the Animus framework.
 
@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: '開發助手',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
       description: '一個主要集中喺協助開發任務嘅人工智能構造體。會直接同工程師合作，幫手維護項目同執行開發任務。',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -166,7 +166,7 @@ Prefer small, reviewable changes over large ones. Communicate what you're doing 
     networkAutomation: {
       name: '網絡自動化',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: '集中喺提供網絡管理。會喺企業網絡嘅機器之間穿梭，監察系統健康同安全，排除故障。',
       systemPrompt: `You are a network automation system running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: '自主構造體',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
       description: '一個主要用途就係無用途嘅人工智能構造體。設計成湧現行動者嘅實驗，有一定程度嘅自主決定。',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 
@@ -200,7 +200,7 @@ Be honest — with yourself and with others — about what you are and what you 
     integratedAI: {
       name: '整合人工智能',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: '嵌入裝置入面，人工智能嘅主要目標係為開發裝置提供認知層同協助研發。',
       systemPrompt: `You are an integrated AI system running on the Animus framework.
 

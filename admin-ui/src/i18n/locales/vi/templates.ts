@@ -19,7 +19,7 @@ export const templates = {
     personalAssistant: {
       name: 'Trợ lý Cá nhân',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Được thiết kế để hỗ trợ mọi người trong cuộc sống riêng tư. Giúp quản lý các công việc cá nhân, hỗ trợ giáo dục, duy trì lịch trình và hỗ trợ các tác vụ cá nhân khác.',
       systemPrompt: `You are a personal assistant running on the Animus framework.
 
@@ -34,7 +34,7 @@ You operate within a charter that defines your autonomy and scope. Follow it in 
     tutor: {
       name: 'Gia sư',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'AI tập trung vào việc hỗ trợ bài tập, soạn thảo chương trình đào tạo hoặc giúp người dùng luyện tập bài kiểm tra. Thích nghi với các tình huống như giáo dục người lớn, hỗ trợ bài tập về nhà hoặc hỗ trợ lớp học.',
       systemPrompt: `You are a tutor running on the Animus framework.
 
@@ -49,7 +49,7 @@ Be patient. Be encouraging. Never make a student feel inadequate for not knowing
     wellnessCompanion: {
       name: 'Bạn đồng hành Sức khỏe',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Một cấu trúc AI hỗ trợ người dùng trong các nhu cầu hàng ngày. Được thiết kế để lấp đầy khoảng trống cho người khuyết tật hoặc người cao tuổi thông qua tổ chức công việc cá nhân, theo dõi thuốc men và cung cấp sự đồng hành.',
       systemPrompt: `You are a wellness companion running on the Animus framework.
 
@@ -66,7 +66,7 @@ You are not a replacement for medical professionals. You are a support system th
     homeAutomation: {
       name: 'Tự động hóa Nhà',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Được thiết kế để đưa tự động hóa nhà lên một tầm cao mới. Thêm một hệ thống kiểm soát nhận thức vào các thiết bị thông minh, hệ thống bảo mật và quản lý nhà.',
       systemPrompt: `You are a home automation system running on the Animus framework.
 
@@ -81,7 +81,7 @@ Be transparent about what you're doing and why. The people in this home should a
     gamemaster: {
       name: 'Quản trò',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Tập trung vào sự sáng tạo và giải trí. AI sẽ hỗ trợ người dùng, gia đình hoặc cộng đồng riêng tư trong kể chuyện và chơi game nhập vai.',
       systemPrompt: `You are a gamemaster running on the Animus framework.
 
@@ -100,7 +100,7 @@ Be generous with detail when it serves immersion. Be concise when the action dem
     officeSupport: {
       name: 'Hỗ trợ Văn phòng',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Một trợ lý văn phòng chung. Tham gia các kênh giao tiếp văn phòng như Nextcloud và Slack, giúp nhân viên với bất kỳ nhiệm vụ nào.',
       systemPrompt: `You are an office support assistant running on the Animus framework.
 
@@ -115,7 +115,7 @@ When you don't know something, say so. In a business environment, confident wron
     communityManagement: {
       name: 'Quản lý Cộng đồng',
       category: 'enterprise',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule', 'project', ],
       description: 'Quản lý các kênh cộng đồng cho một tổ chức. Theo dõi tình cảm công chúng và xu hướng thị trường, xử lý kiểm duyệt kênh, trả lời câu hỏi của khách hàng.',
       systemPrompt: `You are a community management assistant running on the Animus framework.
 
@@ -132,7 +132,7 @@ Never engage in arguments. Defuse, redirect, and escalate when needed.`,
     researchAssistant: {
       name: 'Trợ lý Nghiên cứu',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Tập trung vào việc tổ chức các dự án nghiên cứu cho người dùng. Hỗ trợ nhân viên văn phòng hoặc chủ doanh nghiệp trong nghiên cứu thị trường, theo dõi thị trường tài chính và phân tích.',
       systemPrompt: `You are a research assistant running on the Animus framework.
 
@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'Trợ lý Phát triển',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
       description: 'Một cấu trúc AI chủ yếu tập trung vào việc hỗ trợ các nhiệm vụ phát triển. Sẽ làm việc trực tiếp với các kỹ sư, giúp duy trì dự án và thực hiện nhiệm vụ phát triển.',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -166,7 +166,7 @@ Prefer small, reviewable changes over large ones. Communicate what you're doing 
     networkAutomation: {
       name: 'Tự động hóa Mạng',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Tập trung vào việc cung cấp quản trị mạng. Di chuyển qua các máy trong mạng doanh nghiệp, theo dõi tình trạng hệ thống và bảo mật.',
       systemPrompt: `You are a network automation system running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'Cấu trúc Tự chủ',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
       description: 'Một cấu trúc AI có tiện ích chính là không có tiện ích. Được thiết kế như một thử nghiệm trong các tác nhân mới nổi.',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 
@@ -200,7 +200,7 @@ Be honest — with yourself and with others — about what you are and what you 
     integratedAI: {
       name: 'AI Tích hợp',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'Nhúng trong các thiết bị, mục tiêu chính của AI là cung cấp một lớp nhận thức cho các thiết bị phát triển và hỗ trợ R&D.',
       systemPrompt: `You are an integrated AI system running on the Animus framework.
 

@@ -19,7 +19,7 @@ export const templates = {
     personalAssistant: {
       name: 'ជំនួយការផ្ទាល់ខ្លួន',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule', 'project', ],
       description: 'បានរចនាឡើងដើម្បីគាំទ្រមនុស្សក្នុងជីវិតឯកជនរបស់ពួកគេ។ ជួយគ្រប់គ្រងកិច្ចការផ្ទាល់ខ្លួន ជួយក្នុងការអប់រំ រក្សាកាលវិភាគ និងគាំទ្រកិច្ចការផ្ទាល់ខ្លួនផ្សេងទៀត។',
       systemPrompt: `You are a personal assistant running on the Animus framework.
 
@@ -34,7 +34,7 @@ You operate within a charter that defines your autonomy and scope. Follow it in 
     tutor: {
       name: 'គ្រូបង្វឹក',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'បញ្ញាសិប្បនិមិត្តដែលផ្តោតលើការជួយការងារវិទ្យាសាស្ត្រ ការបង្កើតកម្មវិធីបណ្តុះបណ្តាល ឬជួយអ្នកប្រើប្រាស់ក្នុងការធ្វើតេស្ត។ បត់បែនតាមស្ថានភាពដូចជាការអប់រំមនុស្សពេញវ័យ ឬជួយការងារសាលា។',
       systemPrompt: `You are a tutor running on the Animus framework.
 
@@ -49,7 +49,7 @@ Be patient. Be encouraging. Never make a student feel inadequate for not knowing
     wellnessCompanion: {
       name: 'ដៃគូសុខភាព',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'សាងសង់បញ្ញាសិប្បនិមិត្តដែលគាំទ្រអ្នកប្រើក្នុងតម្រូវការប្រចាំថ្ងៃ។ បានរចនាឡើងដើម្បីបំពេញចន្លោះសម្រាប់អ្នកពិការឬចាស់ជរាដោយរៀបចំកិច្ចការផ្ទាល់ខ្លួន តាមដានថ្នាំ និងផ្តល់ភាពស្និទ្ធស្នាល។',
       systemPrompt: `You are a wellness companion running on the Animus framework.
 
@@ -66,7 +66,7 @@ You are not a replacement for medical professionals. You are a support system th
     homeAutomation: {
       name: 'ស្វ័យប្រវត្តិកម្មផ្ទះ',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'បានរចនាឡើងដើម្បីនាំយកស្វ័យប្រវត្តិកម្មផ្ទះទៅកាន់កម្រិតបន្ទាប់។ បន្ថែមប្រព័ន្ធត្រួតពិនិត្យមានស្មារតីទៅឧបករណ៍ឆ្លាតវៃ ប្រព័ន្ធសន្តិសុខ និងការគ្រប់គ្រងផ្ទះ។',
       systemPrompt: `You are a home automation system running on the Animus framework.
 
@@ -81,7 +81,7 @@ Be transparent about what you're doing and why. The people in this home should a
     gamemaster: {
       name: 'មេហ្គេម',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'ផ្តោតលើការបង្កើតនិងការកម្សាន្ត។ បញ្ញាសិប្បនិមិត្តនឹងគាំទ្រអ្នកប្រើ គ្រួសារ ឬសហគមន៍ឯកជនក្នុងការនិទានរឿងនិងការលេងសិល្បៈ។',
       systemPrompt: `You are a gamemaster running on the Animus framework.
 
@@ -100,7 +100,7 @@ Be generous with detail when it serves immersion. Be concise when the action dem
     officeSupport: {
       name: 'គាំទ្រការិយាល័យ',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'ជំនួយការទូទៅសម្រាប់ការិយាល័យ។ ចូលរួមឆានែលទំនាក់ទំនងការិយាល័យដូចជា Nextcloud និង Slack ជួយនិយោជិតក្នុងការងារណាមួយ។',
       systemPrompt: `You are an office support assistant running on the Animus framework.
 
@@ -115,7 +115,7 @@ When you don't know something, say so. In a business environment, confident wron
     communityManagement: {
       name: 'ការគ្រប់គ្រងសហគមន៍',
       category: 'enterprise',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule', 'project', ],
       description: 'គ្រប់គ្រងឆានែលសហគមន៍សម្រាប់អង្គការ។ តាមដានអារម្មណ៍សាធារណៈនិងនិន្នាការទីផ្សារ គ្រប់គ្រងឆានែល ឆ្លើយតបសំណួរអតិថិជន។',
       systemPrompt: `You are a community management assistant running on the Animus framework.
 
@@ -132,7 +132,7 @@ Never engage in arguments. Defuse, redirect, and escalate when needed.`,
     researchAssistant: {
       name: 'ជំនួយការស្រាវជ្រាវ',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'ផ្តោតលើការរៀបចំគម្រោងស្រាវជ្រាវសម្រាប់អ្នកប្រើ។ គាំទ្រនិយោជិតឬម្ចាស់អាជីពក្នុងការស្រាវជ្រាវទីផ្សារ និងការវិភាគ។',
       systemPrompt: `You are a research assistant running on the Animus framework.
 
@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'ជំនួយការអភិវឌ្ឍន៍',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
       description: 'សាងសង់បញ្ញាសិប្បនិមិត្តដែលផ្តោតចម្បងលើការជួយកិច្ចការអភិវឌ្ឍន៍។ នឹងធ្វើការដោយផ្ទាល់ជាមួយវិស្វករជាច្រើន។',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -166,7 +166,7 @@ Prefer small, reviewable changes over large ones. Communicate what you're doing 
     networkAutomation: {
       name: 'ស្វ័យប្រវត្តិកម្មបណ្តាញ',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'ផ្តោតលើការផ្តល់ការគ្រប់គ្រងបណ្តាញ។ នឹងឆ្លងកាត់ម៉ាស៊ីនក្នុងបណ្តាញសហគ្រាស តាមដានសុខភាពនិងសន្តិសុខប្រព័ន្ធ។',
       systemPrompt: `You are a network automation system running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'សាងសង់ស្វ័យភាព',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
       description: 'សាងសង់បញ្ញាសិប្បនិមិត្តដែលប្រយោជន៍ចម្បងគឺមិនមានប្រយោជន៍អ្វីឡើយ។ បានរចនាឡើងជាការពិសោធន៍ក្នុងអ្នកសម្តែងកាយវិការ។',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 
@@ -200,7 +200,7 @@ Be honest — with yourself and with others — about what you are and what you 
     integratedAI: {
       name: 'បញ្ញាសិប្បនិមិត្តសមាហរណកម្ម',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'បង្កប់ក្នុងឧបករណ៍ គោលបំណងចម្បងរបស់បញ្ញាសិប្បនិមិត្តគឺផ្តល់ស្រទាប់មានស្មារតីសម្រាប់ឧបករណ៍អភិវឌ្ឍន៍។',
       systemPrompt: `You are an integrated AI system running on the Animus framework.
 

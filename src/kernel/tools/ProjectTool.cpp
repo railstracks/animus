@@ -415,7 +415,7 @@ ToolDefinition ProjectTool::GetDefinition() const {
     def.parameters.push_back({"detail", "string", "Task detail/notes (for add_task, update)", false});
     def.parameters.push_back({"status", "string", "Task status (for update, tasks filter)", false});
     def.parameters.push_back({"result", "string", "Completion result or output (for complete, update)", false});
-    def.parameters.push_back({"depends_on", "array", "JSON array of task IDs this task depends on (for add_task)", false});
+    def.parameters.push_back({"depends_on", "array", "JSON array of task IDs this task depends on (for add_task, update)", false});
 
     return def;
 }
@@ -642,6 +642,33 @@ ToolResult ProjectTool::HandleUpdate(const std::string& agentId, const Json::Val
     if (args.isMember("detail")) task->detail = args["detail"].asString();
     if (args.isMember("status")) task->status = args["status"].asString();
     if (args.isMember("result")) task->result = args["result"].asString();
+
+    // Update dependencies if provided — validate each dep exists and check for cycles
+    if (args.isMember("depends_on") && args["depends_on"].isArray()) {
+        std::vector<std::string> newDeps;
+        for (const auto& d : args["depends_on"]) newDeps.push_back(d.asString());
+
+        // Verify all dependency tasks exist in the same project
+        auto allTasks = m_store->ListTasks(agentId, task->project_id);
+        for (const auto& depId : newDeps) {
+            bool found = false;
+            for (const auto& t : allTasks) {
+                if (t.id == depId) { found = true; break; }
+            }
+            if (!found) {
+                result.success = false;
+                result.error = "Dependency task not found: " + depId;
+                return result;
+            }
+            // Cycle check: adding task→dep must not create a cycle
+            if (m_store->WouldCreateCycle(agentId, task->project_id, task->id, depId)) {
+                result.success = false;
+                result.error = "Adding dependency on " + depId + " would create a cycle";
+                return result;
+            }
+        }
+        task->depends_on = newDeps;
+    }
 
     m_store->UpdateTask(agentId, *task);
 

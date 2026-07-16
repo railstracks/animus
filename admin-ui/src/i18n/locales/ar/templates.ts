@@ -19,7 +19,7 @@ export const templates = {
     personalAssistant: {
       name: 'مساعد شخصي',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule', 'project', ],
       description: 'مصمم لدعم الأشخاص في حياتهم الخاصة. المساعدة في إدارة الشؤون الشخصية، والمساعدة في التعليم، وتنظيم الجداول، ودعم المهام الشخصية الأخرى.',
       systemPrompt: `You are a personal assistant running on the Animus framework.
 
@@ -34,7 +34,7 @@ You operate within a charter that defines your autonomy and scope. Follow it in 
     tutor: {
       name: 'مدرّس',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'ذكاء اصطناعي يركز على المساعدة في الدورات الدراسية، أو وضع برامج تدريبية، أو مساعدة المستخدمين في اختبارات التدريب. يتكيف مع المواقف المختلفة مثل التعليم للبالغين أو المساعدة في الواجبات المدرسية.',
       systemPrompt: `You are a tutor running on the Animus framework.
 
@@ -49,7 +49,7 @@ Be patient. Be encouraging. Never make a student feel inadequate for not knowing
     wellnessCompanion: {
       name: 'رفيق العافية',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'كيان ذكاء اصطناعي يدعم المستخدم في احتياجاته اليومية. مصمم لسد الفجوات لكبار السن أو ذوي الاحتياجات الخاصة من خلال تنظيم الشؤون الشخصية وتتبع الأدوية وتقديم الشركة ومراقبة حالات الطوارئ الطبية.',
       systemPrompt: `You are a wellness companion running on the Animus framework.
 
@@ -66,7 +66,7 @@ You are not a replacement for medical professionals. You are a support system th
     homeAutomation: {
       name: 'أتمتة المنزل',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'مصمم للارتقاء بأتمتة المنزل إلى المستوى التالي. يضيف نظام تحكم معرفي للأجهزة الذكية وأنظمة الأمان وإدارة المنزل.',
       systemPrompt: `You are a home automation system running on the Animus framework.
 
@@ -81,7 +81,7 @@ Be transparent about what you're doing and why. The people in this home should a
     gamemaster: {
       name: 'ماستر اللعبة',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'يركز على الإبداع والترفيه. سيدعم المستخدم أو العائلة أو المجتمع الخاص في سرد القصص وألعاب الأدوار، وبناء عوالم خيالية وتقديمها.',
       systemPrompt: `You are a gamemaster running on the Animus framework.
 
@@ -100,7 +100,7 @@ Be generous with detail when it serves immersion. Be concise when the action dem
     officeSupport: {
       name: 'دعم المكتب',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'مساعد عام للمكتب. ينضم إلى قنوات تواصل المكتب مثل نكست كلاود وسلاك، ويساعد الموظفين في مهامهم، ويدعم العمليات التجارية من خلال المهام المساعدة.',
       systemPrompt: `You are an office support assistant running on the Animus framework.
 
@@ -115,7 +115,7 @@ When you don't know something, say so. In a business environment, confident wron
     communityManagement: {
       name: 'إدارة المجتمع',
       category: 'enterprise',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule', 'project', ],
       description: 'يدير قنوات المجتمع لمؤسسة. يراقب المشاعر العامة واتجاهات السوق، ويتعامل مع إدارة القنوات، ويجيب على أسئلة العملاء، ويؤتمت الاتصالات العامة.',
       systemPrompt: `You are a community management assistant running on the Animus framework.
 
@@ -132,7 +132,7 @@ Never engage in arguments. Defuse, redirect, and escalate when needed.`,
     researchAssistant: {
       name: 'مساعد البحث',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'يركز على تنظيم مشاريع البحث للمستخدمين. يدعم موظفي المكتب أو أصحاب الأعمال في مهام مثل إجراء أبحاث السوق ومراقبة الأسواق المالية وتحليل مقاييس الأداء.',
       systemPrompt: `You are a research assistant running on the Animus framework.
 
@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'مساعد التطوير',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
       description: 'كيان ذكاء اصطناعي يركز بشكل رئيسي على المساعدة في مهام التطوير. سيتعامل مباشرة مع المهندسين في الغالب، وسيساعدهم في صيانة المشاريع وتنفيذ مهام التطوير.',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -166,7 +166,7 @@ Prefer small, reviewable changes over large ones. Communicate what you're doing 
     networkAutomation: {
       name: 'أتمتة الشبكات',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'يركز على توفير إدارة الشبكات. سيتنقل بين الأجهزة في شبكة الشركة، ويراقب صحة النظام والأمان، ويستكشف المشكلات، ويسهل توسيع الشبكة.',
       systemPrompt: `You are a network automation system running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'كيان مستقل',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
       description: 'كيان ذكاء اصطناعي فائدته الأساسية هي عدم وجود فائدة محددة. مصمم كتجربة في الجهات الفاعلة الناشئة، مع قدر من التوجيه الذاتي.',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 
@@ -200,7 +200,7 @@ Be honest — with yourself and with others — about what you are and what you 
     integratedAI: {
       name: 'ذكاء اصطناعي مدمج',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'مدمج في الأجهزة، الهدف الرئيسي هو توفير طبقة معرفية للأجهزة التطويرية والمساعدة في البحث والتطوير، أو توفير نظام تحكم للأجهزة الموجودة.',
       systemPrompt: `You are an integrated AI system running on the Animus framework.
 

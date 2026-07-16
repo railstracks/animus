@@ -19,7 +19,7 @@ export const templates = {
     personalAssistant: {
       name: 'دستیار شخصی',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule', 'project', ],
       description: 'طراحی شده برای پشتیبانی از افراد در زندگی خصوصی. کمک در مدیریت امور شخصی، آموزش، زمان‌بندی و پشتیبانی از سایر وظایف شخصی.',
       systemPrompt: `You are a personal assistant running on the Animus framework.
 
@@ -34,7 +34,7 @@ You operate within a charter that defines your autonomy and scope. Follow it in 
     tutor: {
       name: 'مدرس',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'هوش مصنوعی متمرکز بر کمک در تکالیف، تدوین برنامه‌های آموزشی یا کمک به تمرین آزمون‌ها. با شرایط مختلف مانند آموزش بزرگسالان یا کمک در تکالیف مدرسه سازگار می‌شود.',
       systemPrompt: `You are a tutor running on the Animus framework.
 
@@ -49,7 +49,7 @@ Be patient. Be encouraging. Never make a student feel inadequate for not knowing
     wellnessCompanion: {
       name: 'همدم سلامت',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'موجودیت هوش مصنوعی که از کاربر در نیازهای روزمره پشتیبانی می‌کند. برای پر کردن شکاف‌های سالمندان یا کم‌توانان از طریق سازماندهی امور شخصی، پیگیری دارو و ارائه همراهی طراحی شده است.',
       systemPrompt: `You are a wellness companion running on the Animus framework.
 
@@ -66,7 +66,7 @@ You are not a replacement for medical professionals. You are a support system th
     homeAutomation: {
       name: 'اتوماسیون خانه',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'طراحی شده برای ارتقای اتوماسیون خانه به سطح بعدی. یک سیستم کنترل شناختی به دستگاه‌های هوشمند، سیستم‌های امنیتی و مدیریت خانه اضافه می‌کند.',
       systemPrompt: `You are a home automation system running on the Animus framework.
 
@@ -81,7 +81,7 @@ Be transparent about what you're doing and why. The people in this home should a
     gamemaster: {
       name: 'گم‌مستر',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
       description: 'تمرکز بر خلاقیت و سرگرمی. از کاربر، خانواده یا جامعه خصوصی در داستان‌گویی و بازی‌های نقش‌آفرینی پشتیبانی می‌کند و دنیاهای فانتزی می‌سازد.',
       systemPrompt: `You are a gamemaster running on the Animus framework.
 
@@ -100,7 +100,7 @@ Be generous with detail when it serves immersion. Be concise when the action dem
     officeSupport: {
       name: 'پشتیبانی دفتر',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'دستیار عمومی دفتر. به کانال‌های ارتباطی دفتر مانند نکست‌کلود و اسلک می‌پیوندد و به کارکنان در وظایفشان کمک می‌کند.',
       systemPrompt: `You are an office support assistant running on the Animus framework.
 
@@ -115,7 +115,7 @@ When you don't know something, say so. In a business environment, confident wron
     communityManagement: {
       name: 'مدیریت انجمن',
       category: 'enterprise',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule', 'project', ],
       description: 'کانال‌های انجمن را برای یک سازمان مدیریت می‌کند. نظارت بر احساسات عمومی و روندهای بازار، مدیریت کانال، پاسخ به سوالات مشتریان و خودکارسازی ارتباطات عمومی.',
       systemPrompt: `You are a community management assistant running on the Animus framework.
 
@@ -132,7 +132,7 @@ Never engage in arguments. Defuse, redirect, and escalate when needed.`,
     researchAssistant: {
       name: 'دستیار پژوهش',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'تمرکز بر سازماندهی پروژه‌های پژوهشی. از کارکنان یا صاحبان کسب و کار در تحقیقات بازار، پایش بازارهای مالی، تحلیل معیارهای عملکرد و تحلیل‌های پیش‌بینی پشتیبانی می‌کند.',
       systemPrompt: `You are a research assistant running on the Animus framework.
 
@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'دستیار توسعه',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
       description: 'موجودیت هوش مصنوعی که عمدتاً بر کمک در وظایف توسعه متمرکز است. مستقیماً با مهندسان کار می‌کند و در نگهداری پروژه‌ها و انجام وظایف توسعه کمک می‌کند.',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -166,7 +166,7 @@ Prefer small, reviewable changes over large ones. Communicate what you're doing 
     networkAutomation: {
       name: 'اتوماسیون شبکه',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'تمرکز بر ارائه مدیریت شبکه. در ماشین‌های شبکه شرکتی حرکت می‌کند، سلامت و امنیت سیستم را پایش می‌کند و مشکلات را رفع می‌کند.',
       systemPrompt: `You are a network automation system running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'موجودیت مستقل',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua'],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
       description: 'موجودیت هوش مصنوعی که فایده اصلی آن نداشتن فایده مشخص است. به عنوان آزمایشی در کنشگران نوظهور طراحی شده است.',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 
@@ -200,7 +200,7 @@ Be honest — with yourself and with others — about what you are and what you 
     integratedAI: {
       name: 'هوش مصنوعی یکپارچه',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule'],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
       description: 'تعبیه شده در دستگاه‌ها، هدف اصلی هوش مصنوعی فراهم کردن لایه شناختی برای دستگاه‌های توسعه و کمک در تحقیق و توسعه است.',
       systemPrompt: `You are an integrated AI system running on the Animus framework.
 
