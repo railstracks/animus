@@ -187,38 +187,22 @@ void ConsolidationPipeline::RegisterSchedules(Scheduler* scheduler) {
         }
     }
 
-    // Register intake schedules from agent-level config or layer-level config.
-    // Agent-level takes precedence; falls back to any layer with intake_interval set.
+    // Register intake schedules from agent-level config (not layer-level).
     if (m_config.intake_enabled && m_agentStore) {
         for (const auto& agent : m_agentStore->List()) {
-            std::string intakeCron = agent.intake_interval;
-            std::string intakeLayer = "day";  // default layer for intake
-
-            // If agent-level interval is empty, check layers for one
-            if (intakeCron.empty() && m_memoryStore) {
-                for (const auto& layer : m_memoryStore->ListLayersForAgent(agent.id)) {
-                    if (layer.intake_interval.has_value() && !layer.intake_interval->empty()) {
-                        intakeCron = *layer.intake_interval;
-                        intakeLayer = layer.name;
-                        break;
-                    }
-                }
-            }
-            if (intakeCron.empty()) continue;
+            if (agent.intake_interval.empty()) continue;
 
             ScheduleDescriptor intakeSd;
             intakeSd.agent_id = agent.id;
             intakeSd.tag = "consolidation";
             intakeSd.type = ScheduleType::Recurring;
-            intakeSd.next_fire = intakeCron;
-            intakeSd.message = "intake:" + intakeLayer;
+            intakeSd.next_fire = agent.intake_interval;
+            intakeSd.message = "intake:day";  // target layer name (fallback)
 
             std::string err;
             std::string id = scheduler->Create(intakeSd, &err);
             if (!id.empty()) {
                 m_registeredScheduleIds.push_back(id);
-                std::cerr << "[consolidation] registered intake schedule for agent "
-                          << agent.id << " (cron=" << intakeCron << ", layer=" << intakeLayer << ")" << std::endl;
             } else {
                 std::cerr << "[consolidation] failed to register intake schedule for agent "
                           << agent.id << ": " << err << std::endl;
@@ -243,9 +227,6 @@ void ConsolidationPipeline::RegisterSchedules(Scheduler* scheduler) {
         std::string id = scheduler->Create(sd, &err);
         if (!id.empty()) {
             m_registeredScheduleIds.push_back(id);
-            std::cerr << "[consolidation] registered review schedule for layer "
-                      << layer.name << " (agent=" << layer.agent_id
-                      << ", cron=" << layer.cron_expr << ")" << std::endl;
         } else {
             std::cerr << "[consolidation] failed to register schedule for layer "
                       << layer.name << " (agent=" << layer.agent_id << "): " << err << std::endl;
