@@ -426,6 +426,9 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
         case discord_op::HEARTBEAT_ACK: {
             // Opcode 11: Heartbeat acknowledged
             heartbeatAcked = true;
+            // Update liveness tracker — heartbeats prove the connection is alive
+            // even when no MESSAGE_CREATE events arrive (quiet server)
+            state->last_ws_event = std::chrono::steady_clock::now();
             break;
         }
 
