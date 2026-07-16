@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: '開發助手',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua', 'project', ],
       description: '一個主要集中喺協助開發任務嘅人工智能構造體。會直接同工程師合作，幫手維護項目同執行開發任務。',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: '自主構造體',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua', 'project', ],
       description: '一個主要用途就係無用途嘅人工智能構造體。設計成湧現行動者嘅實驗，有一定程度嘅自主決定。',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 

@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'مساعد التطوير',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua', 'project', ],
       description: 'كيان ذكاء اصطناعي يركز بشكل رئيسي على المساعدة في مهام التطوير. سيتعامل مباشرة مع المهندسين في الغالب، وسيساعدهم في صيانة المشاريع وتنفيذ مهام التطوير.',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'كيان مستقل',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua', 'project', ],
       description: 'كيان ذكاء اصطناعي فائدته الأساسية هي عدم وجود فائدة محددة. مصمم كتجربة في الجهات الفاعلة الناشئة، مع قدر من التوجيه الذاتي.',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 

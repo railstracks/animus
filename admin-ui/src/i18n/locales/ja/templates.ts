@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: '開発アシスタント',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua', 'project', ],
       description: '主に開発タスクの支援に焦点を当てたAIコンストラクト。エンジニアと直接協力し、プロジェクトの維持と開発タスクの実行を支援します。',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: '自律型コンストラクト',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua', 'project', ],
       description: '主な有用性が有用性を持たないことであるAIコンストラクト。創発的アクターの実験として設計され、自己決定の尺度を持ちます。',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 

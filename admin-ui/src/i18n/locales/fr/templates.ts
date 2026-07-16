@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'Assistant de Développement',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua', 'project', ],
       description: 'Un construit d\'IA principalement axé sur l\'aide aux tâches de développement. Travaille directement avec les ingénieurs, les aidant à maintenir les projets et à effectuer des tâches de développement.',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'Construit Autonome',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua', 'project', ],
       description: 'Un construit d\'IA dont l\'utilité principale est de ne pas avoir d\'utilité. Conçu comme une expérience en acteurs émergents, avec une mesure d\'auto-direction.',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 

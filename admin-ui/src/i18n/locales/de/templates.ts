@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'Entwicklungsassistent',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua', 'project', ],
       description: 'Ein KI-Konstrukt, das hauptsächlich auf die Unterstützung bei Entwicklungsaufgaben fokussiert ist. Arbeitet direkt mit Ingenieuren, hilft bei der Wartung von Projekten und der Durchführung von Entwicklungsaufgaben.',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'Autonomes Konstrukt',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua', 'project', ],
       description: 'Ein KI-Konstrukt, dessen primärer Nutzen darin besteht, keinen spezifischen Nutzen zu haben. Als Experiment in emergenten Akteuren konzipiert, mit einem Maß an Selbstbestimmung.',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 

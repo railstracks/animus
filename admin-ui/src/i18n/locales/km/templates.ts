@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'ជំនួយការអភិវឌ្ឍន៍',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua', 'project', ],
       description: 'សាងសង់បញ្ញាសិប្បនិមិត្តដែលផ្តោតចម្បងលើការជួយកិច្ចការអភិវឌ្ឍន៍។ នឹងធ្វើការដោយផ្ទាល់ជាមួយវិស្វករជាច្រើន។',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'សាងសង់ស្វ័យភាព',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua', 'project', ],
       description: 'សាងសង់បញ្ញាសិប្បនិមិត្តដែលប្រយោជន៍ចម្បងគឺមិនមានប្រយោជន៍អ្វីឡើយ។ បានរចនាឡើងជាការពិសោធន៍ក្នុងអ្នកសម្តែងកាយវិការ។',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 

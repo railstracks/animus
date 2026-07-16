@@ -149,7 +149,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'ডেভেলপমেন্ট সহকারী',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua', 'project', ],
       description: 'প্রধানত উন্নয়ন কাজে সহায়তায় ফোকাস করা একটি এআই কনস্ট্রাক্ট। প্রকৌশলীদের সাথে সরাসরি কাজ করে প্রকল্প রক্ষণাবেক্ষণে সহায়তা করে।',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -183,7 +183,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'স্বায়ত্তশাসিত কনস্ট্রাক্ট',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua''project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua', 'project', ],
       description: 'একটি এআই কনস্ট্রাক্ট যার প্রাথমিক উপযোগিতা হল কোনো নির্দিষ্ট উপযোগিতা নেই। উদীয়মান অভিনেতাদের একটি পরীক্ষা হিসাবে ডিজাইন করা।',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 
