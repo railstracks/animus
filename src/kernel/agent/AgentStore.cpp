@@ -206,7 +206,7 @@ void AgentStore::EnsureSchema() {
             agent_id TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
-            identity TEXT NOT NULL DEFAULT 'You are Animus.',
+            identity TEXT NOT NULL DEFAULT '',
             avatar TEXT NOT NULL DEFAULT '',
             default_provider TEXT NOT NULL DEFAULT 'openai',
             default_model TEXT NOT NULL DEFAULT 'gpt-4.1-mini',

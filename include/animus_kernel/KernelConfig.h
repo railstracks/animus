@@ -47,7 +47,7 @@ struct KernelConfig {
     struct AgentRuntimeConfig {
         AgentModelConfig model{};
         double temperature{0.7};
-        std::string identity{"You are Animus."};
+        std::string identity{};
         AgentBudgetConfig budget{};
 
         // Thinking mode configuration (native provider thinking)

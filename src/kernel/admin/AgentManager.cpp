@@ -60,6 +60,11 @@ AgentManager::OperationResult AgentManager::CreateAgent(const Json::Value& patch
         return result;
     }
 
+    // Default identity to "You are <name>." if not explicitly set
+    if (agent.identity.empty() && !agent.name.empty()) {
+        agent.identity = "You are " + agent.name + ".";
+    }
+
     if (!m_providerManager->HasProvider(agent.default_provider)) {
         result.statusCode = 400;
         result.error = "unknown provider: " + agent.default_provider;
