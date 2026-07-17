@@ -61,6 +61,12 @@ For every HTTP request to /api/*:
 | GET | `/api/auth/me` | Required | Return current user info |
 | POST | `/api/auth/setup` | Static token | Create first user account (bootstrap) |
 | GET | `/api/auth/status` | None | Returns whether auth is required and whether users exist |
+| GET | `/api/users` | Admin | List all users |
+| POST | `/api/users` | Admin | Create new user (username, password, role) |
+| PUT | `/api/users/:id` | Admin | Update user (password, role) |
+| DELETE | `/api/users/:id` | Admin | Delete user (invalidates their session tokens) |
+| GET | `/api/users/:id/sessions` | Admin | List active session tokens for user |
+| DELETE | `/api/users/:id/sessions` | Admin | Revoke all session tokens for user |
 
 ### WebSocket Authentication
 
@@ -135,9 +141,22 @@ CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires ON auth_tokens(expires_at);
 ### Admin UI
 
 - `src/views/LoginView.vue` — login form + setup wizard
+- `src/views/UsersView.vue` — user administration (list, create, edit, delete users)
 - `src/stores/auth.ts` — Pinia store for auth state (token storage, login/logout, auto-redirect)
 - Router guard: redirect to `/login` if not authenticated
 - API client: inject `Authorization: Bearer <token>` on all requests
+
+### User Administration Page
+
+The UsersView provides full user management (admin role required):
+
+- **User list** — table showing username, role, created date, active sessions
+- **Create user** — username + password + role (admin/viewer)
+- **Edit user** — change password, update role
+- **Delete user** — removes user and invalidates all their session tokens
+- **Session management** — view/revoke active session tokens per user
+
+Frontend route: `/users` (admin-only). Sidebar nav item visible only to admin role.
 
 ## Acceptance Criteria
 
@@ -149,6 +168,9 @@ CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires ON auth_tokens(expires_at);
 - [ ] 5 failed attempts from same IP in 60s → 60s block (429)
 - [ ] Admin UI shows login page when auth required
 - [ ] Admin UI setup flow for first user account
+- [ ] User administration page (list, create, edit, delete users)
+- [ ] Session token management (view/revoke active sessions)
+- [ ] Role-based access (admin-only routes)
 - [ ] Existing Docker deployments continue working (backward compatible)
 - [ ] Startup warning when auth is not configured
 
