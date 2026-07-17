@@ -88,7 +88,7 @@ export const channels = {
         tokenHint: 'Mevcut jetonu korumak için boş bırakın',
         applicationId: 'Uygulama Kimliği (eğik çizgi komutları için)',
         monitoredChannels: 'İzlenen kanallar',
-        monitoredChannelsHint: 'Bağlam için izlenecek kanal ID'leri (her satıra bir tane). Mesajlar yanıt tetiklemeden günlüğe kaydedilir.',
+        monitoredChannelsHint: 'Bağlam için izlenecek kanal ID\'leri (her satıra bir tane). Mesajlar yanıt tetiklemeden günlüğe kaydedilir.',
         respondToDm: 'DM\'lere yanıt verin',
         respondToMentions: 'Bahsedilenlere yanıt verme',
         monitorAllChannels: 'Tüm kanalları izle',

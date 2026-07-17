@@ -88,7 +88,7 @@ export const channels = {
       tokenHint: 'Leeg laten om bestaande token te behouden',
       applicationId: 'Applicatie-ID (voor slash-commando’s)',
       monitoredChannels: 'Gevolgde kanalen',
-      monitoredChannelsHint: 'Kanaal-ID's om te volgen voor context (één per regel). Berichten worden gelogd zonder reacties te triggeren.',
+      monitoredChannelsHint: 'Kanaal-ID\'s om te volgen voor context (één per regel). Berichten worden gelogd zonder reacties te triggeren.',
       respondToDm: 'Reageren op DM’s',
       respondToMentions: 'Reageren op vermeldingen',
       monitorAllChannels: 'Alle kanalen volgen',
