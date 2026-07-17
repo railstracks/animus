@@ -50,7 +50,7 @@ const router = createRouter({
 });
 
 // Auth guard
-import { useAuthStore } from '@/stores/auth';
+import { useAuthStore } from '../stores/auth';
 router.beforeEach(async (to, _from, next) => {
   const auth = useAuthStore();
 
