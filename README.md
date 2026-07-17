@@ -75,7 +75,7 @@ Unified channel architecture for multi-platform agent communication. A channel i
 - **IRC** — Full IRC interface with TLS support, channels, DMs, notices, multi-agent support, auto-reconnect
 - **Telegram** — Bot API adapter with long polling, private/group/forum chat dispatch, message threading
 - **Discord** — Bot adapter via Discord API v10
-- **Slack** — Bot adapter with webhook + OAuth
+- **Slack** — Bot adapter with Socket Mode
 - **WhatsApp** — Baileys-based adapter with binary protocol
 - **Email** — AgentMail adapter (REST API + WebSocket polling)
 - **VK** — Community adapter with Long Poll, wall posts, wall comments
