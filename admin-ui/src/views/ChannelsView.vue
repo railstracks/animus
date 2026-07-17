@@ -136,6 +136,8 @@ const formData = ref({
   discord_monitored_channels: '',
   discord_respond_to_dm: true,
   discord_respond_to_mentions: true,
+  discord_respond_to_channels: false,
+  discord_monitor_all_channels: false,
   discord_dm_whitelist_enabled: false,
   discord_allowed_dm_users: '',
   // Slack fields
@@ -241,6 +243,8 @@ function resetForm(): void {
     discord_monitored_channels: '',
     discord_respond_to_dm: true,
     discord_respond_to_mentions: true,
+    discord_respond_to_channels: false,
+    discord_monitor_all_channels: false,
     discord_dm_whitelist_enabled: false,
     discord_allowed_dm_users: '',
     // Slack fields
@@ -398,6 +402,8 @@ function buildConfig(): Record<string, unknown> {
       agent_id: formData.value.agent_id || '',
       respond_to_dm: String(formData.value.discord_respond_to_dm),
       respond_to_mentions: String(formData.value.discord_respond_to_mentions),
+      respond_to_channels: String(formData.value.discord_respond_to_channels),
+      monitor_all_channels: String(formData.value.discord_monitor_all_channels),
     };
     if (formData.value.discord_bot_token) cfg.bot_token = formData.value.discord_bot_token;
     if (formData.value.discord_application_id) cfg.application_id = formData.value.discord_application_id;
@@ -544,6 +550,8 @@ function openEdit(item: ChannelInfo): void {
     formData.value.discord_monitored_channels = monitored.join('\n');
     formData.value.discord_respond_to_dm = Boolean(cfg.respond_to_dm ?? true);
     formData.value.discord_respond_to_mentions = Boolean(cfg.respond_to_mentions ?? true);
+    formData.value.discord_respond_to_channels = Boolean(cfg.respond_to_channels ?? false);
+    formData.value.discord_monitor_all_channels = Boolean(cfg.monitor_all_channels ?? false);
     formData.value.discord_dm_whitelist_enabled = Boolean(cfg.dm_whitelist_enabled ?? false);
     const allowedDm: string[] = Array.isArray(cfg.allowed_dm_users) ? cfg.allowed_dm_users : [];
     formData.value.discord_allowed_dm_users = allowedDm.join('\n');
@@ -992,8 +1000,10 @@ onMounted(async () => {
               />
               <v-text-field v-model="formData.discord_application_id" :label="t('channels.form.discord.applicationId')" density="comfortable" class="mb-2" />
               <v-textarea v-model="formData.discord_monitored_channels" :label="t('channels.form.discord.monitoredChannels')" :hint="t('channels.form.discord.monitoredChannelsHint')" density="comfortable" rows="3" class="mb-2" />
+              <v-checkbox v-model="formData.discord_monitor_all_channels" :label="t('channels.form.discord.monitorAllChannels')" density="comfortable" hide-details class="mb-1" />
               <v-checkbox v-model="formData.discord_respond_to_dm" :label="t('channels.form.discord.respondToDm')" density="comfortable" hide-details class="mb-1" />
               <v-checkbox v-model="formData.discord_respond_to_mentions" :label="t('channels.form.discord.respondToMentions')" density="comfortable" hide-details class="mb-1" />
+              <v-checkbox v-model="formData.discord_respond_to_channels" :label="t('channels.form.discord.respondToChannels')" density="comfortable" hide-details class="mb-1" />
               <v-checkbox v-model="formData.discord_dm_whitelist_enabled" :label="t('channels.form.discord.dmWhitelistEnabled')" density="comfortable" hide-details class="mb-1" />
               <v-textarea v-if="formData.discord_dm_whitelist_enabled" v-model="formData.discord_allowed_dm_users" :label="t('channels.form.discord.allowedDmUsers')" :hint="t('channels.form.discord.allowedDmUsersHint')" density="comfortable" rows="3" class="mb-2" />
             </template>

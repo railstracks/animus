@@ -121,9 +121,17 @@ public:
         const std::string& sessionType,
         const ReplyTarget& replyTarget)>;
 
+    // Callback to log a message to session history without triggering a chain.
+    using LogCallback = std::function<void(
+        const std::string& agentId,
+        const std::string& sessionKey,
+        const std::string& message,
+        const std::string& sessionType)>;
+
     ChannelManager(HttpClient& httpClient,
                    AgentConfigStore* configStore,
-                   DispatchCallback dispatch);
+                   DispatchCallback dispatch,
+                   LogCallback logCallback);
     ~ChannelManager();
 
     ChannelManager(const ChannelManager&) = delete;
@@ -284,6 +292,13 @@ private:
                            const std::string& message,
                            const std::string& sessionType);
 
+    // Log message to session history without triggering an agent chain.
+    // Used for channel tracking — messages are stored as context for later mentions.
+    void LogToSession(PollerState* state,
+                      const std::string& routingKey,
+                      const std::string& message,
+                      const std::string& sessionType);
+
     // --- VK helpers ---
     bool FetchVkLongPollServer(PollerState* state);
     std::string BuildVkLongPollUrl(const PollerState* state) const;
@@ -320,6 +335,7 @@ private:
     AgentConfigStore* m_configStore;
     ChannelRouter m_router;
     DispatchCallback m_dispatch;
+    LogCallback m_logCallback;
 
     // All channel states (loaded from config store)
     std::unordered_map<std::string, ChannelState> m_channels;

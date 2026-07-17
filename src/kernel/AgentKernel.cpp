@@ -1128,8 +1128,36 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             ExecuteChannelDispatch(sessionKey, message, replyTarget, agentId);
         };
 
+        // Log callback — appends message to session history without firing a chain
+        auto logCallback = [this](
+            const std::string& agentId,
+            const std::string& sessionKey,
+            const std::string& message,
+            const std::string& sessionType) {
+            SessionKey key{"channel:" + sessionKey, ""};
+            auto session = m_sessionManager->GetOrCreate(key);
+            if (!session) return;
+
+            if (!agentId.empty() && session->AgentId().empty()) {
+                session->SetAgentId(agentId);
+            }
+
+            auto now = std::chrono::system_clock::now();
+            auto unixMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now.time_since_epoch()).count();
+
+            SessionTurn turn;
+            turn.role = "user";
+            turn.content = message;
+            turn.unix_ms = static_cast<std::uint64_t>(unixMs);
+            session->AddTurn(std::move(turn));
+
+            // Persist session
+            m_sessionManager->FlushSession(session->Id());
+        };
+
         m_channelManager = new ChannelManager(
-            m_httpClient, m_configStore, dispatch);
+            m_httpClient, m_configStore, dispatch, logCallback);
 
         // Wire ChannelManager into AdminServer for route handlers
         if (m_adminServer) {

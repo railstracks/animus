@@ -305,10 +305,11 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                     }
                 }
 
-                // Decide whether to dispatch
-                bool shouldDispatch = false;
+                // Decide whether to track (log) and/or respond (dispatch)
                 bool respondToDm = true;
                 bool respondToMentions = true;
+                bool respondToChannels = false;
+                bool monitorAllChannels = false;
 
                 if (state->config.isMember("respond_to_dm")) {
                     if (state->config["respond_to_dm"].isBool())
@@ -318,6 +319,38 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                     if (state->config["respond_to_mentions"].isBool())
                         respondToMentions = state->config["respond_to_mentions"].asBool();
                 }
+                if (state->config.isMember("respond_to_channels")) {
+                    if (state->config["respond_to_channels"].isString())
+                        respondToChannels = (state->config["respond_to_channels"].asString() == "true");
+                    else if (state->config["respond_to_channels"].isBool())
+                        respondToChannels = state->config["respond_to_channels"].asBool();
+                }
+                if (state->config.isMember("monitor_all_channels")) {
+                    if (state->config["monitor_all_channels"].isString())
+                        monitorAllChannels = (state->config["monitor_all_channels"].asString() == "true");
+                    else if (state->config["monitor_all_channels"].isBool())
+                        monitorAllChannels = state->config["monitor_all_channels"].asBool();
+                }
+
+                // Determine if this channel is tracked
+                bool isTracked = false;
+                if (!isDm) {
+                    if (monitorAllChannels) {
+                        isTracked = true;
+                    } else if (state->config.isMember("monitored_channels") &&
+                               state->config["monitored_channels"].isArray()) {
+                        for (const auto& ch : state->config["monitored_channels"]) {
+                            if (ch.asString() == channelId) {
+                                isTracked = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Determine response action
+                bool shouldRespond = false;
+                bool shouldLog = false;
 
                 if (isDm && respondToDm) {
                     // DM whitelist check
@@ -340,25 +373,21 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                         }
                         if (!userAllowed) break;
                     }
-                    shouldDispatch = true;
+                    shouldRespond = true;
                 } else if (isMention && respondToMentions) {
-                    shouldDispatch = true;
+                    shouldRespond = true;
+                    // If channel is tracked, use the tracked session (has context)
+                    if (isTracked) shouldLog = true;
+                } else if (isTracked && respondToChannels) {
+                    shouldRespond = true;
                 }
 
-                // Also dispatch if channel is in monitored list
-                if (!shouldDispatch && !isDm) {
-                    if (state->config.isMember("monitored_channels") &&
-                        state->config["monitored_channels"].isArray()) {
-                        for (const auto& ch : state->config["monitored_channels"]) {
-                            if (ch.asString() == channelId) {
-                                shouldDispatch = true;
-                                break;
-                            }
-                        }
-                    }
+                // Track without responding if channel is monitored but no response trigger
+                if (isTracked && !shouldRespond) {
+                    shouldLog = true;
                 }
 
-                if (!shouldDispatch) break;
+                if (!shouldRespond && !shouldLog) break;
 
                 // Build message text
                 std::string displayText;
@@ -368,22 +397,28 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                     displayText = "[" + channelId + "] " + authorUsername + ": " + content;
                 }
 
-                std::cerr << "[discord] MESSAGE_CREATE: " << displayText << std::endl;
+                if (shouldRespond) {
+                    std::cerr << "[discord] MESSAGE_CREATE: " << displayText << std::endl;
+                } else {
+                    std::cerr << "[discord] Tracking: " << displayText << std::endl;
+                }
 
                 // Update liveness
                 state->last_ws_event = std::chrono::steady_clock::now();
 
-                // Dispatch to agent session with proper routing key
-                // For Discord, both DMs and guild channels are addressed by channel_id
-                // DMs: peer:DM_CHANNEL_ID (so SendReply can POST to /channels/{dm_channel_id}/messages)
-                // Guild channels: post:CHANNEL_ID (so SendReply can POST to /channels/{channel_id}/messages)
+                // Routing key
                 std::string routingKey;
                 if (isDm) {
-                    routingKey = "peer:" + channelId;  // DMs: peer key uses DM channel ID
+                    routingKey = "peer:" + channelId;
                 } else {
-                    routingKey = "post:" + channelId;   // Guild channels: post key uses channel ID
+                    routingKey = "post:" + channelId;
                 }
-                DispatchToSession(state, routingKey, displayText, "chat");
+
+                if (shouldRespond) {
+                    DispatchToSession(state, routingKey, displayText, "chat");
+                } else {
+                    LogToSession(state, routingKey, displayText, "chat");
+                }
             } else {
                 std::cerr << "[discord] Event: " << eventType << " (seq=" << lastSeq << ")" << std::endl;
             }

@@ -140,10 +140,12 @@ void ChannelRouter::PruneExpired(std::chrono::seconds ttl) {
 
 ChannelManager::ChannelManager(HttpClient& httpClient,
                                AgentConfigStore* configStore,
-                               DispatchCallback dispatch)
+                               DispatchCallback dispatch,
+                               LogCallback logCallback)
     : m_httpClient(httpClient)
     , m_configStore(configStore)
-    , m_dispatch(std::move(dispatch)) {
+    , m_dispatch(std::move(dispatch))
+    , m_logCallback(std::move(logCallback)) {
 }
 
 ChannelManager::~ChannelManager() {
@@ -1933,6 +1935,30 @@ std::string ChannelManager::FetchVKChatHistory(PollerState* state,
 // ============================================================================
 // Session dispatch — unified path for all connectors
 // ============================================================================
+
+void ChannelManager::LogToSession(PollerState* state,
+                                  const std::string& routingKey,
+                                  const std::string& message,
+                                  const std::string& sessionType) {
+    bool isPeer = (routingKey.size() > 5 && routingKey.substr(0, 5) == "peer:");
+    bool isPost = (routingKey.size() > 5 && routingKey.substr(0, 5) == "post:");
+
+    std::string routingValue = routingKey.substr(5);
+
+    // Look up existing session
+    auto entry = m_router.Lookup(state->channel_name, routingKey);
+
+    std::string sessionKey;
+    if (entry) {
+        sessionKey = entry->session_key;
+    } else {
+        sessionKey = sessionType + ":" + state->channel_name + ":" + routingValue;
+        m_router.Register(state->channel_name, routingKey, sessionKey, state->agent_id);
+    }
+
+    // Log the message without triggering a chain
+    m_logCallback(state->agent_id, sessionKey, message, sessionType);
+}
 
 void ChannelManager::DispatchToSession(PollerState* state,
                                          const std::string& routingKey,
