@@ -174,15 +174,10 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
 
         auto wsPtr = drogon::WebSocketClient::newWebSocketClient(wsHostUrl, &loop);
 
-    // Step 2: Create event loop and WebSocket client
-    trantor::EventLoop loop;
-
-    auto wsPtr = drogon::WebSocketClient::newWebSocketClient(wsHostUrl, &loop);
-
     // --- Message handler: Discord Gateway protocol ---
     wsPtr->setMessageHandler(
         [this, state, &sessionId, &resumeUrl, &botUserId, &lastSeq,
-         &identified, &heartbeatAcked, &lastHeartbeatSent, &gatewayAlive, botToken, intents, &wsPtr, &loop]
+         &identified, &heartbeatAcked, &lastHeartbeatSent, &gatewayAlive, &shouldReconnect, botToken, intents, &wsPtr, &loop]
         (std::string&& message,
          const drogon::WebSocketClientPtr&,
          const drogon::WebSocketMessageType& type) {
@@ -269,6 +264,7 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 Json::StreamWriterBuilder wb;
                 wb.settings_["indentation"] = "";
                 std::string resumeMsg = Json::writeString(wb, resumePayload);
+                auto conn = wsPtr->getConnection();
                 if (conn) conn->send(resumeMsg);
                 std::cerr << "[discord] RESUME sent (session=" << sessionId
                           << ", seq=" << lastSeq << ")" << std::endl;
@@ -289,6 +285,7 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 Json::StreamWriterBuilder wb;
                 wb.settings_["indentation"] = "";
                 std::string identifyMsg = Json::writeString(wb, identify);
+                auto conn = wsPtr->getConnection();
                 if (conn) conn->send(identifyMsg);
                 std::cerr << "[discord] IDENTIFY sent (intents=" << intents << ")" << std::endl;
             }
