@@ -323,10 +323,10 @@ function loadIrcConfig(cfg: Record<string, any>): void {
   formData.value.irc_nick = String(cfg.nick ?? '');
   formData.value.irc_username = String(cfg.username ?? 'animus');
   formData.value.irc_realname = String(cfg.realname ?? 'Animus Agent');
-  formData.value.irc_dm_only = Boolean(cfg.dm_only ?? false);
-  formData.value.irc_respond_to_channel_activity = Boolean(cfg.respond_to_channel_activity ?? true);
-  formData.value.irc_respond_to_direct_messages = Boolean(cfg.respond_to_direct_messages ?? true);
-  formData.value.irc_respond_to_notices = Boolean(cfg.respond_to_notices ?? false);
+  formData.value.irc_dm_only = String(cfg.dm_only ?? 'false') === 'true';
+  formData.value.irc_respond_to_channel_activity = String(cfg.respond_to_channel_activity ?? 'true') === 'true';
+  formData.value.irc_respond_to_direct_messages = String(cfg.respond_to_direct_messages ?? 'true') === 'true';
+  formData.value.irc_respond_to_notices = String(cfg.respond_to_notices ?? 'false') === 'true';
   formData.value.irc_agent_id = String(cfg.agent_id ?? '');
 
   const chs: Array<any> = Array.isArray(cfg.channels) ? cfg.channels : [];
@@ -341,7 +341,7 @@ function loadIrcConfig(cfg: Record<string, any>): void {
   formData.value.irc_reconnect_enabled = Boolean(rc.enabled ?? true);
   formData.value.irc_reconnect_initial_delay_ms = Number(rc.initial_delay_ms ?? 1000);
   formData.value.irc_reconnect_max_delay_ms = Number(rc.max_delay_ms ?? 60000);
-  formData.value.irc_use_tls = Boolean(cfg.use_tls ?? false);
+  formData.value.irc_use_tls = String(cfg.use_tls ?? 'false') === 'true';
 }
 
 function buildConfig(): Record<string, unknown> {
@@ -548,11 +548,11 @@ function openEdit(item: ChannelInfo): void {
     formData.value.discord_application_id = cfg.application_id || '';
     const monitored: string[] = Array.isArray(cfg.monitored_channels) ? cfg.monitored_channels : [];
     formData.value.discord_monitored_channels = monitored.join('\n');
-    formData.value.discord_respond_to_dm = Boolean(cfg.respond_to_dm ?? true);
-    formData.value.discord_respond_to_mentions = Boolean(cfg.respond_to_mentions ?? true);
-    formData.value.discord_respond_to_channels = Boolean(cfg.respond_to_channels ?? false);
-    formData.value.discord_monitor_all_channels = Boolean(cfg.monitor_all_channels ?? false);
-    formData.value.discord_dm_whitelist_enabled = Boolean(cfg.dm_whitelist_enabled ?? false);
+    formData.value.discord_respond_to_dm = String(cfg.respond_to_dm ?? 'true') === 'true';
+    formData.value.discord_respond_to_mentions = String(cfg.respond_to_mentions ?? 'true') === 'true';
+    formData.value.discord_respond_to_channels = String(cfg.respond_to_channels ?? 'false') === 'true';
+    formData.value.discord_monitor_all_channels = String(cfg.monitor_all_channels ?? 'false') === 'true';
+    formData.value.discord_dm_whitelist_enabled = String(cfg.dm_whitelist_enabled ?? 'false') === 'true';
     const allowedDm: string[] = Array.isArray(cfg.allowed_dm_users) ? cfg.allowed_dm_users : [];
     formData.value.discord_allowed_dm_users = allowedDm.join('\n');
     formData.value.agent_id = String(cfg.agent_id ?? '');
@@ -561,9 +561,9 @@ function openEdit(item: ChannelInfo): void {
     formData.value.slack_app_token = cfg.app_token ? '' : ''; // Never prefill
     const monitored: string[] = Array.isArray(cfg.monitored_channels) ? cfg.monitored_channels : [];
     formData.value.slack_monitored_channels = monitored.join('\n');
-    formData.value.slack_respond_to_mentions = Boolean(cfg.respond_to_mentions ?? true);
-    formData.value.slack_respond_to_all_messages = Boolean(cfg.respond_to_all_messages ?? false);
-    formData.value.slack_threaded_replies = Boolean(cfg.threaded_replies ?? true);
+    formData.value.slack_respond_to_mentions = String(cfg.respond_to_mentions ?? 'true') === 'true';
+    formData.value.slack_respond_to_all_messages = String(cfg.respond_to_all_messages ?? 'false') === 'true';
+    formData.value.slack_threaded_replies = String(cfg.threaded_replies ?? 'true') === 'true';
     formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'whatsapp') {
     formData.value.whatsapp_auth_dir = cfg.auth_dir || '/tmp/wa-auth';
