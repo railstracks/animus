@@ -1285,8 +1285,6 @@ std::optional<llm::LLMProviderConfig> AdminServer::GetProviderConfig(const std::
     return config;
 }
 
-} // namespace animus::kernel
-
 // ============================================================================
 // Auth configuration
 // ============================================================================
@@ -1303,3 +1301,5 @@ void AdminServer::ConfigureAuth(const std::string& staticToken, IDataStore* data
         m_authManager.SetRequireAuth(true);
     }
 }
+
+} // namespace animus::kernel
