@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: '加利万廷',
       diary: '日记',
       webSearch: '网页搜索',
-      logs: '日志'
+      logs: '日志',
+      users: '用户'
     }
   } as const;

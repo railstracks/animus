@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: 'ga lăng',
       diary: 'Nhật ký',
       webSearch: 'Tìm kiếm web',
-      logs: 'Nhật ký'
+      logs: 'Nhật ký',
+      users: 'Người dùng'
     }
   } as const;

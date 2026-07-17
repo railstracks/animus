@@ -1,5 +1,6 @@
 #include "animus_kernel/AgentKernel.h"
 
+#include <cstdlib>
 #include <algorithm>
 #include <iostream>
 #include <memory>
@@ -927,6 +928,20 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 return m_adminServer->GetProviderConcurrency(id);
             });
         m_adminServer->SetProviderThrottle(m_providerThrottle);
+    }
+
+    // Configure authentication
+    if (m_adminServer) {
+        const char* authToken = std::getenv("ANIMUS_AUTH_TOKEN");
+        std::string staticToken = authToken ? authToken : "";
+        m_adminServer->ConfigureAuth(staticToken, m_dataStore);
+        if (!staticToken.empty()) {
+            std::cerr << "[auth] Static auth token configured from ANIMUS_AUTH_TOKEN" << std::endl;
+        } else if (m_adminServer->GetAuthManager().HasUsers()) {
+            std::cerr << "[auth] Authentication required (user accounts exist)" << std::endl;
+        } else {
+            std::cerr << "[auth] WARNING: No auth configured. Set ANIMUS_AUTH_TOKEN or create user accounts." << std::endl;
+        }
     }
 
     std::string adminErr;

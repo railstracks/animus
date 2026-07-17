@@ -1241,6 +1241,7 @@ void AdminServer::RegisterHandlersOnce() {
         RegisterRoutesNodes();
         RegisterRoutesSearch();
         RegisterRoutesPromptLogs();
+        RegisterRoutesAuth();
     });
 }
 
@@ -1285,3 +1286,20 @@ std::optional<llm::LLMProviderConfig> AdminServer::GetProviderConfig(const std::
 }
 
 } // namespace animus::kernel
+
+// ============================================================================
+// Auth configuration
+// ============================================================================
+
+void AdminServer::ConfigureAuth(const std::string& staticToken, IDataStore* dataStore) {
+    m_staticTokenRaw = staticToken;
+    if (dataStore) {
+        m_authStore = new AuthStore(dataStore);
+        m_authManager.SetAuthStore(m_authStore);
+    }
+    if (!staticToken.empty()) {
+        m_authManager.SetStaticToken(staticToken);
+    } else if (m_authStore && m_authStore->HasUsers()) {
+        m_authManager.SetRequireAuth(true);
+    }
+}

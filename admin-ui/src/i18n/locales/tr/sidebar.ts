@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: 'Galvanting',
       diary: 'Günlük',
       webSearch: 'Web araması',
-      logs: 'Günlükler'
+      logs: 'Günlükler',
+      users: 'Kullanıcılar'
     }
   } as const;

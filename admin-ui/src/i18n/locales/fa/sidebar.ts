@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: 'گالیوانتینگ',
       diary: 'دفتر خاطرات',
       webSearch: 'جستجوی وب',
-      logs: 'سیاههها'
+      logs: 'سیاههها',
+      users: 'کاربران'
     }
   } as const;

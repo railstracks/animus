@@ -311,6 +311,8 @@ add_library(animus_kernel
   src/kernel/chain/PromptAssembler.cpp
   src/kernel/chain/ChainRunner.cpp
   src/kernel/PromptLogStore.cpp
+  src/kernel/auth/AuthStore.cpp
+  src/kernel/auth/AuthManager.cpp
   src/kernel/chain/CompactionService.cpp
   src/kernel/chain/CompactionSummaryGenerator.cpp
   src/kernel/tools/ToolRegistry.cpp

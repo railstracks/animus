@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: '갈리반팅',
       diary: '일기',
       webSearch: '웹 검색',
-      logs: '로그'
+      logs: '로그',
+      users: '사용자'
     }
   } as const;

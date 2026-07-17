@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: 'Неистовый',
       diary: 'Дневник',
       webSearch: 'Веб-поиск',
-      logs: 'Журналы'
+      logs: 'Журналы',
+      users: 'Пользователи'
     }
   } as const;

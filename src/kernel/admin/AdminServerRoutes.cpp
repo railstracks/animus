@@ -77,4 +77,8 @@ void AdminServer::RegisterRoutesPromptLogs() {
 #include "kernel/admin/internal/AdminServerRoutesPromptLogs.inc"
 }
 
+void AdminServer::RegisterRoutesAuth() {
+#include "kernel/admin/internal/AdminServerRoutesAuth.inc"
+}
+
 } // namespace animus::kernel

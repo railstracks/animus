@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: 'الركض',
       diary: 'يوميات',
       webSearch: 'بحث الويب',
-      logs: 'سجلات'
+      logs: 'سجلات',
+      users: 'المستخدمون'
     }
   } as const;

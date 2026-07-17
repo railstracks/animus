@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: 'Gallivanting',
       diary: 'Diary',
       webSearch: 'Binciken yanar gizo',
-      logs: 'Logs'
+      logs: 'Logs',
+      users: 'Masu amfani'
     }
   } as const;

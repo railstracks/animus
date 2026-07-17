@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: 'वीरतापूर्ण',
       diary: 'डायरी',
       webSearch: 'वेब खोज',
-      logs: 'लॉग'
+      logs: 'लॉग',
+      users: 'उपयोगकर्ता'
     }
   } as const;

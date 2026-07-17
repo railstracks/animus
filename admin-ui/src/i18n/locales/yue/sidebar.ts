@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: '加利萬廷',
       diary: '日記',
       webSearch: '網絡搜尋',
-      logs: '紀錄'
+      logs: '紀錄',
+      users: '用戶'
     }
   } as const;

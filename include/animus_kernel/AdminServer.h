@@ -29,6 +29,10 @@
 #include "animus_kernel/llm/LLMProviderConfig.h"
 #include "animus_kernel/llm/LLMTypes.h"
 
+#include "animus_kernel/AuthStore.h"
+#include "animus_kernel/AuthManager.h"
+#include "animus_kernel/AuthHelpers.h"
+
 namespace animus::kernel {
 
 class ChainRunner;
@@ -194,6 +198,10 @@ public:
     // Web search config (ticket 069)
     void SetSearchConfig(KernelConfig::SearchConfig* cfg) { m_searchConfig = cfg; }
     void SetHttpClient(HttpClient* client) { m_httpClientPtr = client; }
+
+    // Auth
+    void ConfigureAuth(const std::string& staticToken, IDataStore* dataStore);
+    AuthManager& GetAuthManager() { return m_authManager; }
     DiaryManager& GetDiaryManager() { return m_diaryManager; }
     std::chrono::steady_clock::time_point m_kernelStartedAt{};
 
@@ -250,6 +258,7 @@ private:
     void RegisterRoutesNodes();
     void RegisterRoutesSearch();
     void RegisterRoutesPromptLogs();
+    void RegisterRoutesAuth();
     void SyncIrcInterfaces();
     void RefreshChatSessionServiceDependencies();
 
@@ -259,6 +268,11 @@ private:
     // Web search config
     KernelConfig::SearchConfig* m_searchConfig{nullptr};
     HttpClient* m_httpClientPtr{nullptr};
+
+    // Auth
+    AuthManager m_authManager{};
+    AuthStore* m_authStore{nullptr};
+    std::string m_staticTokenRaw;
 };
 
 } // namespace animus::kernel

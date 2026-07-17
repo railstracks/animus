@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useAuthStore } from '@/stores/auth';
+import { useRouter } from 'vue-router';
 
 const { t } = useI18n();
+const auth = useAuthStore();
+const router = useRouter();
 
 const links = [
   { titleKey: 'sidebar.links.dashboard', path: '/', icon: 'mdi-view-dashboard-outline' },
@@ -22,7 +26,8 @@ const links = [
   { titleKey: 'sidebar.links.agents', path: '/agents', icon: 'mdi-account-group' },
   { titleKey: 'sidebar.links.gallivanting', path: '/gallivanting', icon: 'mdi-walk' },
   { titleKey: 'sidebar.links.diary', path: '/diary', icon: 'mdi-notebook' },
-  { titleKey: 'sidebar.links.logs', path: '/logs', icon: 'mdi-text-box-search-outline' }
+  { titleKey: 'sidebar.links.logs', path: '/logs', icon: 'mdi-text-box-search-outline' },
+  { titleKey: 'sidebar.links.users', path: '/users', icon: 'mdi-account-cog-outline' }
 ] as const;
 
 const translatedLinks = computed(() =>
@@ -44,6 +49,17 @@ const translatedLinks = computed(() =>
       active-class="active-nav-item"
       :prepend-icon="link.icon"
       :title="link.title"
+    />
+  </v-list>
+
+  <v-list nav density="comfortable" v-if="auth.authRequired">
+    <v-list-subheader class="subheader">Account</v-list-subheader>
+    <v-list-item v-if="auth.username" prepend-icon="mdi-account" :title="auth.username" disabled />
+    <v-list-item
+      prepend-icon="mdi-logout"
+      title="Sign Out"
+      @click="auth.logout(); router.push('/login')"
+      rounded="lg"
     />
   </v-list>
 </template>

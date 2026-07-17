@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: 'Galopowanie',
       diary: 'Pamiętnik',
       webSearch: 'Wyszukiwanie w sieci',
-      logs: 'Dzienniki'
+      logs: 'Dzienniki',
+      users: 'Użytkownicy'
     }
   } as const;

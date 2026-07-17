@@ -19,11 +19,14 @@ import ActiveMemoryView from '../views/ActiveMemoryView.vue';
 import NodesView from '../views/NodesView.vue';
 import SessionReportsView from '../views/SessionReportsView.vue';
 import PromptLogsView from '../views/PromptLogsView.vue';
+import LoginView from '../views/LoginView.vue';
+import UsersView from '../views/UsersView.vue';
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/wizard', name: 'wizard', component: WizardView },
+    { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
+    { path: '/wizard', name: 'wizard', component: WizardView, meta: { public: true } },
     { path: '/', name: 'dashboard', component: DashboardView },
     { path: '/chat', name: 'chat', component: ChatView },
     { path: '/memory', name: 'memory', component: MemoryView },
@@ -41,8 +44,41 @@ const router = createRouter({
     { path: '/active-memory', name: 'active-memory', component: ActiveMemoryView },
     { path: '/nodes', name: 'nodes', component: NodesView },
     { path: '/session-reports', name: 'session-reports', component: SessionReportsView },
-    { path: '/prompt-logs', name: 'prompt-logs', component: PromptLogsView }
+    { path: '/prompt-logs', name: 'prompt-logs', component: PromptLogsView },
+    { path: '/users', name: 'users', component: UsersView },
   ]
+});
+
+// Auth guard
+import { useAuthStore } from '@/stores/auth';
+router.beforeEach(async (to, _from, next) => {
+  const auth = useAuthStore();
+
+  // Check auth status if we haven't yet
+  if (auth.authRequired === false && !auth.token) {
+    await auth.checkStatus();
+  }
+
+  // Public routes (login, wizard) always accessible
+  if (to.meta.public) {
+    next();
+    return;
+  }
+
+  // If auth not required, allow
+  if (!auth.authRequired) {
+    next();
+    return;
+  }
+
+  // If authenticated, allow
+  if (auth.isAuthenticated) {
+    next();
+    return;
+  }
+
+  // Redirect to login
+  next('/login');
 });
 
 export default router;

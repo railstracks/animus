@@ -19,6 +19,7 @@ export const sidebar = {
       agents: 'Agentes',
       gallivanting: 'galivando',
       diary: 'diario',
-      logs: 'Registros'
+      logs: 'Registros',
+      users: 'Usuarios'
     }
   } as const;

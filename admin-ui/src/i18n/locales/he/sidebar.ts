@@ -19,6 +19,7 @@ export const sidebar = {
       gallivanting: 'גליבנט',
       diary: 'יומן',
       webSearch: 'חיפוש באינטרנט',
-      logs: 'יומנים'
+      logs: 'יומנים',
+      users: 'משתמשים'
     }
   } as const;
