@@ -25,6 +25,7 @@
 #include <json/writer.h>
 
 #include <chrono>
+#include <thread>
 #include <random>
 #include <sstream>
 #include <iostream>
@@ -112,42 +113,66 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
         try { intents = std::stoi(intentsStr); } catch (...) {}
     }
 
-    // Step 1: Get Gateway URL
-    HttpClient::Request gatewayReq;
-    gatewayReq.method = "GET";
-    gatewayReq.url = "https://discord.com/api/v10/gateway/bot";
-    gatewayReq.headers["Authorization"] = "Bot " + botToken;
-
-    HttpClient::Response gatewayResp = m_httpClient.Execute(gatewayReq);
-    if (gatewayResp.status_code != 200) {
-        std::cerr << "[discord] Failed to get gateway URL (status "
-                  << gatewayResp.status_code << "): " << gatewayResp.body << std::endl;
-        return;
-    }
-
-    Json::Value gatewayInfo = ParseJson(gatewayResp.body);
-    std::string gatewayUrl = GetString(gatewayInfo, "url");
-    if (gatewayUrl.empty()) {
-        std::cerr << "[discord] No URL in gateway/bot response" << std::endl;
-        return;
-    }
-
-    // Gateway URL is like wss://gateway.discord.gg
-    // Query params go on the HTTP request path, not the WebSocket host string
-    std::string wsHostUrl = gatewayUrl;  // wss://gateway.discord.gg
-    std::string wsPath = "/?v=10&encoding=json";
-
-    std::cerr << "[discord] Gateway URL: " << wsHostUrl << wsPath << std::endl;
-
-    // Gateway state
+    // Persistent gateway state across reconnects
     std::string sessionId;
     std::string resumeUrl;
     std::string botUserId;
     uint64_t lastSeq = 0;
     bool identified = false;
-    bool heartbeatAcked = true;  // Start true; first heartbeat sent after HELLO
-    bool gatewayAlive = true;    // Set false when stop() is called; guards send()
-    std::chrono::steady_clock::time_point lastHeartbeatSent;
+
+    // --- Reconnect loop ---
+    while (state->active) {
+        int reconnectDelay = 2;  // seconds, grows on repeated failures
+
+        // Step 1: Determine gateway URL (use resume_url if available)
+        std::string gatewayBaseUrl = resumeUrl.empty() ? "" : resumeUrl;
+
+        if (gatewayBaseUrl.empty()) {
+            // Fresh gateway URL from Discord API
+            HttpClient::Request gatewayReq;
+            gatewayReq.method = "GET";
+            gatewayReq.url = "https://discord.com/api/v10/gateway/bot";
+            gatewayReq.headers["Authorization"] = "Bot " + botToken;
+
+            HttpClient::Response gatewayResp = m_httpClient.Execute(gatewayReq);
+            if (gatewayResp.status_code != 200) {
+                std::cerr << "[discord] Failed to get gateway URL (status "
+                          << gatewayResp.status_code << "): " << gatewayResp.body << std::endl;
+                if (state->active) {
+                    std::cerr << "[discord] Retrying in " << reconnectDelay << "s..." << std::endl;
+                    std::this_thread::sleep_for(std::chrono::seconds(reconnectDelay));
+                    reconnectDelay = std::min(reconnectDelay * 2, 30);
+                }
+                continue;
+            }
+
+            Json::Value gatewayInfo = ParseJson(gatewayResp.body);
+            gatewayBaseUrl = GetString(gatewayInfo, "url");
+            if (gatewayBaseUrl.empty()) {
+                std::cerr << "[discord] No URL in gateway/bot response" << std::endl;
+                return;
+            }
+        }
+
+        std::string wsHostUrl = gatewayBaseUrl;
+        std::string wsPath = "/?v=10&encoding=json";
+
+        std::cerr << "[discord] Gateway URL: " << wsHostUrl << wsPath;
+        if (!sessionId.empty()) {
+            std::cerr << " (resuming session " << sessionId << ")";
+        }
+        std::cerr << std::endl;
+
+        // Per-connection state
+        bool heartbeatAcked = true;
+        bool gatewayAlive = true;
+        bool shouldReconnect = false;  // Set by RECONNECT/INVALID_SESSION handlers
+        std::chrono::steady_clock::time_point lastHeartbeatSent;
+
+        // Step 2: Create event loop and WebSocket client
+        trantor::EventLoop loop;
+
+        auto wsPtr = drogon::WebSocketClient::newWebSocketClient(wsHostUrl, &loop);
 
     // Step 2: Create event loop and WebSocket client
     trantor::EventLoop loop;
@@ -230,25 +255,43 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 });
             });
 
-            // Send IDENTIFY
-            Json::Value identify;
-            identify["op"] = discord_op::IDENTIFY;
-            Json::Value identifyData;
-            identifyData["token"] = botToken;
-            Json::Value props;
-            props["os"] = "linux";
-            props["browser"] = "animus";
-            props["device"] = "animus";
-            identifyData["properties"] = props;
-            identifyData["intents"] = intents;
-            identify["d"] = identifyData;
+            // Send IDENTIFY or RESUME
+            if (!sessionId.empty() && identified) {
+                // RESUME an existing session after reconnect
+                Json::Value resumePayload;
+                resumePayload["op"] = discord_op::RESUME;
+                Json::Value resumeData;
+                resumeData["token"] = botToken;
+                resumeData["session_id"] = sessionId;
+                resumeData["seq"] = static_cast<Json::Int64>(lastSeq);
+                resumePayload["d"] = resumeData;
 
-            Json::StreamWriterBuilder wb;
-            wb.settings_["indentation"] = "";
-            std::string identifyMsg = Json::writeString(wb, identify);
-            auto conn = wsPtr->getConnection();
-            if (conn) conn->send(identifyMsg);
-            std::cerr << "[discord] IDENTIFY sent (intents=" << intents << ")" << std::endl;
+                Json::StreamWriterBuilder wb;
+                wb.settings_["indentation"] = "";
+                std::string resumeMsg = Json::writeString(wb, resumePayload);
+                if (conn) conn->send(resumeMsg);
+                std::cerr << "[discord] RESUME sent (session=" << sessionId
+                          << ", seq=" << lastSeq << ")" << std::endl;
+            } else {
+                // IDENTIFY — new session
+                Json::Value identify;
+                identify["op"] = discord_op::IDENTIFY;
+                Json::Value identifyData;
+                identifyData["token"] = botToken;
+                Json::Value props;
+                props["os"] = "linux";
+                props["browser"] = "animus";
+                props["device"] = "animus";
+                identifyData["properties"] = props;
+                identifyData["intents"] = intents;
+                identify["d"] = identifyData;
+
+                Json::StreamWriterBuilder wb;
+                wb.settings_["indentation"] = "";
+                std::string identifyMsg = Json::writeString(wb, identify);
+                if (conn) conn->send(identifyMsg);
+                std::cerr << "[discord] IDENTIFY sent (intents=" << intents << ")" << std::endl;
+            }
             break;
         }
 
@@ -441,8 +484,10 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
         case discord_op::RECONNECT: {
             // Opcode 7: Server requests reconnect
             std::cerr << "[discord] RECONNECT requested by server — reconnecting" << std::endl;
+            shouldReconnect = true;
             gatewayAlive = false;
-            wsPtr->stop();
+            // Stop the loop cleanly — the reconnect loop will re-establish
+            loop.quit();
             break;
         }
 
@@ -455,6 +500,10 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 resumeUrl.clear();
                 identified = false;
             }
+            shouldReconnect = true;
+            gatewayAlive = false;
+            // Discord requires waiting 1-5 seconds before reconnecting on INVALID_SESSION
+            loop.runAfter(2.0, [&loop]() { loop.quit(); });
             break;
         }
 
@@ -475,10 +524,16 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
 
     // --- Connection closed handler ---
     wsPtr->setConnectionClosedHandler(
-        [state](const drogon::WebSocketClientPtr&) {
+        [state, &gatewayAlive, &shouldReconnect](const drogon::WebSocketClientPtr&) {
             std::cerr << "[discord] WebSocket connection closed for "
                       << state->channel_name << std::endl;
             state->ws_connected = false;
+            // If we weren't already told to reconnect, this is an unexpected close
+            // Mark for reconnect and quit the loop
+            if (state->active && !shouldReconnect) {
+                shouldReconnect = true;
+            }
+            gatewayAlive = false;
         });
 
     // --- Build connect request ---
@@ -490,7 +545,7 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
     // --- Connect ---
     wsPtr->connectToServer(
         req,
-        [this, state, wsPtr](drogon::ReqResult r,
+        [this, state, wsPtr, &loop, &shouldReconnect, &gatewayAlive](drogon::ReqResult r,
                              const drogon::HttpResponsePtr&,
                              const drogon::WebSocketClientPtr&) {
             if (r != drogon::ReqResult::Ok) {
@@ -502,6 +557,9 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                     std::cerr << "[discord] Too many failures — stopping" << std::endl;
                     state->active = false;
                 }
+                gatewayAlive = false;
+                shouldReconnect = true;
+                loop.quit();
                 return;
             }
 
@@ -513,17 +571,16 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
     state->last_ws_event = std::chrono::steady_clock::now();
 
     // Schedule periodic checks: shutdown + liveness monitoring
-    loop.runEvery(5.0, [this, state, &loop, wsPtr, &gatewayAlive]() {
+    loop.runEvery(5.0, [this, state, &loop, wsPtr, &gatewayAlive, &shouldReconnect]() {
         if (!state->active) {
             std::cerr << "[discord] Shutting down" << std::endl;
             gatewayAlive = false;
-            wsPtr->stop();
             loop.quit();
             return;
         }
 
         // Liveness check: if connected but no events for 5 minutes
-        if (state->ws_connected) {
+        if (state->ws_connected && gatewayAlive) {
             auto elapsed = std::chrono::steady_clock::now() - state->last_ws_event;
             auto minutes = std::chrono::duration_cast<std::chrono::minutes>(elapsed);
             if (minutes.count() >= 5) {
@@ -534,15 +591,27 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                     std::cerr << "[discord] Stale connection — reconnecting" << std::endl;
                     state->ws_connected = false;
                     gatewayAlive = false;
-                    wsPtr->stop();
+                    shouldReconnect = true;
                     state->consecutive_errors = 0;
+                    loop.quit();
                 }
             }
         }
     });
 
-    // Run the event loop — blocks until quit() is called from shutdown check
+    // Run the event loop — blocks until quit() is called
     loop.loop();
+
+        // Loop exited — either shutdown, RECONNECT, INVALID_SESSION, or connection close
+        if (shouldReconnect && state->active) {
+            // Brief delay before reconnecting to avoid hammering
+            std::cerr << "[discord] Reconnecting in 2s..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            continue;  // Re-enter the while loop
+        }
+
+        break;  // state->active is false — real shutdown
+    }
 
     std::cerr << "[discord] Gateway loop stopped for " << state->channel_name << std::endl;
 }
