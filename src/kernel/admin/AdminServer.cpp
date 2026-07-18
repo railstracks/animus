@@ -1265,6 +1265,26 @@ void AdminServer::RegisterHandlersOnce() {
             auto [result, userId] = m_authManager.ValidateToken(token);
             if (result == AuthResult::Ok || result == AuthResult::AuthNotRequired) {
                 m_authManager.RecordSuccess(ip);
+
+                // Admin-only routes: user management, channels, providers
+                // Static token auth (no userId) always passes — treated as admin
+                if (!userId.empty()) {
+                    bool isAdminRoute =
+                        path.rfind("/api/v1/users", 0) == 0 ||
+                        path.rfind("/api/v1/channels", 0) == 0 ||
+                        path.rfind("/api/v1/providers", 0) == 0;
+                    if (isAdminRoute) {
+                        auto user = m_authManager.GetUserById(userId);
+                        if (!user || user->role != "admin") {
+                            Json::Value body;
+                            body["error"] = "Forbidden — admin role required";
+                            auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+                            resp->setStatusCode(drogon::k403Forbidden);
+                            return resp;
+                        }
+                    }
+                }
+
                 return nullptr;  // Allow
             }
 
