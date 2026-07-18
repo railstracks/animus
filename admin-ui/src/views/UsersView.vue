@@ -85,7 +85,6 @@ import { ref, onMounted } from 'vue';
 import { useAuthStore } from '../stores/auth';
 
 const auth = useAuthStore();
-const token = auth.token;
 
 const users = ref<any[]>([]);
 const loading = ref(false);
@@ -116,7 +115,7 @@ async function loadUsers() {
   loading.value = true;
   try {
     const resp = await fetch('/api/v1/users', {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {},
     });
     users.value = await resp.json();
   } finally {
@@ -145,7 +144,7 @@ async function saveUser() {
       if (dialogForm.value.password) body.password = dialogForm.value.password;
       const resp = await fetch(`/api/v1/users/${editingId.value}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const data = await resp.json();
@@ -154,7 +153,7 @@ async function saveUser() {
     } else {
       const resp = await fetch('/api/v1/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dialogForm.value),
       });
       const data = await resp.json();
@@ -180,7 +179,7 @@ async function doDelete() {
   try {
     const resp = await fetch(`/api/v1/users/${deleteTarget.value.id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {},
     });
     if (!resp.ok) throw new Error('Failed to delete user');
     showSnackbar('User deleted');
@@ -195,7 +194,7 @@ async function revokeSessions(user: any) {
   try {
     const resp = await fetch(`/api/v1/users/${user.id}/sessions`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {},
     });
     if (!resp.ok) throw new Error('Failed to revoke sessions');
     showSnackbar(`Sessions revoked for ${user.username}`);
