@@ -47,4 +47,9 @@ fi
 echo "animusd started (pid ${PID}). Log: ${LOG_FILE}"
 if [[ "${ADMIN_ENABLED}" != "0" ]]; then
   echo "Admin UI/API available at: http://${ADMIN_HOST}:${ADMIN_PORT}/"
+  if [[ -n "${ANIMUS_AUTH_TOKEN}" ]]; then
+    echo "Auth: static token enabled"
+  else
+    echo "Auth: none (set ANIMUS_AUTH_TOKEN to enable)"
+  fi
 fi
