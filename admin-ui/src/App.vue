@@ -10,7 +10,7 @@ const route = useRoute();
 const drawer = ref(true);
 const { t, locale } = useI18n();
 
-const isWizard = computed(() => route.name === 'wizard');
+const isWizard = computed(() => route.name === 'wizard' || route.name === 'login');
 
 const localeItems = LocaleSelectItems.map((loc: LocaleSelectItem) => ({
   title: loc.label,

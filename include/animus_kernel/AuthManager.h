@@ -92,7 +92,7 @@ private:
     mutable std::mutex m_rateLimitMutex;
     std::unordered_map<std::string, RateLimitEntry> m_rateLimit;
 
-    static constexpr int kMaxFailures = 5;
+    static constexpr int kMaxFailures = 50;
     static constexpr int kRateLimitWindowSec = 60;
     static constexpr int kRateLimitBlockSec = 60;
 };

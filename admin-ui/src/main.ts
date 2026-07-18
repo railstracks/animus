@@ -11,8 +11,17 @@ import './styles/theme.css';
 // Global fetch interceptor: inject auth token + handle 401 redirects
 const originalFetch = window.fetch;
 window.fetch = function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : input.url);
-  const isApi = url.startsWith('/api/');
+  let url: string;
+  if (typeof input === 'string') {
+    url = input;
+  } else if (input instanceof URL) {
+    url = input.href;
+  } else {
+    url = input.url;
+  }
+
+  // Match both relative (/api/...) and absolute (http://host/api/...) URLs
+  const isApi = url.includes('/api/');
 
   if (isApi) {
     const token = localStorage.getItem('animus_auth_token');
@@ -27,10 +36,9 @@ window.fetch = function(input: RequestInfo | URL, init?: RequestInit): Promise<R
   }
 
   return originalFetch.call(this, input, init).then((resp: Response) => {
-    // Redirect to login on 401 from any API call (except login itself)
+    // Redirect to login on 401 from any API call (except auth endpoints)
     if (isApi && resp.status === 401 && !url.includes('/api/v1/auth/')) {
       localStorage.removeItem('animus_auth_token');
-      // Avoid redirect loop if already on login
       if (!window.location.pathname.startsWith('/login')) {
         window.location.href = '/login';
       }

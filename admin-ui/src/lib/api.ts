@@ -1,6 +1,6 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-const ADMIN_TOKEN_KEY = 'animus_admin_token';
+const ADMIN_TOKEN_KEY = 'animus_auth_token';
 
 export function resolveApiBaseUrl(): string {
   const fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
