@@ -1266,13 +1266,24 @@ void AdminServer::RegisterHandlersOnce() {
             if (result == AuthResult::Ok || result == AuthResult::AuthNotRequired) {
                 m_authManager.RecordSuccess(ip);
 
-                // Admin-only routes: user management, channels, providers
+                // Admin-only writes: user management (all), channels/providers (mutating only)
                 // Static token auth (no userId) always passes — treated as admin
                 if (!userId.empty()) {
-                    bool isAdminRoute =
-                        path.rfind("/api/v1/users", 0) == 0 ||
-                        path.rfind("/api/v1/channels", 0) == 0 ||
-                        path.rfind("/api/v1/providers", 0) == 0;
+                    auto method = req->method();
+                    bool isAdminRoute = false;
+
+                    // User management: admin-only for everything
+                    if (path.rfind("/api/v1/users", 0) == 0) {
+                        isAdminRoute = true;
+                    }
+                    // Channels & providers: admin-only for writes, reads OK for any user
+                    if ((path.rfind("/api/v1/channels", 0) == 0 ||
+                         path.rfind("/api/v1/providers", 0) == 0) &&
+                        (method == drogon::Post || method == drogon::Put ||
+                         method == drogon::Patch || method == drogon::Delete)) {
+                        isAdminRoute = true;
+                    }
+
                     if (isAdminRoute) {
                         auto user = m_authManager.GetUserById(userId);
                         if (!user || user->role != "admin") {

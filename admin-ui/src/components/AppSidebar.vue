@@ -30,11 +30,25 @@ const links = [
   { titleKey: 'sidebar.links.users', path: '/users', icon: 'mdi-account-cog-outline' }
 ] as const;
 
+const isAdmin = computed(() => {
+  // Static token (no username) = admin. Session user needs role === 'admin'.
+  return !auth.username.value || auth.role.value === 'admin';
+});
+
 const translatedLinks = computed(() =>
-  links.map((link) => ({
-    ...link,
-    title: t(link.titleKey)
-  }))
+  links
+    .filter((link) => {
+      // Hide admin-only pages from non-admin users
+      if (!isAdmin.value) {
+        const adminPaths = ['/channels', '/providers', '/users'];
+        if (adminPaths.includes(link.path)) return false;
+      }
+      return true;
+    })
+    .map((link) => ({
+      ...link,
+      title: t(link.titleKey)
+    }))
 );
 </script>
 
