@@ -1231,6 +1231,52 @@ void AdminServer::RunLoop() {
 
 void AdminServer::RegisterHandlersOnce() {
     std::call_once(g_handlersRegistered, [this] {
+        // Register auth middleware before any routes
+        drogon::app().registerSyncAdvice([this](const drogon::HttpRequestPtr& req)
+            -> drogon::HttpResponsePtr {
+            // Only protect /api/ routes
+            const auto& path = req->path();
+            if (path.rfind("/api/", 0) != 0) return nullptr;
+
+            // Exempt public endpoints
+            if (path == "/api/v1/status" ||
+                path == "/api/v1/auth/status" ||
+                path == "/api/v1/auth/login" ||
+                path == "/api/v1/auth/setup" ||
+                path == "/api/v1/system/first-run")
+                return nullptr;
+
+            // If auth not required, allow
+            if (!m_authManager.IsAuthRequired()) return nullptr;
+
+            // Rate limit
+            auto ip = ExtractClientIp(req);
+            if (m_authManager.IsRateLimited(ip)) {
+                Json::Value body;
+                body["error"] = "Too many failed attempts.";
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+                resp->setStatusCode(drogon::k429TooManyRequests);
+                resp->addHeader("Retry-After", "60");
+                return resp;
+            }
+
+            // Validate token
+            auto token = ExtractBearerToken(req);
+            auto [result, userId] = m_authManager.ValidateToken(token);
+            if (result == AuthResult::Ok || result == AuthResult::AuthNotRequired) {
+                m_authManager.RecordSuccess(ip);
+                return nullptr;  // Allow
+            }
+
+            // Deny
+            m_authManager.RecordFailure(ip);
+            Json::Value body;
+            body["error"] = "Unauthorized";
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+            resp->setStatusCode(drogon::k401Unauthorized);
+            return resp;
+        });
+
         RegisterRoutesProvidersAndSpa();
         RegisterRoutesAgentsAndRuntime();
         RegisterRoutesInterfacesSessionsMemory();
