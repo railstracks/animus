@@ -114,7 +114,7 @@ onMounted(async () => {
   await auth.checkStatus();
 
   // Already authenticated? Go to app.
-  if (auth.isAuthenticated) {
+  if (auth.isAuthenticated.value) {
     const me = await auth.fetchMe();
     if (me) {
       router.push('/');
@@ -123,13 +123,13 @@ onMounted(async () => {
   }
 
   // No auth required? Go to app.
-  if (!auth.authRequired) {
+  if (!auth.authRequired.value) {
     router.push('/');
     return;
   }
 
   // Default to token tab if no users exist
-  if (!auth.hasUsers) {
+  if (!auth.hasUsers.value) {
     tab.value = 'token';
   }
 });
@@ -159,7 +159,7 @@ async function doToken() {
     auth.setToken(tokenInput.value);
     // Check if setup is available (no users)
     await auth.checkStatus();
-    if (!auth.hasUsers) {
+    if (!auth.hasUsers.value) {
       setupAvailable.value = true;
     }
     loading.value = false;

@@ -54,8 +54,8 @@ import { useAuthStore } from '../stores/auth';
 router.beforeEach(async (to, _from, next) => {
   const auth = useAuthStore();
 
-  // Check auth status if we haven't yet
-  if (auth.authRequired === false && !auth.token) {
+  // Check auth status if we haven't yet (ref .value needed — not auto-unwrapped in plain JS)
+  if (!auth.authRequired.value && !auth.token.value) {
     await auth.checkStatus();
   }
 
@@ -66,13 +66,13 @@ router.beforeEach(async (to, _from, next) => {
   }
 
   // If auth not required, allow
-  if (!auth.authRequired) {
+  if (!auth.authRequired.value) {
     next();
     return;
   }
 
   // If authenticated, allow
-  if (auth.isAuthenticated) {
+  if (auth.isAuthenticated.value) {
     next();
     return;
   }
