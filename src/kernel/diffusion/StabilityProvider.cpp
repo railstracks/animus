@@ -48,7 +48,7 @@ public:
         httpReq.method = "GET";
         httpReq.url = m_config.base_url + "/v2beta/stable-image/results/" + generationId;
         httpReq.headers["Authorization"] = "Bearer " + m_config.api_key;
-        httpReq.headers["accept"] = "application/json";
+        httpReq.headers["Accept"] = "application/json";
         httpReq.timeout_seconds = 30;
 
         auto resp = m_client.Execute(httpReq);
@@ -58,12 +58,18 @@ public:
             return false;
         }
 
-        Json::Value data = ParseJson(resp.body);
-        outResult.success = true;
-        outResult.finish_reason = GetString(data, "finish_reason");
-        if (data.isMember("image")) {
-            outResult.file_data = GetString(data, "image");
+        // Results endpoint may also return binary image data
+        if (resp.content_type.rfind("image/", 0) == 0) {
+            outResult.file_data = Base64Encode(resp.body);
+            outResult.finish_reason = "SUCCESS";
+        } else {
+            Json::Value data = ParseJson(resp.body);
+            outResult.finish_reason = GetString(data, "finish_reason");
+            if (data.isMember("image")) {
+                outResult.file_data = GetString(data, "image");
+            }
         }
+        outResult.success = true;
         return true;
     }
 
@@ -185,7 +191,7 @@ private:
         httpReq.url = m_config.base_url + endpoint;
         httpReq.headers["Authorization"] = "Bearer " + m_config.api_key;
         httpReq.headers["Content-Type"] = form.ContentType();
-        httpReq.headers["accept"] = "application/json";
+        httpReq.headers["Accept"] = "application/json";
         httpReq.body = body;
         httpReq.timeout_seconds = 120;
 
@@ -198,10 +204,19 @@ private:
             return result;
         }
 
-        Json::Value data = ParseJson(resp.body);
-        result.finish_reason = GetString(data, "finish_reason");
-        if (data.isMember("image"))
-            result.file_data = GetString(data, "image");
+        std::cerr << "[stability] response content-type: " << resp.content_type << std::endl;
+
+        // Stability v2beta may return JSON (with base64 in "image" field) or
+        // raw binary image data depending on server behavior
+        if (resp.content_type.rfind("image/", 0) == 0) {
+            result.file_data = Base64Encode(resp.body);
+            result.finish_reason = "SUCCESS";
+        } else {
+            Json::Value data = ParseJson(resp.body);
+            result.finish_reason = GetString(data, "finish_reason");
+            if (data.isMember("image"))
+                result.file_data = GetString(data, "image");
+        }
 
         result.success = true;
         return result;
@@ -344,6 +359,25 @@ private:
     static std::string GetString(const Json::Value& v, const std::string& key) {
         if (v.isMember(key) && !v[key].isNull()) return v[key].asString();
         return "";
+    }
+
+    static std::string Base64Encode(const std::string& data) {
+        static const char chars[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::string out;
+        int val = 0, valb = -6;
+        for (unsigned char c : data) {
+            val = (val << 8) + c;
+            valb += 8;
+            while (valb >= 0) {
+                out.push_back(chars[(val >> valb) & 0x3F]);
+                valb -= 6;
+            }
+        }
+        if (valb > -6)
+            out.push_back(chars[((val << 8) >> (valb + 8)) & 0x3F]);
+        while (out.size() % 4) out.push_back('=');
+        return out;
     }
 
     static std::vector<DiffusionModel> s_stabilityModels;
