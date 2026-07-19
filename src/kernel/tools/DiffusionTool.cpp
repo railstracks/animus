@@ -183,6 +183,12 @@ ToolDefinition DiffusionTool::GetDefinition() const {
     pInputImage.description = "Path to input image (for image-to-image, 3D from image, upscale)";
     def.parameters.push_back(pInputImage);
 
+    ToolParameter pOutputPath;
+    pOutputPath.name = "output_filepath"; pOutputPath.type = "string"; pOutputPath.required = false;
+    pOutputPath.description = "Absolute path to save the generated media. "
+                               "If omitted, a random filename is generated in the default output directory.";
+    def.parameters.push_back(pOutputPath);
+
     return def;
 }
 
@@ -403,8 +409,19 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call, const Json::Valu
                     : (type == "3d") ? "glb"
                     : genReq.output_format;
     if (ext.empty()) ext = "png";
-    std::string filename = GenerateFilename(type, ext);
-    std::string savePath = EnsureOutputDir() + "/" + filename;
+
+    // Use agent-provided filepath or generate one
+    std::string outputPath = GetStringField(args, "output_filepath");
+    std::string savePath;
+    if (!outputPath.empty()) {
+        savePath = outputPath;
+        // Ensure parent directory exists
+        auto parent = std::filesystem::path(savePath).parent_path();
+        if (!parent.empty()) std::filesystem::create_directories(parent);
+    } else {
+        std::string filename = GenerateFilename(type, ext);
+        savePath = EnsureOutputDir() + "/" + filename;
+    }
 
     // If we have base64 data, decode and save directly
     if (!genResult.file_data.empty()) {
