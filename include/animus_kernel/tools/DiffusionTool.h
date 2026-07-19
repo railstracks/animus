@@ -24,7 +24,8 @@ public:
 
     DiffusionTool(HttpClient& client,
                   DiffusionStore* store,
-                  Config config = {});
+                 Config config = {});
+                  Config config);
 
     ToolDefinition GetDefinition() const override;
     ToolResult Execute(const ToolCall& call) override;

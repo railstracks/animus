@@ -42,6 +42,7 @@ namespace ontology { class OntologyStore; }
 
 class AgentStore;
 class DiaryStore;
+class DiffusionStore;
 class GallivantingStore;
 class SessionNotesStore;
 class SessionReportStore;

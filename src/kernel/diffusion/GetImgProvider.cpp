@@ -1,6 +1,5 @@
 #include "animus_kernel/DiffusionProvider.h"
 #include "animus_kernel/tools/HttpClient.h"
-#include "animus_kernel/tools/Base64.h"
 
 #include <json/json.h>
 #include <iostream>
@@ -8,6 +7,7 @@
 #include <filesystem>
 #include <chrono>
 #include <thread>
+#include <sstream>
 
 namespace animus::kernel {
 
