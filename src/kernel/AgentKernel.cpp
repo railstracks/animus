@@ -81,6 +81,8 @@
 #include "animus_kernel/tools/CalculatorTool.h"
 #include "animus_kernel/tools/ToolsTool.h"
 #include "animus_kernel/tools/ImageTool.h"
+#include "animus_kernel/tools/DiffusionTool.h"
+#include "animus_kernel/DiffusionStore.h"
 
 namespace animus::kernel {
 
@@ -942,6 +944,11 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         } else {
             std::cerr << "[auth] WARNING: No auth configured. Set ANIMUS_AUTH_TOKEN or create user accounts." << std::endl;
         }
+
+        // Configure diffusion
+        m_diffusionStore = std::make_unique<DiffusionStore>(m_dataStore);
+        m_adminServer->SetDiffusionStore(m_diffusionStore.get());
+        std::cerr << "[diffusion] Store initialized" << std::endl;
     }
 
     std::string adminErr;
@@ -1433,7 +1440,16 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
         }
 
         m_tools.Register(std::make_unique<ImageTool>(
-            m_httpClient, std::move(imgCfg), m_chainRunner, m_agentStore));
+           m_httpClient, std::move(imgCfg), m_chainRunner, m_agentStore));
+   }
+
+    // Diffusion tool (ticket 122)
+    if (m_diffusionStore) {
+        DiffusionTool::Config diffCfg;
+        diffCfg.output_dir = "media/generated";
+        m_tools.Register(std::make_unique<DiffusionTool>(
+            m_httpClient, m_diffusionStore.get(), std::move(diffCfg)));
+        std::cerr << "[diffusion] Tool registered" << std::endl;
     }
 
     std::cerr << "[kernel] Registered " << m_tools.Size() << " built-in tools" << std::endl;

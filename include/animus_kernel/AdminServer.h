@@ -32,6 +32,7 @@
 #include "animus_kernel/AuthStore.h"
 #include "animus_kernel/AuthManager.h"
 #include "animus_kernel/AuthHelpers.h"
+#include "animus_kernel/DiffusionStore.h"
 
 namespace animus::kernel {
 
@@ -202,6 +203,9 @@ public:
     // Auth
     void ConfigureAuth(const std::string& staticToken, IDataStore* dataStore);
     AuthManager& GetAuthManager() { return m_authManager; }
+
+    // Diffusion
+    void SetDiffusionStore(DiffusionStore* store) { m_diffusionStore = store; }
     DiaryManager& GetDiaryManager() { return m_diaryManager; }
     std::chrono::steady_clock::time_point m_kernelStartedAt{};
 
@@ -259,6 +263,7 @@ private:
     void RegisterRoutesSearch();
     void RegisterRoutesPromptLogs();
     void RegisterRoutesAuth();
+    void RegisterRoutesDiffusion();
     void SyncIrcInterfaces();
     void RefreshChatSessionServiceDependencies();
 
@@ -273,6 +278,9 @@ private:
     AuthManager m_authManager{};
     AuthStore* m_authStore{nullptr};
     std::string m_staticTokenRaw;
+
+    // Diffusion
+    DiffusionStore* m_diffusionStore{nullptr};
 };
 
 } // namespace animus::kernel

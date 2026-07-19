@@ -21,6 +21,7 @@ import SessionReportsView from '../views/SessionReportsView.vue';
 import PromptLogsView from '../views/PromptLogsView.vue';
 import LoginView from '../views/LoginView.vue';
 import UsersView from '../views/UsersView.vue';
+import DiffusionView from '../views/DiffusionView.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -45,8 +46,9 @@ const router = createRouter({
     { path: '/nodes', name: 'nodes', component: NodesView },
     { path: '/session-reports', name: 'session-reports', component: SessionReportsView },
     { path: '/prompt-logs', name: 'prompt-logs', component: PromptLogsView },
-    { path: '/users', name: 'users', component: UsersView },
-  ]
+   { path: '/users', name: 'users', component: UsersView },
+    { path: '/diffusion', name: 'diffusion', component: DiffusionView },
+ ]
 });
 
 // Auth guard

@@ -312,8 +312,11 @@ add_library(animus_kernel
   src/kernel/chain/ChainRunner.cpp
   src/kernel/PromptLogStore.cpp
   src/kernel/auth/AuthStore.cpp
-  src/kernel/auth/AuthManager.cpp
-  src/kernel/chain/CompactionService.cpp
+ src/kernel/auth/AuthManager.cpp
+  src/kernel/diffusion/DiffusionStore.cpp
+  src/kernel/diffusion/GetImgProvider.cpp
+  src/kernel/tools/DiffusionTool.cpp
+ src/kernel/chain/CompactionService.cpp
   src/kernel/chain/CompactionSummaryGenerator.cpp
   src/kernel/tools/ToolRegistry.cpp
   src/kernel/tools/HttpClient.cpp

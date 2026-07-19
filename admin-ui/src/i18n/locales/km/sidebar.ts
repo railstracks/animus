@@ -20,6 +20,7 @@ export const sidebar = {
       diary: 'កំណត់ហេតុប្រចាំថ្ងៃ',
       webSearch: 'ការស្វែងរកតាមអ៊ិនធឺណិត',
       logs: 'កំណត់ហេតុ',
-      users: 'អ្នកប្រើប្រាស់'
+      users: 'អ្នកប្រើប្រាស់',
+      diffusion: 'បន្សង'
     }
   } as const;

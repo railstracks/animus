@@ -20,6 +20,7 @@ export const sidebar = {
       diary: '일기',
       webSearch: '웹 검색',
       logs: '로그',
-      users: '사용자'
+      users: '사용자',
+      diffusion: '디퓨전'
     }
   } as const;

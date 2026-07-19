@@ -1319,6 +1319,7 @@ void AdminServer::RegisterHandlersOnce() {
         RegisterRoutesSearch();
         RegisterRoutesPromptLogs();
         RegisterRoutesAuth();
+        RegisterRoutesDiffusion();
     });
 }
 

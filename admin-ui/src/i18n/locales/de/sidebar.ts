@@ -20,6 +20,7 @@ export const sidebar = {
       gallivanting: 'Galivantieren',
       diary: 'Tagebuch',
       logs: 'Protokolle',
-      users: 'Benutzer'
+      users: 'Benutzer',
+      diffusion: 'Diffusion'
     }
   } as const;

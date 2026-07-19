@@ -20,6 +20,7 @@ export const sidebar = {
       diary: 'Diário',
       webSearch: 'Pesquisa na web',
       logs: 'Registros',
-      users: 'Usuários'
+      users: 'Usuários',
+      diffusion: 'Difusão'
     }
   } as const;

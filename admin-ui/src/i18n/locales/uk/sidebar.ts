@@ -20,6 +20,7 @@ export const sidebar = {
       diary: 'Щоденник',
       webSearch: 'Веб-пошук',
       logs: 'Журнали',
-      users: 'Користувачі'
+      users: 'Користувачі',
+      diffusion: 'Дифузія'
     }
   } as const;

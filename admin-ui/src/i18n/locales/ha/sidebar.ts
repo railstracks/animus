@@ -20,6 +20,7 @@ export const sidebar = {
       diary: 'Diary',
       webSearch: 'Binciken yanar gizo',
       logs: 'Logs',
-      users: 'Masu amfani'
+      users: 'Masu amfani',
+      diffusion: 'Yaɗuwa'
     }
   } as const;

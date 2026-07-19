@@ -20,6 +20,7 @@ export const sidebar = {
       diary: '日記',
       webSearch: '網絡搜尋',
       logs: '紀錄',
-      users: '用戶'
+      users: '用戶',
+      diffusion: '擴散'
     }
   } as const;

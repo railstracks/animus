@@ -156,7 +156,10 @@ private:
     };
     std::unordered_map<std::string, PendingDispatch> m_pendingReplyTargets;
     std::chrono::steady_clock::time_point m_startedAt{};
-    bool m_running{false};
+   bool m_running{false};
+
+    // Diffusion
+    std::unique_ptr<DiffusionStore> m_diffusionStore;
 };
 
 } // namespace animus::kernel

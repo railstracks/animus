@@ -20,6 +20,7 @@ export const sidebar = {
       diary: 'Nhật ký',
       webSearch: 'Tìm kiếm web',
       logs: 'Nhật ký',
-      users: 'Người dùng'
+      users: 'Người dùng',
+      diffusion: 'Khuếch tán'
     }
   } as const;

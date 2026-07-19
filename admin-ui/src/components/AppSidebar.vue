@@ -27,7 +27,8 @@ const links = [
   { titleKey: 'sidebar.links.gallivanting', path: '/gallivanting', icon: 'mdi-walk' },
   { titleKey: 'sidebar.links.diary', path: '/diary', icon: 'mdi-notebook' },
   { titleKey: 'sidebar.links.logs', path: '/logs', icon: 'mdi-text-box-search-outline' },
-  { titleKey: 'sidebar.links.users', path: '/users', icon: 'mdi-account-cog-outline' }
+  { titleKey: 'sidebar.links.users', path: '/users', icon: 'mdi-account-cog-outline' },
+  { titleKey: 'sidebar.links.diffusion', path: '/diffusion', icon: 'mdi-creation' }
 ] as const;
 
 const isAdmin = computed(() => {
@@ -40,7 +41,7 @@ const translatedLinks = computed(() =>
     .filter((link) => {
       // Hide admin-only pages from non-admin users
       if (!isAdmin.value) {
-        const adminPaths = ['/channels', '/providers', '/users'];
+        const adminPaths = ['/channels', '/providers', '/users', '/diffusion'];
         if (adminPaths.includes(link.path)) return false;
       }
       return true;
