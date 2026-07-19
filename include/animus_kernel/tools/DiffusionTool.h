@@ -12,7 +12,8 @@
 namespace animus::kernel {
 
 // ============================================================================
-// DiffusionTool — agent-facing tool for diffusion image/video generation
+// DiffusionTool — agent-facing tool for diffusion media generation
+// Supports image, video, audio, and 3D via pluggable providers
 // ============================================================================
 
 class DiffusionTool : public IToolHandler {
@@ -38,12 +39,14 @@ private:
     DiffusionStore* m_store;
     Config m_config;
 
-    ToolResult ExecuteGenerate(const ToolCall& call);
     ToolResult ExecuteGenerate(const ToolCall& call, const Json::Value& args);
     ToolResult ExecuteListModels(const ToolCall& call, const Json::Value& args);
 
     std::string EnsureOutputDir();
     std::string GenerateFilename(const std::string& type, const std::string& format);
+
+    /// Save base64-encoded file data to disk
+    bool SaveBase64(const std::string& base64Data, const std::string& savePath);
 };
 
 } // namespace animus::kernel

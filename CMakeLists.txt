@@ -315,6 +315,8 @@ add_library(animus_kernel
  src/kernel/auth/AuthManager.cpp
   src/kernel/diffusion/DiffusionStore.cpp
   src/kernel/diffusion/GetImgProvider.cpp
+  src/kernel/diffusion/StabilityProvider.cpp
+  src/kernel/tools/MultipartFormData.cpp
   src/kernel/tools/DiffusionTool.cpp
  src/kernel/chain/CompactionService.cpp
   src/kernel/chain/CompactionSummaryGenerator.cpp

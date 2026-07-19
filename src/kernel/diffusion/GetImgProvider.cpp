@@ -1,4 +1,5 @@
 #include "animus_kernel/DiffusionProvider.h"
+#include "animus_kernel/DiffusionCapabilities.h"
 #include "animus_kernel/tools/HttpClient.h"
 
 #include <json/json.h>
@@ -19,6 +20,10 @@ class GetImgProvider : public IDiffusionProvider {
 public:
     GetImgProvider(HttpClient& client, const DiffusionProviderConfig& config)
         : m_client(client), m_config(config) {}
+
+    DiffusionCapabilities GetCapabilities() const override {
+        return ImageGeneration | VideoGeneration | ImageToImage;
+    }
 
     // --- IDiffusionProvider ---
 

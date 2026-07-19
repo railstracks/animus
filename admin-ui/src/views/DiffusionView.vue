@@ -60,7 +60,7 @@
         <v-card-title>{{ editing ? 'Edit Provider' : 'Create Provider' }}</v-card-title>
         <v-card-text>
           <v-text-field v-model="dialogForm.id" label="Provider ID" density="comfortable" :disabled="editing" class="mb-3" hint="e.g. 'getimg'" />
-          <v-select v-model="dialogForm.type" :items="['getimg']" label="Type" density="comfortable" class="mb-3" @update:model-value="onTypeChange" />
+          <v-select v-model="dialogForm.type" :items="['getimg', 'stability']" label="Type" density="comfortable" class="mb-3" @update:model-value="onTypeChange" />
           <v-text-field v-model="dialogForm.base_url" label="Base URL" density="comfortable" class="mb-3" hint="e.g. https://api.getimg.ai" />
           <v-text-field v-model="dialogForm.api_key" label="API Key" type="password" density="comfortable" class="mb-3" />
           <v-text-field v-model="dialogForm.default_model" label="Default Model" density="comfortable" class="mb-3" hint="Optional fallback model ID" />
@@ -158,17 +158,22 @@ function nextProviderId(type: string): string {
 }
 
 function onTypeChange() {
-  if (dialogForm.value.type === 'getimg') {
-    if (!dialogForm.value.base_url) {
-      dialogForm.value.base_url = 'https://api.getimg.ai';
+  const typeDefaults: Record<string, { base_url: string; aspect_ratio: string }> = {
+    getimg: { base_url: 'https://api.getimg.ai', aspect_ratio: '1:1' },
+    stability: { base_url: 'https://api.stability.ai', aspect_ratio: '1:1' },
+  };
+  const defaults = typeDefaults[dialogForm.value.type];
+  if (defaults) {
+    if (!dialogForm.value.base_url || dialogForm.value.base_url === '') {
+      dialogForm.value.base_url = defaults.base_url;
     }
     if (!editing.value) {
-      dialogForm.value.id = nextProviderId('getimg');
+      dialogForm.value.id = nextProviderId(dialogForm.value.type);
     }
     if (!dialogForm.value.default_aspect_ratio) {
-      dialogForm.value.default_aspect_ratio = '1:1';
+      dialogForm.value.default_aspect_ratio = defaults.aspect_ratio;
     }
-  }
+    }
 }
 
 function openEdit(provider: any) {

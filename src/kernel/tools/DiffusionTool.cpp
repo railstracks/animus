@@ -1,4 +1,5 @@
 #include "animus_kernel/tools/DiffusionTool.h"
+#include "animus_kernel/DiffusionCapabilities.h"
 
 #include <json/json.h>
 #include <iostream>
@@ -8,18 +9,42 @@
 #include <random>
 #include <iomanip>
 #include <sstream>
+#include <cstdint>
 
 namespace animus::kernel {
 
-// Factory function implemented in GetImgProvider.cpp
+// Factory functions implemented in provider .cpp files
 std::unique_ptr<IDiffusionProvider> CreateGetImgProvider(
+    HttpClient& client, const DiffusionProviderConfig& config);
+std::unique_ptr<IDiffusionProvider> CreateStabilityProvider(
     HttpClient& client, const DiffusionProviderConfig& config);
 
 // ============================================================================
-// Helpers (anonymous namespace, same pattern as ImageTool)
+// Base64 decoding (for providers that return base64-encoded media)
 // ============================================================================
 
 namespace {
+
+std::string Base64Decode(const std::string& encoded) {
+    static const std::string chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    std::vector<int> T(256, -1);
+    for (int i = 0; i < 64; i++) T[chars[i]] = i;
+
+    int val = 0, valb = -8;
+    for (unsigned char c : encoded) {
+        if (c == '=') break;
+        if (T[c] == -1) continue;
+        val = (val << 6) + T[c];
+        valb += 6;
+        if (valb >= 0) {
+            out.push_back(static_cast<char>((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+    return out;
+}
 
 Json::Value ParseArgs(const std::string& args) {
     Json::Value root;
@@ -46,6 +71,12 @@ bool GetBoolField(const Json::Value& v, const std::string& key, bool def = false
     return def;
 }
 
+double GetDoubleField(const Json::Value& v, const std::string& key, double def = 0.0) {
+    if (v.isMember(key) && v[key].isDouble()) return v[key].asDouble();
+    if (v.isMember(key) && v[key].isInt()) return static_cast<double>(v[key].asInt());
+    return def;
+}
+
 } // namespace
 
 // ============================================================================
@@ -62,10 +93,9 @@ DiffusionTool::DiffusionTool(HttpClient& client,
 ToolDefinition DiffusionTool::GetDefinition() const {
     ToolDefinition def;
     def.name = "diffusion";
-    def.description = "Generate images or video using diffusion models (e.g. GetImg). "
-                      "Different models produce different visual styles — choose the model "
-                      "that matches the desired aesthetic (e.g. SynthWave, Anime, Cinematic, "
-                      "Photorealistic). Use list_models to see available models.";
+    def.description = "Generate images, video, audio, or 3D models using diffusion models. "
+                      "Different models produce different visual styles — use list_models "
+                      "to see available options across all configured providers.";
 
     ToolParameter pAction;
     pAction.name = "action"; pAction.type = "string"; pAction.required = true;
@@ -75,8 +105,8 @@ ToolDefinition DiffusionTool::GetDefinition() const {
 
     ToolParameter pType;
     pType.name = "type"; pType.type = "string"; pType.required = false;
-    pType.description = "image | video (default: image)";
-    pType.enum_values = {"image", "video"};
+    pType.description = "image | video | audio | 3d (default: image)";
+    pType.enum_values = {"image", "video", "audio", "3d"};
     def.parameters.push_back(pType);
 
     ToolParameter pPrompt;
@@ -92,12 +122,12 @@ ToolDefinition DiffusionTool::GetDefinition() const {
 
     ToolParameter pProvider;
     pProvider.name = "provider"; pProvider.type = "string"; pProvider.required = false;
-    pProvider.description = "Which configured diffusion provider to use (e.g. 'getimg')";
+    pProvider.description = "Which configured diffusion provider to use (e.g. 'getimg', 'stability-1')";
     def.parameters.push_back(pProvider);
 
     ToolParameter pAspect;
     pAspect.name = "aspect_ratio"; pAspect.type = "string"; pAspect.required = false;
-    pAspect.description = "1:1, 16:9, 9:16, 2:3, 3:2";
+    pAspect.description = "1:1, 16:9, 9:16, 2:3, 3:2, 4:5, 5:4, 21:9, 9:21";
     def.parameters.push_back(pAspect);
 
     ToolParameter pRes;
@@ -107,18 +137,47 @@ ToolDefinition DiffusionTool::GetDefinition() const {
 
     ToolParameter pFormat;
     pFormat.name = "output_format"; pFormat.type = "string"; pFormat.required = false;
-    pFormat.description = "png | jpeg | webp (images only)";
+    pFormat.description = "png | jpeg | webp (images), mp3 | wav (audio), glb (3D)";
     def.parameters.push_back(pFormat);
 
     ToolParameter pDuration;
     pDuration.name = "duration"; pDuration.type = "integer"; pDuration.required = false;
-    pDuration.description = "Duration in seconds (video only)";
+    pDuration.description = "Duration in seconds (video/audio only)";
     def.parameters.push_back(pDuration);
 
     ToolParameter pSound;
     pSound.name = "sound"; pSound.type = "boolean"; pSound.required = false;
     pSound.description = "Generate audio (video only, where supported)";
     def.parameters.push_back(pSound);
+
+    // Extended parameters (Ticket 124)
+    ToolParameter pNegative;
+    pNegative.name = "negative_prompt"; pNegative.type = "string"; pNegative.required = false;
+    pNegative.description = "Keywords of what to exclude from the output (Stability only)";
+    def.parameters.push_back(pNegative);
+
+    ToolParameter pStyle;
+    pStyle.name = "style_preset"; pStyle.type = "string"; pStyle.required = false;
+    pStyle.description = "Style guide: 3d-model, analog-film, anime, cinematic, "
+                         "comic-book, digital-art, enhance, fantasy-art, isometric, "
+                         "line-art, low-poly, modeling-compound, neon-punk, origami, "
+                         "photographic, pixel-art, tile-texture (Stability only)";
+    def.parameters.push_back(pStyle);
+
+    ToolParameter pSeed;
+    pSeed.name = "seed"; pSeed.type = "integer"; pSeed.required = false;
+    pSeed.description = "Random seed for reproducibility (0 = random, Stability only)";
+    def.parameters.push_back(pSeed);
+
+    ToolParameter pStrength;
+    pStrength.name = "strength"; pStrength.type = "number"; pStrength.required = false;
+    pStrength.description = "Image-to-image influence: 0=identical to input, 1=ignore input (Stability only)";
+    def.parameters.push_back(pStrength);
+
+    ToolParameter pInputImage;
+    pInputImage.name = "input_image"; pInputImage.type = "string"; pInputImage.required = false;
+    pInputImage.description = "Path to input image (for image-to-image, 3D from image, upscale)";
+    def.parameters.push_back(pInputImage);
 
     return def;
 }
@@ -172,6 +231,7 @@ ToolResult DiffusionTool::ExecuteListModels(const ToolCall& call, const Json::Va
         auto provider = CreateProvider(pconfig);
         if (!provider) continue;
 
+        auto caps = provider->GetCapabilities();
         auto models = provider->ListModels();
         for (const auto& m : models) {
             Json::Value modelObj;
@@ -179,6 +239,19 @@ ToolResult DiffusionTool::ExecuteListModels(const ToolCall& call, const Json::Va
             modelObj["type"] = m.type;
             modelObj["name"] = m.name;
             modelObj["provider"] = pconfig.id;
+
+            // Build capability list
+            Json::Value capsArr(Json::arrayValue);
+            if (HasCapability(m.capabilities, ImageGeneration)) capsArr.append("image_generation");
+            if (HasCapability(m.capabilities, VideoGeneration)) capsArr.append("video_generation");
+            if (HasCapability(m.capabilities, AudioGeneration)) capsArr.append("audio_generation");
+            if (HasCapability(m.capabilities, Model3DGeneration)) capsArr.append("3d_generation");
+            if (HasCapability(m.capabilities, ImageToImage)) capsArr.append("image_to_image");
+            if (HasCapability(m.capabilities, NegativePrompt)) capsArr.append("negative_prompt");
+            if (HasCapability(m.capabilities, StylePreset)) capsArr.append("style_preset");
+            if (HasCapability(m.capabilities, SeedControl)) capsArr.append("seed_control");
+            modelObj["capabilities"] = capsArr;
+
             modelsJson.append(modelObj);
         }
     }
@@ -257,6 +330,22 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call, const Json::Valu
     genReq.duration = GetIntField(args, "duration");
     genReq.sound = GetBoolField(args, "sound");
 
+    // Extended parameters (only sent if provider supports them)
+    auto caps = provider->GetCapabilities();
+    if (HasCapability(caps, NegativePrompt)) {
+        genReq.negative_prompt = GetStringField(args, "negative_prompt");
+    }
+    if (HasCapability(caps, StylePreset)) {
+        genReq.style_preset = GetStringField(args, "style_preset");
+    }
+    if (HasCapability(caps, SeedControl)) {
+        genReq.seed = static_cast<int64_t>(GetIntField(args, "seed"));
+    }
+    if (HasCapability(caps, ImageToImage)) {
+        genReq.input_image_path = GetStringField(args, "input_image");
+        genReq.strength = GetDoubleField(args, "strength");
+    }
+
     // Generate
     std::string genError;
     auto genResult = provider->Generate(genReq, &genError);
@@ -267,7 +356,7 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call, const Json::Valu
         return result;
     }
 
-    // For async (video): poll until complete
+    // For async (video/audio): poll until complete
     if (genResult.async && !genResult.generation_id.empty()) {
         int pollInterval = m_config.video_poll_interval_sec;
         int elapsed = 0;
@@ -288,6 +377,7 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call, const Json::Valu
                     return result;
                 }
                 genResult.media_url = pollResult.media_url;
+                genResult.file_data = pollResult.file_data;
                 genResult.content_type = pollResult.content_type;
                 genResult.width = pollResult.width;
                 genResult.height = pollResult.height;
@@ -296,23 +386,44 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call, const Json::Valu
             }
         }
 
-        if (genResult.media_url.empty()) {
+        if (genResult.media_url.empty() && genResult.file_data.empty()) {
             result.success = false;
-            result.error = "Video generation timed out after " + std::to_string(timeout) + "s";
+            result.error = "Generation timed out after " + std::to_string(timeout) + "s";
             return result;
         }
     }
 
-    // Download media
-    std::string ext = (type == "video") ? "mp4" : genReq.output_format;
+    // Save the generated media
+    std::string ext = (type == "video") ? "mp4"
+                    : (type == "audio") ? "mp3"
+                    : (type == "3d") ? "glb"
+                    : genReq.output_format;
     if (ext.empty()) ext = "png";
     std::string filename = GenerateFilename(type, ext);
     std::string savePath = EnsureOutputDir() + "/" + filename;
 
-    std::string dlError;
-    if (!provider->DownloadMedia(genResult.media_url, savePath, &dlError)) {
+    // If we have base64 data, decode and save directly
+    if (!genResult.file_data.empty()) {
+        std::string decoded = Base64Decode(genResult.file_data);
+        std::ofstream file(savePath, std::ios::binary);
+        if (!file) {
+            result.success = false;
+            result.error = "Cannot open file for writing: " + savePath;
+            return result;
+        }
+        file.write(decoded.data(), decoded.size());
+        file.close();
+    } else if (!genResult.media_url.empty()) {
+        // Download from URL
+        std::string dlError;
+        if (!provider->DownloadMedia(genResult.media_url, savePath, &dlError)) {
+            result.success = false;
+            result.error = "Generation succeeded but download failed: " + dlError;
+            return result;
+        }
+    } else {
         result.success = false;
-        result.error = "Generation succeeded but download failed: " + dlError;
+        result.error = "Generation succeeded but no media URL or file data returned";
         return result;
     }
 
@@ -325,6 +436,9 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call, const Json::Valu
     if (genResult.duration_seconds > 0) {
         result.output += " " + std::to_string(genResult.duration_seconds) + "s";
     }
+    if (!genResult.finish_reason.empty() && genResult.finish_reason != "SUCCESS") {
+        result.output += " [finish: " + genResult.finish_reason + "]";
+    }
     return result;
 }
 
@@ -332,6 +446,9 @@ std::unique_ptr<IDiffusionProvider> DiffusionTool::CreateProvider(
     const DiffusionProviderConfig& config) {
     if (config.type == "getimg") {
         return CreateGetImgProvider(m_client, config);
+    }
+    if (config.type == "stability") {
+        return CreateStabilityProvider(m_client, config);
     }
     std::cerr << "[diffusion] Unknown provider type: " << config.type << std::endl;
     return nullptr;
@@ -356,6 +473,15 @@ std::string DiffusionTool::GenerateFilename(const std::string& type, const std::
     oss << "diffusion_" << type << "_" << ms << "_"
         << std::setfill('0') << std::setw(4) << dis(gen) << "." << format;
     return oss.str();
+}
+
+bool DiffusionTool::SaveBase64(const std::string& base64Data, const std::string& savePath) {
+    std::string decoded = Base64Decode(base64Data);
+    std::ofstream file(savePath, std::ios::binary);
+    if (!file) return false;
+    file.write(decoded.data(), decoded.size());
+    file.close();
+    return true;
 }
 
 } // namespace animus::kernel
