@@ -196,6 +196,7 @@ private:
         httpReq.timeout_seconds = 120;
 
         auto resp = m_client.Execute(httpReq);
+        std::cerr << "[stability] response status: " << resp.status_code << " body size: " << resp.body.size() << std::endl;
         if (resp.status_code != 200) {
             result.success = false;
             result.error = "Stability generation failed (status "
@@ -285,6 +286,7 @@ private:
         httpReq.timeout_seconds = 120;
 
         auto resp = m_client.Execute(httpReq);
+        std::cerr << "[stability] v1 response status: " << resp.status_code << " body size: " << resp.body.size() << std::endl;
         if (resp.status_code != 200) {
             result.success = false;
             result.error = "Stability v1 generation failed (status "

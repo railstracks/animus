@@ -35,7 +35,8 @@ public:
     std::unique_ptr<IDiffusionProvider> CreateProvider(const DiffusionProviderConfig& config);
 
 private:
-    HttpClient& m_client;
+    HttpClient& m_client;        // shared kernel client (for provider list/CRUD)
+    HttpClient m_ownClient;      // dedicated client for generation requests (larger body limit)
     DiffusionStore* m_store;
     Config m_config;
 

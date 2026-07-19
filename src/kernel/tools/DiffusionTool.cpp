@@ -87,7 +87,10 @@ double GetDoubleField(const Json::Value& v, const std::string& key, double def =
 DiffusionTool::DiffusionTool(HttpClient& client,
                              DiffusionStore* store,
                              Config config)
-    : m_client(client), m_store(store), m_config(std::move(config)) {
+    : m_client(client), m_ownClient(), m_store(store), m_config(std::move(config)) {
+    // Dedicated HTTP client for generation requests — base64 images can be several MB
+    m_ownClient.SetMaxBodySize(50 * 1024 * 1024);  // 50MB
+    m_ownClient.SetTlsVerify(true);
     EnsureOutputDir();
 }
 
@@ -446,10 +449,10 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call, const Json::Valu
 std::unique_ptr<IDiffusionProvider> DiffusionTool::CreateProvider(
     const DiffusionProviderConfig& config) {
     if (config.type == "getimg") {
-        return CreateGetImgProvider(m_client, config);
+        return CreateGetImgProvider(m_ownClient, config);
     }
     if (config.type == "stability") {
-        return CreateStabilityProvider(m_client, config);
+        return CreateStabilityProvider(m_ownClient, config);
     }
     std::cerr << "[diffusion] Unknown provider type: " << config.type << std::endl;
     return nullptr;
