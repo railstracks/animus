@@ -318,6 +318,8 @@ add_library(animus_kernel
   src/kernel/diffusion/StabilityProvider.cpp
   src/kernel/tools/MultipartFormData.cpp
   src/kernel/tools/DiffusionTool.cpp
+  src/kernel/attachment/AttachmentStore.cpp
+  src/kernel/tools/AttachmentTool.cpp
  src/kernel/chain/CompactionService.cpp
   src/kernel/chain/CompactionSummaryGenerator.cpp
   src/kernel/tools/ToolRegistry.cpp

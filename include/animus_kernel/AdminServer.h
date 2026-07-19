@@ -33,6 +33,7 @@
 #include "animus_kernel/AuthManager.h"
 #include "animus_kernel/AuthHelpers.h"
 #include "animus_kernel/DiffusionStore.h"
+#include "animus_kernel/AttachmentStore.h"
 
 namespace animus::kernel {
 
@@ -206,6 +207,8 @@ public:
 
     // Diffusion
     void SetDiffusionStore(DiffusionStore* store) { m_diffusionStore = store; }
+    // Attachments
+    void SetAttachmentStore(AttachmentStore* store) { m_attachmentStore = store; }
     DiaryManager& GetDiaryManager() { return m_diaryManager; }
     std::chrono::steady_clock::time_point m_kernelStartedAt{};
 
@@ -281,6 +284,8 @@ private:
 
     // Diffusion
     DiffusionStore* m_diffusionStore{nullptr};
+    // Attachments
+    AttachmentStore* m_attachmentStore{nullptr};
 };
 
 } // namespace animus::kernel

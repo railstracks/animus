@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 
 import { apiGet, apiRequest, readAdminToken, writeAdminToken } from '../lib/api';
 import { connectJsonWebSocket } from '../lib/ws';
+import AttachmentMessage from '../components/chat/AttachmentMessage.vue';
 
 type WsConnectionState = 'closed' | 'connecting' | 'open';
 
@@ -47,6 +48,14 @@ interface SessionTurn {
     arguments?: string;
   }>;
   thinking_content?: string;
+  attachments?: Array<{
+    id: string;
+    filename: string;
+    mime_type: string;
+    size_bytes: number;
+    filepath: string;
+    has_inline_data?: boolean;
+  }>;
 }
 
 interface SessionHistoryResponse {
@@ -82,6 +91,14 @@ interface UiMessage {
   _compactionExpanded?: boolean;
   _thoughtMarkerBuffer?: string;
   _thoughtMarkerOpen?: boolean;
+  attachments?: Array<{
+    id: string;
+    filename: string;
+    mime_type: string;
+    size_bytes: number;
+    filepath: string;
+    has_inline_data?: boolean;
+  }>;
 }
 
 interface SessionContextState {
@@ -686,11 +703,23 @@ async function loadSessionHistory(sessionId: string): Promise<void> {
         interrupted: false,
         thinkingContent: thinking,
         thinkingExpanded: false,
-        toolName: turn.tool_name ?? '',
-        toolCallId: turn.tool_call_id ?? '',
-        toolExpanded: false
-      });
+      toolName: turn.tool_name ?? '',
+      toolCallId: turn.tool_call_id ?? '',
+      toolExpanded: false
+    });
     }
+
+    // If this turn has attachments, emit them as a separate message
+    if (turn.attachments && turn.attachments.length > 0) {
+      uiMessages.push({
+        id: `hist-${sessionId}-${turn.turn_id}-att`,
+        role: 'assistant' as UiMessage['role'],
+        content: '',
+        createdUnixMs: turn.unix_ms ?? nowUnixMs(),
+        streaming: false,
+        interrupted: false,
+        attachments: turn.attachments,
+      });
   }
   messagesBySession.value[sessionId] = uiMessages;
   historyLoadedBySession.value[sessionId] = true;
@@ -1571,6 +1600,11 @@ watch(sessionSearch, () => {
                   <span v-else>{{ new Date(message.createdUnixMs).toLocaleTimeString() }}</span>
                 </div>
               </div>
+              <AttachmentMessage
+                v-if="message.attachments && message.attachments.length > 0"
+                :attachments="message.attachments"
+                :session-key="currentSessionId"
+              />
             </div>
           </article>
         </div>

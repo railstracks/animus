@@ -427,6 +427,81 @@
             },
             {drogon::Get});
 
+        // ============================================================================
+        // Attachment serving (Ticket 123)
+        // GET /api/v1/sessions/{key}/attachments/{id} — streams attachment content
+        // ====================================================================================
+        drogon::app().registerHandler(
+            "/api/v1/sessions/{1}/attachments/{2}",
+            [](const drogon::HttpRequestPtr& req,
+               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+               const std::string& sessionIdText,
+               const std::string& attachmentId) {
+                AdminServer* server = g_activeAdminServer.load();
+                if (!server) {
+                    SendServerNotActive(callback);
+                    return;
+                }
+                if (!server->m_attachmentStore) {
+                    auto resp = drogon::HttpResponse::newHttpResponse();
+                    resp->setStatusCode(drogon::k404NotFound);
+                    resp->setBody("Attachments not configured");
+                    callback(resp);
+                    return;
+                }
+                auto att = server->m_attachmentStore->GetById(attachmentId);
+                if (!att) {
+                    auto resp = drogon::HttpResponse::newHttpResponse();
+                    resp->setStatusCode(drogon::k404NotFound);
+                    resp->setBody("Attachment not found");
+                    callback(resp);
+                    return;
+                }
+
+                // Serve inline (base64-decoded) or file-backed
+                if (!att->data_b64.empty()) {
+                    // Decode base64 and serve
+                    static const std::string chars =
+                        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                    std::vector<int> T(256, -1);
+                    for (int i = 0; i < 64; i++) T[chars[i]] = i;
+                    std::string decoded;
+                    int val = 0, valb = -8;
+                    for (unsigned char c : att->data_b64) {
+                        if (c == '=') break;
+                        if (T[c] == -1) continue;
+                        val = (val << 6) + T[c];
+                        valb += 6;
+                        if (valb >= 0) {
+                            decoded.push_back(static_cast<char>((val >> valb) & 0xFF));
+                            valb -= 8;
+                        }
+                    }
+                    auto resp = drogon::HttpResponse::newHttpResponse();
+                    resp->setContentTypeString(att->mime_type);
+                    resp->setBody(decoded);
+                    callback(resp);
+                } else if (!att->filepath.empty()) {
+                    // Serve from file
+                    if (!std::filesystem::exists(att->filepath)) {
+                        auto resp = drogon::HttpResponse::newHttpResponse();
+                        resp->setStatusCode(drogon::k404NotFound);
+                        resp->setBody("Attachment file not found on disk");
+                        callback(resp);
+                        return;
+                    }
+                    auto resp = drogon::HttpResponse::newFileResponse(att->filepath);
+                    resp->setContentTypeString(att->mime_type);
+                    callback(resp);
+                } else {
+                    auto resp = drogon::HttpResponse::newHttpResponse();
+                    resp->setStatusCode(drogon::k404NotFound);
+                    resp->setBody("Attachment has no data");
+                    callback(resp);
+                }
+            },
+            {drogon::Get});
+
         drogon::app().registerHandler(
             "/api/v1/sessions/{1}",
             [](const drogon::HttpRequestPtr&,
@@ -524,18 +599,24 @@
 
                 const std::uint32_t page = ParsePaginationParam(req, "page", 1, 1, 1000000);
                 const std::uint32_t limit = ParsePaginationParam(req, "limit", 50, 1, 200);
-                const std::vector<SessionTurn>& turns = session->Turns();
-                const std::size_t total = turns.size();
-                const std::size_t offset = static_cast<std::size_t>(page - 1) * limit;
+            const std::vector<SessionTurn>& turns = session->Turns();
+            const std::size_t total = turns.size();
+            const std::size_t offset = static_cast<std::size_t>(page - 1) * limit;
+            const std::string sessionKeyStr = session->Key().ToString();
 
-                Json::Value items(Json::arrayValue);
-                if (offset < total) {
-                    const std::size_t maxItems = std::min<std::size_t>(limit, total - offset);
-                    for (std::size_t i = 0; i < maxItems; ++i) {
-                        const std::size_t reverseIndex = total - 1 - (offset + i);
-                        items.append(BuildSessionTurnJson(turns[reverseIndex]));
+            Json::Value items(Json::arrayValue);
+            if (offset < total) {
+                const std::size_t maxItems = std::min<std::size_t>(limit, total - offset);
+                for (std::size_t i = 0; i < maxItems; ++i) {
+                    const std::size_t reverseIndex = total - 1 - (offset + i);
+                    const auto& turn = turns[reverseIndex];
+                    std::vector<Attachment> atts;
+                    if (server->m_attachmentStore) {
+                        atts = server->m_attachmentStore->GetForTurn(turn.turn_id);
                     }
+                    items.append(BuildSessionTurnJson(turn, atts));
                 }
+            }
 
                 Json::Value out(Json::objectValue);
                 out["session_id"] = static_cast<Json::UInt64>(sessionId);

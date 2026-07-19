@@ -43,6 +43,7 @@ namespace ontology { class OntologyStore; }
 class AgentStore;
 class DiaryStore;
 class DiffusionStore;
+class AttachmentStore;
 class GallivantingStore;
 class SessionNotesStore;
 class SessionReportStore;
@@ -161,6 +162,7 @@ private:
 
     // Diffusion
     std::unique_ptr<DiffusionStore> m_diffusionStore;
+    std::unique_ptr<AttachmentStore> m_attachmentStore;
 };
 
 } // namespace animus::kernel

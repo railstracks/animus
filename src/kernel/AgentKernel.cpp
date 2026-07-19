@@ -83,6 +83,8 @@
 #include "animus_kernel/tools/ImageTool.h"
 #include "animus_kernel/tools/DiffusionTool.h"
 #include "animus_kernel/DiffusionStore.h"
+#include "animus_kernel/AttachmentStore.h"
+#include "animus_kernel/tools/AttachmentTool.h"
 
 namespace animus::kernel {
 
@@ -483,6 +485,11 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
     m_diffusionStore = std::make_unique<DiffusionStore>(m_dataStore);
     m_adminServer->SetDiffusionStore(m_diffusionStore.get());
     std::cerr << "[diffusion] Store initialized" << std::endl;
+
+    // --- Attachment store (Ticket 123) ---
+    m_attachmentStore = std::make_unique<AttachmentStore>(m_dataStore);
+    m_adminServer->SetAttachmentStore(m_attachmentStore.get());
+    std::cerr << "[attachment] Store initialized" << std::endl;
 
     // --- Register built-in tools ---
     RegisterBuiltinTools(m_config);
@@ -1450,6 +1457,13 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
         m_tools.Register(std::make_unique<DiffusionTool>(
             m_httpClient, m_diffusionStore.get(), std::move(diffCfg)));
         std::cerr << "[diffusion] Tool registered" << std::endl;
+    }
+
+    // Attachment tool (Ticket 123)
+    if (m_attachmentStore) {
+        m_tools.Register(std::make_unique<AttachmentTool>(
+            m_attachmentStore.get(), m_sessionManager));
+        std::cerr << "[attachment] Tool registered" << std::endl;
     }
 
     std::cerr << "[kernel] Registered " << m_tools.Size() << " built-in tools" << std::endl;

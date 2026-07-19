@@ -387,6 +387,27 @@ Json::Value BuildSessionTurnJson(const SessionTurn& turn) {
     return out;
 }
 
+Json::Value BuildSessionTurnJson(const SessionTurn& turn,
+                                  const std::vector<Attachment>& attachments) {
+    Json::Value out = BuildSessionTurnJson(turn);  // base fields
+
+    if (!attachments.empty()) {
+        Json::Value atts(Json::arrayValue);
+        for (const auto& att : attachments) {
+            Json::Value attJson(Json::objectValue);
+            attJson["id"] = att.id;
+            attJson["filename"] = att.filename;
+            attJson["mime_type"] = att.mime_type;
+            attJson["size_bytes"] = static_cast<Json::Int64>(att.size_bytes);
+            attJson["filepath"] = att.filepath;
+            attJson["has_inline_data"] = !att.data_b64.empty();
+            atts.append(attJson);
+        }
+        out["attachments"] = atts;
+    }
+    return out;
+}
+
 std::uint32_t ParsePaginationParam(
     const drogon::HttpRequestPtr& req,
     const char* name,
