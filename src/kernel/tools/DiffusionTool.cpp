@@ -1,5 +1,4 @@
 #include "animus_kernel/tools/DiffusionTool.h"
-#include "animus_kernel/tools/Base64.h"
 
 #include <json/json.h>
 #include <iostream>
