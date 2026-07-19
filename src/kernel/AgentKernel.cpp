@@ -479,6 +479,11 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
 
         m_tools.Register(std::make_unique<LuaTool>(m_luaStates, m_tools, m_httpClient, *m_scriptStore, m_configStore));
 
+    // --- Diffusion store (must be initialized before RegisterBuiltinTools) ---
+    m_diffusionStore = std::make_unique<DiffusionStore>(m_dataStore);
+    m_adminServer->SetDiffusionStore(m_diffusionStore.get());
+    std::cerr << "[diffusion] Store initialized" << std::endl;
+
     // --- Register built-in tools ---
     RegisterBuiltinTools(m_config);
 
@@ -942,13 +947,8 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         } else if (m_adminServer->GetAuthManager().HasUsers()) {
             std::cerr << "[auth] Authentication required (user accounts exist)" << std::endl;
         } else {
-            std::cerr << "[auth] WARNING: No auth configured. Set ANIMUS_AUTH_TOKEN or create user accounts." << std::endl;
-        }
-
-        // Configure diffusion
-        m_diffusionStore = std::make_unique<DiffusionStore>(m_dataStore);
-        m_adminServer->SetDiffusionStore(m_diffusionStore.get());
-        std::cerr << "[diffusion] Store initialized" << std::endl;
+           std::cerr << "[auth] WARNING: No auth configured. Set ANIMUS_AUTH_TOKEN or create user accounts." << std::endl;
+       }
     }
 
     std::string adminErr;
