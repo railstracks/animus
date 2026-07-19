@@ -9,40 +9,48 @@
 #include <iomanip>
 #include <sstream>
 
-// GetImg provider implementation
-#include "animus_kernel/DiffusionProvider.h"
-#include "animus_kernel/tools/HttpClient.h"
-
-// GetImgProvider is defined in GetImgProvider.cpp (same namespace)
-// We reference it here via forward declaration
-namespace animus::kernel {
-    class GetImgProvider;
-}
-
-namespace animus::kernel {
-
-// Forward-declared GetImgProvider is in GetImgProvider.cpp
-// We need to construct it — include the implementation header
-// Since GetImgProvider.cpp defines the class in the same namespace,
-// we declare it here for the factory method.
-
-// Actually, GetImgProvider is fully defined in GetImgProvider.cpp.
-// For the factory, we'll need to reference it. Let's use a different approach:
-// The GetImgProvider class is defined entirely in GetImgProvider.cpp.
-// We'll create it there via a factory function.
-
-} // namespace animus::kernel
-
 namespace animus::kernel {
 
 // Factory function implemented in GetImgProvider.cpp
-// This avoids header exposure of the full class
 std::unique_ptr<IDiffusionProvider> CreateGetImgProvider(
     HttpClient& client, const DiffusionProviderConfig& config);
 
-} // namespace animus::kernel
+// ============================================================================
+// Helpers (anonymous namespace, same pattern as ImageTool)
+// ============================================================================
 
-namespace animus::kernel {
+namespace {
+
+Json::Value ParseArgs(const std::string& args) {
+    Json::Value root;
+    Json::CharReaderBuilder builder;
+    std::istringstream stream(args);
+    std::string errors;
+    Json::parseFromStream(builder, stream, &root, &errors);
+    return root;
+}
+
+std::string GetStringField(const Json::Value& v, const std::string& key,
+                            const std::string& def = "") {
+    return (v.isMember(key) && v[key].isString()) ? v[key].asString() : def;
+}
+
+int GetIntField(const Json::Value& v, const std::string& key, int def = 0) {
+    if (v.isMember(key) && v[key].isInt()) return v[key].asInt();
+    return def;
+}
+
+bool GetBoolField(const Json::Value& v, const std::string& key, bool def = false) {
+    if (v.isMember(key) && v[key].isBool()) return v[key].asBool();
+    if (v.isMember(key) && v[key].isString()) return v[key].asString() == "true";
+    return def;
+}
+
+} // namespace
+
+// ============================================================================
+// Construction
+// ============================================================================
 
 DiffusionTool::DiffusionTool(HttpClient& client,
                              DiffusionStore* store,
@@ -59,49 +67,91 @@ ToolDefinition DiffusionTool::GetDefinition() const {
                       "that matches the desired aesthetic (e.g. SynthWave, Anime, Cinematic, "
                       "Photorealistic). Use list_models to see available models.";
 
-    def.parameters.push_back({"action", "string", true,
-        "generate | list_models"});
-    def.parameters.push_back({"type", "string", false,
-        "image | video (default: image)"});
-    def.parameters.push_back({"prompt", "string", false,
-        "Text description of the media to generate (required for generate)"});
-    def.parameters.push_back({"model", "string", false,
-        "Diffusion model ID. Choose based on desired visual style. "
-        "Use action=list_models to see available options."});
-    def.parameters.push_back({"provider", "string", false,
-        "Which configured diffusion provider to use (e.g. 'getimg')"});
-    def.parameters.push_back({"aspect_ratio", "string", false,
-        "1:1, 16:9, 9:16, 2:3, 3:2"});
-    def.parameters.push_back({"resolution", "string", false,
-        "1K, 2K, 4K (images) or 720p, 1080p (video)"});
-    def.parameters.push_back({"output_format", "string", false,
-        "png | jpeg | webp (images only)"});
-    def.parameters.push_back({"duration", "integer", false,
-        "Duration in seconds (video only)"});
-    def.parameters.push_back({"sound", "boolean", false,
-        "Generate audio (video only, where supported)"});
+    ToolParameter pAction;
+    pAction.name = "action"; pAction.type = "string"; pAction.required = true;
+    pAction.description = "generate | list_models";
+    pAction.enum_values = {"generate", "list_models"};
+    def.parameters.push_back(pAction);
+
+    ToolParameter pType;
+    pType.name = "type"; pType.type = "string"; pType.required = false;
+    pType.description = "image | video (default: image)";
+    pType.enum_values = {"image", "video"};
+    def.parameters.push_back(pType);
+
+    ToolParameter pPrompt;
+    pPrompt.name = "prompt"; pPrompt.type = "string"; pPrompt.required = false;
+    pPrompt.description = "Text description of the media to generate (required for generate)";
+    def.parameters.push_back(pPrompt);
+
+    ToolParameter pModel;
+    pModel.name = "model"; pModel.type = "string"; pModel.required = false;
+    pModel.description = "Diffusion model ID. Choose based on desired visual style. "
+                         "Use action=list_models to see available options.";
+    def.parameters.push_back(pModel);
+
+    ToolParameter pProvider;
+    pProvider.name = "provider"; pProvider.type = "string"; pProvider.required = false;
+    pProvider.description = "Which configured diffusion provider to use (e.g. 'getimg')";
+    def.parameters.push_back(pProvider);
+
+    ToolParameter pAspect;
+    pAspect.name = "aspect_ratio"; pAspect.type = "string"; pAspect.required = false;
+    pAspect.description = "1:1, 16:9, 9:16, 2:3, 3:2";
+    def.parameters.push_back(pAspect);
+
+    ToolParameter pRes;
+    pRes.name = "resolution"; pRes.type = "string"; pRes.required = false;
+    pRes.description = "1K, 2K, 4K (images) or 720p, 1080p (video)";
+    def.parameters.push_back(pRes);
+
+    ToolParameter pFormat;
+    pFormat.name = "output_format"; pFormat.type = "string"; pFormat.required = false;
+    pFormat.description = "png | jpeg | webp (images only)";
+    def.parameters.push_back(pFormat);
+
+    ToolParameter pDuration;
+    pDuration.name = "duration"; pDuration.type = "integer"; pDuration.required = false;
+    pDuration.description = "Duration in seconds (video only)";
+    def.parameters.push_back(pDuration);
+
+    ToolParameter pSound;
+    pSound.name = "sound"; pSound.type = "boolean"; pSound.required = false;
+    pSound.description = "Generate audio (video only, where supported)";
+    def.parameters.push_back(pSound);
 
     return def;
 }
 
 ToolResult DiffusionTool::Execute(const ToolCall& call) {
-    std::string action = call.GetParam("action");
+    auto args = ParseArgs(call.arguments);
+    if (args.empty()) {
+        ToolResult r;
+        r.call_id = call.id;
+        r.success = false;
+        r.error = "Failed to parse arguments";
+        return r;
+    }
+
+    std::string action = GetStringField(args, "action");
 
     if (action == "list_models") {
-        return ExecuteListModels(call);
+        return ExecuteListModels(call, args);
     }
     if (action == "generate") {
-        return ExecuteGenerate(call);
+        return ExecuteGenerate(call, args);
     }
 
     ToolResult r;
+    r.call_id = call.id;
     r.success = false;
     r.error = "Unknown action: " + action + ". Use 'generate' or 'list_models'.";
     return r;
 }
 
-ToolResult DiffusionTool::ExecuteListModels(const ToolCall& call) {
+ToolResult DiffusionTool::ExecuteListModels(const ToolCall& call, const Json::Value& args) {
     ToolResult result;
+    result.call_id = call.id;
 
     if (!m_store) {
         result.success = false;
@@ -136,21 +186,22 @@ ToolResult DiffusionTool::ExecuteListModels(const ToolCall& call) {
     Json::StreamWriterBuilder wb;
     wb.settings_["indentation"] = "";
     result.success = true;
-    result.content = Json::writeString(wb, modelsJson);
+    result.output = Json::writeString(wb, modelsJson);
     return result;
 }
 
-ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call) {
+ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call, const Json::Value& args) {
     ToolResult result;
+    result.call_id = call.id;
 
-    std::string prompt = call.GetParam("prompt");
+    std::string prompt = GetStringField(args, "prompt");
     if (prompt.empty()) {
         result.success = false;
         result.error = "prompt is required for generate action";
         return result;
     }
 
-    std::string model = call.GetParam("model");
+    std::string model = GetStringField(args, "model");
     if (model.empty()) {
         result.success = false;
         result.error = "model is required for generate action. "
@@ -158,12 +209,9 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call) {
         return result;
     }
 
-    std::string type = call.GetParam("type");
-    if (type.empty()) type = "image";
+    std::string type = GetStringField(args, "type", "image");
+    std::string providerId = GetStringField(args, "provider");
 
-    std::string providerId = call.GetParam("provider");
-
-    // Find provider
     if (!m_store) {
         result.success = false;
         result.error = "No diffusion store configured";
@@ -175,17 +223,10 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call) {
 
     if (!providerId.empty()) {
         auto opt = m_store->GetProvider(providerId);
-        if (opt) {
-            pconfig = *opt;
-            found = true;
-        }
+        if (opt) { pconfig = *opt; found = true; }
     } else {
-        // Use first available provider
         auto providers = m_store->ListProviders();
-        if (!providers.empty()) {
-            pconfig = providers[0];
-            found = true;
-        }
+        if (!providers.empty()) { pconfig = providers[0]; found = true; }
     }
 
     if (!found) {
@@ -207,21 +248,14 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call) {
     genReq.prompt = prompt;
     genReq.model = model;
     genReq.type = type;
-    genReq.aspect_ratio = call.GetParam("aspect_ratio");
+    genReq.aspect_ratio = GetStringField(args, "aspect_ratio");
     if (genReq.aspect_ratio.empty() && !pconfig.default_aspect_ratio.empty()) {
         genReq.aspect_ratio = pconfig.default_aspect_ratio;
     }
-    genReq.resolution = call.GetParam("resolution");
-    genReq.output_format = call.GetParam("output_format");
-    if (genReq.output_format.empty()) genReq.output_format = "png";
-
-    std::string durStr = call.GetParam("duration");
-    if (!durStr.empty()) {
-        try { genReq.duration = std::stoi(durStr); } catch (...) {}
-    }
-
-    std::string soundStr = call.GetParam("sound");
-    genReq.sound = (soundStr == "true" || soundStr == "1");
+    genReq.resolution = GetStringField(args, "resolution");
+    genReq.output_format = GetStringField(args, "output_format", "png");
+    genReq.duration = GetIntField(args, "duration");
+    genReq.sound = GetBoolField(args, "sound");
 
     // Generate
     std::string genError;
@@ -253,7 +287,6 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call) {
                     result.error = pollResult.error.empty() ? pollError : pollResult.error;
                     return result;
                 }
-                // Completed — copy download info
                 genResult.media_url = pollResult.media_url;
                 genResult.content_type = pollResult.content_type;
                 genResult.width = pollResult.width;
@@ -284,13 +317,13 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call) {
     }
 
     result.success = true;
-    result.content = "Generated " + type + " saved to: " + savePath;
+    result.output = "Generated " + type + " saved to: " + savePath;
     if (genResult.width > 0 && genResult.height > 0) {
-        result.content += " (" + std::to_string(genResult.width) + "x"
-                        + std::to_string(genResult.height) + ")";
+        result.output += " (" + std::to_string(genResult.width) + "x"
+                       + std::to_string(genResult.height) + ")";
     }
     if (genResult.duration_seconds > 0) {
-        result.content += " " + std::to_string(genResult.duration_seconds) + "s";
+        result.output += " " + std::to_string(genResult.duration_seconds) + "s";
     }
     return result;
 }

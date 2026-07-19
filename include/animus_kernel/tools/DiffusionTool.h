@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <map>
+#include <json/json.h>
 
 namespace animus::kernel {
 
@@ -38,7 +39,8 @@ private:
     Config m_config;
 
     ToolResult ExecuteGenerate(const ToolCall& call);
-    ToolResult ExecuteListModels(const ToolCall& call);
+    ToolResult ExecuteGenerate(const ToolCall& call, const Json::Value& args);
+    ToolResult ExecuteListModels(const ToolCall& call, const Json::Value& args);
 
     std::string EnsureOutputDir();
     std::string GenerateFilename(const std::string& type, const std::string& format);
