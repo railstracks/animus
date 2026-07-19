@@ -19,7 +19,7 @@ const links = [
   { titleKey: 'sidebar.links.memoryFiles', path: '/memory-files', icon: 'mdi-file-cabinet' },
   { titleKey: 'sidebar.links.scheduler', path: '/scheduler', icon: 'mdi-calendar-clock' },
   { titleKey: 'sidebar.links.providers', path: '/providers', icon: 'mdi-cloud-cog-outline' },
-  { titleKey: 'sidebar.links.diffusion', path: '/diffusion', icon: 'mdi-creation' }
+  { titleKey: 'sidebar.links.diffusion', path: '/diffusion', icon: 'mdi-creation' },
   { titleKey: 'sidebar.links.webSearch', path: '/web-search', icon: 'mdi-magnify' },
   { titleKey: 'sidebar.links.nodes', path: '/nodes', icon: 'mdi-lan' },
   { titleKey: 'sidebar.links.sessionReports', path: '/session-reports', icon: 'mdi-file-document-multiple-outline' },
