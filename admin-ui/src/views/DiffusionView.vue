@@ -169,6 +169,7 @@ function onTypeChange() {
       dialogForm.value.id = nextProviderId(dialogForm.value.type);
       dialogForm.value.default_aspect_ratio = defaults.aspect_ratio;
     }
+  }
 }
 
 function openEdit(provider: any) {
