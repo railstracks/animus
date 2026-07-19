@@ -60,7 +60,7 @@
         <v-card-title>{{ editing ? 'Edit Provider' : 'Create Provider' }}</v-card-title>
         <v-card-text>
           <v-text-field v-model="dialogForm.id" label="Provider ID" density="comfortable" :disabled="editing" class="mb-3" hint="e.g. 'getimg'" />
-          <v-select v-model="dialogForm.type" :items="['getimg']" label="Type" density="comfortable" class="mb-3" />
+          <v-select v-model="dialogForm.type" :items="['getimg']" label="Type" density="comfortable" class="mb-3" @update:model-value="onTypeChange" />
           <v-text-field v-model="dialogForm.base_url" label="Base URL" density="comfortable" class="mb-3" hint="e.g. https://api.getimg.ai" />
           <v-text-field v-model="dialogForm.api_key" label="API Key" type="password" density="comfortable" class="mb-3" />
           <v-text-field v-model="dialogForm.default_model" label="Default Model" density="comfortable" class="mb-3" hint="Optional fallback model ID" />
@@ -144,8 +144,31 @@ async function loadProviders() {
 
 function openCreate() {
   editing.value = false;
-  dialogForm.value = { id: '', type: 'getimg', base_url: '', api_key: '', default_model: '', default_aspect_ratio: '' };
+  dialogForm.value = { id: '', type: 'getimg', base_url: 'https://api.getimg.ai', api_key: '', default_model: '', default_aspect_ratio: '1:1' };
+  dialogForm.value.id = nextProviderId('getimg');
   dialog.value = true;
+}
+
+function nextProviderId(type: string): string {
+  let n = 1;
+  while (providers.value.some(p => p.id === `${type}-${n}`)) {
+    n++;
+  }
+  return `${type}-${n}`;
+}
+
+function onTypeChange() {
+  if (dialogForm.value.type === 'getimg') {
+    if (!dialogForm.value.base_url) {
+      dialogForm.value.base_url = 'https://api.getimg.ai';
+    }
+    if (!editing.value) {
+      dialogForm.value.id = nextProviderId('getimg');
+    }
+    if (!dialogForm.value.default_aspect_ratio) {
+      dialogForm.value.default_aspect_ratio = '1:1';
+    }
+  }
 }
 
 function openEdit(provider: any) {
