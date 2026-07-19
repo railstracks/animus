@@ -24,15 +24,25 @@ parameters:
   action: "generate" (required)
   type: "image" | "video" (default: "image")
   prompt: string (required) — text description
-  model: string — diffusion model ID (provider-specific)
+  model: string (required) — diffusion model ID. Agent selects from available
+          models across all configured providers. Different models produce
+          different visual styles (e.g. SynthWave, Anime, Cinematic, Photorealistic).
+          The model list is surfaced to the agent via the provider's model listing.
+  provider: string — which configured diffusion provider to use (e.g. "getimg")
   aspect_ratio: string — e.g. "1:1", "16:9", "9:16", "2:3", "3:2"
   resolution: string — e.g. "1K", "2K", "4K" (images) or "720p", "1080p" (video)
   output_format: string — "png" | "jpeg" | "webp" (images only)
   duration: integer — seconds (video only)
   sound: boolean — generate audio (video only, where supported)
   reference_images: array — [{ url: string, role: string }] for guided generation
-  provider: string — which configured diffusion provider to use
 ```
+
+**Model selection is agent-driven, not preconfigured.** The agent chooses the
+model per-generation based on the desired style. Providers expose their model
+lists via `GET /v2/models` (or equivalent), and these are surfaced to the agent
+at runtime — either through the tool's model list or by the admin UI surfacing
+them in the agent's system prompt. The `default_model` in provider config is
+only a fallback when the agent doesn't specify one.
 
 **Image generation flow (sync):**
 1. Agent calls `diffusion` with `type: "image"`
@@ -68,7 +78,7 @@ New config section in agent config, separate from LLM providers:
 }
 ```
 
-Provider types initially supported: `getimg`. Architecture should allow adding `comfyui`, `automatic1111`, etc.
+Provider types initially supported: `getimg`. Architecture should allow adding `comfyui`, `automatic1111`, etc. Each provider must implement a `ListModels()` method so the agent can discover available models and their capabilities (image vs video, supported aspect ratios, etc.).
 
 ### Admin UI
 
