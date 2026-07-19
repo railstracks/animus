@@ -14,15 +14,16 @@ namespace animus::kernel {
 class MultipartFormData {
 public:
     MultipartFormData() {
-        // Generate a random boundary
+        // Generate a random boundary (hex characters only)
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_int_distribution<> dis(0, 15);
         m_boundary = "----AnimusBoundary";
         for (int i = 0; i < 16; ++i) {
-            m_boundary += dis(gen) < 10
-                ? static_cast<char>('0' + dis(gen))
-                : static_cast<char>('a' + dis(gen) - 10);
+            int v = dis(gen);
+            m_boundary += (v < 10)
+                ? static_cast<char>('0' + v)
+                : static_cast<char>('a' + v - 10);
         }
     }
 

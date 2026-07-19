@@ -168,18 +168,22 @@ private:
         }
 
         // For SD 3.5, model field selects the variant
-        if (req.model.find("sd3.5") != std::string::npos) {
+        if (req.model.find("sd3.5") != std::string::npos || req.model.find("sd3") != std::string::npos) {
             form.AddField("model", req.model);
         }
 
         std::string body = form.Build();
+
+        std::cerr << "[stability] Endpoint: " << endpoint << std::endl;
+        std::cerr << "[stability] Content-Type: " << form.ContentType() << std::endl;
+        std::cerr << "[stability] Body size: " << body.size() << std::endl;
 
         HttpClient::Request httpReq;
         httpReq.method = "POST";
         httpReq.url = m_config.base_url + endpoint;
         httpReq.headers["Authorization"] = "Bearer " + m_config.api_key;
         httpReq.headers["Content-Type"] = form.ContentType();
-        httpReq.headers["Accept"] = "application/json"; // base64 response
+        httpReq.headers["accept"] = "application/json"; // base64 response
         httpReq.body = body;
         httpReq.timeout_seconds = 120;
 
@@ -204,14 +208,13 @@ private:
     }
 
     std::string GetEndpointForModel(const std::string& model) const {
-        if (model == "ultra" || model == "stable-image-ultra")
+        if (model == "ultra" || model == "stable-image-ultra" || model.rfind("ultra", 0) == 0)
             return "/v2beta/stable-image/generate/ultra";
-        if (model == "core" || model == "stable-image-core")
+        if (model == "core" || model == "stable-image-core" || model.rfind("core", 0) == 0)
             return "/v2beta/stable-image/generate/core";
-        if (model == "sd3.5-large" || model == "sd3.5-large-turbo"
-            || model == "sd3.5-medium" || model == "sd3.5-flash"
-            || model.rfind("sd3.5", 0) == 0)
-            return "/v2beta/stable-image/generate/sd3.5";
+        // All SD 3.5 variants use the same endpoint, model field selects the variant
+        if (model.rfind("sd3.5", 0) == 0 || model.rfind("sd3", 0) == 0)
+            return "/v2beta/stable-image/generate/sd3";
         return "";
     }
 
