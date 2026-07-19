@@ -203,23 +203,49 @@ New keys for:
 
 ### Phases
 
-**Phase 1 (MVP):**
+**Phase 1 (MVP — Webchat only):**
 - `add_chat_attachment` tool (filepath → attachment)
 - DB schema + store
 - API: attachment serving endpoint
-- Per-channel `attachments_enabled` flag with type defaults
 - Admin UI: AttachmentMessage component (all four type renderers)
-- Admin UI: Channel edit form attachments toggle
-- Channel adapter dispatch: skip attachments when disabled
 - System prompt context: attachment capability indication
 - Tool registered for agents
 
-**Phase 2 (optional):**
+**Phase 2 (Channel adapters — one at a time):**
+Each channel needs its own file upload API integration, investigated and tested individually:
+- Discord (file upload via Discord API)
+- WhatsApp (media upload via WhatsApp Business API)
+- Slack (files.upload API)
+- Telegram (sendDocument/sendPhoto API)
+Each channel adapter is a separate sub-task with its own API research, implementation, and testing.
+
+**Phase 3 (optional):**
 - Drag-and-drop file upload from admin UI (user → agent direction)
 - Attachment in user messages (not just assistant)
 - Attachment size limits per agent config
 - Thumbnail generation for large images
-- Channel-specific attachment delivery (Discord file upload, Slack file upload, etc.)
+- Social platform attachment delivery (Twitter media upload, Bluesky blob upload, etc.)
+
+### Channel Attachment Defaults (Phase 1)
+
+In Phase 1, only webchat has attachments enabled. All other channels default to disabled:
+
+| Channel Type | attachments_enabled | Notes |
+|-------------|-------------------|-------|
+| Webchat | ✅ true | Phase 1 — renders in admin UI |
+| Discord | ❌ false | Phase 2 — Discord file upload API |
+| Slack | ❌ false | Phase 2 — Slack files.upload API |
+| WhatsApp | ❌ false | Phase 2 — WhatsApp media upload API |
+| Telegram | ❌ false | Phase 2 — Telegram sendDocument API |
+| Email | ❌ false | Always — email replies use email tool |
+| IRC | ❌ false | Always — no protocol support |
+| Bluesky | ❌ false | Phase 3 — blob upload API |
+| VK | ❌ false | Phase 3 |
+| Mastodon | ❌ false | Phase 3 |
+| Twitter | ❌ false | Phase 3 — media upload API |
+| Nextcloud Talk | ❌ false | Phase 3 |
+
+The `attachments_enabled` toggle in `/channels` is added in Phase 2 when per-channel support is being rolled out. In Phase 1, the flag is implicit (webchat = yes, everything else = no).
 
 ### Ordering
 
