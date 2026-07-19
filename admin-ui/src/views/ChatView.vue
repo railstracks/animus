@@ -721,6 +721,7 @@ async function loadSessionHistory(sessionId: string): Promise<void> {
         attachments: turn.attachments,
       });
   }
+  }
   messagesBySession.value[sessionId] = uiMessages;
   historyLoadedBySession.value[sessionId] = true;
 }
