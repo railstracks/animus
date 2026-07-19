@@ -3,10 +3,13 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <optional>
+
+#include "animus_kernel/IDataStore.h"
 
 namespace animus::kernel {
 
-class IDataStore;
+// Forward declaration removed — IDataStore is now included above
 
 // ============================================================================
 // AttachmentStore — persistence for session attachments (Ticket 123)
