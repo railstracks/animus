@@ -164,15 +164,10 @@ function onTypeChange() {
   };
   const defaults = typeDefaults[dialogForm.value.type];
   if (defaults) {
-    if (!dialogForm.value.base_url || dialogForm.value.base_url === '') {
-      dialogForm.value.base_url = defaults.base_url;
-    }
     if (!editing.value) {
+      dialogForm.value.base_url = defaults.base_url;
       dialogForm.value.id = nextProviderId(dialogForm.value.type);
-    }
-    if (!dialogForm.value.default_aspect_ratio) {
       dialogForm.value.default_aspect_ratio = defaults.aspect_ratio;
-    }
     }
 }
 
