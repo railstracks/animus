@@ -1,6 +1,6 @@
 # Ticket 123: Chat Attachments
 
-**Status:** Scoped (updated 2026-07-20)
+**Status:** Phase 1 Complete (updated 2026-07-20)
 **Date:** 2026-07-19
 **Author:** Melvin + Kestrel
 
