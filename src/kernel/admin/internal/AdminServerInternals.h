@@ -17,6 +17,7 @@
 #include "animus_kernel/AdminServer.h"
 #include "animus_kernel/Session.h"
 #include "animus_kernel/AttachmentStore.h"
+#include "animus_kernel/AttachmentTokenManager.h"
 #include "animus_kernel/admin/ObservationStreamTypes.h"
 #include "animus_kernel/tools/ToolTypes.h"
 
@@ -46,6 +47,7 @@ bool ParseSessionId(const std::string& text, SessionId* out);
 Json::Value BuildSessionSummaryJson(const Session& session);
 Json::Value BuildSessionTurnJson(const SessionTurn& turn);
 Json::Value BuildSessionTurnJson(const SessionTurn& turn, const std::vector<Attachment>& attachments);
+Json::Value BuildSessionTurnJson(const SessionTurn& turn, const std::vector<Attachment>& attachments, AttachmentTokenManager* tokenMgr);
 std::uint32_t ParsePaginationParam(
     const drogon::HttpRequestPtr& req,
     const char* name,

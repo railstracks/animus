@@ -408,6 +408,32 @@ Json::Value BuildSessionTurnJson(const SessionTurn& turn,
     return out;
 }
 
+Json::Value BuildSessionTurnJson(const SessionTurn& turn,
+                                  const std::vector<Attachment>& attachments,
+                                  AttachmentTokenManager* tokenMgr) {
+    Json::Value out = BuildSessionTurnJson(turn);  // base fields
+
+    if (!attachments.empty() && tokenMgr) {
+        Json::Value atts(Json::arrayValue);
+        for (const auto& att : attachments) {
+            Json::Value attJson(Json::objectValue);
+            attJson["id"] = att.id;
+            attJson["filename"] = att.filename;
+            attJson["mime_type"] = att.mime_type;
+            attJson["size_bytes"] = static_cast<Json::Int64>(att.size_bytes);
+            attJson["filepath"] = att.filepath;
+            attJson["has_inline_data"] = !att.data_b64.empty();
+            // Generate short-lived token for this attachment
+            attJson["access_token"] = tokenMgr->GenerateToken(att.id);
+            atts.append(attJson);
+        }
+        out["attachments"] = atts;
+    } else if (!attachments.empty()) {
+        out = BuildSessionTurnJson(turn, attachments);
+    }
+    return out;
+}
+
 std::uint32_t ParsePaginationParam(
     const drogon::HttpRequestPtr& req,
     const char* name,

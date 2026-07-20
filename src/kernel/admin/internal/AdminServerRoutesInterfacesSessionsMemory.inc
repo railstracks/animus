@@ -442,6 +442,18 @@
                     SendServerNotActive(callback);
                     return;
                 }
+
+                // Validate short-lived attachment token (?token=***)
+                auto token = req->getParameter("token");
+                if (token.empty() || !server->m_attachmentTokens.ValidateToken(token, attachmentId)) {
+                    Json::Value body;
+                    body["error"] = "Unauthorized";
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+                    resp->setStatusCode(drogon::k401Unauthorized);
+                    callback(resp);
+                    return;
+                }
+
                 if (!server->m_attachmentStore) {
                     auto resp = drogon::HttpResponse::newHttpResponse();
                     resp->setStatusCode(drogon::k404NotFound);
@@ -614,7 +626,7 @@
                     if (server->m_attachmentStore) {
                         atts = server->m_attachmentStore->GetForTurn(turn.turn_id);
                     }
-                    items.append(BuildSessionTurnJson(turn, atts));
+                    items.append(BuildSessionTurnJson(turn, atts, &server->m_attachmentTokens));
                 }
             }
 

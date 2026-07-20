@@ -55,6 +55,7 @@ interface SessionTurn {
     size_bytes: number;
     filepath: string;
     has_inline_data?: boolean;
+    access_token?: string;
   }>;
 }
 
@@ -98,6 +99,7 @@ interface UiMessage {
     size_bytes: number;
     filepath: string;
     has_inline_data?: boolean;
+    access_token?: string;
   }>;
 }
 

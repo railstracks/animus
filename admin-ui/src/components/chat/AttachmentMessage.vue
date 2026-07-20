@@ -8,7 +8,7 @@
       <!-- Image -->
       <div v-if="att.mime_type.startsWith('image/')" class="att-image-wrap" @click="openLightbox(att)">
         <img
-          :src="`/api/v1/sessions/${encodeURIComponent(sessionKey)}/attachments/${att.id}`"
+          :src="attachmentUrl(att)"
           :alt="att.filename"
           class="att-image"
           loading="lazy"
@@ -27,7 +27,7 @@
           <span class="att-size">{{ formatSize(att.size_bytes) }}</span>
         </div>
         <audio
-          :src="`/api/v1/sessions/${encodeURIComponent(sessionKey)}/attachments/${att.id}`"
+          :src="attachmentUrl(att)"
           controls
           class="att-audio"
         />
@@ -41,7 +41,7 @@
           <span class="att-size">{{ formatSize(att.size_bytes) }}</span>
         </div>
         <video
-          :src="`/api/v1/sessions/${encodeURIComponent(sessionKey)}/attachments/${att.id}`"
+          :src="attachmentUrl(att)"
           controls
           class="att-video"
         />
@@ -54,7 +54,6 @@
           <span class="att-filename">{{ att.filename }}</span>
           <span class="att-size">{{ formatSize(att.size_bytes) }}</span>
         </div>
-        <pre class="att-text" @click="toggleExpand">{{ attPreview }}</pre>
       </div>
 
       <!-- Download / fallback -->
@@ -65,7 +64,7 @@
           <span class="att-size">{{ formatSize(att.size_bytes) }}</span>
         </div>
         <a
-          :href="`/api/v1/sessions/${encodeURIComponent(sessionKey)}/attachments/${att.id}`"
+          :href="attachmentUrl(att)"
           download
           class="att-download-link"
         >
@@ -86,6 +85,7 @@ interface Attachment {
   size_bytes: number;
   filepath: string;
   has_inline_data?: boolean;
+  access_token?: string;
 }
 
 const props = defineProps<{
@@ -95,19 +95,19 @@ const props = defineProps<{
 
 const expanded = ref(false);
 
+function attachmentUrl(att: Attachment): string {
+  const base = `/api/v1/sessions/${encodeURIComponent(props.sessionKey)}/attachments/${encodeURIComponent(att.id)}`;
+  return att.access_token ? `${base}?token=${att.access_token}` : base;
+}
+
 function formatSize(bytes: number): string {
   if (bytes >= 1_000_000) return (bytes / 1_000_000).toFixed(1) + ' MB';
   if (bytes >= 1_000) return Math.round(bytes / 1_000) + ' KB';
   return bytes + ' B';
 }
 
-function toggleExpand() {
-  expanded.value = !expanded.value;
-}
-
 function openLightbox(att: Attachment) {
-  // Simple lightbox: open in new tab
-  window.open(`/api/v1/sessions/${encodeURIComponent(props.sessionKey)}/attachments/${att.id}`, '_blank');
+  window.open(attachmentUrl(att), '_blank');
 }
 </script>
 
@@ -169,18 +169,6 @@ function openLightbox(att: Attachment) {
 
 .att-text-wrap {
   cursor: pointer;
-}
-
-.att-text {
-  max-height: 200px;
-  overflow: hidden;
-  padding: 8px 10px;
-  margin: 0;
-  font-family: monospace;
-  font-size: 0.8rem;
-  white-space: pre-wrap;
-  word-break: break-all;
-  background: rgba(var(--v-theme-on-surface), 0.04);
 }
 
 .att-download-wrap {
