@@ -1085,6 +1085,28 @@ function handleSocketMessage(payload: unknown): void {
     return;
   }
 
+  if (type === 'attachment') {
+    const sid = asString(envelope.session_id) || currentSessionId.value;
+    if (!sid) return;
+    const att = envelope.attachment;
+    if (att && typeof att === 'object') {
+      pushMessage(sid, {
+        id: `att-${sid}-${nowUnixMs()}`,
+        role: 'assistant' as UiMessage['role'],
+        content: '',
+        createdUnixMs: nowUnixMs(),
+        streaming: false,
+        interrupted: false,
+        attachments: [att],
+      });
+    }
+    if (!currentSessionId.value) {
+      adoptNewSessionId(sid);
+    }
+    maybeAutoScroll();
+    return;
+  }
+
   if (type === 'done') {
     const sid = asString(envelope.session_id) || currentSessionId.value;
     const interrupted = Boolean(envelope.interrupted);

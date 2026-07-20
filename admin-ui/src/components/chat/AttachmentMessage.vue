@@ -49,11 +49,15 @@
 
       <!-- Text -->
       <div v-else-if="att.mime_type.startsWith('text/')" class="att-text-wrap">
-        <div class="att-meta">
-          <v-icon icon="mdi-file-document-outline" size="small" />
-          <span class="att-filename">{{ att.filename }}</span>
-          <span class="att-size">{{ formatSize(att.size_bytes) }}</span>
+        <div class="att-header" @click="toggleText(att.id)">
+          <div class="att-meta">
+            <v-icon :icon="textExpanded[att.id] ? 'mdi-chevron-down' : 'mdi-chevron-right'" size="small" />
+            <v-icon icon="mdi-file-document-outline" size="small" />
+            <span class="att-filename">{{ att.filename }}</span>
+            <span class="att-size">{{ formatSize(att.size_bytes) }}</span>
+          </div>
         </div>
+        <pre v-if="textExpanded[att.id]" class="att-text">{{ textCache[att.id] || 'Loading…' }}</pre>
       </div>
 
       <!-- Download / fallback -->
@@ -76,7 +80,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { reactive } from 'vue';
 
 interface Attachment {
   id: string;
@@ -93,7 +97,8 @@ const props = defineProps<{
   sessionKey: string;
 }>();
 
-const expanded = ref(false);
+const textExpanded = reactive<Record<string, boolean>>({});
+const textCache = reactive<Record<string, string>>({});
 
 function attachmentUrl(att: Attachment): string {
   const base = `/api/v1/sessions/${encodeURIComponent(props.sessionKey)}/attachments/${encodeURIComponent(att.id)}`;
@@ -108,6 +113,25 @@ function formatSize(bytes: number): string {
 
 function openLightbox(att: Attachment) {
   window.open(attachmentUrl(att), '_blank');
+}
+
+async function toggleText(attId: string) {
+  if (textExpanded[attId]) {
+    textExpanded[attId] = false;
+    return;
+  }
+  // Fetch text content if not cached
+  if (!textCache[attId]) {
+    const att = props.attachments.find(a => a.id === attId);
+    if (!att) return;
+    try {
+      const resp = await fetch(attachmentUrl(att));
+      textCache[attId] = await resp.text();
+    } catch {
+      textCache[attId] = 'Failed to load text content.';
+    }
+  }
+  textExpanded[attId] = true;
 }
 </script>
 
@@ -147,6 +171,11 @@ function openLightbox(att: Attachment) {
   color: rgba(var(--v-theme-on-surface), 0.7);
 }
 
+.att-header {
+  cursor: pointer;
+  user-select: none;
+}
+
 .att-filename {
   font-weight: 500;
 }
@@ -168,7 +197,20 @@ function openLightbox(att: Attachment) {
 }
 
 .att-text-wrap {
-  cursor: pointer;
+  /* allows expanding beyond max-width if needed */
+}
+
+.att-text {
+  max-height: 300px;
+  overflow: auto;
+  padding: 8px 10px;
+  margin: 0;
+  font-family: monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .att-download-wrap {

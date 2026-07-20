@@ -1225,6 +1225,8 @@ void AdminServer::RefreshChatSessionServiceDependencies() {
     deps.jobs = m_jobs;
     deps.chatMutex = &m_chatMutex;
     deps.agentConfig = &m_agentConfig;
+    deps.attachmentStore = m_attachmentStore;
+    deps.attachmentTokenManager = &m_attachmentTokens;
     m_chatSessionService.Configure(deps);
 }
 

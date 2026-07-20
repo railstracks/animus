@@ -295,7 +295,13 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 QueueSendJson(wsConnPtr, msg);
             };
 
-            auto toolEventCallback = [wsConnPtr, sessionId, stopSignal](
+            auto attachmentStore = m_deps.attachmentStore;
+            auto attachmentTokenManager = m_deps.attachmentTokenManager;
+            auto sessionKeyStr = session->Key().ToString();
+
+            auto toolEventCallback = [wsConnPtr, sessionId, stopSignal,
+                                      attachmentStore, attachmentTokenManager,
+                                      sessionKeyStr](
                                          const ToolCall& call,
                                          const ToolResult& result) {
                 if (stopSignal && stopSignal->load()) {
@@ -309,6 +315,28 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 msg["success"] = result.success;
                 msg["content"] = result.success ? result.output : result.error;
                 QueueSendJson(wsConnPtr, msg);
+
+                // If this was a successful attachment tool call, emit attachment event
+                if (result.success && call.name == "add_chat_attachment" &&
+                    attachmentStore && attachmentTokenManager) {
+                    auto allAtts = attachmentStore->GetForSession(sessionKeyStr);
+                    if (!allAtts.empty()) {
+                        const auto& att = allAtts.back();
+                        Json::Value attMsg(Json::objectValue);
+                        attMsg["type"] = "attachment";
+                        attMsg["session_id"] = std::to_string(sessionId);
+                        Json::Value attData(Json::objectValue);
+                        attData["id"] = att.id;
+                        attData["filename"] = att.filename;
+                        attData["mime_type"] = att.mime_type;
+                        attData["size_bytes"] = static_cast<Json::Int64>(att.size_bytes);
+                        attData["filepath"] = att.filepath;
+                        attData["has_inline_data"] = !att.data_b64.empty();
+                        attData["access_token"] = attachmentTokenManager->GenerateToken(att.id);
+                        attMsg["attachment"] = attData;
+                        QueueSendJson(wsConnPtr, attMsg);
+                    }
+                }
             };
 
             SessionAccess sessionAccess(session, SessionAccessMode::ReadWrite);

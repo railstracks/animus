@@ -9,6 +9,8 @@
 
 #include "animus_kernel/KernelConfig.h"
 #include "animus_kernel/Session.h"
+#include "animus_kernel/AttachmentStore.h"
+#include "animus_kernel/AttachmentTokenManager.h"
 
 namespace animus::jobs {
 class JobSystem;
@@ -40,8 +42,10 @@ public:
         ProviderThrottle* providerThrottle{nullptr};
         ::animus::jobs::JobSystem* jobs{nullptr};
         std::mutex* chatMutex{nullptr};
-        const KernelConfig::AgentRuntimeConfig* agentConfig{nullptr};
-    };
+    const KernelConfig::AgentRuntimeConfig* agentConfig{nullptr};
+    AttachmentStore* attachmentStore{nullptr};
+    AttachmentTokenManager* attachmentTokenManager{nullptr};
+   };
 
     struct Request {
         drogon::WebSocketConnectionPtr wsConnection;
