@@ -1296,6 +1296,26 @@ void AdminServer::RegisterHandlersOnce() {
             // If auth not required, allow
             if (!m_authManager.IsAuthRequired()) return nullptr;
 
+            // Attachment serving: validate short-lived ?token= query param
+            // This allows <img>/<audio>/<video> tags to load attachments
+            // without a Bearer header (which they can't send).
+            if (path.find("/attachments/") != std::string::npos) {
+                auto attToken = req->getParameter("token");
+                if (!attToken.empty()) {
+                    // Extract attachment ID from path: /api/v1/sessions/{id}/attachments/{attId}
+                    auto lastSlash = path.find_last_of('/');
+                    if (lastSlash != std::string::npos) {
+                        std::string attachmentId = path.substr(lastSlash + 1);
+                        // Strip any query string (shouldn't be in path, but just in case)
+                        auto qMark = attachmentId.find('?');
+                        if (qMark != std::string::npos) attachmentId = attachmentId.substr(0, qMark);
+                        if (m_attachmentTokens.ValidateToken(attToken, attachmentId)) {
+                            return nullptr;  // Allow
+                        }
+                    }
+                }
+            }
+
             // Rate limit
             auto ip = ExtractClientIp(req);
             if (m_authManager.IsRateLimited(ip)) {
