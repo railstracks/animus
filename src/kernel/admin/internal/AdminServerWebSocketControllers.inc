@@ -137,9 +137,10 @@ public:
             }
 
             const std::uint64_t conversationId = server->m_nextWsConversationId.fetch_add(1);
+            const std::string sessionSource = payload.get("source", "ws_chat").asString();
             SessionKey key{
-                "ws_chat",
-                "ws-conversation-" + std::to_string(conversationId),
+                sessionSource,
+                sessionSource + "-conversation-" + std::to_string(conversationId),
                 "conn-" + std::to_string(GetConnectionId(wsConnPtr))};
             session = server->m_sessions ? server->m_sessions->GetOrCreate(key) : nullptr;
             if (!session) {
