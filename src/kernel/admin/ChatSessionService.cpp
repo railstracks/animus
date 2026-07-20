@@ -87,6 +87,8 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
     ProviderManager* const providerManager = m_deps.providerManager;
     AgentStore* const agentStore = m_deps.agentStore;
     ProviderThrottle* const providerThrottle = m_deps.providerThrottle;
+    AttachmentStore* const attachmentStore = m_deps.attachmentStore;
+    AttachmentTokenManager* const attachmentTokenManager = m_deps.attachmentTokenManager;
     std::mutex* const chatMutex = m_deps.chatMutex;
     const KernelConfig::AgentRuntimeConfig* const agentConfig = m_deps.agentConfig;
 
@@ -295,8 +297,6 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 QueueSendJson(wsConnPtr, msg);
             };
 
-            auto attachmentStore = m_deps.attachmentStore;
-            auto attachmentTokenManager = m_deps.attachmentTokenManager;
             auto sessionKeyStr = session->Key().ToString();
 
             auto toolEventCallback = [wsConnPtr, sessionId, stopSignal,
