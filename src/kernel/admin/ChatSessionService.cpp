@@ -99,7 +99,8 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
         ::animus::jobs::JobLane::Cognition,
         [wsConnPtr, session, sessionId, userContent, stopSignal,
          requestedProviderOverride, requestedModelOverride,
-         sessions, chainRunner, compactionService, providerRegistry, providerManager, agentStore, providerThrottle, chatMutex, agentConfig, configLookup]() {
+         sessions, chainRunner, compactionService, providerRegistry, providerManager, agentStore, providerThrottle, chatMutex, agentConfig, configLookup,
+         attachmentStore, attachmentTokenManager]() {
             std::string providerId = requestedProviderOverride.empty()
                 ? session->ProviderId()
                 : requestedProviderOverride;
