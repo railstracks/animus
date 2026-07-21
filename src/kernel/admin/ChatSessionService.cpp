@@ -372,6 +372,11 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 textCallback,
                 toolEventCallback);
 
+            // Clear singleton callbacks so consolidation/scheduler chains
+            // don't fire them against a stale wsConnPtr.
+            chainRunner->SetThinkingCallback(nullptr);
+            chainRunner->SetToolCallCallback(nullptr);
+
             if (result.success && sessions) {
                 sessions->FlushSession(session->Id());
 
