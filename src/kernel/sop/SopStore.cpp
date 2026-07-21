@@ -1,4 +1,5 @@
 #include "animus_kernel/SopStore.h"
+#include "animus_kernel/tools/HttpClient.h"
 
 #include <algorithm>
 #include <cctype>
@@ -6,50 +7,74 @@
 #include <iostream>
 #include <sstream>
 #include <set>
+#include <json/json.h>
 
 namespace animus::kernel {
 
-SopStore::SopStore(const std::filesystem::path& sopsDir)
-    : m_sopsDir(sopsDir) {}
+static const char* DEFAULT_REMOTE_SOPS =
+    "https://api.github.com/repos/railstracks/animus/contents/sops";
+
+SopStore::SopStore(const std::filesystem::path& sopsDir,
+                   HttpClient* httpClient,
+                   const std::string& remoteUrl)
+    : m_sopsDir(sopsDir)
+    , m_httpClient(httpClient)
+    , m_remoteUrl(remoteUrl) {}
 
 void SopStore::Refresh() {
     m_entries.clear();
 
-    if (m_sopsDir.empty() || !std::filesystem::exists(m_sopsDir)) {
-        std::cerr << "[sop] Directory not found: " << m_sopsDir.string() << std::endl;
-        return;
+    // Ensure local directory exists
+    if (!m_sopsDir.empty()) {
+        std::filesystem::create_directories(m_sopsDir);
     }
 
-    for (const auto& entry : std::filesystem::directory_iterator(m_sopsDir)) {
-        if (!entry.is_regular_file()) continue;
-        if (entry.path().extension() != ".md") continue;
+    // Fetch remote SOPs first (caches to local dir)
+    if (m_httpClient) {
+        std::string url = m_remoteUrl.empty() ? DEFAULT_REMOTE_SOPS : m_remoteUrl;
+        FetchRemoteSops();
+    }
 
-        std::ifstream ifs(entry.path());
-        if (!ifs) continue;
+    // Scan local directory
+    if (!m_sopsDir.empty() && std::filesystem::exists(m_sopsDir)) {
+        for (const auto& entry : std::filesystem::directory_iterator(m_sopsDir)) {
+            if (!entry.is_regular_file()) continue;
+            if (entry.path().extension() != ".md") continue;
 
-        std::stringstream ss;
-        ss << ifs.rdbuf();
-        std::string raw = ss.str();
+            std::ifstream ifs(entry.path());
+            if (!ifs) continue;
 
-        auto [frontmatter, body] = SplitFrontmatter(raw);
+            std::stringstream ss;
+            ss << ifs.rdbuf();
+            std::string raw = ss.str();
 
-        SopEntry sop;
-        sop.filepath = entry.path();
-        sop.raw = raw;
-        sop.content = body;
-        sop.meta.name = GetField(frontmatter, "name");
-        if (sop.meta.name.empty()) {
-            sop.meta.name = SlugFromFilename(entry.path());
+            auto [frontmatter, body] = SplitFrontmatter(raw);
+
+            SopEntry sop;
+            sop.filepath = entry.path();
+            sop.raw = raw;
+            sop.content = body;
+            sop.meta.name = GetField(frontmatter, "name");
+            if (sop.meta.name.empty()) {
+                sop.meta.name = SlugFromFilename(entry.path());
+            }
+            sop.meta.title = GetField(frontmatter, "title");
+            if (sop.meta.title.empty()) sop.meta.title = sop.meta.name;
+            sop.meta.category = GetField(frontmatter, "category");
+            sop.meta.version = GetField(frontmatter, "version");
+            if (sop.meta.version.empty()) sop.meta.version = "1.0.0";
+            sop.meta.description = GetField(frontmatter, "description");
+            sop.meta.tags = ParseList(GetField(frontmatter, "tags"));
+
+            // Deduplicate — skip if already loaded from remote with same name
+            bool dup = false;
+            for (const auto& e : m_entries) {
+                if (e.meta.name == sop.meta.name) { dup = true; break; }
+            }
+            if (!dup) {
+                m_entries.push_back(std::move(sop));
+            }
         }
-        sop.meta.title = GetField(frontmatter, "title");
-        if (sop.meta.title.empty()) sop.meta.title = sop.meta.name;
-        sop.meta.category = GetField(frontmatter, "category");
-        sop.meta.version = GetField(frontmatter, "version");
-        if (sop.meta.version.empty()) sop.meta.version = "1.0.0";
-        sop.meta.description = GetField(frontmatter, "description");
-        sop.meta.tags = ParseList(GetField(frontmatter, "tags"));
-
-        m_entries.push_back(std::move(sop));
     }
 
     // Sort by category, then name
@@ -62,6 +87,97 @@ void SopStore::Refresh() {
 
     std::cerr << "[sop] Loaded " << m_entries.size() << " SOPs from "
               << m_sopsDir.string() << std::endl;
+}
+
+void SopStore::FetchRemoteSops() {
+    if (!m_httpClient) return;
+
+    std::string url = m_remoteUrl.empty() ? DEFAULT_REMOTE_SOPS : m_remoteUrl;
+    std::cerr << "[sop] Fetching remote SOP listing from " << url << std::endl;
+
+    HttpClient::Request req;
+    req.method = "GET";
+    req.url = url;
+    req.headers["Accept"] = "application/vnd.github.v3+json";
+    req.headers["User-Agent"] = "Animus-SopStore";
+    req.timeout_seconds = 15;
+
+    auto resp = m_httpClient->Execute(req);
+    if (resp.status_code != 200) {
+        std::cerr << "[sop] Remote fetch failed: HTTP " << resp.status_code
+                  << " — " << resp.error << std::endl;
+        return;
+    }
+
+    // Parse GitHub contents API response — array of file entries
+    Json::Value root;
+    Json::CharReaderBuilder builder;
+    std::istringstream stream(resp.body);
+    std::string errors;
+    if (!Json::parseFromStream(builder, stream, &root, &errors)) {
+        std::cerr << "[sop] Failed to parse remote listing JSON" << std::endl;
+        return;
+    }
+
+    if (!root.isArray()) {
+        std::cerr << "[sop] Remote listing is not an array" << std::endl;
+        return;
+    }
+
+    int fetched = 0;
+    for (const auto& item : root) {
+        std::string type = item.get("type", "").asString();
+        std::string name = item.get("name", "").asString();
+        std::string downloadUrl = item.get("download_url", "").asString();
+
+        // Only fetch .md files
+        if (type != "file") continue;
+        if (name.size() < 4 || name.substr(name.size() - 3) != ".md") continue;
+        if (downloadUrl.empty()) continue;
+
+        // Check if we already have this file locally
+        auto localPath = m_sopsDir / name;
+        bool needFetch = true;
+
+        if (std::filesystem::exists(localPath)) {
+            // Compare size to detect updates
+            auto remoteSize = item.get("size", 0).asInt64();
+            auto localSize = std::filesystem::file_size(localPath);
+            if (remoteSize > 0 && static_cast<uintmax_t>(remoteSize) == localSize) {
+                needFetch = false;
+            }
+        }
+
+        if (!needFetch) continue;
+
+        // Download the file
+        HttpClient::Request fileReq;
+        fileReq.method = "GET";
+        fileReq.url = downloadUrl;
+        fileReq.headers["User-Agent"] = "Animus-SopStore";
+        fileReq.timeout_seconds = 15;
+
+        auto fileResp = m_httpClient->Execute(fileReq);
+        if (fileResp.status_code != 200) {
+            std::cerr << "[sop] Failed to download " << name
+                      << ": HTTP " << fileResp.status_code << std::endl;
+            continue;
+        }
+
+        // Write to local cache
+        std::ofstream ofs(localPath);
+        if (!ofs) {
+            std::cerr << "[sop] Cannot write " << localPath.string() << std::endl;
+            continue;
+        }
+        ofs << fileResp.body;
+        ofs.close();
+        fetched++;
+    }
+
+    if (fetched > 0) {
+        std::cerr << "[sop] Fetched " << fetched << " remote SOP(s)" << std::endl;
+    }
 }
 
 std::vector<SopMeta> SopStore::List(const std::string& category,

@@ -8,6 +8,8 @@
 
 namespace animus::kernel {
 
+class HttpClient;
+
 // ============================================================================
 // SopStore — catalogs and serves Standard Operating Procedure files
 // Ticket 125: SOP System
@@ -31,9 +33,14 @@ struct SopEntry {
 
 class SopStore {
 public:
-    explicit SopStore(const std::filesystem::path& sopsDir);
+    /// Construct with local sops directory and optional remote source URL.
+    /// remoteUrl should point to a GitHub contents API endpoint or similar.
+    SopStore(const std::filesystem::path& sopsDir,
+             HttpClient* httpClient = nullptr,
+             const std::string& remoteUrl = "");
 
-    /// Scan the directory and build the catalog. Called on startup.
+    /// Scan the local directory and build the catalog. Called on startup.
+    /// If a remote source is configured, fetches and caches remote SOPs first.
     void Refresh();
 
     /// List SOPs, optionally filtered by category. Paginated.
@@ -57,7 +64,13 @@ public:
 
 private:
     std::filesystem::path m_sopsDir;
+    HttpClient* m_httpClient{nullptr};
+    std::string m_remoteUrl;
+
     std::vector<SopEntry> m_entries;
+
+    /// Fetch remote SOP listing and download files to local cache.
+    void FetchRemoteSops();
 
     /// Parse YAML-like frontmatter from markdown content.
     /// Returns {frontmatter_lines, body_content}.

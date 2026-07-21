@@ -494,7 +494,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
     std::cerr << "[attachment] Store initialized" << std::endl;
 
     // --- SOP store (Ticket 125) ---
-    m_sopStore = std::make_unique<SopStore>(m_config.dataDir / "sops");
+    m_sopStore = std::make_unique<SopStore>(m_config.dataDir / "sops", &m_httpClient);
     m_sopStore->Refresh();
     std::cerr << "[sop] Store initialized" << std::endl;
 
