@@ -79,6 +79,9 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
     const auto stopSignal = request.stopSignal;
     const std::string requestedProviderOverride = request.requestedProviderOverride;
     const std::string requestedModelOverride = request.requestedModelOverride;
+    const std::string requestedReasoningEffort = request.requestedReasoningEffort;
+    const bool requestedReasoningEnabled = request.requestedReasoningEnabled;
+    const bool hasReasoningOverride = request.hasReasoningOverride;
 
     SessionManager* const sessions = m_deps.sessions;
     ChainRunner* const chainRunner = m_deps.chainRunner;
@@ -99,6 +102,7 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
         ::animus::jobs::JobLane::Cognition,
         [wsConnPtr, session, sessionId, userContent, stopSignal,
          requestedProviderOverride, requestedModelOverride,
+         requestedReasoningEffort, requestedReasoningEnabled, hasReasoningOverride,
          sessions, chainRunner, compactionService, providerRegistry, providerManager, agentStore, providerThrottle, chatMutex, agentConfig, configLookup,
          attachmentStore, attachmentTokenManager]() {
             std::string providerId = requestedProviderOverride.empty()
@@ -371,9 +375,9 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 thinkingCallback,
                 toolCallCallback,
                 nullptr,  // assistantMessageCallback (WS chat doesn't need it)
-                request.requestedReasoningEffort,
-                request.requestedReasoningEnabled,
-                request.hasReasoningOverride);
+                requestedReasoningEffort,
+                requestedReasoningEnabled,
+                hasReasoningOverride);
 
             if (result.success && sessions) {
                 sessions->FlushSession(session->Id());
