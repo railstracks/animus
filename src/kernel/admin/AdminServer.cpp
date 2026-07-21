@@ -766,19 +766,19 @@ bool AdminServer::Start(
     RefreshChatSessionServiceDependencies();
 
     // Seed WS conversation counter from existing sessions to avoid collisions after restart.
-    // Existing sessions may have conversation_id values like "ws-conversation-5";
-    // we need the next counter to be higher than any existing one.
+    // Sessions may have conversation_id values like "ws-conversation-5" or "vscode-conversation-12";
+    // we extract the numeric suffix from ALL sessions regardless of prefix.
     if (m_sessions) {
         std::uint64_t maxConvId = 0;
         for (const auto& session : m_sessions->ListSessions()) {
             const auto& convId = session->Key().conversation_id;
-            // Extract numeric suffix from "ws-conversation-N"
-            const std::string prefix = "ws-conversation-";
-            if (convId.compare(0, prefix.size(), prefix) == 0) {
+            // Extract trailing numeric suffix from any "...-N" pattern
+            const auto dashPos = convId.rfind('-');
+            if (dashPos != std::string::npos && dashPos + 1 < convId.size()) {
                 try {
                     std::size_t parsed = 0;
-                    const std::uint64_t num = std::stoull(convId.substr(prefix.size()), &parsed);
-                    if (parsed == convId.size() - prefix.size() && num > maxConvId) {
+                    const std::uint64_t num = std::stoull(convId.substr(dashPos + 1), &parsed);
+                    if (parsed == convId.size() - dashPos - 1 && num > maxConvId) {
                         maxConvId = num;
                     }
                 } catch (...) {
