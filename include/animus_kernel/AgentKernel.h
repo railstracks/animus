@@ -44,6 +44,7 @@ class AgentStore;
 class DiaryStore;
 class DiffusionStore;
 class AttachmentStore;
+class SopStore;
 class GallivantingStore;
 class SessionNotesStore;
 class SessionReportStore;
@@ -163,6 +164,7 @@ private:
     // Diffusion
     std::unique_ptr<DiffusionStore> m_diffusionStore;
     std::unique_ptr<AttachmentStore> m_attachmentStore;
+    std::unique_ptr<SopStore> m_sopStore;
 };
 
 } // namespace animus::kernel

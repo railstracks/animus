@@ -85,6 +85,8 @@
 #include "animus_kernel/DiffusionStore.h"
 #include "animus_kernel/AttachmentStore.h"
 #include "animus_kernel/tools/AttachmentTool.h"
+#include "animus_kernel/SopStore.h"
+#include "animus_kernel/tools/SopTool.h"
 
 namespace animus::kernel {
 
@@ -490,6 +492,11 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
     m_attachmentStore = std::make_unique<AttachmentStore>(m_dataStore);
     m_adminServer->SetAttachmentStore(m_attachmentStore.get());
     std::cerr << "[attachment] Store initialized" << std::endl;
+
+    // --- SOP store (Ticket 125) ---
+    m_sopStore = std::make_unique<SopStore>(m_config.dataDir / "sops");
+    m_sopStore->Refresh();
+    std::cerr << "[sop] Store initialized" << std::endl;
 
     // --- Register built-in tools ---
     RegisterBuiltinTools(m_config);
@@ -1465,6 +1472,13 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
         m_tools.Register(std::make_unique<AttachmentTool>(
             m_attachmentStore.get(), m_sessionManager));
         std::cerr << "[attachment] Tool registered" << std::endl;
+    }
+
+    // SOP tool (Ticket 125)
+    if (m_sopStore && m_sopStore->HasSops()) {
+        m_tools.Register(std::make_unique<SopTool>(
+            m_sopStore.get(), m_memoryFileStore));
+        std::cerr << "[sop] Tool registered" << std::endl;
     }
 
     std::cerr << "[kernel] Registered " << m_tools.Size() << " built-in tools" << std::endl;

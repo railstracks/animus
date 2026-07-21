@@ -320,6 +320,8 @@ add_library(animus_kernel
   src/kernel/tools/DiffusionTool.cpp
   src/kernel/attachment/AttachmentStore.cpp
   src/kernel/tools/AttachmentTool.cpp
+  src/kernel/sop/SopStore.cpp
+  src/kernel/tools/SopTool.cpp
  src/kernel/chain/CompactionService.cpp
   src/kernel/chain/CompactionSummaryGenerator.cpp
   src/kernel/tools/ToolRegistry.cpp
