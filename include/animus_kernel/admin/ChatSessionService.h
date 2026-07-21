@@ -55,6 +55,9 @@ public:
         std::shared_ptr<std::atomic<bool>> stopSignal;
         std::string requestedProviderOverride;
         std::string requestedModelOverride;
+        std::string requestedReasoningEffort;
+        bool requestedReasoningEnabled{false};
+        bool hasReasoningOverride{false};
     };
 
     void Configure(const Dependencies& deps);

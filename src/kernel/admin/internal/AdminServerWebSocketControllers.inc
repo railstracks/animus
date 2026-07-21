@@ -97,6 +97,23 @@ public:
             requestedModelOverride = payload["model_id"].asString();
         }
 
+        // Reasoning overrides (optional)
+        std::string requestedReasoningEffort;
+        bool requestedReasoningEnabled = false;
+        bool hasReasoningOverride = false;
+        if (payload.isMember("reasoning_effort")) {
+            if (!payload["reasoning_effort"].isString()) {
+                SendError(wsConnPtr, "reasoning_effort must be a string");
+                return;
+            }
+            requestedReasoningEffort = payload["reasoning_effort"].asString();
+            hasReasoningOverride = true;
+        }
+        if (payload.isMember("reasoning_enabled")) {
+            requestedReasoningEnabled = payload["reasoning_enabled"].asBool();
+            hasReasoningOverride = true;
+        }
+
         SessionId sessionId = 0;
         std::shared_ptr<Session> session;
         std::string requestedAgentId = "default";
@@ -203,6 +220,9 @@ public:
         request.stopSignal = stopSignal;
         request.requestedProviderOverride = requestedProviderOverride;
         request.requestedModelOverride = requestedModelOverride;
+        request.requestedReasoningEffort = requestedReasoningEffort;
+        request.requestedReasoningEnabled = requestedReasoningEnabled;
+        request.hasReasoningOverride = hasReasoningOverride;
 
         if (!server->m_chatSessionService.EnqueueStreamingResponse(request)) {
             SendError(wsConnPtr, "job system not available");

@@ -183,7 +183,10 @@ ChainResult ChainRunner::ExecuteOnSession(
     std::size_t contextWindowTokens,
     ChainThinkingCallback thinkingCallback,
     ChainToolCallCallback toolCallCallback,
-    ChainAssistantMessageCallback assistantMessageCallback) {
+    ChainAssistantMessageCallback assistantMessageCallback,
+    const std::string& reasoningEffortOverride,
+    bool reasoningEnabledOverride,
+    bool hasReasoningEnabledOverride) {
 
     ChainResult result;
     const auto start = std::chrono::steady_clock::now();
@@ -194,8 +197,8 @@ ChainResult ChainRunner::ExecuteOnSession(
     std::string resolvedModel = model;
     std::string resolvedSystemPrompt = systemPrompt;
     std::size_t resolvedContextWindow = contextWindowTokens;
-    bool resolvedReasoningEnabled = m_reasoningEnabled;
-    std::string resolvedReasoningEffort = m_reasoningEffort;
+    bool resolvedReasoningEnabled = hasReasoningEnabledOverride ? reasoningEnabledOverride : m_reasoningEnabled;
+    std::string resolvedReasoningEffort = !reasoningEffortOverride.empty() ? reasoningEffortOverride : m_reasoningEffort;
     std::uint32_t resolvedMaxChainSteps = m_maxChainSteps;
     std::uint32_t resolvedMaxToolCallsPerChain = m_maxToolCallsPerChain;
     if (m_agentStore && !session.AgentId().empty()) {
@@ -219,8 +222,8 @@ ChainResult ChainRunner::ExecuteOnSession(
             }
             // Identity is now provided by IdentityProvider via the context registry.
             // Do not assign agent->identity to resolvedSystemPrompt here.
-            resolvedReasoningEnabled = agent->reasoning_enabled;
-            if (!agent->reasoning_effort.empty()) resolvedReasoningEffort = agent->reasoning_effort;
+            if (!hasReasoningEnabledOverride) resolvedReasoningEnabled = agent->reasoning_enabled;
+            if (reasoningEffortOverride.empty() && !agent->reasoning_effort.empty()) resolvedReasoningEffort = agent->reasoning_effort;
             if (agent->budget.maxChainSteps > 0) resolvedMaxChainSteps = agent->budget.maxChainSteps;
             if (agent->budget.maxToolCallsPerChain > 0) resolvedMaxToolCallsPerChain = agent->budget.maxToolCallsPerChain;
 
@@ -404,7 +407,10 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     ChainToolEventCallback toolEventCallback,
     ChainThinkingCallback thinkingCallback,
     ChainToolCallCallback toolCallCallback,
-    ChainAssistantMessageCallback assistantMessageCallback) {
+    ChainAssistantMessageCallback assistantMessageCallback,
+    const std::string& reasoningEffortOverride,
+    bool reasoningEnabledOverride,
+    bool hasReasoningEnabledOverride) {
 
     ChainResult result;
     const auto start = std::chrono::steady_clock::now();
@@ -415,8 +421,8 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     std::string resolvedModel = model;
     std::string resolvedSystemPrompt = systemPrompt;
     std::size_t resolvedContextWindow = contextWindowTokens;
-    bool resolvedReasoningEnabled = m_reasoningEnabled;
-    std::string resolvedReasoningEffort = m_reasoningEffort;
+    bool resolvedReasoningEnabled = hasReasoningEnabledOverride ? reasoningEnabledOverride : m_reasoningEnabled;
+    std::string resolvedReasoningEffort = !reasoningEffortOverride.empty() ? reasoningEffortOverride : m_reasoningEffort;
     std::uint32_t resolvedMaxChainSteps = m_maxChainSteps;
     std::uint32_t resolvedMaxToolCallsPerChain = m_maxToolCallsPerChain;
     if (m_agentStore && !session.AgentId().empty()) {
@@ -440,8 +446,8 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
             }
             // Identity is now provided by IdentityProvider via the context registry.
             // Do not assign agent->identity to resolvedSystemPrompt here.
-            resolvedReasoningEnabled = agent->reasoning_enabled;
-            if (!agent->reasoning_effort.empty()) resolvedReasoningEffort = agent->reasoning_effort;
+            if (!hasReasoningEnabledOverride) resolvedReasoningEnabled = agent->reasoning_enabled;
+            if (reasoningEffortOverride.empty() && !agent->reasoning_effort.empty()) resolvedReasoningEffort = agent->reasoning_effort;
             if (agent->budget.maxChainSteps > 0) resolvedMaxChainSteps = agent->budget.maxChainSteps;
             if (agent->budget.maxToolCallsPerChain > 0) resolvedMaxToolCallsPerChain = agent->budget.maxToolCallsPerChain;
 

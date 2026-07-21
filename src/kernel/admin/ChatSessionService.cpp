@@ -369,7 +369,11 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 textCallback,
                 toolEventCallback,
                 thinkingCallback,
-                toolCallCallback);
+                toolCallCallback,
+                nullptr,  // assistantMessageCallback (WS chat doesn't need it)
+                request.requestedReasoningEffort,
+                request.requestedReasoningEnabled,
+                request.hasReasoningOverride);
 
             if (result.success && sessions) {
                 sessions->FlushSession(session->Id());

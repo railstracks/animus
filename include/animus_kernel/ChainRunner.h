@@ -103,7 +103,10 @@ public:
         std::size_t contextWindowTokens,
         ChainThinkingCallback thinkingCallback = nullptr,
         ChainToolCallCallback toolCallCallback = nullptr,
-        ChainAssistantMessageCallback assistantMessageCallback = nullptr);
+        ChainAssistantMessageCallback assistantMessageCallback = nullptr,
+        const std::string& reasoningEffortOverride = "",
+        bool reasoningEnabledOverride = false,
+        bool hasReasoningEnabledOverride = false);
 
     ChainResult ExecuteStreamingOnSession(
         SessionAccess& session,
@@ -118,7 +121,10 @@ public:
         ChainToolEventCallback toolEventCallback = nullptr,
         ChainThinkingCallback thinkingCallback = nullptr,
         ChainToolCallCallback toolCallCallback = nullptr,
-        ChainAssistantMessageCallback assistantMessageCallback = nullptr);
+        ChainAssistantMessageCallback assistantMessageCallback = nullptr,
+        const std::string& reasoningEffortOverride = "",
+        bool reasoningEnabledOverride = false,
+        bool hasReasoningEnabledOverride = false);
 
     // Set the agent store for per-agent tool filtering.
     void SetAgentStore(AgentStore* store) { m_agentStore = store; }
