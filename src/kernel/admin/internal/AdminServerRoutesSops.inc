@@ -129,7 +129,13 @@
                     }
                 }
 
-                int64_t agentId = requestBody.get("agent_id", 0).asInt64();
+                int64_t agentId = 0;
+                const auto& av = requestBody.get("agent_id", Json::Value(0));
+                if (av.isNumeric()) {
+                    agentId = av.asInt64();
+                } else if (av.isString()) {
+                    try { agentId = std::stoll(av.asString()); } catch (...) {}
+                }
                 if (agentId == 0) {
                     Json::Value err;
                     err["error"] = "Missing required field: agent_id";
