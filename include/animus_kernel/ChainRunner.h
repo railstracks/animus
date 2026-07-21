@@ -92,6 +92,7 @@ public:
         ChainToolEventCallback toolEventCallback = nullptr);
 
     // Lower-level: execute on an already-resolved session.
+    // Callbacks are per-invocation — they fire only for this call.
     ChainResult ExecuteOnSession(
         SessionAccess& session,
         const std::string& userMessage,
@@ -99,7 +100,10 @@ public:
         const std::string& providerId,
         const std::string& configId,
         const std::string& model,
-        std::size_t contextWindowTokens);
+        std::size_t contextWindowTokens,
+        ChainThinkingCallback thinkingCallback = nullptr,
+        ChainToolCallCallback toolCallCallback = nullptr,
+        ChainAssistantMessageCallback assistantMessageCallback = nullptr);
 
     ChainResult ExecuteStreamingOnSession(
         SessionAccess& session,
@@ -111,7 +115,10 @@ public:
         std::size_t contextWindowTokens,
         llm::LLMTokenCallback tokenCallback,
         ChainTextCallback textCallback = nullptr,
-        ChainToolEventCallback toolEventCallback = nullptr);
+        ChainToolEventCallback toolEventCallback = nullptr,
+        ChainThinkingCallback thinkingCallback = nullptr,
+        ChainToolCallCallback toolCallCallback = nullptr,
+        ChainAssistantMessageCallback assistantMessageCallback = nullptr);
 
     // Set the agent store for per-agent tool filtering.
     void SetAgentStore(AgentStore* store) { m_agentStore = store; }
@@ -150,16 +157,6 @@ public:
     llm::LLMProviderRegistry& GetProviders() { return m_providers; }
     const ProviderConfigLookup& GetConfigLookup() const { return m_configLookup; }
 
-    // Set the thinking callback — receives native thinking content as it streams.
-    void SetThinkingCallback(ChainThinkingCallback cb) { m_thinkingCallback = std::move(cb); }
-
-    // Set the tool call notification callback — receives ToolCall before execution.
-    void SetToolCallCallback(ChainToolCallCallback cb) { m_toolCallCallback = std::move(cb); }
-
-    // Set the assistant message callback — fires for each user-visible assistant
-    // message produced during the chain (not thinking blocks or tool calls).
-    void SetAssistantMessageCallback(ChainAssistantMessageCallback cb) { m_assistantMessageCallback = std::move(cb); }
-
 private:
     std::unique_ptr<llm::ILLMProvider> CreateProvider(
         const std::string& providerId,
@@ -195,7 +192,8 @@ private:
         std::string& userVisibleText,
         std::string& toolOutputText,
         int& toolCallsExecuted,
-        ChainToolEventCallback toolEventCallback = nullptr);
+        ChainToolEventCallback toolEventCallback = nullptr,
+        ChainToolCallCallback toolCallCallback = nullptr);
 
     std::vector<llm::LLMToolDef> GetToolDefinitionsForRequest() const;
 
@@ -233,19 +231,10 @@ private:
     // Message queue for interjection (may be null if not set)
     MessageQueue* m_messageQueue{nullptr};
 
-    // Thinking mode (replaces old reasoning mode)
+    // Thinking mode
     bool m_reasoningEnabled{false};
     std::string m_reasoningEffort{"high"};
     std::string m_reasoningInstruction; // Kept for API compat, not injected into prompts
-
-    // Thinking callback — receives native thinking content
-    ChainThinkingCallback m_thinkingCallback;
-
-    // Tool call notification callback — fires before each tool execution.
-    ChainToolCallCallback m_toolCallCallback;
-
-    // Assistant message callback — fires for each user-visible message in the chain.
-    ChainAssistantMessageCallback m_assistantMessageCallback;
 
     // Chain budgets
     std::uint32_t m_maxChainSteps{200};

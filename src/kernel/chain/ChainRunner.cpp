@@ -180,7 +180,10 @@ ChainResult ChainRunner::ExecuteOnSession(
     const std::string& providerId,
     const std::string& configId,
     const std::string& model,
-    std::size_t contextWindowTokens) {
+    std::size_t contextWindowTokens,
+    ChainThinkingCallback thinkingCallback,
+    ChainToolCallCallback toolCallCallback,
+    ChainAssistantMessageCallback assistantMessageCallback) {
 
     ChainResult result;
     const auto start = std::chrono::steady_clock::now();
@@ -323,8 +326,8 @@ ChainResult ChainRunner::ExecuteOnSession(
         }
 
         // Deliver thinking content to callback
-        if (!response.thinking_content.empty() && m_thinkingCallback) {
-            m_thinkingCallback(response.thinking_content);
+        if (!response.thinking_content.empty() && thinkingCallback) {
+            thinkingCallback(response.thinking_content);
         }
 
         // Process response: store turns, execute tools
@@ -334,7 +337,8 @@ ChainResult ChainRunner::ExecuteOnSession(
         bool shouldContinue = ProcessResponse(
             session, response, response.content,
             response.thinking_content,
-            toolResultMessages, userVisibleText, toolOutputText, toolCallsThisStep);
+            toolResultMessages, userVisibleText, toolOutputText, toolCallsThisStep,
+            nullptr, toolCallCallback);
 
         totalToolCalls += toolCallsThisStep;
         result.tool_calls_executed = totalToolCalls;
@@ -348,8 +352,8 @@ ChainResult ChainRunner::ExecuteOnSession(
 
         if (!userVisibleText.empty()) {
             result.response = userVisibleText;
-            if (m_assistantMessageCallback) {
-                m_assistantMessageCallback(userVisibleText);
+            if (assistantMessageCallback) {
+                assistantMessageCallback(userVisibleText);
             }
         }
 
@@ -397,7 +401,10 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     std::size_t contextWindowTokens,
     llm::LLMTokenCallback tokenCallback,
     ChainTextCallback textCallback,
-    ChainToolEventCallback toolEventCallback) {
+    ChainToolEventCallback toolEventCallback,
+    ChainThinkingCallback thinkingCallback,
+    ChainToolCallCallback toolCallCallback,
+    ChainAssistantMessageCallback assistantMessageCallback) {
 
     ChainResult result;
     const auto start = std::chrono::steady_clock::now();
@@ -531,11 +538,11 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         //   - non-thinking tokens (content) → regular token callback (user-visible)
         std::string accumulatedThinking;
         llm::LLMTokenCallback stepTokenCallback;
-        if (m_thinkingCallback) {
-            stepTokenCallback = [this, tokenCallback, &accumulatedThinking](const llm::LLMToken& token) {
+        if (thinkingCallback) {
+            stepTokenCallback = [thinkingCallback, tokenCallback, &accumulatedThinking](const llm::LLMToken& token) {
                 if (token.is_thinking) {
                     accumulatedThinking += token.content;
-                    m_thinkingCallback(token.content);
+                    thinkingCallback(token.content);
                 } else if (tokenCallback) {
                     tokenCallback(token);
                 }
@@ -597,7 +604,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
               session, response, response.content,
               accumulatedThinking,
               toolResultMessages, userVisibleText, toolOutputText, toolCallsThisStep,
-              toolEventCallback);
+              toolEventCallback, toolCallCallback);
         } catch (const std::exception& e) {
           std::cerr << "[chain/stream] EXCEPTION in ProcessResponse: " << e.what() << std::endl;
           result.error = std::string("ProcessResponse exception: ") + e.what();
@@ -622,8 +629,8 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         }
         if (!userVisibleText.empty()) {
             result.response = userVisibleText;
-            if (m_assistantMessageCallback) {
-                m_assistantMessageCallback(userVisibleText);
+            if (assistantMessageCallback) {
+                assistantMessageCallback(userVisibleText);
             }
         }
 
@@ -741,7 +748,8 @@ bool ChainRunner::ProcessResponse(
     std::string& userVisibleText,
     std::string& toolOutputText,
     int& toolCallsExecuted,
-    ChainToolEventCallback toolEventCallback) {
+    ChainToolEventCallback toolEventCallback,
+    ChainToolCallCallback toolCallCallback) {
 
     std::cerr << "[chain] ProcessResponse: tool_calls=" << response.tool_calls.size()
               << " content_len=" << content.size()
@@ -816,8 +824,8 @@ bool ChainRunner::ProcessResponse(
         }
 
         // Notify before execution (for real-time UI feedback)
-        if (m_toolCallCallback) {
-            m_toolCallCallback(tc);
+        if (toolCallCallback) {
+            toolCallCallback(tc);
         }
 
         if (!nodeName.empty() && m_nodeManager) {

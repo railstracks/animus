@@ -357,9 +357,6 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 }
             }
 
-            chainRunner->SetThinkingCallback(thinkingCallback);
-            chainRunner->SetToolCallCallback(toolCallCallback);
-
             auto result = chainRunner->ExecuteStreamingOnSession(
                 sessionAccess,
                 userContent,
@@ -370,12 +367,9 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 contextWindow,
                 tokenCallback,
                 textCallback,
-                toolEventCallback);
-
-            // Clear singleton callbacks so consolidation/scheduler chains
-            // don't fire them against a stale wsConnPtr.
-            chainRunner->SetThinkingCallback(nullptr);
-            chainRunner->SetToolCallCallback(nullptr);
+                toolEventCallback,
+                thinkingCallback,
+                toolCallCallback);
 
             if (result.success && sessions) {
                 sessions->FlushSession(session->Id());

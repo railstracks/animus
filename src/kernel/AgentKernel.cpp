@@ -1298,12 +1298,12 @@ void AgentKernel::ExecuteChannelDispatch(
     m_jobs.EnqueueInLane(
         ::animus::jobs::JobLane::Cognition,
         [this, session, sessionKey, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval]() {
-            // Set up per-message callback so each assistant message is sent
-            // to the channel immediately, not just the final response.
-            m_chainRunner->SetAssistantMessageCallback(
+            // Per-message callback: send each assistant message to the channel
+            // immediately rather than only the final response.
+            ChainAssistantMessageCallback assistantCb =
                 [this, replyTarget](const std::string& text) {
                     SendAutoReply(replyTarget, text);
-                });
+                };
 
             auto sessionAccess = SessionAccess(session, SessionAccessMode::ReadWrite);
             auto result = m_chainRunner->ExecuteOnSession(
@@ -1313,10 +1313,11 @@ void AgentKernel::ExecuteChannelDispatch(
                 registryKey,
                 providerId,
                 model,
-                contextWindow);
+                contextWindow,
+                nullptr,      // thinkingCallback
+                nullptr,      // toolCallCallback
+                assistantCb); // assistantMessageCallback
 
-            // Clear callback after chain completes
-            m_chainRunner->SetAssistantMessageCallback(nullptr);
             if (result.success && m_sessionManager) {
                 m_sessionManager->FlushSession(session->Id());
 
