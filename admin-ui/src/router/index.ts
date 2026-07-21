@@ -22,6 +22,7 @@ import PromptLogsView from '../views/PromptLogsView.vue';
 import LoginView from '../views/LoginView.vue';
 import UsersView from '../views/UsersView.vue';
 import DiffusionView from '../views/DiffusionView.vue';
+import SopsView from '../views/SopsView.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -48,6 +49,7 @@ const router = createRouter({
     { path: '/prompt-logs', name: 'prompt-logs', component: PromptLogsView },
    { path: '/users', name: 'users', component: UsersView },
     { path: '/diffusion', name: 'diffusion', component: DiffusionView },
+    { path: '/sops', name: 'sops', component: SopsView },
  ]
 });
 

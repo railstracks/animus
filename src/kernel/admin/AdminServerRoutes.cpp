@@ -85,4 +85,8 @@ void AdminServer::RegisterRoutesDiffusion() {
 #include "kernel/admin/internal/AdminServerRoutesDiffusion.inc"
 }
 
+void AdminServer::RegisterRoutesSops() {
+#include "kernel/admin/internal/AdminServerRoutesSops.inc"
+}
+
 } // namespace animus::kernel

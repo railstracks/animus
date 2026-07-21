@@ -35,6 +35,7 @@
 #include "animus_kernel/DiffusionStore.h"
 #include "animus_kernel/AttachmentStore.h"
 #include "animus_kernel/AttachmentTokenManager.h"
+#include "animus_kernel/SopStore.h"
 
 namespace animus::kernel {
 
@@ -210,6 +211,7 @@ public:
     void SetDiffusionStore(DiffusionStore* store) { m_diffusionStore = store; }
     // Attachments
     void SetAttachmentStore(AttachmentStore* store) { m_attachmentStore = store; }
+    void SetSopStore(SopStore* store) { m_sopStore = store; }
     AttachmentTokenManager m_attachmentTokens;
     AttachmentTokenManager& GetAttachmentTokenManager() { return m_attachmentTokens; }
     DiaryManager& GetDiaryManager() { return m_diaryManager; }
@@ -270,6 +272,7 @@ private:
     void RegisterRoutesPromptLogs();
     void RegisterRoutesAuth();
     void RegisterRoutesDiffusion();
+    void RegisterRoutesSops();
     void SyncIrcInterfaces();
     void RefreshChatSessionServiceDependencies();
 
@@ -289,6 +292,8 @@ private:
     DiffusionStore* m_diffusionStore{nullptr};
     // Attachments
     AttachmentStore* m_attachmentStore{nullptr};
+    // SOPs
+    SopStore* m_sopStore{nullptr};
 };
 
 } // namespace animus::kernel

@@ -21,6 +21,7 @@ export const sidebar = {
       diary: 'Diary',
       logs: 'Logs',
       users: 'Users',
-      diffusion: 'Diffusion'
+      diffusion: 'Diffusion',
+      sops: 'SOPs',
     }
   } as const;

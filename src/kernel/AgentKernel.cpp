@@ -496,6 +496,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
     // --- SOP store (Ticket 125) ---
     m_sopStore = std::make_unique<SopStore>(m_config.dataDir / "sops", &m_httpClient);
     m_sopStore->Refresh();
+    m_adminServer->SetSopStore(m_sopStore.get());
     std::cerr << "[sop] Store initialized" << std::endl;
 
     // --- Register built-in tools ---
