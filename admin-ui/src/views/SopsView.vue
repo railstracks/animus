@@ -184,8 +184,8 @@ async function loadAgents() {
     const data = await resp.json();
     const list = data.agents || data;
     agents.value = (Array.isArray(list) ? list : []).map((a: any) => ({
-      id: a.id || a.agent_id,
-      name: a.name || a.id || a.agent_id,
+      id: a.numeric_id ?? a.id,
+      name: a.name || a.id,
     }));
   } catch (e) {
     console.error('Failed to load agents:', e);
