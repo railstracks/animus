@@ -255,14 +255,15 @@ bool ChannelManager::UpdateChannelConfig(const std::string& name,
         m_channels[name].config = config;
     }
 
+    // Re-sync credential keys into AgentConfigStore BEFORE enqueuing restart
+    // so the adapter reads fresh credentials when it starts.
+    SyncChannelCredentialsToConfigStore(name, state.type, config);
+
     // Restart the channel with new config (async to avoid blocking HTTP handler)
     if (m_running && state.enabled) {
         state.config = config;
         EnqueueRestart(name, state);
     }
-
-    // Re-sync credential keys into AgentConfigStore
-    SyncChannelCredentialsToConfigStore(name, state.type, config);
 
     return true;
 }
