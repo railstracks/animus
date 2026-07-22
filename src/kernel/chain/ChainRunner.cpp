@@ -1129,8 +1129,9 @@ std::vector<llm::LLMToolDef> ChainRunner::GetToolDefinitionsForSession(
             defs.push_back(def);
         } else {
             // Only available in listed session types
+            // "default" matches empty session_type (normal chat sessions)
             for (const auto& st : td.session_types) {
-                if (st == session_type) {
+                if (st == session_type || (st == "default" && session_type.empty())) {
                     defs.push_back(def);
                     break;
                 }

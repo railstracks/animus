@@ -195,27 +195,44 @@ MemoryFile MemoryFileStore::CreateFile(const MemoryFile& file) {
     const int64_t createdAt = file.created_at_unix_ms > 0 ? file.created_at_unix_ms : now;
     const int64_t importedAt = file.imported_at_unix_ms > 0 ? file.imported_at_unix_ms : now;
 
-    auto stmt = m_store->Prepare(
-        "INSERT INTO memory_files "
-        "(source_path, file_type, content, content_mutable, agent_id, superseded, created_at_unix_ms, imported_at_unix_ms, status) "
-        "VALUES (?,?,?,?,?,?,?,?,?)");
-    if (!stmt) return {};
-    stmt->BindText(1, file.source_path);
-    stmt->BindInt64(2, FileTypeToInt(file.file_type));
-    stmt->BindText(3, file.content);
-    stmt->BindInt(4, file.content_mutable ? 1 : 0);
-    stmt->BindInt64(5, file.agent_id);
-    stmt->BindInt(6, file.superseded ? 1 : 0);
-    stmt->BindInt64(7, createdAt);
-    stmt->BindInt64(8, importedAt);
-    stmt->BindInt(9, static_cast<int64_t>(file.status));
-    stmt->Step();
-    if (!DidWriteRows(m_store)) {
-        std::cerr << "[memory_files] create failed: " << m_store->ErrMsg() << std::endl;
+    int64_t newId = 0;
+    {
+        auto stmt = m_store->Prepare(
+            "INSERT INTO memory_files "
+            "(source_path, file_type, content, content_mutable, agent_id, superseded, created_at_unix_ms, imported_at_unix_ms, status) "
+            "VALUES (?,?,?,?,?,?,?,?,?)");
+        if (!stmt) return {};
+        stmt->BindText(1, file.source_path);
+        stmt->BindInt64(2, FileTypeToInt(file.file_type));
+        stmt->BindText(3, file.content);
+        stmt->BindInt(4, file.content_mutable ? 1 : 0);
+        stmt->BindInt64(5, file.agent_id);
+        stmt->BindInt(6, file.superseded ? 1 : 0);
+        stmt->BindInt64(7, createdAt);
+        stmt->BindInt64(8, importedAt);
+        stmt->BindInt(9, static_cast<int64_t>(file.status));
+        stmt->Step();
+        if (!DidWriteRows(m_store)) {
+            std::cerr << "[memory_files] create failed: " << m_store->ErrMsg() << std::endl;
+            return {};
+        }
+        newId = m_store->LastInsertRowId();
+        // stmt destroyed here — releases statement before GetFile reuses the connection
+    }
+
+    if (newId <= 0) {
+        std::cerr << "[memory_files] LastInsertRowId returned " << newId
+                  << " after successful insert" << std::endl;
         return {};
     }
 
-    return GetFile(m_store->LastInsertRowId()).value_or(MemoryFile{});
+    auto result = GetFile(newId);
+    if (!result) {
+        std::cerr << "[memory_files] GetFile(" << newId
+                  << ") returned nullopt after insert" << std::endl;
+        return {};
+    }
+    return *result;
 }
 
 std::optional<MemoryFile> MemoryFileStore::GetFile(int64_t id) {
