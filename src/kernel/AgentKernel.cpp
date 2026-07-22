@@ -55,6 +55,8 @@
 #include "animus_kernel/tools/NodeTool.h"
 #include "animus_kernel/tools/ShellExecTool.h"
 #include "animus_kernel/tools/WebFetchTool.h"
+#include "animus_kernel/tools/StoredLinksTool.h"
+#include "animus_kernel/tools/RssTool.h"
 #include "animus_kernel/tools/WebSearchTool.h"
 #include "animus_kernel/tools/DiaryTool.h"
 #include "animus_kernel/tools/AgentTool.h"
@@ -468,6 +470,47 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                     m_config.search.default_count = searchJson["default_count"].asInt();
                 if (searchJson.isMember("rate_limit_per_minute") && m_config.search.rate_limit_per_minute == 10)
                     m_config.search.rate_limit_per_minute = searchJson["rate_limit_per_minute"].asInt();
+            }
+        }
+
+        // Load stored_links and rss_feeds from persisted config (if not set via CLI)
+        {
+            std::string persistedLinks = m_configStore->Get("__kernel__", "stored_links");
+            if (!persistedLinks.empty() && m_config.stored_links.empty()) {
+                Json::Value linksJson;
+                Json::CharReaderBuilder reader;
+                std::istringstream ss(persistedLinks);
+                std::string errs;
+                if (Json::parseFromStream(reader, ss, &linksJson, &errs) && linksJson.isArray()) {
+                    for (const auto& item : linksJson) {
+                        KernelConfig::StoredLinkConfig sl;
+                        sl.id = item.get("id", "").asString();
+                        sl.label = item.get("label", "").asString();
+                        sl.url = item.get("url", "").asString();
+                        if (!sl.id.empty() && !sl.url.empty()) {
+                            m_config.stored_links.push_back(std::move(sl));
+                        }
+                    }
+                }
+            }
+
+            std::string persistedFeeds = m_configStore->Get("__kernel__", "rss_feeds");
+            if (!persistedFeeds.empty() && m_config.rss_feeds.empty()) {
+                Json::Value feedsJson;
+                Json::CharReaderBuilder reader;
+                std::istringstream ss(persistedFeeds);
+                std::string errs;
+                if (Json::parseFromStream(reader, ss, &feedsJson, &errs) && feedsJson.isArray()) {
+                    for (const auto& item : feedsJson) {
+                        KernelConfig::RssFeedConfig rf;
+                        rf.id = item.get("id", "").asString();
+                        rf.label = item.get("label", "").asString();
+                        rf.url = item.get("url", "").asString();
+                        if (!rf.id.empty() && !rf.url.empty()) {
+                            m_config.rss_feeds.push_back(std::move(rf));
+                        }
+                    }
+                }
             }
         }
 
@@ -1402,6 +1445,25 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
     // Web tools — share the kernel's HttpClient
     m_tools.Register(std::make_unique<HttpTool>(m_httpClient));
     m_tools.Register(std::make_unique<WebFetchTool>(m_httpClient));
+
+    // Stored links tool — pre-configured HTTP endpoints (ticket 127)
+    if (!m_config.stored_links.empty()) {
+        std::vector<StoredLinksTool::StoredLink> links;
+        for (const auto& sl : m_config.stored_links) {
+            links.push_back({sl.id, sl.label, sl.url});
+        }
+        m_tools.Register(std::make_unique<StoredLinksTool>(m_httpClient, std::move(links)));
+    }
+
+    // RSS tool — pre-configured feeds (ticket 127)
+    if (!m_config.rss_feeds.empty()) {
+        std::vector<RssTool::RssFeed> feeds;
+        for (const auto& rf : m_config.rss_feeds) {
+            feeds.push_back({rf.id, rf.label, rf.url});
+        }
+        m_tools.Register(std::make_unique<RssTool>(m_httpClient, std::move(feeds)));
+    }
+
     m_tools.Register(std::make_unique<EmailTool>(m_httpClient, m_configStore));
 
     // Web Search tool (ticket 069) — Brave provider

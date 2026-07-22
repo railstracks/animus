@@ -1,4 +1,4 @@
-# Ticket 127: JSON Fetch Tool + RSS Tool
+# Ticket 127: Stored Links Tool + RSS Tool
 
 **Status:** Draft
 **Date:** 2026-07-22
@@ -10,25 +10,25 @@ Agents need structured data from external sources for analysis workflows (market
 
 Two gaps:
 
-1. **Structured JSON data** — Many data sources return JSON. `web_fetch` discards structure by extracting readable text. Agents need the raw JSON to reason about fields, values, and relationships. A generic tool that fetches JSON from pre-configured endpoints would let agents pull structured data (indicators, metrics, API responses) without hardcoding URLs in prompts.
+1. **Pre-configured HTTP endpoints** — Many data sources return structured data (JSON, CSV, etc.). `web_fetch` discards structure by extracting readable text. A generic tool that fetches pre-configured HTTP links by identifier would let agents pull structured responses without hardcoding URLs in prompts. The operator curates which endpoints are available; the agent selects by name.
 
 2. **RSS/news feeds** — News aggregation is a common analysis input. Agents need itemized feed results with metadata (title, link, date, paywall indication) rather than raw XML. Configurable RSS feeds let operators define which sources are available without the agent guessing URLs.
 
 ## Design
 
-### Tool 1: `json_fetch`
+### Tool 1: `stored_links`
 
-**Purpose:** Fetch JSON data from pre-configured stored links. The agent selects from available stored links by identifier; the tool fetches the URL and returns the raw JSON response.
+**Purpose:** Fetch HTTP responses from pre-configured stored links. The agent selects from available stored links by identifier; the tool fetches the URL and returns the raw response.
 
 **Why stored links instead of freeform URLs:**
 - Operators control which endpoints are available (security, rate limiting)
 - Agent doesn't need to know URL templates or API keys
 - Configuration defines human-readable identifiers ("sp500-4h") that map to full URLs
-- Keeps the tool domain-agnostic — anything that returns JSON works
+- Keeps the tool domain-agnostic — any HTTP endpoint works
 
 **Configuration:**
 
-Stored links are configured in `KernelConfig` (or AgentConfigStore):
+Stored links are configured in `KernelConfig`:
 
 ```json
 {
@@ -36,12 +36,12 @@ Stored links are configured in `KernelConfig` (or AgentConfigStore):
     {
       "id": "sp500-4h",
       "label": "S&P 500 Index, 4-Hour Intervals",
-      "url": "https://scanner.tradingview.com/symbol?symbol=SP%3AIVX&fields=Recommend.All,RSI,change|4h,...&interval=4h"
+      "url": "https://example.com/api?symbol=SPX&interval=4h"
     },
     {
       "id": "sp500-1h",
       "label": "S&P 500 Index, 1-Hour Intervals",
-      "url": "https://scanner.tradingview.com/symbol?symbol=SP%3AIVX&fields=...&interval=1h"
+      "url": "https://example.com/api?symbol=SPX&interval=1h"
     }
   ]
 }
@@ -51,8 +51,8 @@ Stored links are configured in `KernelConfig` (or AgentConfigStore):
 
 ```json
 {
-  "name": "json_fetch",
-  "description": "Fetch JSON data from pre-configured stored links. Returns the raw JSON response.",
+  "name": "stored_links",
+  "description": "Fetch pre-configured HTTP links by identifier. Returns the raw response content.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -67,15 +67,15 @@ Stored links are configured in `KernelConfig` (or AgentConfigStore):
 ```
 
 **Behavior:**
-- `json_fetch("list")` — returns a list of available stored links with id, label
-- `json_fetch("sp500-4h")` — fetches the URL, returns raw JSON response
-- If the response isn't valid JSON, returns an error message
+- `stored_links("list")` — returns a list of available stored links with id, label
+- `stored_links("sp500-4h")` — fetches the URL, returns raw response body
+- Content-Type header is included in the result so the agent knows what format came back
 - Uses the existing `HttpClient` with SSRF protection (inherited from framework)
 - Timeout: 15s default, configurable
 
 **Session types:** `["default"]` — available in normal chat sessions.
 
-**No freeform URL parameter:** The tool only fetches pre-configured URLs. This is deliberate — it prevents prompt injection from causing the agent to fetch arbitrary internal endpoints, and it keeps the tool domain-agnostic.
+**No freeform URL parameter:** The tool only fetches pre-configured URLs. This is deliberate — it prevents prompt injection from causing the agent to fetch arbitrary internal endpoints.
 
 ### Tool 2: `rss`
 
@@ -139,15 +139,14 @@ RSS feeds are configured in `KernelConfig`:
 ## Scope
 
 ### New files:
-- `include/animus_kernel/JsonFetchTool.h`
-- `src/kernel/tools/JsonFetchTool.cpp`
+- `include/animus_kernel/StoredLinksTool.h`
+- `src/kernel/tools/StoredLinksTool.cpp`
 - `include/animus_kernel/RssTool.h`
 - `src/kernel/tools/RssTool.cpp`
 
 ### Modified files:
 - `include/animus_kernel/KernelConfig.h` — add `stored_links` and `rss_feeds` config fields
 - `src/kernel/AgentKernel.cpp` — register both tools
-- `src/kernel/chain/ChainRunner.cpp` — tool definitions (if needed)
 
 ### No admin UI changes in this phase:
 - Configuration via KernelConfig JSON (manual edit for now)
@@ -156,8 +155,8 @@ RSS feeds are configured in `KernelConfig`:
 ## Testing
 
 1. Configure 8 stored links at different intervals for a target symbol
-2. Agent calls `json_fetch("list")` — sees all 8
-3. Agent calls `json_fetch("sp500-4h")` — gets JSON response with indicator fields
+2. Agent calls `stored_links("list")` — sees all 8
+3. Agent calls `stored_links("sp500-4h")` — gets response with content and content-type
 4. Configure 2-3 RSS feeds
 5. Agent calls `rss()` — gets merged, sorted items from all feeds
 6. Agent calls `rss("market-news", 5)` — gets 5 items from one feed

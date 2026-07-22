@@ -199,6 +199,18 @@ struct KernelConfig {
         int rate_limit_per_minute{10};
     };
 
+    struct StoredLinkConfig {
+        std::string id;
+        std::string label;
+        std::string url;
+    };
+
+    struct RssFeedConfig {
+        std::string id;
+        std::string label;
+        std::string url;
+    };
+
     // Job system
     jobs::JobSystemConfig jobSystemConfig{};
 
@@ -227,6 +239,8 @@ struct KernelConfig {
     FileConfig file{};
     ShellConfig shell{};
     SearchConfig search{};
+    std::vector<StoredLinkConfig> stored_links{};
+    std::vector<RssFeedConfig> rss_feeds{};
     std::vector<InterfaceModuleInfo> interfaceModules{};
 
     // Storage backend configuration
