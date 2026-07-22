@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -322,6 +324,19 @@ private:
         const std::string& channelName,
         bool connected,
         std::uint64_t eventUnixMs);
+
+    // --- Async restart queue ---
+    // Channel restarts are enqueued and processed by a background thread
+    // to avoid blocking HTTP handlers (which caused Drogon response errors).
+    struct PendingRestart {
+        std::string channel_name;
+        ChannelState state;
+    };
+    std::mutex m_restartMutex;
+    std::vector<PendingRestart> m_pendingRestarts;
+    std::atomic<bool> m_restartThreadRunning{false};
+    void EnqueueRestart(const std::string& name, const ChannelState& state);
+    void ProcessPendingRestarts();
 
     // --- Config helpers ---
     void LoadChannelsFromConfigStore();

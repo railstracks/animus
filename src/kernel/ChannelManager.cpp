@@ -212,9 +212,9 @@ bool ChannelManager::CreateChannel(const ChannelState& state, std::string* error
         m_channels[state.name] = state;
     }
 
-    // Auto-start if enabled
+    // Auto-start if enabled (async to avoid blocking HTTP handler)
     if (state.enabled && m_running) {
-        StartChannel(state);
+        EnqueueRestart(state.name, state);
     }
 
     // Sync credential keys from ChannelState.config into AgentConfigStore
@@ -255,11 +255,10 @@ bool ChannelManager::UpdateChannelConfig(const std::string& name,
         m_channels[name].config = config;
     }
 
-    // Restart the channel with new config
+    // Restart the channel with new config (async to avoid blocking HTTP handler)
     if (m_running && state.enabled) {
-        StopChannel(name);
         state.config = config;
-        StartChannel(state);
+        EnqueueRestart(name, state);
     }
 
     // Re-sync credential keys into AgentConfigStore
@@ -302,6 +301,7 @@ bool ChannelManager::SetChannelEnabled(const std::string& name, bool enabled,
             return false;
         }
         state = it->second;
+        state.enabled = enabled;
         it->second.enabled = enabled;
     }
 
@@ -311,11 +311,9 @@ bool ChannelManager::SetChannelEnabled(const std::string& name, bool enabled,
     }
 
     if (m_running) {
-        if (enabled) {
-            StartChannel(state);
-        } else {
-            StopChannel(name);
-        }
+        // Enqueue async restart — StopChannel is called, then StartChannel
+        // only if state.enabled is true. Handles both enable and disable.
+        EnqueueRestart(name, state);
     }
 
     return true;
@@ -352,6 +350,12 @@ void ChannelManager::Shutdown() {
     if (!m_running) return;
     m_running = false;
     m_stopRequested = true;
+
+    // Clear pending restarts so the restart thread doesn't race with shutdown
+    {
+        std::lock_guard<std::mutex> lock(m_restartMutex);
+        m_pendingRestarts.clear();
+    }
 
     // Stop all poller threads
     {
@@ -396,9 +400,13 @@ bool ChannelManager::RestartChannel(const std::string& name, std::string* error)
         }
         state = it->second;
     }
-    StopChannel(name);
-    if (state.enabled) {
-        StartChannel(state);
+    if (m_running) {
+        EnqueueRestart(name, state);
+    } else {
+        StopChannel(name);
+        if (state.enabled) {
+            StartChannel(state);
+        }
     }
     return true;
 }
@@ -976,6 +984,53 @@ void ChannelManager::SyncIrcStatusCallback(
     if (it != m_channels.end()) {
         it->second.connected = connected;
         it->second.lastEventUnixMs = eventUnixMs;
+    }
+}
+
+// ============================================================================
+// Async restart queue — processes channel restarts off the HTTP handler thread
+// ============================================================================
+
+void ChannelManager::EnqueueRestart(const std::string& name,
+                                     const ChannelState& state) {
+    {
+        std::lock_guard<std::mutex> lock(m_restartMutex);
+        // Coalesce: remove any existing pending restart for this channel
+        m_pendingRestarts.erase(
+            std::remove_if(m_pendingRestarts.begin(), m_pendingRestarts.end(),
+                [&](const PendingRestart& r) { return r.channel_name == name; }),
+            m_pendingRestarts.end());
+        m_pendingRestarts.push_back({name, state});
+    }
+    // Spawn worker thread if not already running
+    if (!m_restartThreadRunning.exchange(true)) {
+        std::thread(&ChannelManager::ProcessPendingRestarts, this).detach();
+    }
+}
+
+void ChannelManager::ProcessPendingRestarts() {
+    while (true) {
+        PendingRestart restart;
+        {
+            std::lock_guard<std::mutex> lock(m_restartMutex);
+            if (m_pendingRestarts.empty()) {
+                m_restartThreadRunning = false;
+                break;
+            }
+            restart = std::move(m_pendingRestarts.front());
+            m_pendingRestarts.erase(m_pendingRestarts.begin());
+        }
+
+        // Stop the old channel instance
+        StopChannel(restart.channel_name);
+
+        // Brief pause to allow socket/file cleanup to complete
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+        // Start with new config (only if still enabled)
+        if (restart.state.enabled) {
+            StartChannel(restart.state);
+        }
     }
 }
 
