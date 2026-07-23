@@ -6,15 +6,8 @@ import { useI18n } from 'vue-i18n';
 const { t } = useI18n();
 const { currentKey, themes, setTheme } = useAppTheme();
 
-const themeItems = themes.map(t => ({ title: t.label, value: t.key }));
-
-// Local ref that Vuetify's v-select owns completely
 const localSelected = ref(currentKey.value);
-
-// Sync local when external theme changes
 watch(currentKey, (val) => { localSelected.value = val; });
-
-// Apply theme when local changes (from select click)
 watch(localSelected, (val) => {
   if (typeof val === 'string' && val !== currentKey.value) setTheme(val);
 });
@@ -27,14 +20,15 @@ watch(localSelected, (val) => {
     <!-- Theme selector -->
     <v-card variant="tonal" class="mb-6 pa-4" max-width="500">
       <div class="text-subtitle-1 mb-3">{{ t('theme.selectLabel', 'Application Theme') }}</div>
-      <v-select
-        v-model="localSelected"
-        :items="themeItems"
-        :label="t('theme.selectLabel', 'Application Theme')"
-        density="compact"
-        variant="outlined"
-        hide-details
-      />
+      <v-radio-group v-model="localSelected" density="compact" hide-details>
+        <v-radio
+          v-for="theme in themes"
+          :key="theme.key"
+          :value="theme.key"
+          :label="theme.label"
+          color="primary"
+        />
+      </v-radio-group>
       <p class="text-caption text-medium-emphasis mt-2">
         {{ t('theme.hint', 'Theme preference is stored in your browser and applies to this device only.') }}
       </p>
@@ -76,12 +70,6 @@ watch(localSelected, (val) => {
       <!-- Form inputs -->
       <div class="d-flex ga-3 mb-4 flex-wrap">
         <v-text-field label="Text Field" density="compact" style="max-width: 200px;" />
-        <v-select
-          label="Select"
-          :items="['Option A', 'Option B', 'Option C']"
-          density="compact"
-          style="max-width: 200px;"
-        />
         <v-switch label="Toggle" density="compact" color="primary" hide-details />
       </div>
 
