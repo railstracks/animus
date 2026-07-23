@@ -1447,7 +1447,8 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
     m_tools.Register(std::make_unique<WebFetchTool>(m_httpClient));
 
     // Stored links tool — pre-configured HTTP endpoints (ticket 127)
-    if (!m_config.stored_links.empty()) {
+    // Always registered for discoverability; returns helpful error if no links configured.
+    {
         std::vector<StoredLinksTool::StoredLink> links;
         for (const auto& sl : m_config.stored_links) {
             links.push_back({sl.id, sl.label, sl.url});
@@ -1456,7 +1457,8 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
     }
 
     // RSS tool — pre-configured feeds (ticket 127)
-    if (!m_config.rss_feeds.empty()) {
+    // Always registered for discoverability; returns helpful error if no feeds configured.
+    {
         std::vector<RssTool::RssFeed> feeds;
         for (const auto& rf : m_config.rss_feeds) {
             feeds.push_back({rf.id, rf.label, rf.url});
