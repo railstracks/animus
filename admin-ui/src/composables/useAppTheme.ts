@@ -9,27 +9,31 @@ export function useAppTheme() {
 
   const currentTheme = vuetifyTheme.current;
 
-  // Plain ref that mirrors vuetifyTheme.name — safe for v-model binding
+  // Plain ref for v-model binding — Vuetify's v-select owns this freely
   const currentKey = ref(vuetifyTheme.name.value);
 
-  // Keep ref in sync if theme changes externally
-  watch(() => vuetifyTheme.name.value, (val) => {
-    currentKey.value = val;
-  });
-
-  function setTheme(key: string) {
+  // Apply side effects when currentKey changes (from v-model)
+  watch(currentKey, (key) => {
     if (!themeList.some((t) => t.key === key)) return;
     vuetifyTheme.name.value = key;
-    currentKey.value = key;
     try {
       localStorage.setItem(STORAGE_KEY, key);
     } catch {
-      // localStorage might be unavailable (private mode, SSR)
+      // localStorage might be unavailable
     }
+  });
+
+  // Keep ref in sync if theme changes externally
+  watch(() => vuetifyTheme.name.value, (val) => {
+    if (val !== currentKey.value) currentKey.value = val;
+  });
+
+  function setTheme(key: string) {
+    currentKey.value = key;
   }
 
   function cycleTheme() {
-    const idx = themeList.findIndex((t) => t.key === vuetifyTheme.name.value);
+    const idx = themeList.findIndex((t) => t.key === currentKey.value);
     const next = themeList[(idx + 1) % themeList.length];
     setTheme(next.key);
   }

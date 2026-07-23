@@ -14,13 +14,12 @@ const { currentKey, themes, setTheme } = useAppTheme();
     <v-card variant="tonal" class="mb-6 pa-4" max-width="500">
       <div class="text-subtitle-1 mb-3">{{ t('theme.selectLabel', 'Application Theme') }}</div>
       <v-select
-        :model-value="currentKey"
+        v-model="currentKey"
         :items="themes.map(t => ({ title: t.label, value: t.key }))"
         :label="t('theme.selectLabel', 'Application Theme')"
         density="compact"
         variant="outlined"
         hide-details
-        @update:model-value="setTheme"
       />
       <p class="text-caption text-medium-emphasis mt-2">
         {{ t('theme.hint', 'Theme preference is stored in your browser and applies to this device only.') }}
