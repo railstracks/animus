@@ -1,4 +1,5 @@
 import { useTheme as useVuetifyTheme } from 'vuetify';
+import { computed } from 'vue';
 import { themeList, type ThemeInfo } from '../plugins/vuetify';
 
 const STORAGE_KEY = 'animus-theme';
@@ -18,6 +19,12 @@ export function useAppTheme() {
     }
   }
 
+  // Writable computed so v-select v-model works without readonly errors
+  const currentKey = computed({
+    get: () => vuetifyTheme.name.value,
+    set: (val: string) => setTheme(val),
+  });
+
   function cycleTheme() {
     const idx = themeList.findIndex((t) => t.key === vuetifyTheme.name.value);
     const next = themeList[(idx + 1) % themeList.length];
@@ -26,7 +33,7 @@ export function useAppTheme() {
 
   return {
     currentTheme,
-    currentKey: vuetifyTheme.name,
+    currentKey,
     themes: themeList,
     setTheme,
     cycleTheme,
