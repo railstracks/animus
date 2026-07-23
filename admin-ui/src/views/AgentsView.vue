@@ -178,6 +178,42 @@ function ensureFileToolConfig(): FileToolConfig {
 
 const fileToolConfig = computed<FileToolConfig>(() => ensureFileToolConfig());
 
+// Stored links / RSS feeds config (system-wide, persisted in __kernel__)
+interface StoredLinkEntry { id: string; label: string; url: string; }
+interface RssFeedEntry { id: string; label: string; url: string; }
+const storedLinksConfig = ref<StoredLinkEntry[]>([]);
+const rssFeedsConfig = ref<RssFeedEntry[]>([]);
+const toolConfigDirty = ref(false);
+const toolConfigSaved = ref(false);
+
+async function loadStoredLinksConfig() {
+  try {
+    storedLinksConfig.value = await apiGet<StoredLinkEntry[]>('/api/v1/stored-links');
+  } catch { storedLinksConfig.value = []; }
+}
+async function loadRssFeedsConfig() {
+  try {
+    rssFeedsConfig.value = await apiGet<RssFeedEntry[]>('/api/v1/rss-feeds');
+  } catch { rssFeedsConfig.value = []; }
+}
+async function saveStoredLinksConfig() {
+  try {
+    await apiRequest('PUT', '/api/v1/stored-links', storedLinksConfig.value);
+    toolConfigSaved.value = true; setTimeout(() => toolConfigSaved.value = false, 3000);
+  } catch (e: any) { error.value = e.message || 'Failed to save'; }
+}
+async function saveRssFeedsConfig() {
+  try {
+    await apiRequest('PUT', '/api/v1/rss-feeds', rssFeedsConfig.value);
+    toolConfigSaved.value = true; setTimeout(() => toolConfigSaved.value = false, 3000);
+  } catch (e: any) { error.value = e.message || 'Failed to save'; }
+}
+function addStoredLink() { storedLinksConfig.value.push({ id: '', label: '', url: '' }); toolConfigDirty.value = true; }
+function removeStoredLink(i: number) { storedLinksConfig.value.splice(i, 1); toolConfigDirty.value = true; }
+function addRssFeed() { rssFeedsConfig.value.push({ id: '', label: '', url: '' }); toolConfigDirty.value = true; }
+function removeRssFeed(i: number) { rssFeedsConfig.value.splice(i, 1); toolConfigDirty.value = true; }
+
+
 // ---------------------------------------------------------------------------
 // Data loading
 // ---------------------------------------------------------------------------
@@ -466,7 +502,7 @@ function toolCount(a: Agent): string {
 }
 
 onMounted(() => {
-  void Promise.all([loadAgents(), loadTools(), loadProviders(), loadNodes(), loadVisionModels()]);
+  void Promise.all([loadAgents(), loadTools(), loadProviders(), loadNodes(), loadVisionModels(), loadStoredLinksConfig(), loadRssFeedsConfig()]);
 });
 
 watch(
@@ -745,9 +781,9 @@ watch(
                 </v-btn>
               </div>
 
-              <div class="d-flex ga-4" style="min-height: 300px;">
-                <!-- Tool list (left) -->
-                <div style="width: 280px; flex-shrink: 0; max-height: 400px; overflow-y: auto;" class="border rounded">
+              <div class="d-flex flex-column ga-4" style="min-height: 300px;">
+                <!-- Tool list (top) -->
+                <div style="max-height: 300px; overflow-y: auto;" class="border rounded">
                   <v-list density="compact">
                     <v-list-item
                       v-for="tool in sortedTools"
@@ -777,7 +813,7 @@ watch(
                   </p>
                 </div>
 
-                <!-- Detail panel (right) -->
+                <!-- Detail panel (below) -->
                 <div class="flex-grow-1">
                   <v-card v-if="selectedTool" variant="tonal" class="pa-4">
                     <div class="d-flex align-center mb-3">
@@ -897,6 +933,50 @@ watch(
                           density="compact"
                           class="mt-2"
                         />
+                      </template>
+
+                      <!-- Stored links config -->
+                      <template v-if="selectedTool.name === 'stored_links'">
+                        <div class="d-flex align-center mb-2">
+                          <span class="text-subtitle-2">Configured Links</span>
+                          <v-spacer />
+                          <v-btn size="x-small" variant="tonal" @click="addStoredLink">Add</v-btn>
+                          <v-btn size="x-small" variant="tonal" color="primary" class="ml-2" @click="saveStoredLinksConfig">Save</v-btn>
+                        </div>
+                        <v-alert v-if="toolConfigSaved" type="success" density="compact" class="mb-2">
+                          Saved. Restart kernel to apply.
+                        </v-alert>
+                        <div v-for="(link, i) in storedLinksConfig" :key="i" class="d-flex ga-2 mb-2">
+                          <v-text-field v-model="link.id" label="ID" density="compact" hide-details style="max-width: 120px;" />
+                          <v-text-field v-model="link.label" label="Label" density="compact" hide-details style="max-width: 140px;" />
+                          <v-text-field v-model="link.url" label="URL" density="compact" hide-details class="flex-grow-1" />
+                          <v-btn size="small" icon variant="text" @click="removeStoredLink(i)"><v-icon>mdi-close</v-icon></v-btn>
+                        </div>
+                        <p v-if="storedLinksConfig.length === 0" class="text-caption text-medium-emphasis">
+                          No stored links configured. Click Add to create one.
+                        </p>
+                      </template>
+
+                      <!-- RSS feeds config -->
+                      <template v-if="selectedTool.name === 'rss'">
+                        <div class="d-flex align-center mb-2">
+                          <span class="text-subtitle-2">Configured Feeds</span>
+                          <v-spacer />
+                          <v-btn size="x-small" variant="tonal" @click="addRssFeed">Add</v-btn>
+                          <v-btn size="x-small" variant="tonal" color="primary" class="ml-2" @click="saveRssFeedsConfig">Save</v-btn>
+                        </div>
+                        <v-alert v-if="toolConfigSaved" type="success" density="compact" class="mb-2">
+                          Saved. Restart kernel to apply.
+                        </v-alert>
+                        <div v-for="(feed, i) in rssFeedsConfig" :key="i" class="d-flex ga-2 mb-2">
+                          <v-text-field v-model="feed.id" label="ID" density="compact" hide-details style="max-width: 120px;" />
+                          <v-text-field v-model="feed.label" label="Label" density="compact" hide-details style="max-width: 140px;" />
+                          <v-text-field v-model="feed.url" label="URL" density="compact" hide-details class="flex-grow-1" />
+                          <v-btn size="small" icon variant="text" @click="removeRssFeed(i)"><v-icon>mdi-close</v-icon></v-btn>
+                        </div>
+                        <p v-if="rssFeedsConfig.length === 0" class="text-caption text-medium-emphasis">
+                          No RSS feeds configured. Click Add to create one.
+                        </p>
                       </template>
                     </template>
                     <p v-else-if="selectedTool" class="text-caption text-medium-emphasis mt-2">

@@ -273,6 +273,7 @@ private:
     void RegisterRoutesAuth();
     void RegisterRoutesDiffusion();
     void RegisterRoutesSops();
+    void RegisterRoutesStoredLinksRss();
     void SyncIrcInterfaces();
     void RefreshChatSessionServiceDependencies();
 
