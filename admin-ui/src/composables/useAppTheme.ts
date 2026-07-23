@@ -23,21 +23,28 @@ export function getCurrentTheme(): string {
   }
 }
 
+export function applyTheme(key: string) {
+  if (!themeList.some((t) => t.key === key)) return;
+  try {
+    localStorage.setItem(STORAGE_KEY, key);
+  } catch {}
+}
+
+// Must be called from a component setup context
 export function useAppTheme() {
   const theme = useTheme();
 
-  function applyTheme(key: string) {
+  function setTheme(key: string) {
     if (!themeList.some((t) => t.key === key)) return;
+    // Use $nextTick to avoid writing during reactive propagation
     theme.name.value = key;
-    try {
-      localStorage.setItem(STORAGE_KEY, key);
-    } catch {}
+    applyTheme(key);
   }
 
-  // Apply saved theme on mount — called from App.vue
   function initTheme() {
-    applyTheme(getCurrentTheme());
+    const saved = getCurrentTheme();
+    theme.name.value = saved;
   }
 
-  return { theme, themeList, applyTheme, initTheme };
+  return { theme, themeList, setTheme, initTheme };
 }

@@ -4,20 +4,18 @@ import { useAppTheme, getCurrentTheme, themeList } from '../composables/useAppTh
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
-const { applyTheme } = useAppTheme();
+const { setTheme } = useAppTheme();
 
 const localSelected = ref('animusDark');
-const themeItems = themeList.map(t => ({ title: t.label, value: t.key }));
 
 onMounted(() => {
   localSelected.value = getCurrentTheme();
 });
 
-function onSelectTheme(value: unknown) {
-  if (typeof value === 'string') {
-    localSelected.value = value;
-    applyTheme(value);
-  }
+function onChange(e: Event) {
+  const value = (e.target as HTMLSelectElement).value;
+  localSelected.value = value;
+  setTheme(value);
 }
 </script>
 
@@ -28,15 +26,15 @@ function onSelectTheme(value: unknown) {
     <!-- Theme selector -->
     <v-card variant="tonal" class="mb-6 pa-4" max-width="500">
       <div class="text-subtitle-1 mb-3">{{ t('theme.selectLabel', 'Application Theme') }}</div>
-      <v-select
-        :model-value="localSelected"
-        :items="themeItems"
-        :label="t('theme.selectLabel', 'Application Theme')"
-        density="compact"
-        variant="outlined"
-        hide-details
-        @update:model-value="onSelectTheme"
-      />
+      <select
+        v-model="localSelected"
+        class="theme-native-select"
+        @change="onChange"
+      >
+        <option v-for="theme in themeList" :key="theme.key" :value="theme.key">
+          {{ theme.label }}
+        </option>
+      </select>
       <p class="text-caption text-medium-emphasis mt-2">
         {{ t('theme.hint', 'Theme preference is stored in your browser and applies to this device only.') }}
       </p>
@@ -46,7 +44,6 @@ function onSelectTheme(value: unknown) {
     <v-card variant="tonal" class="mb-4 pa-4">
       <div class="text-subtitle-1 mb-3">{{ t('theme.samples', 'Sample Elements') }}</div>
 
-      <!-- Buttons -->
       <div class="d-flex ga-2 mb-4 flex-wrap">
         <v-btn color="primary">Primary</v-btn>
         <v-btn color="secondary">Secondary</v-btn>
@@ -57,7 +54,6 @@ function onSelectTheme(value: unknown) {
         <v-btn color="error">Error</v-btn>
       </div>
 
-      <!-- Chips -->
       <div class="d-flex ga-2 mb-4 flex-wrap">
         <v-chip color="primary" variant="tonal">Primary</v-chip>
         <v-chip color="secondary" variant="tonal">Secondary</v-chip>
@@ -67,7 +63,6 @@ function onSelectTheme(value: unknown) {
         <v-chip color="error" variant="tonal">Error</v-chip>
       </div>
 
-      <!-- Alerts -->
       <div class="d-flex flex-column ga-2 mb-4">
         <v-alert type="info" density="compact">Info alert — something worth noting.</v-alert>
         <v-alert type="success" density="compact">Success alert — operation completed.</v-alert>
@@ -75,13 +70,11 @@ function onSelectTheme(value: unknown) {
         <v-alert type="error" density="compact">Error alert — something went wrong.</v-alert>
       </div>
 
-      <!-- Form inputs -->
       <div class="d-flex ga-3 mb-4 flex-wrap">
         <v-text-field label="Text Field" density="compact" style="max-width: 200px;" />
         <v-switch label="Toggle" density="compact" color="primary" hide-details />
       </div>
 
-      <!-- Cards -->
       <div class="d-flex ga-3 mb-4 flex-wrap">
         <v-card variant="tonal" class="pa-3" max-width="220">
           <div class="text-subtitle-2 mb-1">Tonal Card</div>
@@ -97,20 +90,17 @@ function onSelectTheme(value: unknown) {
         </v-card>
       </div>
 
-      <!-- Progress -->
       <div class="d-flex ga-4 mb-4 align-center">
         <v-progress-circular color="primary" indeterminate />
         <v-progress-linear color="primary" model-value="65" style="max-width: 200px;" />
       </div>
 
-      <!-- Text styles -->
       <div class="mb-2">
         <div class="text-h6">Heading Text</div>
         <div class="text-body-1">Body text in the current theme.</div>
         <div class="text-caption text-medium-emphasis">Caption with medium emphasis.</div>
       </div>
 
-      <!-- Table -->
       <v-table density="compact">
         <thead>
           <tr>
@@ -140,3 +130,20 @@ function onSelectTheme(value: unknown) {
     </v-card>
   </div>
 </template>
+
+<style scoped>
+.theme-native-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.2);
+  border-radius: 8px;
+  background: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-on-surface));
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+}
+.theme-native-select:focus {
+  border-color: rgb(var(--v-theme-primary));
+}
+</style>
