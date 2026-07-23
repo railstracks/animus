@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { useAppTheme } from '../composables/useAppTheme';
+import { ref, onMounted } from 'vue';
+import { applyTheme, getCurrentTheme, themeList } from '../composables/useAppTheme';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
-const { currentKey, themes, setTheme } = useAppTheme();
+const localSelected = ref('animusDark');
 
-const localSelected = ref(currentKey.value);
-watch(currentKey, (val) => { localSelected.value = val; });
-watch(localSelected, (val) => {
-  if (typeof val === 'string' && val !== currentKey.value) setTheme(val);
+onMounted(() => {
+  localSelected.value = getCurrentTheme();
 });
+
+function onSelectTheme(key: string) {
+  localSelected.value = key;
+  applyTheme(key);
+}
 </script>
 
 <template>
@@ -20,9 +23,9 @@ watch(localSelected, (val) => {
     <!-- Theme selector -->
     <v-card variant="tonal" class="mb-6 pa-4" max-width="500">
       <div class="text-subtitle-1 mb-3">{{ t('theme.selectLabel', 'Application Theme') }}</div>
-      <v-radio-group v-model="localSelected" density="compact" hide-details>
+      <v-radio-group v-model="localSelected" density="compact" hide-details @update:model-value="onSelectTheme">
         <v-radio
-          v-for="theme in themes"
+          v-for="theme in themeList"
           :key="theme.key"
           :value="theme.key"
           :label="theme.label"

@@ -1,10 +1,23 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 
 import AppSidebar from './components/AppSidebar.vue';
 import { setLocale, isLocaleType, LocaleSelectItems, LocaleSelectItem } from './i18n';
+import { applyTheme, getCurrentTheme, themeCss } from './composables/useAppTheme';
+
+const route = useRoute();
+const drawer = ref(true);
+const { t, locale } = useI18n();
+
+// Inject theme CSS and apply saved theme on mount
+onMounted(() => {
+  const style = document.createElement('style');
+  style.textContent = themeCss;
+  document.head.appendChild(style);
+  applyTheme(getCurrentTheme());
+});
 
 const route = useRoute();
 const drawer = ref(true);
