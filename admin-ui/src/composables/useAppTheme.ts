@@ -23,27 +23,20 @@ export function getCurrentTheme(): string {
   }
 }
 
-export function applyTheme(key: string) {
-  if (!themeList.some((t) => t.key === key)) return;
-  try {
-    localStorage.setItem(STORAGE_KEY, key);
-  } catch {}
-}
-
-// Must be called from a component setup context
 export function useAppTheme() {
   const theme = useTheme();
 
   function setTheme(key: string) {
     if (!themeList.some((t) => t.key === key)) return;
-    // Use $nextTick to avoid writing during reactive propagation
-    theme.name.value = key;
-    applyTheme(key);
+    // Use Vuetify's change() API — theme.name is readonly in component context
+    theme.change(key);
+    try {
+      localStorage.setItem(STORAGE_KEY, key);
+    } catch {}
   }
 
   function initTheme() {
-    const saved = getCurrentTheme();
-    theme.name.value = saved;
+    setTheme(getCurrentTheme());
   }
 
   return { theme, themeList, setTheme, initTheme };
