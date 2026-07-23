@@ -337,6 +337,8 @@ function normalizePossiblyEscapedChannelMarkers(input: string): string {
   normalized = normalized.replace(/\\u003c/gi, '<');
   normalized = normalized.replace(/\\u003e/gi, '>');
   normalized = normalized.replace(/\\u0026/g, '&');
+  // Also catch bare u0026 without backslash (some models output this)
+  normalized = normalized.replace(/(?<!\\)u0026/g, '&');
   return normalized;
 }
 
