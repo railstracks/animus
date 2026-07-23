@@ -748,29 +748,29 @@ watch(
               <div class="d-flex ga-4" style="min-height: 300px;">
                 <!-- Tool list (left) -->
                 <div style="width: 280px; flex-shrink: 0; max-height: 400px; overflow-y: auto;" class="border rounded">
-                  <v-list density="compact" :items="sortedTools" item-key="name">
-                    <template #item="{ item: tool }">
-                      <v-list-item
-                        :active="selectedToolName === tool.name"
-                        @click="selectTool(tool.name)"
-                        density="compact"
-                        :title="tool.name"
-                      >
-                        <template #prepend>
-                          <v-checkbox
-                            :model-value="isToolEnabled(tool.name)"
-                            @update:model-value="toggleTool(tool.name)"
-                            @click.stop
-                            density="compact"
-                            hide-details
-                            color="primary"
-                          />
-                        </template>
-                        <template #append>
-                          <v-icon v-if="isToolEnabled(tool.name)" size="x-small" color="success">mdi-check-circle</v-icon>
-                        </template>
-                      </v-list-item>
-                    </template>
+                  <v-list density="compact">
+                    <v-list-item
+                      v-for="tool in sortedTools"
+                      :key="tool.name"
+                      :active="selectedToolName === tool.name"
+                      @click="selectTool(tool.name)"
+                      density="compact"
+                      :title="tool.name"
+                    >
+                      <template #prepend>
+                        <v-checkbox
+                          :model-value="isToolEnabled(tool.name)"
+                          @update:model-value="toggleTool(tool.name)"
+                          @click.stop
+                          density="compact"
+                          hide-details
+                          color="primary"
+                        />
+                      </template>
+                      <template #append>
+                        <v-icon v-if="isToolEnabled(tool.name)" size="x-small" color="success">mdi-check-circle</v-icon>
+                      </template>
+                    </v-list-item>
                   </v-list>
                   <p v-if="tools.length === 0" class="text-caption text-medium-emphasis pa-3">
                     {{ t('agents.form.noToolsLoaded') }}
