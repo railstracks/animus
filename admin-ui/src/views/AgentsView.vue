@@ -850,6 +850,58 @@ watch(
                     <p v-if="(!selectedTool.parameters || selectedTool.parameters.length === 0) && (!selectedTool.config_parameters || selectedTool.config_parameters.length === 0)" class="text-caption text-medium-emphasis">
                       No configuration parameters.
                     </p>
+
+                    <!-- Tool-specific config UI -->
+                    <template v-if="isToolEnabled(selectedTool.name)">
+                      <v-divider class="mb-3" />
+
+                      <!-- File tool config -->
+                      <template v-if="selectedTool.name === 'file'">
+                        <div class="text-subtitle-2 mb-2">{{ t('agents.form.fileToolConfigTitle') }}</div>
+                        <v-switch
+                          v-model="fileToolConfig.restrict_to_workspace"
+                          :label="t('agents.form.fileRestrictToWorkspace')"
+                          density="compact"
+                          hide-details
+                          color="primary"
+                        />
+                        <v-text-field
+                          v-model="fileToolConfig.workspace_root"
+                          :label="t('agents.form.fileWorkspaceRoot')"
+                          :hint="t('agents.form.fileWorkspaceRootHint')"
+                          persistent-hint
+                          density="compact"
+                          class="mt-2"
+                        />
+                        <v-combobox
+                          v-model="fileToolConfig.path_allowlist"
+                          :label="t('agents.form.filePathAllowlist')"
+                          :hint="t('agents.form.filePathAllowlistHint')"
+                          persistent-hint
+                          multiple
+                          chips
+                          closable-chips
+                          clearable
+                          density="compact"
+                          class="mt-2"
+                        />
+                        <v-combobox
+                          v-model="fileToolConfig.path_denylist"
+                          :label="t('agents.form.filePathDenylist')"
+                          :hint="t('agents.form.filePathDenylistHint')"
+                          persistent-hint
+                          multiple
+                          chips
+                          closable-chips
+                          clearable
+                          density="compact"
+                          class="mt-2"
+                        />
+                      </template>
+                    </template>
+                    <p v-else-if="selectedTool" class="text-caption text-medium-emphasis mt-2">
+                      Enable this tool to configure its options.
+                    </p>
                   </v-card>
                   <v-card v-else variant="outlined" class="pa-4 text-center text-medium-emphasis">
                     <v-icon size="large" class="mb-2">mdi-hand-point-left</v-icon>
@@ -857,54 +909,6 @@ watch(
                   </v-card>
                 </div>
               </div>
-
-              <v-card
-                v-if="isToolEnabled('file')"
-                variant="tonal"
-                class="mt-4 pa-3"
-              >
-                <div class="text-subtitle-2 mb-2">{{ t('agents.form.fileToolConfigTitle') }}</div>
-                <v-switch
-                  v-model="fileToolConfig.restrict_to_workspace"
-                  :label="t('agents.form.fileRestrictToWorkspace')"
-                  density="compact"
-                  hide-details
-                  color="primary"
-                />
-                <v-text-field
-                  v-model="fileToolConfig.workspace_root"
-                  :label="t('agents.form.fileWorkspaceRoot')"
-                  :hint="t('agents.form.fileWorkspaceRootHint')"
-                  persistent-hint
-                  density="compact"
-                  class="mt-2"
-                />
-                <v-combobox
-                  v-model="fileToolConfig.path_allowlist"
-                  :label="t('agents.form.filePathAllowlist')"
-                  :hint="t('agents.form.filePathAllowlistHint')"
-                  persistent-hint
-                  multiple
-                  chips
-                  closable-chips
-                  clearable
-                  density="compact"
-                  class="mt-2"
-                />
-                <v-combobox
-                  v-model="fileToolConfig.path_denylist"
-                  :label="t('agents.form.filePathDenylist')"
-                  :hint="t('agents.form.filePathDenylistHint')"
-                  persistent-hint
-                  multiple
-                  chips
-                  closable-chips
-                  clearable
-                  density="compact"
-                  class="mt-2"
-                />
-              </v-card>
-
               <v-divider class="my-4" />
 
               <div class="text-subtitle-2 mb-1">Allowed Nodes</div>
