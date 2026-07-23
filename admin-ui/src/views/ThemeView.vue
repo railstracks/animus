@@ -6,13 +6,17 @@ import { useI18n } from 'vue-i18n';
 const { t } = useI18n();
 const localSelected = ref('animusDark');
 
+const themeItems = themeList.map(t => ({ title: t.label, value: t.key }));
+
 onMounted(() => {
   localSelected.value = getCurrentTheme();
 });
 
-function onSelectTheme(key: string) {
-  localSelected.value = key;
-  applyTheme(key);
+function onSelectTheme(value: unknown) {
+  if (typeof value === 'string') {
+    localSelected.value = value;
+    applyTheme(value);
+  }
 }
 </script>
 
@@ -23,15 +27,15 @@ function onSelectTheme(key: string) {
     <!-- Theme selector -->
     <v-card variant="tonal" class="mb-6 pa-4" max-width="500">
       <div class="text-subtitle-1 mb-3">{{ t('theme.selectLabel', 'Application Theme') }}</div>
-      <v-radio-group v-model="localSelected" density="compact" hide-details @update:model-value="onSelectTheme">
-        <v-radio
-          v-for="theme in themeList"
-          :key="theme.key"
-          :value="theme.key"
-          :label="theme.label"
-          color="primary"
-        />
-      </v-radio-group>
+      <v-select
+        :model-value="localSelected"
+        :items="themeItems"
+        :label="t('theme.selectLabel', 'Application Theme')"
+        density="compact"
+        variant="outlined"
+        hide-details
+        @update:model-value="onSelectTheme"
+      />
       <p class="text-caption text-medium-emphasis mt-2">
         {{ t('theme.hint', 'Theme preference is stored in your browser and applies to this device only.') }}
       </p>

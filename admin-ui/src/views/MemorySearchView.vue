@@ -355,7 +355,7 @@ onMounted(() => {
 }
 
 .result-card:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(var(--v-theme-on-surface), 0.15);
 }
 
 .result-header {
@@ -382,7 +382,7 @@ onMounted(() => {
 .meta-tag {
   font-size: 0.72rem;
   opacity: 0.6;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--v-theme-on-surface), 0.05);
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
 }

@@ -1,8 +1,7 @@
 // Application theme system — CSS class based, independent of Vuetify's theme reactivity.
 //
-// Themes are defined as CSS custom property sets scoped under .theme-<name>
-// on the v-application root. The composable toggles the class on the root
-// element and persists the choice in localStorage.
+// Themes override Vuetify's CSS custom properties by targeting
+// .v-application.theme-<name> for specificity over Vuetify's inline styles.
 
 export interface ThemeInfo {
   key: string;
@@ -35,31 +34,23 @@ export function getCurrentTheme(): string {
 export function applyTheme(key: string) {
   const root = getRoot();
   if (!root) return;
-  // Remove all theme classes
   for (const t of themeList) {
     root.classList.remove(`theme-${t.key}`);
   }
-  // Add the selected one
   root.classList.add(`theme-${key}`);
-  // Set data-theme for any CSS that prefers attribute selectors
   root.setAttribute('data-theme', key);
-  // Set dark/light attribute for Vuetify dark mode helpers
   const info = themeList.find(t => t.key === key);
   if (info) {
     root.setAttribute('data-dark', info.dark ? 'true' : 'false');
   }
   try {
     localStorage.setItem(STORAGE_KEY, key);
-  } catch {
-    // localStorage might be unavailable
-  }
+  } catch {}
 }
 
-// CSS custom property definitions per theme.
-// These override Vuetify's --v-theme-* variables when the theme class is active.
 export const themeCss = `
 /* ── Animus Dark (original) ── */
-.theme-animusDark {
+.v-application.theme-animusDark {
   --v-theme-background: 15, 17, 23;
   --v-theme-surface: 23, 26, 35;
   --v-theme-surface-variant: 31, 35, 48;
@@ -71,12 +62,18 @@ export const themeCss = `
   --v-theme-warning: 255, 191, 105;
   --v-theme-error: 255, 93, 115;
   --v-theme-on-surface: 255, 255, 255;
+  --v-theme-on-background: 255, 255, 255;
+  --v-theme-on-primary: 255, 255, 255;
+  --v-theme-on-secondary: 255, 255, 255;
+  --v-theme-on-accent: 255, 255, 255;
   --v-border-color: 255, 255, 255;
   --v-border-opacity: 0.08;
+  color: rgb(255, 255, 255);
+  background: rgb(15, 17, 23);
 }
 
 /* ── Animus Light ── */
-.theme-animusLight {
+.v-application.theme-animusLight {
   --v-theme-background: 244, 243, 239;
   --v-theme-surface: 255, 255, 255;
   --v-theme-surface-variant: 232, 230, 224;
@@ -88,12 +85,18 @@ export const themeCss = `
   --v-theme-warning: 217, 119, 6;
   --v-theme-error: 220, 38, 38;
   --v-theme-on-surface: 30, 30, 30;
+  --v-theme-on-background: 30, 30, 30;
+  --v-theme-on-primary: 255, 255, 255;
+  --v-theme-on-secondary: 255, 255, 255;
+  --v-theme-on-accent: 255, 255, 255;
   --v-border-color: 0, 0, 0;
   --v-border-opacity: 0.12;
+  color: rgb(30, 30, 30);
+  background: rgb(244, 243, 239);
 }
 
 /* ── Midnight ── */
-.theme-midnight {
+.v-application.theme-midnight {
   --v-theme-background: 10, 14, 26;
   --v-theme-surface: 17, 23, 38;
   --v-theme-surface-variant: 26, 34, 56;
@@ -105,12 +108,18 @@ export const themeCss = `
   --v-theme-warning: 255, 183, 77;
   --v-theme-error: 239, 83, 80;
   --v-theme-on-surface: 255, 255, 255;
+  --v-theme-on-background: 255, 255, 255;
+  --v-theme-on-primary: 255, 255, 255;
+  --v-theme-on-secondary: 255, 255, 255;
+  --v-theme-on-accent: 255, 255, 255;
   --v-border-color: 255, 255, 255;
   --v-border-opacity: 0.08;
+  color: rgb(255, 255, 255);
+  background: rgb(10, 14, 26);
 }
 
 /* ── Ember ── */
-.theme-ember {
+.v-application.theme-ember {
   --v-theme-background: 26, 20, 16;
   --v-theme-surface: 34, 26, 20;
   --v-theme-surface-variant: 45, 34, 24;
@@ -122,7 +131,13 @@ export const themeCss = `
   --v-theme-warning: 245, 158, 11;
   --v-theme-error: 239, 68, 68;
   --v-theme-on-surface: 255, 240, 230;
+  --v-theme-on-background: 255, 240, 230;
+  --v-theme-on-primary: 255, 255, 255;
+  --v-theme-on-secondary: 255, 255, 255;
+  --v-theme-on-accent: 255, 255, 255;
   --v-border-color: 255, 240, 230;
   --v-border-opacity: 0.08;
+  color: rgb(255, 240, 230);
+  background: rgb(26, 20, 16);
 }
 `;

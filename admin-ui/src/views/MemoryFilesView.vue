@@ -896,7 +896,7 @@ watch(selectedAgentId, () => {
 .content-block {
   white-space: pre-wrap;
   word-break: break-word;
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(var(--v-theme-on-surface), 0.04);
   border-radius: 8px;
   padding: 12px;
   max-height: 420px;
@@ -911,7 +911,7 @@ watch(selectedAgentId, () => {
 .batch-file-list {
   max-height: 240px;
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(var(--v-theme-on-surface), 0.04);
   border-radius: 8px;
 }
 </style>
