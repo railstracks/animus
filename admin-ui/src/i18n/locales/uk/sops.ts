@@ -8,7 +8,7 @@ export const sops = {
   close: 'Закрити',
   selectAgent: 'Вибрати агента',
   install: 'Встановити',
-  installSuccess: '"{title}" встановлено в пам'ять агента (ID файлу: {id})',
+  installSuccess: '"{title}" встановлено в пам\'ять агента (ID файлу: {id})',
   installFailed: 'Помилка встановлення СОП',
   loadFailed: 'Помилка завантаження СОП',
 } as const;
