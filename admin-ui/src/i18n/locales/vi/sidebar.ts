@@ -21,6 +21,8 @@ export const sidebar = {
       webSearch: 'Tìm kiếm web',
       logs: 'Nhật ký',
       users: 'Người dùng',
-      diffusion: 'Khuếch tán'
+      diffusion: 'Khuếch tán',
+      sops: 'SOPs',
+      theme: 'Giao diện'
     }
   } as const;

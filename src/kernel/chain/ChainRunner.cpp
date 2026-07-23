@@ -167,6 +167,45 @@ std::string InjectFilePolicy(const std::string& argumentsJson, const std::string
     return Json::writeString(wb, args);
 }
 
+// Inject per-agent tool config for stored_links and rss tools.
+// tool_configs.stored_links → __config.links
+// tool_configs.rss_feeds   → __config.feeds
+std::string InjectToolConfig(const std::string& toolName,
+                             const std::string& argumentsJson,
+                             const std::string& toolConfigsJson) {
+    if (toolName == "file") {
+        return InjectFilePolicy(argumentsJson, toolConfigsJson);
+    }
+
+    Json::Value toolConfigs(Json::objectValue);
+    if (!ParseJsonObject(toolConfigsJson, &toolConfigs)) return argumentsJson;
+
+    std::string configKey;
+    std::string injectKey;
+    if (toolName == "stored_links") {
+        configKey = "stored_links";
+        injectKey = "links";
+    } else if (toolName == "rss") {
+        configKey = "rss_feeds";
+        injectKey = "feeds";
+    } else {
+        return argumentsJson;
+    }
+
+    if (!toolConfigs.isMember(configKey) || !toolConfigs[configKey].isArray()) return argumentsJson;
+
+    Json::Value args(Json::objectValue);
+    if (!ParseJsonObject(argumentsJson, &args)) return argumentsJson;
+
+    Json::Value config(Json::objectValue);
+    config[injectKey] = toolConfigs[configKey];
+    args["__config"] = config;
+
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    return Json::writeString(wb, args);
+}
+
 } // namespace
 
 // ============================================================================
@@ -794,10 +833,11 @@ bool ChainRunner::ProcessResponse(
 
     for (const auto& call : response.tool_calls) {
         ToolCall tc = FromLLM(call);
-        if (tc.name == "file" && m_agentStore && !session.AgentId().empty()) {
+        if ((tc.name == "file" || tc.name == "stored_links" || tc.name == "rss") &&
+            m_agentStore && !session.AgentId().empty()) {
             auto agent = m_agentStore->GetById(session.AgentId());
             if (agent.has_value()) {
-                tc.arguments = InjectFilePolicy(tc.arguments, agent->tool_configs_json);
+                tc.arguments = InjectToolConfig(tc.name, tc.arguments, agent->tool_configs_json);
             }
         }
         // Inject session context for agent-scoped tools

@@ -328,7 +328,7 @@ onMounted(() => {
 
 <style scoped>
 .search-card {
-  background: linear-gradient(170deg, rgba(23, 26, 35, 0.95), rgba(16, 18, 24, 0.98));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
 }
 
 .domain-checks {
@@ -350,12 +350,12 @@ onMounted(() => {
 
 .result-card {
   padding: 0.75rem 1rem;
-  background: linear-gradient(170deg, rgba(23, 26, 35, 0.95), rgba(16, 18, 24, 0.98));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
   transition: border-color 0.15s;
 }
 
 .result-card:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(var(--v-theme-on-surface), 0.15);
 }
 
 .result-header {
@@ -382,7 +382,7 @@ onMounted(() => {
 .meta-tag {
   font-size: 0.72rem;
   opacity: 0.6;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--v-theme-on-surface), 0.05);
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
 }

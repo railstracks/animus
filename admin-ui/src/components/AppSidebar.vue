@@ -29,6 +29,7 @@ const links = [
   { titleKey: 'sidebar.links.gallivanting', path: '/gallivanting', icon: 'mdi-walk' },
   { titleKey: 'sidebar.links.diary', path: '/diary', icon: 'mdi-notebook' },
   { titleKey: 'sidebar.links.logs', path: '/logs', icon: 'mdi-text-box-search-outline' },
+  { titleKey: 'sidebar.links.theme', path: '/theme', icon: 'mdi-palette-outline' },
   { titleKey: 'sidebar.links.users', path: '/users', icon: 'mdi-account-cog-outline' },
 ] as const;
 

@@ -21,6 +21,8 @@ export const sidebar = {
       webSearch: 'بحث الويب',
       logs: 'سجلات',
       users: 'المستخدمون',
-      diffusion: 'الانتشار'
+      diffusion: 'الانتشار',
+      sops: 'الإجراءات',
+      theme: 'السمة'
     }
   } as const;

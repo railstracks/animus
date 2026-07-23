@@ -1101,7 +1101,7 @@ onMounted(async () => {
                 <div class="mb-1"><strong>Account created!</strong> API key has been set above.</div>
                 <div class="mb-1" v-if="moltbookRegResult.tweet_text">
                   <strong>Verification tweet:</strong> Post this from your Twitter account to activate the account:
-                  <div class="pa-2 mt-1 rounded" style="background: rgba(0,0,0,0.1); font-family: monospace; font-size: 0.85em; word-break: break-word;">{{ moltbookRegResult.tweet_text }}</div>
+                  <div class="pa-2 mt-1 rounded" style="background: rgba(var(--v-theme-on-surface), 0.1); font-family: monospace; font-size: 0.85em; word-break: break-word;">{{ moltbookRegResult.tweet_text }}</div>
                 </div>
                 <div v-if="moltbookRegResult.claim_url" class="text-caption mt-1">
                   Claim URL: <a :href="moltbookRegResult.claim_url" target="_blank">{{ moltbookRegResult.claim_url }}</a>

@@ -619,7 +619,7 @@ onMounted(async () => {
               :key="'grid-' + i"
               :d="path"
               fill="none"
-              stroke="rgba(255,255,255,0.08)"
+              stroke="rgba(var(--v-theme-on-surface), 0.08)"
               stroke-width="1"
             />
             <!-- Axes -->
@@ -630,7 +630,7 @@ onMounted(async () => {
               :y1="spiderCy"
               :x2="axisPoint(i, spiderCx, spiderCy, spiderR).x"
               :y2="axisPoint(i, spiderCx, spiderCy, spiderR).y"
-              stroke="rgba(255,255,255,0.06)"
+              stroke="rgba(var(--v-theme-on-surface), 0.06)"
               stroke-width="1"
             />
             <!-- Data area -->
@@ -648,7 +648,7 @@ onMounted(async () => {
               :y="axisPoint(i, spiderCx, spiderCy, spiderR + 18).y"
               text-anchor="middle"
               dominant-baseline="central"
-              fill="rgba(255,255,255,0.7)"
+              fill="rgba(var(--v-theme-on-surface), 0.7)"
               font-size="11"
             >
               {{ SDT_LABELS[key] }}
@@ -945,12 +945,12 @@ onMounted(async () => {
               class="sdt-toggle"
               :class="{ active: threadForm.sdt_tags.includes(key) }"
               :style="{
-                borderColor: threadForm.sdt_tags.includes(key) ? SDT_COLORS[key] : 'rgba(255,255,255,0.1)',
+                borderColor: threadForm.sdt_tags.includes(key) ? SDT_COLORS[key] : 'rgba(var(--v-theme-on-surface), 0.1)',
                 background: threadForm.sdt_tags.includes(key) ? SDT_COLORS[key] + '15' : 'transparent'
               }"
               @click="toggleSdtTag(key)"
             >
-              <span class="sdt-toggle-label" :style="{ color: threadForm.sdt_tags.includes(key) ? SDT_COLORS[key] : 'rgba(255,255,255,0.5)' }">
+              <span class="sdt-toggle-label" :style="{ color: threadForm.sdt_tags.includes(key) ? SDT_COLORS[key] : 'rgba(var(--v-theme-on-surface), 0.5)' }">
                 {{ SDT_LABELS[key] }}
               </span>
             </div>
@@ -1042,7 +1042,7 @@ onMounted(async () => {
 .sessions-card,
 .schedule-card {
   padding: 1.25rem;
-  background: linear-gradient(170deg, rgba(23, 26, 35, 0.95), rgba(16, 18, 24, 0.98));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
 }
 
 .card-header {
@@ -1101,14 +1101,14 @@ onMounted(async () => {
   justify-content: space-between;
   padding: 0.75rem;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .thread-item:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(var(--v-theme-on-surface), 0.12);
+  background: rgba(var(--v-theme-on-surface), 0.02);
 }
 
 .thread-item.selected {
@@ -1187,7 +1187,7 @@ onMounted(async () => {
 .session-item {
   padding: 0.75rem;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
 }
 
 .session-header {

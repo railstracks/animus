@@ -21,6 +21,8 @@ export const sidebar = {
       webSearch: 'Веб-пошук',
       logs: 'Журнали',
       users: 'Користувачі',
-      diffusion: 'Дифузія'
+      diffusion: 'Дифузія',
+      sops: 'СОП',
+      theme: 'Тема'
     }
   } as const;

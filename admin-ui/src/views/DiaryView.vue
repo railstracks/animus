@@ -370,7 +370,7 @@ onMounted(loadAgents);
 
 .diary-card {
   padding: 1.5rem;
-  background: linear-gradient(170deg, rgba(23, 26, 35, 0.95), rgba(16, 18, 24, 0.98));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
 }
 
 .diary-header {
@@ -406,7 +406,7 @@ onMounted(loadAgents);
   display: flex;
   align-items: center;
   gap: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   border-radius: 12px;
   padding: 1rem;
 }
@@ -418,7 +418,7 @@ onMounted(loadAgents);
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--v-theme-on-surface), 0.04);
 }
 
 .meta-content {
@@ -452,7 +452,7 @@ onMounted(loadAgents);
   margin-top: 0.75rem;
   padding: 0.75rem 1rem;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--v-theme-on-surface), 0.03);
   font-size: 0.78rem;
   opacity: 0.6;
 }

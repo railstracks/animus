@@ -336,6 +336,10 @@ function normalizePossiblyEscapedChannelMarkers(input: string): string {
   normalized = normalized.replace(/&lt;channel\|&gt;/gi, '<channel|>');
   normalized = normalized.replace(/\\u003c/gi, '<');
   normalized = normalized.replace(/\\u003e/gi, '>');
+  // Catch bare u0026 (without backslash) — some models output this instead of '&'.
+  // Intentionally do NOT normalize \\u0026 (with backslash): if the model writes
+  // the escape sequence explicitly, it's displaying the literal text, not '&'.
+  normalized = normalized.replace(/(?<!\\)u0026/g, '&');
   return normalized;
 }
 
@@ -1905,8 +1909,8 @@ watch(sessionSearch, () => {
   min-height: 0;
   border-radius: 16px;
   overflow: hidden;
-  background: linear-gradient(170deg, rgba(23, 26, 35, 0.95), rgba(16, 18, 24, 0.98));
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
 }
 
 .chat-toolbar {
@@ -1915,7 +1919,7 @@ watch(sessionSearch, () => {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.9rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .toolbar-left {
@@ -1969,7 +1973,7 @@ watch(sessionSearch, () => {
 
 .token-gauge-label {
   font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
   white-space: nowrap;
 }
 
@@ -1978,7 +1982,7 @@ watch(sessionSearch, () => {
   letter-spacing: 0.08em;
   font-size: 0.7rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.14);
   padding: 0.2rem 0.55rem;
 }
 
@@ -2017,7 +2021,7 @@ watch(sessionSearch, () => {
 .message-content-group {
   display: flex;
   flex-direction: column;
-  max-width: min(80ch, 88%);
+  width: 100%;
 }
 
 .message-row {
@@ -2036,11 +2040,11 @@ watch(sessionSearch, () => {
 }
 
 .bubble {
-  max-width: min(80ch, 88%);
+  width: 100%;
   padding: 0.75rem 0.9rem;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  background: rgba(var(--v-theme-on-surface), 0.03);
 }
 
 .role-user .bubble {
@@ -2063,7 +2067,7 @@ watch(sessionSearch, () => {
 
 .markdown-body :deep(pre) {
   padding: 0.6rem;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--v-theme-on-surface), 0.06);
   border-radius: 8px;
   overflow-x: auto;
 }
@@ -2075,8 +2079,8 @@ watch(sessionSearch, () => {
 .composer {
   flex-shrink: 0;
   padding: 0.9rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.18);
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  background: rgba(var(--v-theme-on-surface), 0.18);
 }
 
 .composer-actions {
@@ -2105,7 +2109,7 @@ watch(sessionSearch, () => {
 }
 
 .context-card {
-  background: linear-gradient(170deg, rgba(22, 24, 33, 0.95), rgba(13, 15, 20, 0.98));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
 }
 
 .compaction-timeline {
@@ -2149,7 +2153,7 @@ watch(sessionSearch, () => {
 
 .compaction-timeline-time {
   font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   margin-bottom: 0.2rem;
 }
 
@@ -2164,18 +2168,18 @@ watch(sessionSearch, () => {
   gap: 0.75rem;
   margin-top: 0.25rem;
   font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(var(--v-theme-on-surface), 0.4);
 }
 
 .compaction-modal-card {
-  background: linear-gradient(170deg, rgba(22, 24, 33, 0.98), rgba(13, 15, 20, 0.99));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
 }
 
 .compaction-modal-meta {
   display: flex;
   gap: 1.5rem;
   font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--v-theme-on-surface), 0.6);
 }
 
 .compaction-modal-summary {
@@ -2189,7 +2193,7 @@ watch(sessionSearch, () => {
   top: 0;
   max-height: calc(100vh - 120px);
   overflow: hidden;
-  background: linear-gradient(170deg, rgba(22, 24, 33, 0.95), rgba(13, 15, 20, 0.98));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
 }
 
 .context-tabs-window {
@@ -2209,7 +2213,7 @@ watch(sessionSearch, () => {
 }
 
 .sessions-controls {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   margin-bottom: 0.5rem;
 }
 
@@ -2347,7 +2351,7 @@ watch(sessionSearch, () => {
   padding: 0.55rem 0.65rem;
   border-radius: 8px;
   border: 1px solid rgba(94, 234, 212, 0.2);
-  background: rgba(7, 12, 18, 0.5);
+  background: rgba(var(--v-theme-surface-variant), 0.5);
   color: rgba(210, 255, 246, 0.9);
   font-family: 'IBM Plex Mono', 'Fira Code', monospace;
   font-size: 0.78rem;
@@ -2431,7 +2435,7 @@ watch(sessionSearch, () => {
   padding: 0.55rem 0.65rem;
   border-radius: 8px;
   border: 1px solid rgba(251, 191, 36, 0.2);
-  background: rgba(7, 12, 18, 0.5);
+  background: rgba(var(--v-theme-surface-variant), 0.5);
   color: rgba(253, 224, 71, 0.9);
   font-family: 'IBM Plex Mono', 'Fira Code', monospace;
   font-size: 0.78rem;

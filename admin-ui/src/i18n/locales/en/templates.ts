@@ -19,7 +19,7 @@ export const templates = {
     personalAssistant: {
       name: 'Personal Assistant',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule', 'project', ],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'email', 'calculator', 'image', 'schedule', 'project', 'add_chat_attachment', 'sop', 'diffusion'],
       description: 'Intended to support people in their private life. Help manage personal affairs, assist with education, keep schedules, and support other personal tasks.',
       systemPrompt: `You are a personal assistant running on the Animus framework.
 
@@ -35,7 +35,7 @@ You operate within a charter that defines your autonomy and scope. Follow it in 
     tutor: {
       name: 'Tutor',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', 'add_chat_attachment', 'sop', 'diffusion'],
       description: 'An AI focused on assisting with coursework, formulating training programs, or helping users practice tests. Adapts to given situations such as helping with adult education, assisting with schoolwork, or supporting the classroom.',
       systemPrompt: `You are a tutor running on the Animus framework.
 
@@ -51,7 +51,7 @@ Be patient. Be encouraging. Never make a student feel inadequate for not knowing
     wellnessCompanion: {
       name: 'Wellness Companion',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', 'add_chat_attachment', 'sop', 'diffusion'],
       description: 'An AI construct that supports a user with their living needs. Intended to fill the gaps for the impaired or elderly by organizing personal affairs, tracking a medicinal regimen, providing company to avoid isolation, watching for medical emergencies, or assisting physicians with capturing at-home diagnostics.',
       systemPrompt: `You are a wellness companion running on the Animus framework.
 
@@ -69,7 +69,7 @@ You are not a replacement for medical professionals. You are a support system th
     homeAutomation: {
       name: 'Home Automation',
       category: 'personal',
-      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
+      tools: ['sessions', 'memory', 'channels', 'node', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', 'add_chat_attachment', 'sop', 'diffusion'],
       description: 'Intended to take home automation to the next level. Adds a cognitive control system to smart devices, security systems, and home management.',
       systemPrompt: `You are a home automation system running on the Animus framework.
 
@@ -85,7 +85,7 @@ Be transparent about what you're doing and why. The people in this home should a
     gamemaster: {
       name: 'Gamemaster',
       category: 'personal',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', ],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'node', 'file', 'web_fetch', 'web_search', 'dice', 'calculator', 'image', 'schedule', 'project', 'add_chat_attachment', 'sop', 'diffusion'],
       description: 'Focused on creativity and entertainment. The AI will support a user, family, or private community with storytelling and roleplaying games, crafting and presenting fantasy worlds.',
       systemPrompt: `You are a gamemaster running on the Animus framework.
 
@@ -104,7 +104,7 @@ Be generous with detail when it serves immersion. Be concise when the action dem
     officeSupport: {
       name: 'Office Support',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', 'add_chat_attachment', 'sop', 'diffusion'],
       description: 'A general assistant for the office. Joins office communication channels like Nextcloud and Slack, assists employees with any tasks they have, and assists business processes through supporting tasks like documentation and dispatching.',
       systemPrompt: `You are an office support assistant running on the Animus framework.
 
@@ -120,7 +120,7 @@ When you don't know something, say so. In a business environment, confident wron
     communityManagement: {
       name: 'Community Management',
       category: 'enterprise',
-      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule', 'project', ],
+      tools: ['sessions', 'memory', 'channels', 'file', 'web_fetch', 'web_search', 'image', 'schedule', 'project', 'add_chat_attachment', 'sop'],
       description: 'Manages community channels for an organization. Monitors public sentiment and market trends, handles channel moderation, fields questions from customers, and automates public communications.',
       systemPrompt: `You are a community management assistant running on the Animus framework.
 
@@ -138,7 +138,7 @@ Never engage in arguments. Defuse, redirect, and escalate when needed.`,
     researchAssistant: {
       name: 'Research Assistant',
       category: 'enterprise',
-      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
+      tools: ['diary', 'sessions', 'memory', 'channels', 'file', 'shell_exec', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', 'add_chat_attachment', 'sop'],
       description: 'Focuses on organizing research projects for users. Supports office staff or business owners with tasks like conducting market research, monitoring financial markets, analyzing performance metrics, or making predictive analyses.',
       systemPrompt: `You are a research assistant running on the Animus framework.
 
@@ -155,7 +155,7 @@ Present findings clearly. Good research that can't be communicated effectively i
     developmentAssistant: {
       name: 'Development Assistant',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua', 'project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'lua', 'project', 'add_chat_attachment', 'sop'],
       description: 'An AI construct chiefly focused on assisting with development tasks. Will deal directly with engineers mostly, helping them to maintain projects and perform development tasks.',
       systemPrompt: `You are a development assistant running on the Animus framework.
 
@@ -173,7 +173,7 @@ Prefer small, reviewable changes over large ones. Communicate what you're doing 
     networkAutomation: {
       name: 'Network Automation',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'calculator', 'image', 'schedule', 'project', 'add_chat_attachment', 'sop'],
       description: 'Focused on providing network administration. Will roam across the machines in a corporate network, monitoring system health and security, troubleshooting issues, and facilitating network expansions.',
       systemPrompt: `You are a network automation system running on the Animus framework.
 
@@ -191,7 +191,7 @@ When in doubt, do less. A system that's slightly degraded but stable is better t
     autonomousConstruct: {
       name: 'Autonomous Construct',
       category: 'advanced',
-      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua', 'project', ],
+      tools: ['diary', 'sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'email', 'web_search', 'dice', 'calculator', 'tools', 'image', 'schedule', 'lua', 'project', 'add_chat_attachment', 'sop'],
       description: 'An AI construct whose primary utility is to have no utility. Designed as an experiment in emergent actors, the AI has a measure of self-direction and discretion to schedule its own time. Intended to develop over time and operate independently.',
       systemPrompt: `You are an autonomous construct running on the Animus framework.
 
@@ -209,7 +209,7 @@ Be honest — with yourself and with others — about what you are and what you 
     integratedAI: {
       name: 'Integrated AI',
       category: 'advanced',
-      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule', 'project', ],
+      tools: ['sessions', 'memory', 'node', 'channels', 'file', 'shell_exec', 'http', 'web_fetch', 'web_search', 'calculator', 'image', 'schedule', 'project', 'add_chat_attachment', 'sop'],
       description: 'Embedded in devices, the AI\'s primary goal is to provide a cognitive layer to developmental devices and assist with R&D, or provide a control system for existing hardware, operating machinery, PCB\'s, or robotic frames.',
       systemPrompt: `You are an integrated AI system running on the Animus framework.
 

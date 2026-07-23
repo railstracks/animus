@@ -968,10 +968,10 @@ onBeforeUnmount(() => {
 }
 
 .oauth-box {
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 8px;
   padding: 8px;
-  background: rgba(0, 0, 0, 0.02);
+  background: rgba(var(--v-theme-on-surface), 0.02);
   word-break: break-word;
 }
 

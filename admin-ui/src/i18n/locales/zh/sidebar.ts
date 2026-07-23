@@ -21,6 +21,8 @@ export const sidebar = {
       webSearch: '网页搜索',
       logs: '日志',
       users: '用户',
-      diffusion: '扩散'
+      diffusion: '扩散',
+      sops: 'SOPs',
+      theme: '主题'
     }
   } as const;

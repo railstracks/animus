@@ -23,5 +23,6 @@ export const sidebar = {
       users: 'Users',
       diffusion: 'Diffusion',
       sops: 'SOPs',
+      theme: 'Theme',
     }
   } as const;

@@ -658,7 +658,7 @@ onMounted(async () => {
 
 .panel-card {
   padding: 1rem;
-  background: linear-gradient(170deg, rgba(23, 26, 35, 0.95), rgba(16, 18, 24, 0.98));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
 }
 
 .panel-header {
@@ -728,7 +728,7 @@ onMounted(async () => {
 }
 
 .layer-card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   border-radius: 12px;
   padding: 0.75rem;
   cursor: pointer;
@@ -736,7 +736,7 @@ onMounted(async () => {
 }
 
 .layer-card:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(var(--v-theme-on-surface), 0.15);
 }
 
 .layer-card.active {
@@ -799,7 +799,7 @@ onMounted(async () => {
 }
 
 .persp-card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   border-radius: 10px;
   padding: 0.75rem;
 }
@@ -843,7 +843,7 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: flex-start;
   gap: 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
   border-radius: 8px;
   padding: 0.6rem 0.75rem;
 }

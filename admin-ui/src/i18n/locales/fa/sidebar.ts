@@ -21,6 +21,8 @@ export const sidebar = {
       webSearch: 'جستجوی وب',
       logs: 'سیاههها',
       users: 'کاربران',
-      diffusion: 'نفوذ'
+      diffusion: 'نفوذ',
+      sops: 'رویه‌ها',
+      theme: 'تم'
     }
   } as const;

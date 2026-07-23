@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 
 import AppSidebar from './components/AppSidebar.vue';
 import { setLocale, isLocaleType, LocaleSelectItems, LocaleSelectItem } from './i18n';
+import { useAppTheme } from './composables/useAppTheme';
 
 const route = useRoute();
 const drawer = ref(true);
 const { t, locale } = useI18n();
+const { initTheme } = useAppTheme();
+
+onMounted(() => {
+  initTheme();
+});
 
 const isWizard = computed(() => route.name === 'wizard' || route.name === 'login');
 
@@ -40,15 +46,15 @@ function onLocaleChange(value: unknown): void {
       <v-toolbar-title>{{ t('app.toolbar.title') }}</v-toolbar-title>
       <v-spacer />
       <div class="locale-select-wrap">
-        <v-select
-          :model-value="locale"
-          :label="t('app.toolbar.languageLabel')"
-          :items="localeItems"
-          density="compact"
-          variant="underlined"
-          hide-details
-          class="locale-select"
-          @update:model-value="onLocaleChange"
+          <v-select
+            :model-value="locale"
+            :label="t('app.toolbar.languageLabel')"
+            :items="localeItems"
+            density="compact"
+            variant="underlined"
+            hide-details
+            class="locale-select"
+            @update:model-value="onLocaleChange"
         />
       </div>
     </v-app-bar>
@@ -64,7 +70,7 @@ function onLocaleChange(value: unknown): void {
 <style scoped>
 .brand {
   padding: 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
 .brand-name {
@@ -80,7 +86,7 @@ function onLocaleChange(value: unknown): void {
 }
 
 .app-bar {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
 .main-container {

@@ -268,7 +268,7 @@ onMounted(() => {
   line-height: 1.5;
   max-height: 400px;
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.03);
+  background: rgba(var(--v-theme-on-surface), 0.03);
   padding: 12px;
   border-radius: 6px;
 }

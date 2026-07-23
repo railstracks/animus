@@ -23,6 +23,7 @@ import LoginView from '../views/LoginView.vue';
 import UsersView from '../views/UsersView.vue';
 import DiffusionView from '../views/DiffusionView.vue';
 import SopsView from '../views/SopsView.vue';
+import ThemeView from '../views/ThemeView.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -50,6 +51,7 @@ const router = createRouter({
    { path: '/users', name: 'users', component: UsersView },
     { path: '/diffusion', name: 'diffusion', component: DiffusionView },
     { path: '/sops', name: 'sops', component: SopsView },
+   { path: '/theme', name: 'theme', component: ThemeView },
  ]
 });
 

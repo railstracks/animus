@@ -330,6 +330,8 @@ add_library(animus_kernel
   src/kernel/tools/ShellExecTool.cpp
   src/kernel/tools/HttpTool.cpp
   src/kernel/tools/WebFetchTool.cpp
+  src/kernel/tools/StoredLinksTool.cpp
+  src/kernel/tools/RssTool.cpp
   src/kernel/tools/WebSearchTool.cpp
   src/kernel/tools/ConsolidationTool.cpp
   src/kernel/tools/DiaryTool.cpp

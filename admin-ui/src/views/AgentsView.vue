@@ -16,6 +16,13 @@ function goToWizard() { router.push('/wizard'); }
 interface ToolDef {
   name: string;
   description: string;
+  parameters?: Array<{
+    name: string;
+    type: string;
+    description: string;
+    required?: boolean;
+    default?: unknown;
+  }>;
   config_parameters?: Array<{
     name: string;
     type: string;
@@ -170,6 +177,51 @@ function ensureFileToolConfig(): FileToolConfig {
 }
 
 const fileToolConfig = computed<FileToolConfig>(() => ensureFileToolConfig());
+
+// Stored links / RSS feeds per-agent config (stored in tool_configs)
+interface StoredLinkEntry { id: string; label: string; url: string; }
+interface RssFeedEntry { id: string; label: string; url: string; }
+
+function slugify(label: string): string {
+  return label.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'entry';
+}
+
+function ensureStoredLinksConfig(): StoredLinkEntry[] {
+  const root = formData.value.tool_configs as Record<string, unknown>;
+  const existing = root.stored_links as StoredLinkEntry[] | undefined;
+  if (!existing || !Array.isArray(existing)) {
+    const created: StoredLinkEntry[] = [];
+    root.stored_links = created;
+    return created;
+  }
+  return existing;
+}
+function ensureRssFeedsConfig(): RssFeedEntry[] {
+  const root = formData.value.tool_configs as Record<string, unknown>;
+  const existing = root.rss_feeds as RssFeedEntry[] | undefined;
+  if (!existing || !Array.isArray(existing)) {
+    const created: RssFeedEntry[] = [];
+    root.rss_feeds = created;
+    return created;
+  }
+  return existing;
+}
+const storedLinksConfig = computed<StoredLinkEntry[]>(() => ensureStoredLinksConfig());
+const rssFeedsConfig = computed<RssFeedEntry[]>(() => ensureRssFeedsConfig());
+
+function addStoredLink() { storedLinksConfig.value.push({ id: '', label: '', url: '' }); }
+function removeStoredLink(i: number) { storedLinksConfig.value.splice(i, 1); }
+function addRssFeed() { rssFeedsConfig.value.push({ id: '', label: '', url: '' }); }
+function removeRssFeed(i: number) { rssFeedsConfig.value.splice(i, 1); }
+
+// Auto-generate ID from label on label change
+function onStoredLinkLabel(i: number) {
+  storedLinksConfig.value[i].id = slugify(storedLinksConfig.value[i].label);
+}
+function onRssFeedLabel(i: number) {
+  rssFeedsConfig.value[i].id = slugify(rssFeedsConfig.value[i].label);
+}
+
 
 // ---------------------------------------------------------------------------
 // Data loading
@@ -409,6 +461,16 @@ async function deleteAgent(id: string) {
 // Tool toggling
 // ---------------------------------------------------------------------------
 
+const selectedToolName = ref<string>('');
+
+const sortedTools = computed(() =>
+  [...tools.value].sort((a, b) => a.name.localeCompare(b.name))
+);
+
+const selectedTool = computed(() =>
+  sortedTools.value.find(t => t.name === selectedToolName.value) || null
+);
+
 function isToolEnabled(toolName: string): boolean {
   return formData.value.enabled_tools.includes(toolName);
 }
@@ -420,6 +482,10 @@ function toggleTool(toolName: string) {
   } else {
     formData.value.enabled_tools.push(toolName);
   }
+}
+
+function selectTool(toolName: string) {
+  selectedToolName.value = toolName;
 }
 
 function enableAllTools() {
@@ -723,70 +789,205 @@ watch(
                   {{ t('agents.form.clearAll') }}
                 </v-btn>
               </div>
-              <v-checkbox v-for="tool in tools" :key="tool.name"
-                :model-value="isToolEnabled(tool.name)"
-                @update:model-value="toggleTool(tool.name)"
-                density="compact"
-                hide-details
-              >
-                <template #label>
-                  <div>
-                    <strong>{{ tool.name }}</strong>
-                    <span class="text-medium-emphasis ml-2">{{ tool.description }}</span>
-                  </div>
-                </template>
-              </v-checkbox>
-              <p v-if="tools.length === 0" class="text-caption text-medium-emphasis">
-                {{ t('agents.form.noToolsLoaded') }}
-              </p>
 
-              <v-card
-                v-if="isToolEnabled('file')"
-                variant="tonal"
-                class="mt-4 pa-3"
-              >
-                <div class="text-subtitle-2 mb-2">{{ t('agents.form.fileToolConfigTitle') }}</div>
-                <v-switch
-                  v-model="fileToolConfig.restrict_to_workspace"
-                  :label="t('agents.form.fileRestrictToWorkspace')"
-                  density="compact"
-                  hide-details
-                  color="primary"
-                />
-                <v-text-field
-                  v-model="fileToolConfig.workspace_root"
-                  :label="t('agents.form.fileWorkspaceRoot')"
-                  :hint="t('agents.form.fileWorkspaceRootHint')"
-                  persistent-hint
-                  density="compact"
-                  class="mt-2"
-                />
-                <v-combobox
-                  v-model="fileToolConfig.path_allowlist"
-                  :label="t('agents.form.filePathAllowlist')"
-                  :hint="t('agents.form.filePathAllowlistHint')"
-                  persistent-hint
-                  multiple
-                  chips
-                  closable-chips
-                  clearable
-                  density="compact"
-                  class="mt-2"
-                />
-                <v-combobox
-                  v-model="fileToolConfig.path_denylist"
-                  :label="t('agents.form.filePathDenylist')"
-                  :hint="t('agents.form.filePathDenylistHint')"
-                  persistent-hint
-                  multiple
-                  chips
-                  closable-chips
-                  clearable
-                  density="compact"
-                  class="mt-2"
-                />
-              </v-card>
+              <div class="d-flex flex-column ga-4" style="min-height: 300px;">
+                <!-- Tool list (top) -->
+                <div style="max-height: 300px; overflow-y: auto;" class="border rounded">
+                  <v-list density="compact">
+                    <v-list-item
+                      v-for="tool in sortedTools"
+                      :key="tool.name"
+                      :active="selectedToolName === tool.name"
+                      @click="selectTool(tool.name)"
+                      density="compact"
+                      :title="tool.name"
+                    >
+                      <template #prepend>
+                        <v-checkbox
+                          :model-value="isToolEnabled(tool.name)"
+                          @update:model-value="toggleTool(tool.name)"
+                          @click.stop
+                          density="compact"
+                          hide-details
+                          color="primary"
+                        />
+                      </template>
+                      <template #append>
+                        <v-icon v-if="isToolEnabled(tool.name)" size="x-small" color="success">mdi-check-circle</v-icon>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                  <p v-if="tools.length === 0" class="text-caption text-medium-emphasis pa-3">
+                    {{ t('agents.form.noToolsLoaded') }}
+                  </p>
+                </div>
 
+                <!-- Detail panel (below) -->
+                <div class="flex-grow-1">
+                  <v-card v-if="selectedTool" variant="tonal" class="pa-4">
+                    <div class="d-flex align-center mb-3">
+                      <v-icon class="mr-2" color="primary">mdi-tools</v-icon>
+                      <span class="text-h6">{{ selectedTool.name }}</span>
+                      <v-spacer />
+                      <v-chip
+                        :color="isToolEnabled(selectedTool.name) ? 'success' : 'default'"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{ isToolEnabled(selectedTool.name) ? 'Enabled' : 'Disabled' }}
+                      </v-chip>
+                    </div>
+                    <p class="text-body-2 mb-3">{{ selectedTool.description }}</p>
+                    <template v-if="selectedTool.parameters && selectedTool.parameters.length > 0">
+                      <v-divider class="mb-3" />
+                      <div class="text-subtitle-2 mb-2">Tool Schema</div>
+                      <v-table density="compact">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Req</th>
+                            <th>Description</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="param in selectedTool.parameters" :key="param.name">
+                            <td class="font-weight-medium">{{ param.name }}</td>
+                            <td>
+                              <v-chip size="x-small" variant="outlined">{{ param.type }}</v-chip>
+                            </td>
+                            <td>
+                              <v-icon v-if="param.required" size="small" color="error">mdi-asterisk</v-icon>
+                              <span v-else class="text-medium-emphasis">—</span>
+                            </td>
+                            <td class="text-caption">{{ param.description }}</td>
+                          </tr>
+                        </tbody>
+                      </v-table>
+                    </template>
+                    <template v-if="selectedTool.config_parameters && selectedTool.config_parameters.length > 0">
+                      <v-divider class="mb-3" />
+                      <div class="text-subtitle-2 mb-2">Config Parameters</div>
+                      <v-table density="compact">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Req</th>
+                            <th>Description</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="param in selectedTool.config_parameters" :key="param.name">
+                            <td class="font-weight-medium">{{ param.name }}</td>
+                            <td>
+                              <v-chip size="x-small" variant="outlined">{{ param.type }}</v-chip>
+                            </td>
+                            <td>
+                              <v-icon v-if="param.required" size="small" color="error">mdi-asterisk</v-icon>
+                            <span v-else class="text-medium-emphasis">—</span>
+                            </td>
+                            <td class="text-caption">{{ param.description }}</td>
+                          </tr>
+                        </tbody>
+                      </v-table>
+                    </template>
+                    <p v-if="(!selectedTool.parameters || selectedTool.parameters.length === 0) && (!selectedTool.config_parameters || selectedTool.config_parameters.length === 0)" class="text-caption text-medium-emphasis">
+                      No configuration parameters.
+                    </p>
+
+                    <!-- Tool-specific config UI -->
+                    <template v-if="isToolEnabled(selectedTool.name)">
+                      <v-divider class="mb-3" />
+
+                      <!-- File tool config -->
+                      <template v-if="selectedTool.name === 'file'">
+                        <div class="text-subtitle-2 mb-2">{{ t('agents.form.fileToolConfigTitle') }}</div>
+                        <v-switch
+                          v-model="fileToolConfig.restrict_to_workspace"
+                          :label="t('agents.form.fileRestrictToWorkspace')"
+                          density="compact"
+                          hide-details
+                          color="primary"
+                        />
+                        <v-text-field
+                          v-model="fileToolConfig.workspace_root"
+                          :label="t('agents.form.fileWorkspaceRoot')"
+                          :hint="t('agents.form.fileWorkspaceRootHint')"
+                          persistent-hint
+                          density="compact"
+                          class="mt-2"
+                        />
+                        <v-combobox
+                          v-model="fileToolConfig.path_allowlist"
+                          :label="t('agents.form.filePathAllowlist')"
+                          :hint="t('agents.form.filePathAllowlistHint')"
+                          persistent-hint
+                          multiple
+                          chips
+                          closable-chips
+                          clearable
+                          density="compact"
+                          class="mt-2"
+                        />
+                        <v-combobox
+                          v-model="fileToolConfig.path_denylist"
+                          :label="t('agents.form.filePathDenylist')"
+                          :hint="t('agents.form.filePathDenylistHint')"
+                          persistent-hint
+                          multiple
+                          chips
+                          closable-chips
+                          clearable
+                          density="compact"
+                          class="mt-2"
+                        />
+                      </template>
+
+                      <!-- Stored links config -->
+                      <template v-if="selectedTool.name === 'stored_links'">
+                        <div class="d-flex align-center mb-2">
+                          <span class="text-subtitle-2">Configured Links</span>
+                          <v-spacer />
+                          <v-btn size="x-small" variant="tonal" @click="addStoredLink">Add</v-btn>
+                        </div>
+                        <div v-for="(link, i) in storedLinksConfig" :key="i" class="d-flex ga-2 mb-2">
+                          <v-text-field v-model="link.label" label="Label" density="compact" hide-details style="max-width: 180px;" @input="onStoredLinkLabel(i)" :hint="link.id ? `id: ${link.id}` : ''" persistent-hint />
+                          <v-text-field v-model="link.url" label="URL" density="compact" hide-details class="flex-grow-1" />
+                          <v-btn size="small" icon variant="text" @click="removeStoredLink(i)"><v-icon>mdi-close</v-icon></v-btn>
+                        </div>
+                        <p v-if="storedLinksConfig.length === 0" class="text-caption text-medium-emphasis">
+                          No stored links configured. Click Add to create one.
+                        </p>
+                      </template>
+
+                      <!-- RSS feeds config -->
+                      <template v-if="selectedTool.name === 'rss'">
+                        <div class="d-flex align-center mb-2">
+                          <span class="text-subtitle-2">Configured Feeds</span>
+                          <v-spacer />
+                          <v-btn size="x-small" variant="tonal" @click="addRssFeed">Add</v-btn>
+                        </div>
+                        <div v-for="(feed, i) in rssFeedsConfig" :key="i" class="d-flex ga-2 mb-2">
+                          <v-text-field v-model="feed.label" label="Label" density="compact" hide-details style="max-width: 180px;" @input="onRssFeedLabel(i)" :hint="feed.id ? `id: ${feed.id}` : ''" persistent-hint />
+                          <v-text-field v-model="feed.url" label="URL" density="compact" hide-details class="flex-grow-1" />
+                          <v-btn size="small" icon variant="text" @click="removeRssFeed(i)"><v-icon>mdi-close</v-icon></v-btn>
+                        </div>
+                        <p v-if="rssFeedsConfig.length === 0" class="text-caption text-medium-emphasis">
+                          No RSS feeds configured. Click Add to create one.
+                        </p>
+                      </template>
+                    </template>
+                    <p v-else-if="selectedTool" class="text-caption text-medium-emphasis mt-2">
+                      Enable this tool to configure its options.
+                    </p>
+                  </v-card>
+                  <v-card v-else variant="outlined" class="pa-4 text-center text-medium-emphasis">
+                    <v-icon size="large" class="mb-2">mdi-hand-point-left</v-icon>
+                    <p class="text-body-2">Select a tool to view its details</p>
+                  </v-card>
+                </div>
+              </div>
               <v-divider class="my-4" />
 
               <div class="text-subtitle-2 mb-1">Allowed Nodes</div>
