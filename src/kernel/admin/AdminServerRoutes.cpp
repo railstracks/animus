@@ -89,8 +89,4 @@ void AdminServer::RegisterRoutesSops() {
 #include "kernel/admin/internal/AdminServerRoutesSops.inc"
 }
 
-void AdminServer::RegisterRoutesStoredLinksRss() {
-#include "kernel/admin/internal/AdminServerRoutesStoredLinksRss.inc"
-}
-
 } // namespace animus::kernel

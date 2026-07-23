@@ -1390,7 +1390,6 @@ void AdminServer::RegisterHandlersOnce() {
         RegisterRoutesAuth();
         RegisterRoutesDiffusion();
         RegisterRoutesSops();
-        RegisterRoutesStoredLinksRss();
     });
 }
 

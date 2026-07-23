@@ -49,16 +49,24 @@ ToolDefinition StoredLinksTool::GetDefinition() const {
     idParam.required = true;
     def.parameters.push_back(idParam);
 
+    // Config parameters (per-agent, stored in tool_configs.stored_links)
+    ToolParameter cfgLinks;
+    cfgLinks.name = "links";
+    cfgLinks.type = "array";
+    cfgLinks.description = "Array of stored link objects: {id, label, url}. Per-agent override for system-wide defaults.";
+    cfgLinks.required = false;
+    def.config_parameters.push_back(cfgLinks);
+
     return def;
 }
 
-std::string StoredLinksTool::FormatList() const {
-    if (m_links.empty()) {
+std::string StoredLinksTool::FormatList(const std::vector<StoredLink>& links) const {
+    if (links.empty()) {
         return "No stored links configured.";
     }
 
     Json::Value root(Json::arrayValue);
-    for (const auto& link : m_links) {
+    for (const auto& link : links) {
         Json::Value entry(Json::objectValue);
         entry["id"] = link.id;
         entry["label"] = link.label;
@@ -74,13 +82,29 @@ ToolResult StoredLinksTool::Execute(const ToolCall& call) {
     ToolResult result;
     result.call_id = call.id;
 
-    if (m_links.empty()) {
-        result.success = false;
-        result.error = "No stored links are configured.";
-        return result;
+    // Determine which links to use: per-agent injected config overrides constructor defaults
+    std::vector<StoredLink> activeLinks = m_links;
+    const auto args = ParseArgs(call.arguments);
+
+    if (args.isMember("__config") && args["__config"].isObject() &&
+        args["__config"].isMember("links") && args["__config"]["links"].isArray()) {
+        activeLinks.clear();
+        for (const auto& item : args["__config"]["links"]) {
+            StoredLink link;
+            link.id = item.get("id", "").asString();
+            link.label = item.get("label", "").asString();
+            link.url = item.get("url", "").asString();
+            if (!link.id.empty() && !link.url.empty()) {
+                activeLinks.push_back(std::move(link));
+            }
+        }
     }
 
-    const auto args = ParseArgs(call.arguments);
+    if (activeLinks.empty()) {
+        result.success = false;
+        result.error = "No stored links are configured for this agent. Add links in the tool configuration.";
+        return result;
+    }
     const std::string id = args.isMember("id") && args["id"].isString()
         ? args["id"].asString() : "";
 
@@ -93,12 +117,12 @@ ToolResult StoredLinksTool::Execute(const ToolCall& call) {
     // List mode
     if (ToLower(id) == "list") {
         result.success = true;
-        result.output = FormatList();
+        result.output = FormatList(activeLinks);
         return result;
     }
 
     // Find the stored link
-    auto it = std::find_if(m_links.begin(), m_links.end(),
+    auto it = std::find_if(activeLinks.begin(), activeLinks.end(),
         [&](const StoredLink& l) { return l.id == id; });
 
     if (it == m_links.end()) {

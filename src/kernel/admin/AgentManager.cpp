@@ -379,6 +379,33 @@ bool AgentManager::ValidateFileToolConfig(const Json::Value& fileCfg, std::strin
     return true;
 }
 
+bool AgentManager::ValidateLinkFeedConfig(const Json::Value& config, const char* fieldName, std::string* error) const {
+    if (!config.isArray()) {
+        if (error) *error = std::string("tool_configs.") + fieldName + " must be an array";
+        return false;
+    }
+    for (Json::ArrayIndex i = 0; i < config.size(); ++i) {
+        const Json::Value& entry = config[i];
+        if (!entry.isObject()) {
+            if (error) *error = std::string("tool_configs.") + fieldName + "[" + std::to_string(i) + "] must be an object";
+            return false;
+        }
+        if (!entry.isMember("id") || !entry["id"].isString() || entry["id"].asString().empty()) {
+            if (error) *error = std::string("tool_configs.") + fieldName + "[" + std::to_string(i) + "].id is required";
+            return false;
+        }
+        if (!entry.isMember("url") || !entry["url"].isString() || entry["url"].asString().empty()) {
+            if (error) *error = std::string("tool_configs.") + fieldName + "[" + std::to_string(i) + "].url is required";
+            return false;
+        }
+        if (entry.isMember("label") && !entry["label"].isString()) {
+            if (error) *error = std::string("tool_configs.") + fieldName + "[" + std::to_string(i) + "].label must be a string";
+            return false;
+        }
+    }
+    return true;
+}
+
 bool AgentManager::ParseUInt32Field(
     const Json::Value& object,
     const char* key,
@@ -561,6 +588,18 @@ bool AgentManager::ApplyAgentEntityPatch(
 
         if (toolConfigs.isMember("file")) {
             if (!ValidateFileToolConfig(toolConfigs["file"], error)) {
+                return false;
+            }
+        }
+
+        if (toolConfigs.isMember("stored_links")) {
+            if (!ValidateLinkFeedConfig(toolConfigs["stored_links"], "stored_links", error)) {
+                return false;
+            }
+        }
+
+        if (toolConfigs.isMember("rss_feeds")) {
+            if (!ValidateLinkFeedConfig(toolConfigs["rss_feeds"], "rss_feeds", error)) {
                 return false;
             }
         }

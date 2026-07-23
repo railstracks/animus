@@ -178,40 +178,36 @@ function ensureFileToolConfig(): FileToolConfig {
 
 const fileToolConfig = computed<FileToolConfig>(() => ensureFileToolConfig());
 
-// Stored links / RSS feeds config (system-wide, persisted in __kernel__)
+// Stored links / RSS feeds per-agent config (stored in tool_configs)
 interface StoredLinkEntry { id: string; label: string; url: string; }
 interface RssFeedEntry { id: string; label: string; url: string; }
-const storedLinksConfig = ref<StoredLinkEntry[]>([]);
-const rssFeedsConfig = ref<RssFeedEntry[]>([]);
-const toolConfigDirty = ref(false);
-const toolConfigSaved = ref(false);
 
-async function loadStoredLinksConfig() {
-  try {
-    storedLinksConfig.value = await apiGet<StoredLinkEntry[]>('/api/v1/stored-links');
-  } catch { storedLinksConfig.value = []; }
+function ensureStoredLinksConfig(): StoredLinkEntry[] {
+  const root = formData.value.tool_configs as Record<string, unknown>;
+  const existing = root.stored_links as StoredLinkEntry[] | undefined;
+  if (!existing || !Array.isArray(existing)) {
+    const created: StoredLinkEntry[] = [];
+    root.stored_links = created;
+    return created;
+  }
+  return existing;
 }
-async function loadRssFeedsConfig() {
-  try {
-    rssFeedsConfig.value = await apiGet<RssFeedEntry[]>('/api/v1/rss-feeds');
-  } catch { rssFeedsConfig.value = []; }
+function ensureRssFeedsConfig(): RssFeedEntry[] {
+  const root = formData.value.tool_configs as Record<string, unknown>;
+  const existing = root.rss_feeds as RssFeedEntry[] | undefined;
+  if (!existing || !Array.isArray(existing)) {
+    const created: RssFeedEntry[] = [];
+    root.rss_feeds = created;
+    return created;
+  }
+  return existing;
 }
-async function saveStoredLinksConfig() {
-  try {
-    await apiRequest('PUT', '/api/v1/stored-links', storedLinksConfig.value);
-    toolConfigSaved.value = true; setTimeout(() => toolConfigSaved.value = false, 3000);
-  } catch (e: any) { error.value = e.message || 'Failed to save'; }
-}
-async function saveRssFeedsConfig() {
-  try {
-    await apiRequest('PUT', '/api/v1/rss-feeds', rssFeedsConfig.value);
-    toolConfigSaved.value = true; setTimeout(() => toolConfigSaved.value = false, 3000);
-  } catch (e: any) { error.value = e.message || 'Failed to save'; }
-}
-function addStoredLink() { storedLinksConfig.value.push({ id: '', label: '', url: '' }); toolConfigDirty.value = true; }
-function removeStoredLink(i: number) { storedLinksConfig.value.splice(i, 1); toolConfigDirty.value = true; }
-function addRssFeed() { rssFeedsConfig.value.push({ id: '', label: '', url: '' }); toolConfigDirty.value = true; }
-function removeRssFeed(i: number) { rssFeedsConfig.value.splice(i, 1); toolConfigDirty.value = true; }
+const storedLinksConfig = computed<StoredLinkEntry[]>(() => ensureStoredLinksConfig());
+const rssFeedsConfig = computed<RssFeedEntry[]>(() => ensureRssFeedsConfig());
+function addStoredLink() { storedLinksConfig.value.push({ id: '', label: '', url: '' }); }
+function removeStoredLink(i: number) { storedLinksConfig.value.splice(i, 1); }
+function addRssFeed() { rssFeedsConfig.value.push({ id: '', label: '', url: '' }); }
+function removeRssFeed(i: number) { rssFeedsConfig.value.splice(i, 1); }
 
 
 // ---------------------------------------------------------------------------
@@ -502,7 +498,7 @@ function toolCount(a: Agent): string {
 }
 
 onMounted(() => {
-  void Promise.all([loadAgents(), loadTools(), loadProviders(), loadNodes(), loadVisionModels(), loadStoredLinksConfig(), loadRssFeedsConfig()]);
+  void Promise.all([loadAgents(), loadTools(), loadProviders(), loadNodes(), loadVisionModels()]);
 });
 
 watch(
@@ -941,11 +937,7 @@ watch(
                           <span class="text-subtitle-2">Configured Links</span>
                           <v-spacer />
                           <v-btn size="x-small" variant="tonal" @click="addStoredLink">Add</v-btn>
-                          <v-btn size="x-small" variant="tonal" color="primary" class="ml-2" @click="saveStoredLinksConfig">Save</v-btn>
                         </div>
-                        <v-alert v-if="toolConfigSaved" type="success" density="compact" class="mb-2">
-                          Saved. Restart kernel to apply.
-                        </v-alert>
                         <div v-for="(link, i) in storedLinksConfig" :key="i" class="d-flex ga-2 mb-2">
                           <v-text-field v-model="link.id" label="ID" density="compact" hide-details style="max-width: 120px;" />
                           <v-text-field v-model="link.label" label="Label" density="compact" hide-details style="max-width: 140px;" />
@@ -963,11 +955,7 @@ watch(
                           <span class="text-subtitle-2">Configured Feeds</span>
                           <v-spacer />
                           <v-btn size="x-small" variant="tonal" @click="addRssFeed">Add</v-btn>
-                          <v-btn size="x-small" variant="tonal" color="primary" class="ml-2" @click="saveRssFeedsConfig">Save</v-btn>
                         </div>
-                        <v-alert v-if="toolConfigSaved" type="success" density="compact" class="mb-2">
-                          Saved. Restart kernel to apply.
-                        </v-alert>
                         <div v-for="(feed, i) in rssFeedsConfig" :key="i" class="d-flex ga-2 mb-2">
                           <v-text-field v-model="feed.id" label="ID" density="compact" hide-details style="max-width: 120px;" />
                           <v-text-field v-model="feed.label" label="Label" density="compact" hide-details style="max-width: 140px;" />

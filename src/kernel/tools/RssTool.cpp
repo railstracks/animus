@@ -140,6 +140,14 @@ ToolDefinition RssTool::GetDefinition() const {
     limitParam.required = false;
     def.parameters.push_back(limitParam);
 
+    // Config parameters (per-agent, stored in tool_configs.rss_feeds)
+    ToolParameter cfgFeeds;
+    cfgFeeds.name = "feeds";
+    cfgFeeds.type = "array";
+    cfgFeeds.description = "Array of RSS feed objects: {id, label, url}. Per-agent override for system-wide defaults.";
+    cfgFeeds.required = false;
+    def.config_parameters.push_back(cfgFeeds);
+
     return def;
 }
 
@@ -264,13 +272,29 @@ ToolResult RssTool::Execute(const ToolCall& call) {
     ToolResult result;
     result.call_id = call.id;
 
-    if (m_feeds.empty()) {
-        result.success = false;
-        result.error = "No RSS feeds are configured.";
-        return result;
+    // Determine which feeds to use: per-agent injected config overrides constructor defaults
+    std::vector<RssFeed> activeFeeds = m_feeds;
+    const auto args = ParseArgs(call.arguments);
+
+    if (args.isMember("__config") && args["__config"].isObject() &&
+        args["__config"].isMember("feeds") && args["__config"]["feeds"].isArray()) {
+        activeFeeds.clear();
+        for (const auto& item : args["__config"]["feeds"]) {
+            RssFeed feed;
+            feed.id = item.get("id", "").asString();
+            feed.label = item.get("label", "").asString();
+            feed.url = item.get("url", "").asString();
+            if (!feed.id.empty() && !feed.url.empty()) {
+                activeFeeds.push_back(std::move(feed));
+            }
+        }
     }
 
-    const auto args = ParseArgs(call.arguments);
+    if (activeFeeds.empty()) {
+        result.success = false;
+        result.error = "No RSS feeds are configured for this agent. Add feeds in the tool configuration.";
+        return result;
+    }
 
     std::string feedId;
     if (args.isMember("feed") && args["feed"].isString()) {
@@ -287,11 +311,11 @@ ToolResult RssTool::Execute(const ToolCall& call) {
     // Determine which feeds to fetch
     std::vector<const RssFeed*> toFetch;
     if (feedId.empty() || ToLower(feedId) == "all") {
-        for (const auto& f : m_feeds) toFetch.push_back(&f);
+        for (const auto& f : activeFeeds) toFetch.push_back(&f);
     } else {
-        auto it = std::find_if(m_feeds.begin(), m_feeds.end(),
+        auto it = std::find_if(activeFeeds.begin(), activeFeeds.end(),
             [&](const RssFeed& f) { return f.id == feedId; });
-        if (it == m_feeds.end()) {
+        if (it == activeFeeds.end()) {
             result.success = false;
             result.error = "No RSS feed with id \"" + feedId + "\".";
             return result;

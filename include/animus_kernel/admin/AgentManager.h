@@ -43,6 +43,7 @@ private:
         const KernelConfig::AgentRuntimeConfig& config,
         std::string* error) const;
     bool ValidateFileToolConfig(const Json::Value& fileCfg, std::string* error) const;
+    bool ValidateLinkFeedConfig(const Json::Value& config, const char* fieldName, std::string* error) const;
     bool ParseUInt32Field(
         const Json::Value& object,
         const char* key,

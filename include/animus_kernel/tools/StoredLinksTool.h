@@ -35,7 +35,7 @@ private:
     HttpClient& m_client;
     std::vector<StoredLink> m_links;
 
-    std::string FormatList() const;
+    std::string FormatList(const std::vector<StoredLink>& links) const;
 };
 
 } // namespace animus::kernel
