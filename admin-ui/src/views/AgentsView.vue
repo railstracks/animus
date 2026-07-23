@@ -182,6 +182,10 @@ const fileToolConfig = computed<FileToolConfig>(() => ensureFileToolConfig());
 interface StoredLinkEntry { id: string; label: string; url: string; }
 interface RssFeedEntry { id: string; label: string; url: string; }
 
+function slugify(label: string): string {
+  return label.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'entry';
+}
+
 function ensureStoredLinksConfig(): StoredLinkEntry[] {
   const root = formData.value.tool_configs as Record<string, unknown>;
   const existing = root.stored_links as StoredLinkEntry[] | undefined;
@@ -204,10 +208,19 @@ function ensureRssFeedsConfig(): RssFeedEntry[] {
 }
 const storedLinksConfig = computed<StoredLinkEntry[]>(() => ensureStoredLinksConfig());
 const rssFeedsConfig = computed<RssFeedEntry[]>(() => ensureRssFeedsConfig());
+
 function addStoredLink() { storedLinksConfig.value.push({ id: '', label: '', url: '' }); }
 function removeStoredLink(i: number) { storedLinksConfig.value.splice(i, 1); }
 function addRssFeed() { rssFeedsConfig.value.push({ id: '', label: '', url: '' }); }
 function removeRssFeed(i: number) { rssFeedsConfig.value.splice(i, 1); }
+
+// Auto-generate ID from label on label change
+function onStoredLinkLabel(i: number) {
+  storedLinksConfig.value[i].id = slugify(storedLinksConfig.value[i].label);
+}
+function onRssFeedLabel(i: number) {
+  rssFeedsConfig.value[i].id = slugify(rssFeedsConfig.value[i].label);
+}
 
 
 // ---------------------------------------------------------------------------
@@ -939,8 +952,7 @@ watch(
                           <v-btn size="x-small" variant="tonal" @click="addStoredLink">Add</v-btn>
                         </div>
                         <div v-for="(link, i) in storedLinksConfig" :key="i" class="d-flex ga-2 mb-2">
-                          <v-text-field v-model="link.id" label="ID" density="compact" hide-details style="max-width: 120px;" />
-                          <v-text-field v-model="link.label" label="Label" density="compact" hide-details style="max-width: 140px;" />
+                          <v-text-field v-model="link.label" label="Label" density="compact" hide-details style="max-width: 180px;" @input="onStoredLinkLabel(i)" :hint="link.id ? `id: ${link.id}` : ''" persistent-hint />
                           <v-text-field v-model="link.url" label="URL" density="compact" hide-details class="flex-grow-1" />
                           <v-btn size="small" icon variant="text" @click="removeStoredLink(i)"><v-icon>mdi-close</v-icon></v-btn>
                         </div>
@@ -957,8 +969,7 @@ watch(
                           <v-btn size="x-small" variant="tonal" @click="addRssFeed">Add</v-btn>
                         </div>
                         <div v-for="(feed, i) in rssFeedsConfig" :key="i" class="d-flex ga-2 mb-2">
-                          <v-text-field v-model="feed.id" label="ID" density="compact" hide-details style="max-width: 120px;" />
-                          <v-text-field v-model="feed.label" label="Label" density="compact" hide-details style="max-width: 140px;" />
+                          <v-text-field v-model="feed.label" label="Label" density="compact" hide-details style="max-width: 180px;" @input="onRssFeedLabel(i)" :hint="feed.id ? `id: ${feed.id}` : ''" persistent-hint />
                           <v-text-field v-model="feed.url" label="URL" density="compact" hide-details class="flex-grow-1" />
                           <v-btn size="small" icon variant="text" @click="removeRssFeed(i)"><v-icon>mdi-close</v-icon></v-btn>
                         </div>
