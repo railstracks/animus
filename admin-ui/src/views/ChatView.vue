@@ -1910,7 +1910,7 @@ watch(sessionSearch, () => {
   border-radius: 16px;
   overflow: hidden;
   background: linear-gradient(170deg, rgba(23, 26, 35, 0.95), rgba(16, 18, 24, 0.98));
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
 }
 
 .chat-toolbar {
@@ -1919,7 +1919,7 @@ watch(sessionSearch, () => {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.9rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .toolbar-left {
@@ -1973,7 +1973,7 @@ watch(sessionSearch, () => {
 
 .token-gauge-label {
   font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
   white-space: nowrap;
 }
 
@@ -1982,7 +1982,7 @@ watch(sessionSearch, () => {
   letter-spacing: 0.08em;
   font-size: 0.7rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.14);
   padding: 0.2rem 0.55rem;
 }
 
@@ -2043,8 +2043,8 @@ watch(sessionSearch, () => {
   width: 100%;
   padding: 0.75rem 0.9rem;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  background: rgba(var(--v-theme-on-surface), 0.03);
 }
 
 .role-user .bubble {
@@ -2067,7 +2067,7 @@ watch(sessionSearch, () => {
 
 .markdown-body :deep(pre) {
   padding: 0.6rem;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--v-theme-on-surface), 0.06);
   border-radius: 8px;
   overflow-x: auto;
 }
@@ -2079,8 +2079,8 @@ watch(sessionSearch, () => {
 .composer {
   flex-shrink: 0;
   padding: 0.9rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.18);
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  background: rgba(var(--v-theme-on-surface), 0.18);
 }
 
 .composer-actions {
@@ -2153,7 +2153,7 @@ watch(sessionSearch, () => {
 
 .compaction-timeline-time {
   font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   margin-bottom: 0.2rem;
 }
 
@@ -2168,7 +2168,7 @@ watch(sessionSearch, () => {
   gap: 0.75rem;
   margin-top: 0.25rem;
   font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(var(--v-theme-on-surface), 0.4);
 }
 
 .compaction-modal-card {
@@ -2179,7 +2179,7 @@ watch(sessionSearch, () => {
   display: flex;
   gap: 1.5rem;
   font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--v-theme-on-surface), 0.6);
 }
 
 .compaction-modal-summary {
@@ -2213,7 +2213,7 @@ watch(sessionSearch, () => {
 }
 
 .sessions-controls {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   margin-bottom: 0.5rem;
 }
 

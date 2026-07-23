@@ -5,16 +5,10 @@ import { useRoute } from 'vue-router';
 
 import AppSidebar from './components/AppSidebar.vue';
 import { setLocale, isLocaleType, LocaleSelectItems, LocaleSelectItem } from './i18n';
-import { useAppTheme } from './composables/useAppTheme';
 
 const route = useRoute();
 const drawer = ref(true);
 const { t, locale } = useI18n();
-const { currentKey, themes, setTheme, cycleTheme } = useAppTheme();
-
-const currentThemeLabel = computed(() =>
-  themes.find((t) => t.key === currentKey.value)?.label || 'Animus Dark'
-);
 
 const isWizard = computed(() => route.name === 'wizard' || route.name === 'login');
 
@@ -45,12 +39,7 @@ function onLocaleChange(value: unknown): void {
       <v-app-bar-nav-icon @click="drawer = !drawer" />
       <v-toolbar-title>{{ t('app.toolbar.title') }}</v-toolbar-title>
       <v-spacer />
-      <div class="d-flex align-center ga-2">
-        <v-btn icon variant="text" size="small" @click="cycleTheme">
-          <v-icon size="small">mdi-palette</v-icon>
-          <v-tooltip activator="parent" location="bottom">Theme: {{ currentThemeLabel }}</v-tooltip>
-        </v-btn>
-        <div class="locale-select-wrap">
+      <div class="locale-select-wrap">
           <v-select
             :model-value="locale"
             :label="t('app.toolbar.languageLabel')"
@@ -60,8 +49,7 @@ function onLocaleChange(value: unknown): void {
             hide-details
             class="locale-select"
             @update:model-value="onLocaleChange"
-          />
-        </div>
+        />
       </div>
     </v-app-bar>
 
