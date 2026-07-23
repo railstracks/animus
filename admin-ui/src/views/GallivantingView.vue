@@ -1042,7 +1042,7 @@ onMounted(async () => {
 .sessions-card,
 .schedule-card {
   padding: 1.25rem;
-  background: linear-gradient(170deg, rgba(23, 26, 35, 0.95), rgba(16, 18, 24, 0.98));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
 }
 
 .card-header {

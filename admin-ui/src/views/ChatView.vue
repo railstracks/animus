@@ -1909,7 +1909,7 @@ watch(sessionSearch, () => {
   min-height: 0;
   border-radius: 16px;
   overflow: hidden;
-  background: linear-gradient(170deg, rgba(23, 26, 35, 0.95), rgba(16, 18, 24, 0.98));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
   border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
 }
 
@@ -2109,7 +2109,7 @@ watch(sessionSearch, () => {
 }
 
 .context-card {
-  background: linear-gradient(170deg, rgba(22, 24, 33, 0.95), rgba(13, 15, 20, 0.98));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
 }
 
 .compaction-timeline {
@@ -2172,7 +2172,7 @@ watch(sessionSearch, () => {
 }
 
 .compaction-modal-card {
-  background: linear-gradient(170deg, rgba(22, 24, 33, 0.98), rgba(13, 15, 20, 0.99));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
 }
 
 .compaction-modal-meta {
@@ -2193,7 +2193,7 @@ watch(sessionSearch, () => {
   top: 0;
   max-height: calc(100vh - 120px);
   overflow: hidden;
-  background: linear-gradient(170deg, rgba(22, 24, 33, 0.95), rgba(13, 15, 20, 0.98));
+  background: linear-gradient(170deg, rgba(var(--v-theme-surface), 0.95), rgba(var(--v-theme-surface-variant), 0.98));
 }
 
 .context-tabs-window {
@@ -2351,7 +2351,7 @@ watch(sessionSearch, () => {
   padding: 0.55rem 0.65rem;
   border-radius: 8px;
   border: 1px solid rgba(94, 234, 212, 0.2);
-  background: rgba(7, 12, 18, 0.5);
+  background: rgba(var(--v-theme-surface-variant), 0.5);
   color: rgba(210, 255, 246, 0.9);
   font-family: 'IBM Plex Mono', 'Fira Code', monospace;
   font-size: 0.78rem;
@@ -2435,7 +2435,7 @@ watch(sessionSearch, () => {
   padding: 0.55rem 0.65rem;
   border-radius: 8px;
   border: 1px solid rgba(251, 191, 36, 0.2);
-  background: rgba(7, 12, 18, 0.5);
+  background: rgba(var(--v-theme-surface-variant), 0.5);
   color: rgba(253, 224, 71, 0.9);
   font-family: 'IBM Plex Mono', 'Fira Code', monospace;
   font-size: 0.78rem;
