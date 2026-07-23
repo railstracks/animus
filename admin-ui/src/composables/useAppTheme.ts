@@ -6,14 +6,13 @@ const STORAGE_KEY = '***';
 
 export function useAppTheme() {
   const vuetifyTheme = useVuetifyTheme();
-
   const currentTheme = vuetifyTheme.current;
 
-  // Plain ref for v-model binding — Vuetify's v-select owns this freely
+  // Simple read-only ref for display purposes — never passed to v-model
   const currentKey = ref(vuetifyTheme.name.value);
+  watch(() => vuetifyTheme.name.value, (val) => { currentKey.value = val; });
 
-  // Apply side effects when currentKey changes (from v-model)
-  watch(currentKey, (key) => {
+  function setTheme(key: string) {
     if (!themeList.some((t) => t.key === key)) return;
     vuetifyTheme.name.value = key;
     try {
@@ -21,15 +20,6 @@ export function useAppTheme() {
     } catch {
       // localStorage might be unavailable
     }
-  });
-
-  // Keep ref in sync if theme changes externally
-  watch(() => vuetifyTheme.name.value, (val) => {
-    if (val !== currentKey.value) currentKey.value = val;
-  });
-
-  function setTheme(key: string) {
-    currentKey.value = key;
   }
 
   function cycleTheme() {
@@ -38,11 +28,5 @@ export function useAppTheme() {
     setTheme(next.key);
   }
 
-  return {
-    currentTheme,
-    currentKey,
-    themes: themeList,
-    setTheme,
-    cycleTheme,
-  };
+  return { currentTheme, currentKey, themes: themeList, setTheme, cycleTheme };
 }
