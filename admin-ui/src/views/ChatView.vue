@@ -2021,7 +2021,7 @@ watch(sessionSearch, () => {
 .message-content-group {
   display: flex;
   flex-direction: column;
-  max-width: min(80ch, 88%);
+  width: 100%;
 }
 
 .message-row {
@@ -2040,7 +2040,7 @@ watch(sessionSearch, () => {
 }
 
 .bubble {
-  max-width: min(80ch, 88%);
+  width: 100%;
   padding: 0.75rem 0.9rem;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.1);
