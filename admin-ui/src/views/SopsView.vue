@@ -1,6 +1,6 @@
 <template>
   <div class="pa-4">
-    <h1 class="text-h5 mb-4">Standard Operating Procedures</h1>
+    <h1 class="text-h5 mb-4">{{ t('sops.title') }}</h1>
 
     <!-- Search and filters -->
     <v-card elevation="2" rounded="lg" class="mb-4">
@@ -10,7 +10,7 @@
             <v-text-field
               v-model="searchQuery"
               prepend-inner-icon="mdi-magnify"
-              label="Search SOPs"
+              :label="t('sops.searchLabel')"
               density="comfortable"
               hide-details
               @keyup.enter="loadSops"
@@ -20,14 +20,14 @@
             <v-select
               v-model="categoryFilter"
               :items="categories"
-              label="Category"
+              :label="t('sops.categoryLabel')"
               density="comfortable"
               hide-details
               clearable
             />
           </v-col>
           <v-col cols="12" md="2">
-            <v-btn color="primary" block @click="loadSops" :loading="loading">Search</v-btn>
+            <v-btn color="primary" block @click="loadSops" :loading="loading">{{ t('sops.searchButton') }}</v-btn>
           </v-col>
         </v-row>
       </v-card-text>
@@ -42,7 +42,7 @@
 
     <v-row v-else-if="sops.length === 0">
       <v-col cols="12" class="text-center text-medium-emphasis">
-        No SOPs found.
+        {{ t('sops.noResults') }}
       </v-col>
     </v-row>
 
@@ -65,7 +65,7 @@
             </div>
           </v-card-text>
           <v-card-actions>
-            <v-btn variant="text" size="small" @click="viewSop(sop)">View</v-btn>
+            <v-btn variant="text" size="small" @click="viewSop(sop)">{{ t('sops.view') }}</v-btn>
             <v-spacer />
             <v-select
               v-model="sop._selectedAgent"
@@ -75,7 +75,7 @@
               density="compact"
               hide-details
               style="max-width: 160px;"
-              placeholder="Select agent"
+              :placeholder="t('sops.selectAgent')"
             />
             <v-btn
               color="primary"
@@ -85,7 +85,7 @@
               :loading="sop._installing"
               @click="installSop(sop)"
             >
-              Install
+              {{ t('sops.install') }}
             </v-btn>
           </v-card-actions>
         </v-card>
@@ -104,7 +104,7 @@
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn @click="viewDialog = false">Close</v-btn>
+          <v-btn @click="viewDialog = false">{{ t('sops.close') }}</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -118,6 +118,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 interface Sop {
   name: string;
@@ -220,13 +223,13 @@ async function installSop(sop: Sop) {
     const data = await resp.json();
     snackbar.value = {
       show: true,
-      text: `Installed "${sop.title}" to agent memory (file ID: ${data.memory_file_id})`,
+      text: t('sops.installSuccess', { title: sop.title, id: data.memory_file_id }),
       color: 'success',
     };
   } catch (e: any) {
     snackbar.value = {
       show: true,
-      text: e.message || 'Failed to install SOP',
+      text: e.message || t('sops.installFailed'),
       color: 'error',
     };
   } finally {

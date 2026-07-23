@@ -21,6 +21,8 @@ export const sidebar = {
       webSearch: 'Wyszukiwanie w sieci',
       logs: 'Dzienniki',
       users: 'Użytkownicy',
-      diffusion: 'Dyfuzja'
+      diffusion: 'Dyfuzja',
+      sops: 'SOPs',
+      theme: 'Motyw'
     }
   } as const;

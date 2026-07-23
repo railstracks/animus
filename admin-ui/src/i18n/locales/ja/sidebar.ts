@@ -21,6 +21,8 @@ export const sidebar = {
       webSearch: 'ウェブ検索',
       logs: 'ログ',
       users: 'ユーザー',
-      diffusion: 'ディフュージョン'
+      diffusion: 'ディフュージョン',
+      sops: 'SOPs',
+      theme: 'テーマ'
     }
   } as const;

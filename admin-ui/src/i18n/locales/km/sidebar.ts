@@ -21,6 +21,8 @@ export const sidebar = {
       webSearch: 'ការស្វែងរកតាមអ៊ិនធឺណិត',
       logs: 'កំណត់ហេតុ',
       users: 'អ្នកប្រើប្រាស់',
-      diffusion: 'បន្សង'
+      diffusion: 'បន្សង',
+      sops: 'SOPs',
+      theme: 'រូបរាង'
     }
   } as const;

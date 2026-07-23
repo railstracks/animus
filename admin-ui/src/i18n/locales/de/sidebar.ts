@@ -21,6 +21,8 @@ export const sidebar = {
       diary: 'Tagebuch',
       logs: 'Protokolle',
       users: 'Benutzer',
-      diffusion: 'Diffusion'
+      diffusion: 'Diffusion',
+      sops: 'SOPs',
+      theme: 'Design'
     }
   } as const;

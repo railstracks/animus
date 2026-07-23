@@ -21,6 +21,8 @@ export const sidebar = {
       webSearch: 'חיפוש באינטרנט',
       logs: 'יומנים',
       users: 'משתמשים',
-      diffusion: 'דיפוזיה'
+      diffusion: 'דיפוזיה',
+      sops: 'נהלים',
+      theme: 'ערכת נושא'
     }
   } as const;

@@ -21,6 +21,8 @@ export const sidebar = {
       webSearch: 'Binciken yanar gizo',
       logs: 'Logs',
       users: 'Masu amfani',
-      diffusion: 'Yaɗuwa'
+      diffusion: 'Yaɗuwa',
+      sops: 'SOPs',
+      theme: 'Jigo'
     }
   } as const;

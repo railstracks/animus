@@ -16,6 +16,8 @@ import { channels } from './channels'
 import { charter } from './charter'
 import { webSearch } from './webSearch'
 import { templates } from './templates'
+import { sops } from './sops'
+import { theme } from './theme'
 
 export const pt = {
   app,
@@ -36,4 +38,6 @@ export const pt = {
   charter,
   webSearch,
   templates,
+  sops,
+  theme,
 } as const;

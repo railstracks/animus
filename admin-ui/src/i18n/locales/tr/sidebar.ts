@@ -21,6 +21,8 @@ export const sidebar = {
       webSearch: 'Web araması',
       logs: 'Günlükler',
       users: 'Kullanıcılar',
-      diffusion: 'Difüzyon'
+      diffusion: 'Difüzyon',
+      sops: 'SOPs',
+      theme: 'Tema'
     }
   } as const;

@@ -23,11 +23,11 @@ function onSelectTheme(value: unknown) {
 
 <template>
   <div>
-    <h1 class="text-h5 mb-4">{{ t('theme.title', 'Theme') }}</h1>
+    <h1 class="text-h5 mb-4">{{ t('theme.title') }}</h1>
 
     <!-- Theme selector -->
     <v-card variant="tonal" class="mb-6 pa-4" max-width="500">
-      <div class="text-subtitle-1 mb-3">{{ t('theme.selectLabel', 'Application Theme') }}</div>
+      <div class="text-subtitle-1 mb-3">{{ t('theme.selectLabel') }}</div>
       <v-select
         :items="themeItems"
         :model-value="localSelected"
@@ -37,13 +37,13 @@ function onSelectTheme(value: unknown) {
         @update:model-value="onSelectTheme"
       />
       <p class="text-caption text-medium-emphasis mt-2">
-        {{ t('theme.hint', 'Theme preference is stored in your browser and applies to this device only.') }}
+        {{ t('theme.hint') }}
       </p>
     </v-card>
 
     <!-- Sample elements -->
     <v-card variant="tonal" class="mb-4 pa-4">
-      <div class="text-subtitle-1 mb-3">{{ t('theme.samples', 'Sample Elements') }}</div>
+      <div class="text-subtitle-1 mb-3">{{ t('theme.samples') }}</div>
 
       <!-- Buttons -->
       <div class="d-flex ga-2 mb-4 flex-wrap">
