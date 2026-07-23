@@ -1,29 +1,32 @@
 import { useTheme as useVuetifyTheme } from 'vuetify';
-import { computed } from 'vue';
+import { ref, watch } from 'vue';
 import { themeList, type ThemeInfo } from '../plugins/vuetify';
 
-const STORAGE_KEY = 'animus-theme';
+const STORAGE_KEY = '***';
 
 export function useAppTheme() {
   const vuetifyTheme = useVuetifyTheme();
 
   const currentTheme = vuetifyTheme.current;
 
+  // Plain ref that mirrors vuetifyTheme.name — safe for v-model binding
+  const currentKey = ref(vuetifyTheme.name.value);
+
+  // Keep ref in sync if theme changes externally
+  watch(() => vuetifyTheme.name.value, (val) => {
+    currentKey.value = val;
+  });
+
   function setTheme(key: string) {
     if (!themeList.some((t) => t.key === key)) return;
     vuetifyTheme.name.value = key;
+    currentKey.value = key;
     try {
       localStorage.setItem(STORAGE_KEY, key);
     } catch {
       // localStorage might be unavailable (private mode, SSR)
     }
   }
-
-  // Writable computed so v-select v-model works without readonly errors
-  const currentKey = computed({
-    get: () => vuetifyTheme.name.value,
-    set: (val: string) => setTheme(val),
-  });
 
   function cycleTheme() {
     const idx = themeList.findIndex((t) => t.key === vuetifyTheme.name.value);
