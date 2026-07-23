@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { applyTheme, getCurrentTheme, themeList } from '../composables/useAppTheme';
+import { useAppTheme, getCurrentTheme, themeList } from '../composables/useAppTheme';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
-const localSelected = ref('animusDark');
+const { applyTheme } = useAppTheme();
 
+const localSelected = ref('animusDark');
 const themeItems = themeList.map(t => ({ title: t.label, value: t.key }));
 
 onMounted(() => {

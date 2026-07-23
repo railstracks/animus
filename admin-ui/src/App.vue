@@ -5,18 +5,15 @@ import { useRoute } from 'vue-router';
 
 import AppSidebar from './components/AppSidebar.vue';
 import { setLocale, isLocaleType, LocaleSelectItems, LocaleSelectItem } from './i18n';
-import { applyTheme, getCurrentTheme, themeCss } from './composables/useAppTheme';
+import { useAppTheme } from './composables/useAppTheme';
 
 const route = useRoute();
 const drawer = ref(true);
 const { t, locale } = useI18n();
+const { initTheme } = useAppTheme();
 
-// Inject theme CSS and apply saved theme on mount
 onMounted(() => {
-  const style = document.createElement('style');
-  style.textContent = themeCss;
-  document.head.appendChild(style);
-  applyTheme(getCurrentTheme());
+  initTheme();
 });
 
 const isWizard = computed(() => route.name === 'wizard' || route.name === 'login');
