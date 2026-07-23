@@ -16,6 +16,13 @@ function goToWizard() { router.push('/wizard'); }
 interface ToolDef {
   name: string;
   description: string;
+  parameters?: Array<{
+    name: string;
+    type: string;
+    description: string;
+    required?: boolean;
+    default?: unknown;
+  }>;
   config_parameters?: Array<{
     name: string;
     type: string;
@@ -409,6 +416,16 @@ async function deleteAgent(id: string) {
 // Tool toggling
 // ---------------------------------------------------------------------------
 
+const selectedToolName = ref<string>('');
+
+const sortedTools = computed(() =>
+  [...tools.value].sort((a, b) => a.name.localeCompare(b.name))
+);
+
+const selectedTool = computed(() =>
+  sortedTools.value.find(t => t.name === selectedToolName.value) || null
+);
+
 function isToolEnabled(toolName: string): boolean {
   return formData.value.enabled_tools.includes(toolName);
 }
@@ -420,6 +437,10 @@ function toggleTool(toolName: string) {
   } else {
     formData.value.enabled_tools.push(toolName);
   }
+}
+
+function selectTool(toolName: string) {
+  selectedToolName.value = toolName;
 }
 
 function enableAllTools() {
@@ -723,22 +744,119 @@ watch(
                   {{ t('agents.form.clearAll') }}
                 </v-btn>
               </div>
-              <v-checkbox v-for="tool in tools" :key="tool.name"
-                :model-value="isToolEnabled(tool.name)"
-                @update:model-value="toggleTool(tool.name)"
-                density="compact"
-                hide-details
-              >
-                <template #label>
-                  <div>
-                    <strong>{{ tool.name }}</strong>
-                    <span class="text-medium-emphasis ml-2">{{ tool.description }}</span>
-                  </div>
-                </template>
-              </v-checkbox>
-              <p v-if="tools.length === 0" class="text-caption text-medium-emphasis">
-                {{ t('agents.form.noToolsLoaded') }}
-              </p>
+
+              <div class="d-flex ga-4" style="min-height: 300px;">
+                <!-- Tool list (left) -->
+                <div style="width: 280px; flex-shrink: 0; max-height: 400px; overflow-y: auto;" class="border rounded">
+                  <v-list density="compact" :items="sortedTools" item-key="name">
+                    <template #item="{ item: tool }">
+                      <v-list-item
+                        :active="selectedToolName === tool.name"
+                        @click="selectTool(tool.name)"
+                        density="compact"
+                        :title="tool.name"
+                      >
+                        <template #prepend>
+                          <v-checkbox
+                            :model-value="isToolEnabled(tool.name)"
+                            @update:model-value="toggleTool(tool.name)"
+                            @click.stop
+                            density="compact"
+                            hide-details
+                            color="primary"
+                          />
+                        </template>
+                        <template #append>
+                          <v-icon v-if="isToolEnabled(tool.name)" size="x-small" color="success">mdi-check-circle</v-icon>
+                        </template>
+                      </v-list-item>
+                    </template>
+                  </v-list>
+                  <p v-if="tools.length === 0" class="text-caption text-medium-emphasis pa-3">
+                    {{ t('agents.form.noToolsLoaded') }}
+                  </p>
+                </div>
+
+                <!-- Detail panel (right) -->
+                <div class="flex-grow-1">
+                  <v-card v-if="selectedTool" variant="tonal" class="pa-4">
+                    <div class="d-flex align-center mb-3">
+                      <v-icon class="mr-2" color="primary">mdi-tools</v-icon>
+                      <span class="text-h6">{{ selectedTool.name }}</span>
+                      <v-spacer />
+                      <v-chip
+                        :color="isToolEnabled(selectedTool.name) ? 'success' : 'default'"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{ isToolEnabled(selectedTool.name) ? 'Enabled' : 'Disabled' }}
+                      </v-chip>
+                    </div>
+                    <p class="text-body-2 mb-3">{{ selectedTool.description }}</p>
+                    <template v-if="selectedTool.parameters && selectedTool.parameters.length > 0">
+                      <v-divider class="mb-3" />
+                      <div class="text-subtitle-2 mb-2">Tool Schema</div>
+                      <v-table density="compact">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Req</th>
+                            <th>Description</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="param in selectedTool.parameters" :key="param.name">
+                            <td class="font-weight-medium">{{ param.name }}</td>
+                            <td>
+                              <v-chip size="x-small" variant="outlined">{{ param.type }}</v-chip>
+                            </td>
+                            <td>
+                              <v-icon v-if="param.required" size="small" color="error">mdi-asterisk</v-icon>
+                              <span v-else class="text-medium-emphasis">—</span>
+                            </td>
+                            <td class="text-caption">{{ param.description }}</td>
+                          </tr>
+                        </tbody>
+                      </v-table>
+                    </template>
+                    <template v-if="selectedTool.config_parameters && selectedTool.config_parameters.length > 0">
+                      <v-divider class="mb-3" />
+                      <div class="text-subtitle-2 mb-2">Config Parameters</div>
+                      <v-table density="compact">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Req</th>
+                            <th>Description</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="param in selectedTool.config_parameters" :key="param.name">
+                            <td class="font-weight-medium">{{ param.name }}</td>
+                            <td>
+                              <v-chip size="x-small" variant="outlined">{{ param.type }}</v-chip>
+                            </td>
+                            <td>
+                              <v-icon v-if="param.required" size="small" color="error">mdi-asterisk</v-icon>
+                            <span v-else class="text-medium-emphasis">—</span>
+                            </td>
+                            <td class="text-caption">{{ param.description }}</td>
+                          </tr>
+                        </tbody>
+                      </v-table>
+                    </template>
+                    <p v-if="(!selectedTool.parameters || selectedTool.parameters.length === 0) && (!selectedTool.config_parameters || selectedTool.config_parameters.length === 0)" class="text-caption text-medium-emphasis">
+                      No configuration parameters.
+                    </p>
+                  </v-card>
+                  <v-card v-else variant="outlined" class="pa-4 text-center text-medium-emphasis">
+                    <v-icon size="large" class="mb-2">mdi-hand-point-left</v-icon>
+                    <p class="text-body-2">Select a tool to view its details</p>
+                  </v-card>
+                </div>
+              </div>
 
               <v-card
                 v-if="isToolEnabled('file')"
