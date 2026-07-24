@@ -218,6 +218,14 @@ ToolResult WebSearchTool::Execute(const ToolCall& call) {
     ToolResult result;
     result.call_id = call.id;
 
+    // Check if a search provider is configured
+    if (!m_provider) {
+        result.success = false;
+        result.error = "Web search is not configured. Set the Brave Search API key "
+                       "in the kernel configuration (search.api_key) to enable this tool.";
+        return result;
+    }
+
     // Parse arguments
     Json::Value args;
     Json::CharReaderBuilder builder;
