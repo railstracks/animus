@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -469,6 +470,16 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
     std::cerr << " body=" << body;
   }
   std::cerr << std::endl;
+
+  // Debug: dump full request body to /tmp/llm_request_body.json for inspection
+  if (body.size() > 1000) {
+    std::ofstream dump("/tmp/llm_request_body.json", std::ios::trunc);
+    if (dump.is_open()) {
+      dump << body;
+      dump.close();
+      std::cerr << "[llm] Full body dumped to /tmp/llm_request_body.json" << std::endl;
+    }
+  }
   if (stream) {
     m_http->tokenCallback = std::move(tokenCallback);
     m_http->sseBuffer.clear();
