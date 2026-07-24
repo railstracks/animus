@@ -1469,6 +1469,7 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
     m_tools.Register(std::make_unique<EmailTool>(m_httpClient, m_configStore));
 
     // Web Search tool (ticket 069) — Brave provider
+    // Always register for discoverability; returns "not configured" if no API key.
     if (!m_config.search.api_key.empty()) {
         BraveSearchProvider::Config braveCfg;
         braveCfg.api_key = m_config.search.api_key;
@@ -1482,7 +1483,11 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
             20));
         std::cerr << "[kernel] Web search tool registered (provider: brave)" << std::endl;
     } else {
-        std::cerr << "[kernel] Web search tool NOT registered (no API key configured)" << std::endl;
+        m_tools.Register(std::make_unique<WebSearchTool>(
+            nullptr,
+            m_config.search.default_count > 0 ? m_config.search.default_count : 5,
+            20));
+        std::cerr << "[kernel] Web search tool registered (no provider — API key not configured)" << std::endl;
     }
 
     // Utility tools (tickets 085, 097, 099)

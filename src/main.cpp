@@ -637,7 +637,23 @@ static int RunKernel(animus::kernel::KernelConfig& cfg,
     std::getline(std::cin, ignored);
   }
 
+  // Shutdown watchdog: if kernel.Stop() hangs (e.g. stuck on job join
+  // waiting for an in-flight HTTP call), force exit before Docker's
+  // SIGKILL grace period expires. Default grace is 10s; we use 8s to
+  // leave a safety margin.
+  std::atomic<bool> stopCompleted{false};
+  std::thread watchdog([&stopCompleted]() {
+    for (int i = 0; i < 80; ++i) {
+      if (stopCompleted.load()) return;
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    std::cerr << "[shutdown] Watchdog: kernel.Stop() did not complete in 8s, forcing exit" << std::endl;
+    std::_Exit(0);
+  });
+  watchdog.detach();
+
   kernel.Stop();
+  stopCompleted.store(true);
   return 0;
 }
 

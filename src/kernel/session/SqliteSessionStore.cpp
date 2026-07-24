@@ -521,7 +521,44 @@ std::shared_ptr<Session> SqliteSessionStore::GetById(SessionId id) {
     for (auto& entry : m_entries) {
         if (entry.session->Id() == id) return entry.session;
     }
+    // Not in cache — try loading from DB
+    auto session = LoadFromDbById(id);
+    if (session) {
+        m_entries.push_back({session});
+        return session;
+    }
     return nullptr;
+}
+
+std::shared_ptr<Session> SqliteSessionStore::LoadFromDbById(SessionId id) {
+    auto stmt = m_store->Prepare(
+        "SELECT id, connector, conversation_id, thread_id, provider_id, summary, "
+        "       agent_id, created_at_unix_ms, last_active_unix_ms, terminated, session_type "
+        "FROM sessions WHERE id = ?");
+    if (!stmt) return nullptr;
+    stmt->BindInt64(1, static_cast<int64_t>(id));
+    if (!stmt->Step()) return nullptr;
+
+    SessionKey key;
+    key.connector       = stmt->ColumnText(1);
+    key.conversation_id = stmt->ColumnText(2);
+    key.thread_id       = stmt->ColumnText(3);
+
+    auto session = std::make_shared<Session>(id, key);
+    session->SetProviderId(stmt->ColumnText(4));
+    session->SetSummary(stmt->ColumnText(5));
+    session->SetAgentId(stmt->ColumnText(6));
+    session->SetCreatedUnixMs(static_cast<std::uint64_t>(stmt->ColumnInt64(7)));
+    session->SetLastActiveUnixMs(static_cast<std::uint64_t>(stmt->ColumnInt64(8)));
+    if (stmt->ColumnInt64(9) != 0) {
+        session->MarkTerminated();
+    }
+    session->SetSessionType(stmt->ColumnText(10));
+
+    LoadTurns(*m_store, *session);
+    LoadCompactionSummary(*m_store, *session);
+
+    return session;
 }
 
 std::vector<std::shared_ptr<Session>> SqliteSessionStore::List() {
