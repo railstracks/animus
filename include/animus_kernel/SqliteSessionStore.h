@@ -49,6 +49,7 @@ private:
     void MigrateFromJson(const std::string& jsonPath);
     void PersistSession(const Session& session);
     void DeleteSessionFromDb(SessionId id);
+    std::shared_ptr<Session> LoadFromDbById(SessionId id);
 
     IDataStore* m_store;
     std::mutex m_mutex;
