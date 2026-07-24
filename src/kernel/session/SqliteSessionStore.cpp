@@ -536,7 +536,7 @@ std::shared_ptr<Session> SqliteSessionStore::LoadFromDbById(SessionId id) {
         "       agent_id, created_at_unix_ms, last_active_unix_ms, terminated, session_type "
         "FROM sessions WHERE id = ?");
     if (!stmt) return nullptr;
-    stmt->BindInt64(0, static_cast<int64_t>(id));
+    stmt->BindInt64(1, static_cast<int64_t>(id));
     if (!stmt->Step()) return nullptr;
 
     SessionKey key;
