@@ -408,6 +408,7 @@ void SqliteSessionStore::MigrateFromJson(const std::string& jsonPath) {
         auto session = SessionFromJson(sv);
         if (session->Id() >= maxId) maxId = session->Id() + 1;
         PersistSession(*session);
+        RebuildAllTurns(*session);
         m_entries.push_back({session});
     }
     m_nextId = maxId;
@@ -451,23 +452,112 @@ void SqliteSessionStore::PersistSession(const Session& s) {
     stmt->BindInt64(10, s.IsTerminated() ? 1 : 0);
     stmt->BindText(11, s.SessionType());
     if (!stmt->ExecDML()) {
-        std::cerr << "[session-store] PersistSession: Step() failed for session " << s.Id()
+        std::cerr << "[session-store] PersistSession: upsert failed for session " << s.Id()
                   << ": " << m_store->ErrMsg() << std::endl;
     }
 
-    // Delete old turns + compaction summary, then re-insert
+    // --- Append-only turn persistence ---
+    // Find the highest turn_id already in DB for this session.
+    // Only INSERT turns with turn_id > max_persisted_id.
+    SessionTurnId maxPersistedId = 0;
     {
-        auto delTurns = m_store->Prepare("DELETE FROM session_turns WHERE session_id=?");
-        if (delTurns) { delTurns->BindInt64(1, s.Id()); delTurns->ExecDML(); }
-    }
-    {
-        auto delSummary = m_store->Prepare("DELETE FROM session_compaction_summaries WHERE session_id=?");
-        if (delSummary) { delSummary->BindInt64(1, s.Id()); delSummary->Step(); }
+        auto maxStmt = m_store->Prepare(
+            "SELECT MAX(turn_id) FROM session_turns WHERE session_id=?");
+        if (maxStmt) {
+            maxStmt->BindInt64(1, s.Id());
+            if (maxStmt->Step()) {
+                if (!maxStmt->IsColumnNull(0)) {
+                    maxPersistedId = static_cast<SessionTurnId>(maxStmt->ColumnInt64(0));
+                }
+            }
+        }
     }
 
-    WriteTurns(*m_store, s.Id(), s.Turns());
+    // Insert only new turns (those with turn_id > maxPersistedId)
+    bool hasNewTurns = false;
+    for (const auto& t : s.Turns()) {
+        if (t.turn_id <= maxPersistedId) continue;
+        hasNewTurns = true;
 
-    // Compaction summary
+        auto turnStmt = m_store->Prepare(
+            "INSERT INTO session_turns "
+            "(session_id, turn_id, role, content, unix_ms, is_summary, compacted_from, "
+            " thinking_content, tool_calls, tool_call_id, tool_name, "
+            " intake_processed, intake_processed_at_unix_ms, token_count, is_compacted) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        if (!turnStmt) continue;
+
+        turnStmt->BindInt64(1, s.Id());
+        turnStmt->BindInt64(2, t.turn_id);
+        turnStmt->BindText(3, t.role);
+        turnStmt->BindText(4, t.content);
+        turnStmt->BindInt64(5, t.unix_ms);
+        turnStmt->BindInt(6, t.is_summary ? 1 : 0);
+
+        // compacted_from as JSON array
+        Json::Value fromArr(Json::arrayValue);
+        for (auto id : t.compacted_from) {
+            fromArr.append(static_cast<Json::UInt64>(id));
+        }
+        Json::StreamWriterBuilder wb;
+        wb["indentation"] = "";
+        turnStmt->BindText(7, Json::writeString(wb, fromArr));
+
+        turnStmt->BindText(8, t.thinking_content);
+
+        // tool_calls as JSON array
+        Json::Value tcArr(Json::arrayValue);
+        for (const auto& tc : t.tool_calls) {
+            Json::Value tcObj(Json::objectValue);
+            tcObj["id"] = tc.id;
+            tcObj["name"] = tc.name;
+            tcObj["arguments"] = tc.arguments;
+            tcArr.append(tcObj);
+        }
+        turnStmt->BindText(9, Json::writeString(wb, tcArr));
+
+        turnStmt->BindText(10, t.tool_call_id);
+        turnStmt->BindText(11, t.tool_name);
+        turnStmt->BindInt(12, t.intake_processed ? 1 : 0);
+        turnStmt->BindInt64(13, static_cast<int64_t>(t.intake_processed_at_unix_ms));
+        turnStmt->BindInt64(14, static_cast<int64_t>(t.token_count));
+        turnStmt->BindInt(15, t.is_compacted ? 1 : 0);
+
+        turnStmt->ExecDML();
+    }
+
+    if (hasNewTurns) {
+        std::cerr << "[session-store] PersistSession: appended new turns for session " << s.Id()
+                  << " (max_persisted was " << maxPersistedId << ")" << std::endl;
+    }
+
+    // --- Targeted UPDATE for mutable fields ---
+    // is_compacted and intake_processed can change on existing turns.
+    // Update them in-place rather than DELETE+re-insert.
+    for (const auto& t : s.Turns()) {
+        if (t.turn_id > maxPersistedId) continue;  // Just inserted — skip
+
+        auto updStmt = m_store->Prepare(
+            "UPDATE session_turns SET is_compacted=?, intake_processed=?, "
+            "intake_processed_at_unix_ms=?, token_count=? "
+            "WHERE session_id=? AND turn_id=?");
+        if (!updStmt) continue;
+        updStmt->BindInt(1, t.is_compacted ? 1 : 0);
+        updStmt->BindInt(2, t.intake_processed ? 1 : 0);
+        updStmt->BindInt64(3, static_cast<int64_t>(t.intake_processed_at_unix_ms));
+        updStmt->BindInt64(4, static_cast<int64_t>(t.token_count));
+        updStmt->BindInt64(5, s.Id());
+        updStmt->BindInt64(6, static_cast<int64_t>(t.turn_id));
+        updStmt->ExecDML();
+    }
+
+    // --- Compaction summary: upsert ---
+    // Delete old summary + insert new one (single row, low cost)
+    {
+        auto delSummary = m_store->Prepare(
+            "DELETE FROM session_compaction_summaries WHERE session_id=?");
+        if (delSummary) { delSummary->BindInt64(1, s.Id()); delSummary->ExecDML(); }
+    }
     const auto* cs = s.GetCompactionSummary();
     if (cs) {
         auto csStmt = m_store->Prepare(
@@ -480,9 +570,20 @@ void SqliteSessionStore::PersistSession(const Session& s) {
             csStmt->BindText(4, cs->content);
             csStmt->BindInt64(5, cs->unix_ms);
             csStmt->BindInt64(6, cs->is_summary ? 1 : 0);
-            csStmt->Step();
+            csStmt->ExecDML();
         }
     }
+}
+
+void SqliteSessionStore::RebuildAllTurns(const Session& s) {
+    // Legacy path: DELETE all turns + re-insert everything.
+    // Used by JSON import and recovery flows.
+    {
+        auto delTurns = m_store->Prepare(
+            "DELETE FROM session_turns WHERE session_id=?");
+        if (delTurns) { delTurns->BindInt64(1, s.Id()); delTurns->ExecDML(); }
+    }
+    WriteTurns(*m_store, s.Id(), s.Turns());
 }
 
 void SqliteSessionStore::DeleteSessionFromDb(SessionId id) {

@@ -48,6 +48,7 @@ private:
     void LoadFromDb();
     void MigrateFromJson(const std::string& jsonPath);
     void PersistSession(const Session& session);
+    void RebuildAllTurns(const Session& session);
     void DeleteSessionFromDb(SessionId id);
     std::shared_ptr<Session> LoadFromDbById(SessionId id);
 
