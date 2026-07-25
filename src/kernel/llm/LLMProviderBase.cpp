@@ -2,7 +2,6 @@
 
 #include <cstring>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -359,15 +358,6 @@ bool LLMProviderBase::ProcessSSELine(const std::string& line,
   // Feed every SSE line to the tool call accumulator.
   m_toolCallAccumulator.ProcessLine(data);
 
-  // Debug: dump SSE lines containing tool_calls to /tmp/sse_tool_calls.log
-  if (data.find("tool_calls") != std::string::npos) {
-    std::ofstream sseLog("/tmp/sse_tool_calls.log", std::ios::app);
-    if (sseLog.is_open()) {
-      sseLog << data << "\n---END---\n";
-      sseLog.close();
-    }
-  }
-
   auto token = ParseSSELine(data);
   if (token.has_value()) {
     // Only accumulate non-thinking tokens into the response content.
@@ -480,15 +470,6 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
   }
   std::cerr << std::endl;
 
-  // Debug: dump full request body to /tmp/llm_request_body.json for inspection
-  {
-    std::ofstream dump("/tmp/llm_request_body.json", std::ios::trunc);
-    if (dump.is_open()) {
-      dump << body;
-      dump.close();
-      std::cerr << "[llm] Full body dumped to /tmp/llm_request_body.json (" << body.size() << " bytes)" << std::endl;
-    }
-  }
   if (stream) {
     m_http->tokenCallback = std::move(tokenCallback);
     m_http->sseBuffer.clear();
