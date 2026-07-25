@@ -359,6 +359,15 @@ bool LLMProviderBase::ProcessSSELine(const std::string& line,
   // Feed every SSE line to the tool call accumulator.
   m_toolCallAccumulator.ProcessLine(data);
 
+  // Debug: dump SSE lines containing tool_calls to /tmp/sse_tool_calls.log
+  if (data.find("tool_calls") != std::string::npos) {
+    std::ofstream sseLog("/tmp/sse_tool_calls.log", std::ios::app);
+    if (sseLog.is_open()) {
+      sseLog << data << "\n---END---\n";
+      sseLog.close();
+    }
+  }
+
   auto token = ParseSSELine(data);
   if (token.has_value()) {
     // Only accumulate non-thinking tokens into the response content.
