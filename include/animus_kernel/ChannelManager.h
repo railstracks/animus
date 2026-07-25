@@ -137,6 +137,9 @@ public:
     // --- Runtime status ---
     bool IsChannelConnected(const std::string& name) const;
 
+    // --- WhatsApp-specific (legacy, reads from poller state) ---
+    std::string GetWhatsAppQrUrl(const std::string& name) const;
+
     // --- Send auto-reply via the right connector ---
     void SendReply(const ReplyTarget& target, const std::string& text);
 
@@ -214,6 +217,7 @@ private:
     // These remain as ChannelManager methods until adapter migration.
     void DiscordGatewayLoop(PollerState* state);
     void WhatsAppGatewayLoop(PollerState* state);
+    void WhatsAppGatewayLoopInner(PollerState* state);
     void ProcessDiscordMessage(PollerState* state,
                                const std::string& channelId,
                                const std::string& messageId,

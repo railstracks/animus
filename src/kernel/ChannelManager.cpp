@@ -433,6 +433,15 @@ bool ChannelManager::IsChannelConnected(const std::string& name) const {
 // SendReply — route auto-reply through the right connector
 // ============================================================================
 
+// Get WhatsApp QR URL from poller state (used by admin API)
+std::string ChannelManager::GetWhatsAppQrUrl(const std::string& name) const {
+    std::lock_guard<std::mutex> lock(m_pollersMutex);
+    auto it = m_pollers.find(name);
+    if (it == m_pollers.end()) return "";
+    std::lock_guard<std::mutex> qrLock(it->second->whatsapp_qr_mutex);
+    return it->second->whatsapp_qr_url;
+}
+
 void ChannelManager::SendReply(const ReplyTarget& target, const std::string& text) {
     // --- Adapter-based dispatch ---
     // For connectors migrated to IChannelAdapter, delegate directly.
