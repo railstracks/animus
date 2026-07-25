@@ -21,6 +21,7 @@
 #include "animus_kernel/llm/LLMProviderConfig.h"
 
 #include "animus_kernel/PromptLogStore.h"
+#include "animus_kernel/ExecutionRequest.h"
 
 namespace animus::kernel {
 
@@ -91,8 +92,34 @@ public:
         ChainTextCallback textCallback = nullptr,
         ChainToolEventCallback toolEventCallback = nullptr);
 
-    // Lower-level: execute on an already-resolved session.
-    // Callbacks are per-invocation — they fire only for this call.
+    // --- Pre-resolved overloads (preferred for new callers) ---
+    // These accept a fully resolved ExecutionRequest, eliminating duplicated
+    // provider/model/context-window resolution across entry points.
+
+    ChainResult ExecuteOnSession(
+        SessionAccess& session,
+        const std::string& userMessage,
+        const ExecutionRequest& req,
+        ChainThinkingCallback thinkingCallback = nullptr,
+        ChainToolCallCallback toolCallCallback = nullptr,
+        ChainAssistantMessageCallback assistantMessageCallback = nullptr);
+
+    ChainResult ExecuteStreamingOnSession(
+        SessionAccess& session,
+        const std::string& userMessage,
+        const ExecutionRequest& req,
+        llm::LLMTokenCallback tokenCallback,
+        ChainTextCallback textCallback = nullptr,
+        ChainToolEventCallback toolEventCallback = nullptr,
+        ChainThinkingCallback thinkingCallback = nullptr,
+        ChainToolCallCallback toolCallCallback = nullptr,
+        ChainAssistantMessageCallback assistantMessageCallback = nullptr);
+
+    // --- Legacy overloads (resolve agent overrides internally) ---
+    // Callers that haven't pre-resolved provider/model can use these.
+    // Internally delegates to ResolveAgentOverrides() then calls the
+    // pre-resolved overload above.
+
     ChainResult ExecuteOnSession(
         SessionAccess& session,
         const std::string& userMessage,
@@ -215,6 +242,22 @@ private:
     std::vector<llm::LLMToolDef> GetToolDefinitionsForSession(
         const std::string& agent_id,
         const std::string& session_type) const;
+
+    /// Resolve agent-level overrides (provider, model, reasoning, budgets)
+    /// onto a partially-filled ExecutionRequest. This replaces the duplicated
+    /// ~40-line resolution block that existed in ExecuteOnSession and
+    /// ExecuteStreamingOnSession.
+    void ResolveAgentOverrides(
+        const SessionAccess& session,
+        const std::string& systemPrompt,
+        const std::string& providerId,
+        const std::string& configId,
+        const std::string& model,
+        std::size_t contextWindowTokens,
+        bool hasReasoningEnabledOverride,
+        bool reasoningEnabledOverride,
+        const std::string& reasoningEffortOverride,
+        ExecutionRequest& out) const;
 
     llm::LLMProviderRegistry& m_providers;
     SessionManager& m_sessions;

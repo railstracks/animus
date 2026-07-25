@@ -209,70 +209,81 @@ std::string InjectToolConfig(const std::string& toolName,
 } // namespace
 
 // ============================================================================
-// Non-streaming on session
+// Agent override resolution (shared by legacy and pre-resolved paths)
 // ============================================================================
 
-ChainResult ChainRunner::ExecuteOnSession(
-    SessionAccess& session,
-    const std::string& userMessage,
+void ChainRunner::ResolveAgentOverrides(
+    const SessionAccess& session,
     const std::string& systemPrompt,
     const std::string& providerId,
     const std::string& configId,
     const std::string& model,
     std::size_t contextWindowTokens,
-    ChainThinkingCallback thinkingCallback,
-    ChainToolCallCallback toolCallCallback,
-    ChainAssistantMessageCallback assistantMessageCallback,
-    const std::string& reasoningEffortOverride,
+    bool hasReasoningEnabledOverride,
     bool reasoningEnabledOverride,
-    bool hasReasoningEnabledOverride) {
+    const std::string& reasoningEffortOverride,
+    ExecutionRequest& out) const {
 
-    ChainResult result;
-    const auto start = std::chrono::steady_clock::now();
+    out.providerId = providerId;
+    out.configId = configId;
+    out.model = model;
+    out.systemPrompt = systemPrompt;
+    out.contextWindow = contextWindowTokens;
+    out.reasoningEnabled = hasReasoningEnabledOverride ? reasoningEnabledOverride : m_reasoningEnabled;
+    out.reasoningEffort = !reasoningEffortOverride.empty() ? reasoningEffortOverride : m_reasoningEffort;
+    out.maxChainSteps = m_maxChainSteps;
+    out.maxToolCallsPerChain = m_maxToolCallsPerChain;
 
-    // Resolve per-agent config overrides
-    std::string resolvedProvider = providerId;
-    std::string resolvedConfigId = configId;
-    std::string resolvedModel = model;
-    std::string resolvedSystemPrompt = systemPrompt;
-    std::size_t resolvedContextWindow = contextWindowTokens;
-    bool resolvedReasoningEnabled = hasReasoningEnabledOverride ? reasoningEnabledOverride : m_reasoningEnabled;
-    std::string resolvedReasoningEffort = !reasoningEffortOverride.empty() ? reasoningEffortOverride : m_reasoningEffort;
-    std::uint32_t resolvedMaxChainSteps = m_maxChainSteps;
-    std::uint32_t resolvedMaxToolCallsPerChain = m_maxToolCallsPerChain;
     if (m_agentStore && !session.AgentId().empty()) {
         auto agent = m_agentStore->GetById(session.AgentId());
         if (agent) {
-            if (resolvedConfigId.empty() && !agent->default_provider.empty()) {
-                resolvedConfigId = agent->default_provider;
+            if (out.configId.empty() && !agent->default_provider.empty()) {
+                out.configId = agent->default_provider;
                 if (m_configLookup) {
-                    auto cfg = m_configLookup(resolvedConfigId);
+                    auto cfg = m_configLookup(out.configId);
                     if (cfg && !cfg->provider_id.empty()) {
-                        resolvedProvider = cfg->provider_id;
+                        out.providerId = cfg->provider_id;
                     } else {
-                        resolvedProvider = agent->default_provider;
+                        out.providerId = agent->default_provider;
                     }
                 } else {
-                    resolvedProvider = agent->default_provider;
+                    out.providerId = agent->default_provider;
                 }
             }
-            if (resolvedModel.empty() && !agent->default_model.empty()) {
-                resolvedModel = agent->default_model;
+            if (out.model.empty() && !agent->default_model.empty()) {
+                out.model = agent->default_model;
             }
             // Identity is now provided by IdentityProvider via the context registry.
-            // Do not assign agent->identity to resolvedSystemPrompt here.
-            if (!hasReasoningEnabledOverride) resolvedReasoningEnabled = agent->reasoning_enabled;
-            if (reasoningEffortOverride.empty() && !agent->reasoning_effort.empty()) resolvedReasoningEffort = agent->reasoning_effort;
-            if (agent->budget.maxChainSteps > 0) resolvedMaxChainSteps = agent->budget.maxChainSteps;
-            if (agent->budget.maxToolCallsPerChain > 0) resolvedMaxToolCallsPerChain = agent->budget.maxToolCallsPerChain;
+            // Do not assign agent->identity to systemPrompt here.
+            if (!hasReasoningEnabledOverride) out.reasoningEnabled = agent->reasoning_enabled;
+            if (reasoningEffortOverride.empty() && !agent->reasoning_effort.empty())
+                out.reasoningEffort = agent->reasoning_effort;
+            if (agent->budget.maxChainSteps > 0) out.maxChainSteps = agent->budget.maxChainSteps;
+            if (agent->budget.maxToolCallsPerChain > 0) out.maxToolCallsPerChain = agent->budget.maxToolCallsPerChain;
 
             // Consolidation sessions need more tool calls (review, promote, merge, perspectives, summary)
             if (session.SessionType() == "consolidation" &&
-                resolvedMaxToolCallsPerChain < agent->budget.consolidationToolBudget) {
-                resolvedMaxToolCallsPerChain = agent->budget.consolidationToolBudget;
+                out.maxToolCallsPerChain < agent->budget.consolidationToolBudget) {
+                out.maxToolCallsPerChain = agent->budget.consolidationToolBudget;
             }
         }
     }
+}
+
+// ============================================================================
+// Non-streaming on session — pre-resolved overload (preferred)
+// ============================================================================
+
+ChainResult ChainRunner::ExecuteOnSession(
+    SessionAccess& session,
+    const std::string& userMessage,
+    const ExecutionRequest& req,
+    ChainThinkingCallback thinkingCallback,
+    ChainToolCallCallback toolCallCallback,
+    ChainAssistantMessageCallback assistantMessageCallback) {
+
+    ChainResult result;
+    const auto start = std::chrono::steady_clock::now();
 
     // Store user turn
     SessionTurn userTurn;
@@ -282,8 +293,7 @@ ChainResult ChainRunner::ExecuteOnSession(
     session.AddTurn(std::move(userTurn));
 
     // Assemble context from the provider registry.
-    // If registry is available, it produces identity, session notes, etc.
-    // as separate blocks. Fall back to the raw systemPrompt if no registry.
+    std::string resolvedSystemPrompt = req.systemPrompt;
     if (m_contextRegistry) {
         auto agentOpt = m_agentStore ? m_agentStore->GetById(session.AgentId()) : std::nullopt;
         const Agent& agentRef = agentOpt ? *agentOpt : Agent{};
@@ -295,7 +305,7 @@ ChainResult ChainRunner::ExecuteOnSession(
 
     // Create provider
     std::string providerErr;
-    auto provider = CreateProvider(resolvedProvider, resolvedConfigId, &providerErr);
+    auto provider = CreateProvider(req.providerId, req.configId, &providerErr);
     if (!provider) {
         result.error = providerErr;
         result.elapsed_ms = std::chrono::duration<double, std::milli>(
@@ -307,15 +317,14 @@ ChainResult ChainRunner::ExecuteOnSession(
     std::vector<llm::LLMMessage> toolResultMessages;
     int totalToolCalls = 0;
 
-    for (std::uint32_t step = 0; step < resolvedMaxChainSteps; ++step) {
+    for (std::uint32_t step = 0; step < req.maxChainSteps; ++step) {
         result.chain_steps = step + 1;
 
         // Assemble prompt
         auto assembly = m_assembler.BuildFromAccess(
             session, "", resolvedSystemPrompt,
-            resolvedModel, resolvedContextWindow);
+            req.model, req.contextWindow);
         // Non-streaming execution must request a non-stream response body.
-        // Otherwise providers may return SSE payloads that ParseResponse cannot decode.
         assembly.request.stream = false;
 
         std::cerr << "[chain] ExecuteOnSession id=" << session.Id()
@@ -327,8 +336,8 @@ ChainResult ChainRunner::ExecuteOnSession(
         result.triggered_compaction = assembly.needs_compaction;
 
         // Set reasoning effort on the request
-        if (resolvedReasoningEnabled) {
-            assembly.request.reasoning_effort = resolvedReasoningEffort;
+        if (req.reasoningEnabled) {
+            assembly.request.reasoning_effort = req.reasoningEffort;
         }
 
         // Add tool definitions
@@ -363,7 +372,7 @@ ChainResult ChainRunner::ExecuteOnSession(
         // Log LLM call if prompt logging is enabled
         if (m_promptLogStore && m_promptLogLevel != PromptLogLevel::None) {
             LogPromptCall(session.AgentId(), session.Id(),
-                          resolvedProvider, resolvedModel,
+                          req.providerId, req.model,
                           response, assembly.request, step, llmLatencyMs);
         }
 
@@ -386,9 +395,9 @@ ChainResult ChainRunner::ExecuteOnSession(
         result.tool_calls_executed = totalToolCalls;
 
         // Check tool budget
-        if (totalToolCalls >= static_cast<int>(resolvedMaxToolCallsPerChain)) {
+        if (totalToolCalls >= static_cast<int>(req.maxToolCallsPerChain)) {
             std::cerr << "[chain] tool call budget exhausted (" << totalToolCalls
-                      << "/" << resolvedMaxToolCallsPerChain << ")" << std::endl;
+                      << "/" << req.maxToolCallsPerChain << ")" << std::endl;
             shouldContinue = false;
         }
 
@@ -430,10 +439,10 @@ ChainResult ChainRunner::ExecuteOnSession(
 }
 
 // ============================================================================
-// Streaming on session
+// Non-streaming on session — legacy overload (delegates to pre-resolved)
 // ============================================================================
 
-ChainResult ChainRunner::ExecuteStreamingOnSession(
+ChainResult ChainRunner::ExecuteOnSession(
     SessionAccess& session,
     const std::string& userMessage,
     const std::string& systemPrompt,
@@ -441,9 +450,6 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     const std::string& configId,
     const std::string& model,
     std::size_t contextWindowTokens,
-    llm::LLMTokenCallback tokenCallback,
-    ChainTextCallback textCallback,
-    ChainToolEventCallback toolEventCallback,
     ChainThinkingCallback thinkingCallback,
     ChainToolCallCallback toolCallCallback,
     ChainAssistantMessageCallback assistantMessageCallback,
@@ -451,52 +457,31 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     bool reasoningEnabledOverride,
     bool hasReasoningEnabledOverride) {
 
+    ExecutionRequest req;
+    ResolveAgentOverrides(session, systemPrompt, providerId, configId, model,
+                          contextWindowTokens, hasReasoningEnabledOverride,
+                          reasoningEnabledOverride, reasoningEffortOverride, req);
+    return ExecuteOnSession(session, userMessage, req,
+                            thinkingCallback, toolCallCallback, assistantMessageCallback);
+}
+
+// ============================================================================
+// Streaming on session — pre-resolved overload (preferred)
+// ============================================================================
+
+ChainResult ChainRunner::ExecuteStreamingOnSession(
+    SessionAccess& session,
+    const std::string& userMessage,
+    const ExecutionRequest& req,
+    llm::LLMTokenCallback tokenCallback,
+    ChainTextCallback textCallback,
+    ChainToolEventCallback toolEventCallback,
+    ChainThinkingCallback thinkingCallback,
+    ChainToolCallCallback toolCallCallback,
+    ChainAssistantMessageCallback assistantMessageCallback) {
+
     ChainResult result;
     const auto start = std::chrono::steady_clock::now();
-
-    // Resolve per-agent config overrides
-    std::string resolvedProvider = providerId;
-    std::string resolvedConfigId = configId;
-    std::string resolvedModel = model;
-    std::string resolvedSystemPrompt = systemPrompt;
-    std::size_t resolvedContextWindow = contextWindowTokens;
-    bool resolvedReasoningEnabled = hasReasoningEnabledOverride ? reasoningEnabledOverride : m_reasoningEnabled;
-    std::string resolvedReasoningEffort = !reasoningEffortOverride.empty() ? reasoningEffortOverride : m_reasoningEffort;
-    std::uint32_t resolvedMaxChainSteps = m_maxChainSteps;
-    std::uint32_t resolvedMaxToolCallsPerChain = m_maxToolCallsPerChain;
-    if (m_agentStore && !session.AgentId().empty()) {
-        auto agent = m_agentStore->GetById(session.AgentId());
-        if (agent) {
-            if (resolvedConfigId.empty() && !agent->default_provider.empty()) {
-                resolvedConfigId = agent->default_provider;
-                if (m_configLookup) {
-                    auto cfg = m_configLookup(resolvedConfigId);
-                    if (cfg && !cfg->provider_id.empty()) {
-                        resolvedProvider = cfg->provider_id;
-                    } else {
-                        resolvedProvider = agent->default_provider;
-                    }
-                } else {
-                    resolvedProvider = agent->default_provider;
-                }
-            }
-            if (resolvedModel.empty() && !agent->default_model.empty()) {
-                resolvedModel = agent->default_model;
-            }
-            // Identity is now provided by IdentityProvider via the context registry.
-            // Do not assign agent->identity to resolvedSystemPrompt here.
-            if (!hasReasoningEnabledOverride) resolvedReasoningEnabled = agent->reasoning_enabled;
-            if (reasoningEffortOverride.empty() && !agent->reasoning_effort.empty()) resolvedReasoningEffort = agent->reasoning_effort;
-            if (agent->budget.maxChainSteps > 0) resolvedMaxChainSteps = agent->budget.maxChainSteps;
-            if (agent->budget.maxToolCallsPerChain > 0) resolvedMaxToolCallsPerChain = agent->budget.maxToolCallsPerChain;
-
-            // Consolidation sessions need more tool calls (review, promote, merge, perspectives, summary)
-            if (session.SessionType() == "consolidation" &&
-                resolvedMaxToolCallsPerChain < agent->budget.consolidationToolBudget) {
-                resolvedMaxToolCallsPerChain = agent->budget.consolidationToolBudget;
-            }
-        }
-    }
 
     // Store user turn
     SessionTurn userTurn;
@@ -506,8 +491,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     session.AddTurn(std::move(userTurn));
 
     // Assemble context from the provider registry.
-    // If registry is available, it produces identity, session notes, etc.
-    // as separate blocks. Fall back to the raw systemPrompt if no registry.
+    std::string resolvedSystemPrompt = req.systemPrompt;
     if (m_contextRegistry) {
         auto agentOpt = m_agentStore ? m_agentStore->GetById(session.AgentId()) : std::nullopt;
         if (!agentOpt) {
@@ -517,13 +501,17 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         const Agent& agentRef = agentOpt ? *agentOpt : Agent{};
         auto blocks = m_contextRegistry->Assemble(agentRef, session);
         for (const auto& block : blocks) {
-            resolvedSystemPrompt += "\n\n## " + block.name + "\n\n" + block.content;
+            resolvedSystemPrompt += "
+
+## " + block.name + "
+
+" + block.content;
         }
     }
 
     // Create provider
     std::string providerErr;
-    auto provider = CreateProvider(resolvedProvider, resolvedConfigId, &providerErr);
+    auto provider = CreateProvider(req.providerId, req.configId, &providerErr);
     if (!provider) {
         result.error = providerErr;
         result.elapsed_ms = std::chrono::duration<double, std::milli>(
@@ -535,14 +523,13 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     std::vector<llm::LLMMessage> toolResultMessages;
     int totalToolCalls = 0;
 
-    for (std::uint32_t step = 0; step < resolvedMaxChainSteps; ++step) {
+    for (std::uint32_t step = 0; step < req.maxChainSteps; ++step) {
         result.chain_steps = step + 1;
 
         // Assemble prompt
         auto assembly = m_assembler.BuildFromAccess(
             session, "", resolvedSystemPrompt,
-            resolvedModel, resolvedContextWindow);
-        // Streaming execution expects SSE/tokenized provider responses.
+            req.model, req.contextWindow);
         assembly.request.stream = true;
 
         std::cerr << "[chain] StreamingOnSession id=" << session.Id()
@@ -554,8 +541,8 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         result.triggered_compaction = assembly.needs_compaction;
 
         // Set reasoning effort on the request
-        if (resolvedReasoningEnabled) {
-            assembly.request.reasoning_effort = resolvedReasoningEffort;
+        if (req.reasoningEnabled) {
+            assembly.request.reasoning_effort = req.reasoningEffort;
         }
 
         // Add tool definitions
@@ -566,7 +553,6 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         }
 
         // Append any tool result messages from previous iteration
-        // (Currently always empty since ProcessResponse stores in session turns)
         for (auto& msg : toolResultMessages) {
             assembly.request.messages.push_back(std::move(msg));
         }
@@ -578,9 +564,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
                   << " messages=" << assembly.request.messages.size()
                   << std::endl;
 
-        // Build the per-step token callback that routes thinking vs. content:
-        //   - is_thinking tokens (native thinking, tool-plan-delta) → thinking callback
-        //   - non-thinking tokens (content) → regular token callback (user-visible)
+        // Build the per-step token callback that routes thinking vs. content
         std::string accumulatedThinking;
         llm::LLMTokenCallback stepTokenCallback;
         if (thinkingCallback) {
@@ -615,7 +599,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         // Log LLM call if prompt logging is enabled
         if (m_promptLogStore && m_promptLogLevel != PromptLogLevel::None) {
             LogPromptCall(session.AgentId(), session.Id(),
-                          resolvedProvider, resolvedModel,
+                          req.providerId, req.model,
                           response, assembly.request, step, llmLatencyMs);
         }
 
@@ -680,9 +664,9 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         }
 
         // Check tool budget
-        if (totalToolCalls >= static_cast<int>(resolvedMaxToolCallsPerChain)) {
+        if (totalToolCalls >= static_cast<int>(req.maxToolCallsPerChain)) {
             std::cerr << "[chain] tool call budget exhausted (" << totalToolCalls
-                      << "/" << resolvedMaxToolCallsPerChain << ")" << std::endl;
+                      << "/" << req.maxToolCallsPerChain << ")" << std::endl;
             shouldContinue = false;
         }
 
@@ -716,6 +700,38 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     result.elapsed_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - start).count();
     return result;
+}
+
+// ============================================================================
+// Streaming on session — legacy overload (delegates to pre-resolved)
+// ============================================================================
+
+ChainResult ChainRunner::ExecuteStreamingOnSession(
+    SessionAccess& session,
+    const std::string& userMessage,
+    const std::string& systemPrompt,
+    const std::string& providerId,
+    const std::string& configId,
+    const std::string& model,
+    std::size_t contextWindowTokens,
+    llm::LLMTokenCallback tokenCallback,
+    ChainTextCallback textCallback,
+    ChainToolEventCallback toolEventCallback,
+    ChainThinkingCallback thinkingCallback,
+    ChainToolCallCallback toolCallCallback,
+    ChainAssistantMessageCallback assistantMessageCallback,
+    const std::string& reasoningEffortOverride,
+    bool reasoningEnabledOverride,
+    bool hasReasoningEnabledOverride) {
+
+    ExecutionRequest req;
+    ResolveAgentOverrides(session, systemPrompt, providerId, configId, model,
+                          contextWindowTokens, hasReasoningEnabledOverride,
+                          reasoningEnabledOverride, reasoningEffortOverride, req);
+    return ExecuteStreamingOnSession(session, userMessage, req,
+                                     tokenCallback, textCallback, toolEventCallback,
+                                     thinkingCallback, toolCallCallback,
+                                     assistantMessageCallback);
 }
 
 // ============================================================================
