@@ -87,7 +87,7 @@ using animus::x25519_verify;
 #include <vector>
 
 // WA version constants
-#define WA_VERSION "2.3000.1042466098"
+#define WA_VERSION "2.3000.1043853937"  // Fallback only — actual version resolved from sw.js at runtime
 #define WA_BROWSER "Mac OS"
 #define WA_DEVICE "Desktop"
 #define WA_PLATFORM 0  // CompanionWebClientType
@@ -444,8 +444,9 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                     auth.noiseKey);
 
                 bool isNewLogin = !auth.paired;
+                const auto& versionInfo = animus::whatsapp::WhatsAppVersionResolver::get();
                 auto clientPayload = animus::whatsapp::proto::encodeClientPayload(
-                    isNewLogin, auth.jid,
+                    isNewLogin, versionInfo, auth.jid,
                     auth.registrationId,
                     auth.identityKey.pub,
                     auth.signedPreKeyPub,
@@ -453,10 +454,8 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                     auth.signedPreKeyId);
                 std::cerr << "[whatsapp] Client payload: " << clientPayload.size() << " bytes"
                           << " (isNewLogin=" << isNewLogin
+                          << ", version=" << versionInfo.versionString
                           << ", jid=" << auth.jid << ")" << std::endl;
-                std::cerr << "[whatsapp] Payload hex: ";
-                for (size_t i = 0; i < clientPayload.size(); i++) fprintf(stderr, "%02x", clientPayload[i]);
-                std::cerr << std::endl;
 
                 auto encPayload = noise.encryptClientPayload(clientPayload);
 

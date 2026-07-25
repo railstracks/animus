@@ -13,6 +13,7 @@
 #include <vector>
 #include <cstdint>
 #include <map>
+#include "animus_kernel/whatsapp/WhatsAppVersionResolver.h"
 #include <optional>
 
 namespace animus::whatsapp::proto {
@@ -352,6 +353,7 @@ inline ServerHello decodeServerHello(const uint8_t* data, size_t len) {
 // Baileys: generateRegistrationNode / generateLoginNode
 inline std::vector<uint8_t> encodeClientPayload(
     bool isNewLogin,
+    const animus::whatsapp::WhatsAppVersionInfo& versionInfo,
     const std::string& jid = "",
     uint32_t registrationId = 0,
     const std::vector<uint8_t>& identityPubKey = {},
@@ -372,12 +374,12 @@ inline std::vector<uint8_t> encodeClientPayload(
         // Fields in ascending proto field number order
         // platform (field 1) = WEB = 14
         ua.writeVarintField(1, 14);
-        // appVersion (field 2) = {primary=2, secondary=3000, tertiary=1042466098}
+        // appVersion (field 2) — resolved dynamically from sw.js
         {
             Writer av;
-            av.writeVarintField(1, 2);
-            av.writeVarintField(2, 3000);
-            av.writeVarintField(3, 1042466098);
+            av.writeVarintField(1, versionInfo.primary);
+            av.writeVarintField(2, static_cast<uint64_t>(versionInfo.secondary));
+            av.writeVarintField(3, versionInfo.tertiary);
             ua.writeMessageField(2, av.buf);
         }
         // mcc (field 3)
@@ -456,9 +458,8 @@ inline std::vector<uint8_t> encodeClientPayload(
             if (!signedPreKeySig.empty()) {
                 dpd.writeBytesField(6, signedPreKeySig);
             }
-            // buildHash (field 7) = MD5 of "2.3000.1042466098"
-            dpd.writeBytesField(7, {0x69, 0x4d, 0x81, 0x0d, 0x35, 0x8f, 0xea, 0xf0,
-                                   0xae, 0xae, 0xac, 0xe6, 0x12, 0x8e, 0xc3, 0x1a});
+            // buildHash (field 7) = MD5 of version string (from resolver)
+            dpd.writeBytesField(7, versionInfo.buildHash);
             // deviceProps (field 8) = DeviceProps protobuf
             {
                 Writer dp;

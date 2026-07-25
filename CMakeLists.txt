@@ -370,6 +370,7 @@ add_library(animus_kernel
             src/kernel/whatsapp/WhatsAppMessageHandler.cpp
             src/kernel/whatsapp/WhatsAppNoise.cpp
             src/kernel/whatsapp/WhatsAppTransport.cpp
+            src/kernel/whatsapp/WhatsAppVersionResolver.cpp
             src/kernel/WhatsAppGatewayLoop.cpp
             src/kernel/signal/SignalTypes.cpp
             src/kernel/signal/InMemorySignalStore.cpp
