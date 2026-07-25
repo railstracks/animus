@@ -501,11 +501,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         const Agent& agentRef = agentOpt ? *agentOpt : Agent{};
         auto blocks = m_contextRegistry->Assemble(agentRef, session);
         for (const auto& block : blocks) {
-            resolvedSystemPrompt += "
-
-## " + block.name + "
-
-" + block.content;
+            resolvedSystemPrompt += "\n\n## " + block.name + "\n\n" + block.content;
         }
     }
 
