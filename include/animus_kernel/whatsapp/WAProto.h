@@ -372,12 +372,12 @@ inline std::vector<uint8_t> encodeClientPayload(
         // Fields in ascending proto field number order
         // platform (field 1) = WEB = 14
         ua.writeVarintField(1, 14);
-        // appVersion (field 2) = {primary=2, secondary=3000, tertiary=1035194821}
+        // appVersion (field 2) = {primary=2, secondary=3000, tertiary=1042466098}
         {
             Writer av;
             av.writeVarintField(1, 2);
             av.writeVarintField(2, 3000);
-            av.writeVarintField(3, 1035194821);
+            av.writeVarintField(3, 1042466098);
             ua.writeMessageField(2, av.buf);
         }
         // mcc (field 3)
@@ -456,10 +456,9 @@ inline std::vector<uint8_t> encodeClientPayload(
             if (!signedPreKeySig.empty()) {
                 dpd.writeBytesField(6, signedPreKeySig);
             }
-            // buildHash (field 7) = MD5 of "2.3000.1035194821"
-            // Computed: a2c9471eff910a9e1ae659890a28872d
-            dpd.writeBytesField(7, {0xa2, 0xc9, 0x47, 0x1e, 0xff, 0x91, 0x0a, 0x9e,
-                                   0x1a, 0xe6, 0x59, 0x89, 0x0a, 0x28, 0x87, 0x2d});
+            // buildHash (field 7) = MD5 of "2.3000.1042466098"
+            dpd.writeBytesField(7, {0x69, 0x4d, 0x81, 0x0d, 0x35, 0x8f, 0xea, 0xf0,
+                                   0xae, 0xae, 0xac, 0xe6, 0x12, 0x8e, 0xc3, 0x1a});
             // deviceProps (field 8) = DeviceProps protobuf
             {
                 Writer dp;

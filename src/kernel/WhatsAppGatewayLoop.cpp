@@ -87,7 +87,7 @@ using animus::x25519_verify;
 #include <vector>
 
 // WA version constants
-#define WA_VERSION "2.3000.1035194821"
+#define WA_VERSION "2.3000.1042466098"
 #define WA_BROWSER "Mac OS"
 #define WA_DEVICE "Desktop"
 #define WA_PLATFORM 0  // CompanionWebClientType
@@ -513,6 +513,38 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
         }
 
         // --- Transport phase: decrypt and process binary nodes ---
+        //
+        // If the server rejects the Noise finish or the application payload,
+        // it may send a short error frame (< 20 bytes) that is NOT a valid
+        // Noise transport message. Handle this gracefully.
+        //
+        if (frameData.size() < 20) {
+            std::cerr << "[whatsapp] Short frame (" << frameData.size()
+                      << " bytes) — server likely rejected handshake/payload."
+                      << std::endl;
+            std::cerr << "[whatsapp] Raw hex: ";
+            for (size_t i = 0; i < frameData.size(); i++)
+                fprintf(stderr, "%02x", frameData[i]);
+            std::cerr << std::endl;
+            // Try decoding as a binary node (server may send unencrypted error)
+            try {
+                auto errNode = animus::whatsapp::decodeBinaryNode(frameData);
+                std::cerr << "[whatsapp] Error node: " << errNode.tag;
+                for (auto& [k, v] : errNode.attrs)
+                    std::cerr << " " << k << "=" << v;
+                std::cerr << std::endl;
+            } catch (...) {
+                // Not a binary node — might be raw protobuf or garbage
+                std::cerr << "[whatsapp] Could not decode as binary node" << std::endl;
+            }
+            std::cerr << "[whatsapp] Server rejected the connection. Check:"
+                      << "\n  1. Protocol version (appVersion tertiary)"
+                      << "\n  2. Client payload protobuf encoding"
+                      << "\n  3. Identity/signed-prekey key format"
+                      << std::endl;
+            return;
+        }
+
         std::vector<uint8_t> decryptedData;
         try {
             // A single WS frame can contain multiple Noise frames.
@@ -527,6 +559,10 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                 if (3 + encLen > frameData.size() - offset) {
                     std::cerr << "[whatsapp] Frame truncated at offset " << offset << ": encLen=" << encLen
                               << " but only " << (frameData.size() - offset - 3) << " bytes available" << std::endl;
+                    std::cerr << "[whatsapp] Frame hex: ";
+                    for (size_t i = 0; i < std::min(frameData.size(), size_t(64)); i++)
+                        fprintf(stderr, "%02x", frameData[i]);
+                    std::cerr << std::endl;
                     break;
                 }
                 if (encLen == 0) {
