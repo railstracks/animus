@@ -72,9 +72,9 @@ WhatsAppVersionInfo WhatsAppVersionResolver::refresh() {
 // doFetch() — fetch sw.js and extract client_revision
 // ---------------------------------------------------------------------------
 WhatsAppVersionInfo WhatsAppVersionResolver::doFetch() {
-    constexpr const char* HOST = "web.whatsapp.com";
-    constexpr const char* SW_PATH = "/sw.js";
-    constexpr int PORT = 443;
+    static constexpr const char* HOST = "web.whatsapp.com";
+    static constexpr const char* SW_PATH = "/sw.js";
+    static constexpr int PORT = 443;
 
     // --- TCP connect ---
     struct addrinfo hints{}, *result = nullptr;
@@ -132,14 +132,14 @@ WhatsAppVersionInfo WhatsAppVersionResolver::doFetch() {
 
     // --- HTTP GET ---
     std::string req =
-        "GET " SW_PATH " HTTP/1.1\r\n"
-        "Host: " HOST "\r\n"
-        "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\r\n"
-        "sec-fetch-site: none\r\n"
-        "Accept: */*\r\n"
-        "Connection: close\r\n"
-        "\r\n";
+        std::string("GET ") + SW_PATH + " HTTP/1.1\r\n"
+        + "Host: " + HOST + "\r\n"
+        + "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\r\n"
+          "sec-fetch-site: none\r\n"
+          "Accept: */*\r\n"
+          "Connection: close\r\n"
+          "\r\n";
 
     if (SSL_write(ssl, req.data(), static_cast<int>(req.size())) <= 0) {
         SSL_free(ssl);
