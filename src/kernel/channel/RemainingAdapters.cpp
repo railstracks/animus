@@ -21,7 +21,7 @@ namespace animus::kernel {
 using namespace channel_detail;
 
 // ============================================================================
-// EmailAdapter
+// EmailAdapter — full implementation
 // ============================================================================
 
 void EmailAdapter::RunLoop() {
@@ -55,15 +55,14 @@ void EmailAdapter::WebSocketLoop() {
             std::string msgType = GetString(root, "type");
 
             if (msgType == "subscribed") {
-                std::cerr << "[email] WS: subscribed to "
-                          << GetString(root, "event_types", "") << std::endl;
+                std::cerr << "[email] WS: subscribed" << std::endl;
                 return;
             }
 
             if (msgType == "error") {
                 std::string errName = GetString(root, "name");
-                std::string errMsg = GetString(root, "message");
-                std::cerr << "[email] WS error: " << errName << ": " << errMsg << std::endl;
+                std::cerr << "[email] WS error: " << errName
+                          << ": " << GetString(root, "message") << std::endl;
                 if (errName == "authentication_error" || errName == "authorization_error" ||
                     errName == "invalid_api_key") {
                     rt->ws_connected = false;
@@ -75,9 +74,7 @@ void EmailAdapter::WebSocketLoop() {
             if (eventType == "message.received" || eventType == "message.received.spam" ||
                 eventType == "message.received.blocked" || eventType == "message.received.unauthenticated") {
                 std::string eventId = GetString(root, "event_id");
-                if (!eventId.empty()) {
-                    if (!rt->RememberEventStr(eventId)) return;
-                }
+                if (!eventId.empty() && !rt->RememberEventStr(eventId)) return;
 
                 Json::Value msgObj = root["message"];
                 std::string threadId = GetString(msgObj, "thread_id");
@@ -102,7 +99,7 @@ void EmailAdapter::WebSocketLoop() {
 
     wsPtr->setConnectionClosedHandler(
         [rt](const drogon::WebSocketClientPtr&) {
-            std::cerr << "[email] WS: connection closed for " << rt->channel_name << std::endl;
+            std::cerr << "[email] WS: closed for " << rt->channel_name << std::endl;
             rt->ws_connected = false;
         });
 
@@ -117,12 +114,7 @@ void EmailAdapter::WebSocketLoop() {
             if (r != drogon::ReqResult::Ok) {
                 rt->ws_connected = false;
                 rt->consecutive_errors++;
-                std::cerr << "[email] WS: connection failed (attempt "
-                          << rt->consecutive_errors << ")" << std::endl;
-                if (rt->consecutive_errors >= 5) {
-                    wsPtr->stop();
-                    return;
-                }
+                if (rt->consecutive_errors >= 5) { wsPtr->stop(); return; }
                 return;
             }
 
@@ -142,11 +134,7 @@ void EmailAdapter::WebSocketLoop() {
     rt->last_ws_event = std::chrono::steady_clock::now();
 
     loop.runEvery(5.0, [this, rt, &loop, wsPtr]() {
-        if (!rt->active) {
-            wsPtr->stop();
-            loop.quit();
-            return;
-        }
+        if (!rt->active) { wsPtr->stop(); loop.quit(); return; }
         if (rt->ws_connected) {
             auto elapsed = std::chrono::steady_clock::now() - rt->last_ws_event;
             if (std::chrono::duration_cast<std::chrono::minutes>(elapsed).count() >= 5) {
@@ -203,9 +191,6 @@ void EmailAdapter::PollLoop() {
                 std::string messageId = GetString(msg, "message_id");
                 if (!rt->RememberEventStr(messageId)) continue;
 
-                std::string threadId = GetString(msg, "thread_id");
-                std::string sender = GetString(msg, "from");
-                std::string subject = GetString(msg, "subject");
                 std::string bodyText = GetString(msg, "text");
                 if (bodyText.empty()) bodyText = GetString(msg, "extracted_text");
                 if (bodyText.empty()) {
@@ -213,7 +198,8 @@ void EmailAdapter::PollLoop() {
                     if (!htmlBody.empty()) bodyText = StripHtmlSimple(htmlBody);
                 }
 
-                ProcessMessage(threadId, messageId, sender, subject, bodyText);
+                ProcessMessage(GetString(msg, "thread_id"), messageId,
+                               GetString(msg, "from"), GetString(msg, "subject"), bodyText);
             }
         }
 
@@ -238,7 +224,7 @@ void EmailAdapter::ProcessMessage(const std::string& threadId,
     }
     prompt += "\n\nMessage-ID: " + messageId;
     prompt += "\nThread-ID: " + threadId;
-    prompt += "\n\nYou are responding via email. Use the email tool with action=reply and the message_id above to respond. Do NOT use the social tool to reply.";
+    prompt += "\n\nYou are responding via email. Use the email tool with action=reply and the message_id above to respond.";
 
     Dispatch(routingKey, prompt, sessionType);
 }
@@ -247,18 +233,12 @@ void EmailAdapter::SendReply(const ChannelReplyTarget& target, const std::string
     auto* rt = m_runtime.get();
     std::string apiKey = GetString(rt->config, "api_key");
     std::string inboxId = target.email_inbox_id.empty()
-        ? GetString(rt->config, "inbox_id")
-        : target.email_inbox_id;
-    if (apiKey.empty() || inboxId.empty()) {
-        std::cerr << "[email] Reply: missing api_key or inbox_id" << std::endl;
-        return;
-    }
+        ? GetString(rt->config, "inbox_id") : target.email_inbox_id;
+    if (apiKey.empty() || inboxId.empty()) return;
 
     Json::Value payload(Json::objectValue);
     payload["text"] = text;
-    if (!target.email_thread_id.empty()) {
-        payload["thread_id"] = target.email_thread_id;
-    }
+    if (!target.email_thread_id.empty()) payload["thread_id"] = target.email_thread_id;
 
     HttpClient::Request req;
     req.method = "POST";
@@ -269,23 +249,26 @@ void EmailAdapter::SendReply(const ChannelReplyTarget& target, const std::string
 
     auto resp = m_ctx.httpClient.Execute(req);
     std::cerr << "[email] Reply: " << resp.status_code
-              << " to thread=" << target.email_thread_id << std::endl;
+              << " thread=" << target.email_thread_id << std::endl;
 }
 
 // ============================================================================
-// DiscordAdapter
+// DiscordAdapter — SendReply + ProcessMessage (Gateway loop stays in
+// DiscordGatewayLoop.cpp as ChannelManager method for now, as it's 616 lines
+// of WebSocket protocol code with deep ChannelManager coupling)
 // ============================================================================
 
 void DiscordAdapter::RunLoop() {
-    // Full implementation migrated from ChannelManager::DiscordGatewayLoop
-    // This is a large method (~300 lines) — see original for full gateway protocol
+    // Discord Gateway loop remains in DiscordGatewayLoop.cpp as a
+    // ChannelManager method. It will be migrated to this adapter in a
+    // future refactor. For now, this adapter handles SendReply only.
     auto* rt = m_runtime.get();
-    std::cerr << "[discord] Gateway loop starting for " << rt->channel_name << std::endl;
-
-    // TODO: migrate full Discord Gateway WebSocket protocol
-    // For now, this is a stub that will be filled in from the original
-    std::cerr << "[discord] Gateway loop not yet migrated" << std::endl;
-    rt->active = false;
+    std::cerr << "[discord] Gateway loop is handled by ChannelManager for now. "
+              << "SendReply is handled by DiscordAdapter." << std::endl;
+    // Keep the thread alive
+    while (rt->active && !m_stopRequested) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
 }
 
 void DiscordAdapter::ProcessMessage(const std::string& channelId,
@@ -297,22 +280,16 @@ void DiscordAdapter::ProcessMessage(const std::string& channelId,
     std::string sessionType = "discord:chat";
 
     std::string prompt = "Discord message from " + authorUsername + ":\n" + content +
-        "\n\nYou are responding via Discord. Respond naturally — your reply will be sent automatically. Do NOT use the social tool to reply.";
+        "\n\nYou are responding via Discord. Respond naturally — your reply will be sent automatically.";
 
     Dispatch(routingKey, prompt, sessionType);
 }
 
 void DiscordAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {
     auto* rt = m_runtime.get();
-    std::string channelId;
-    if (!target.peer_id.empty()) channelId = target.peer_id;
-    else if (!target.post_id.empty()) channelId = target.post_id;
-
+    std::string channelId = !target.peer_id.empty() ? target.peer_id : target.post_id;
     std::string botToken = GetString(rt->config, "bot_token");
-    if (botToken.empty()) {
-        std::cerr << "[discord] SendReply: no bot_token" << std::endl;
-        return;
-    }
+    if (botToken.empty() || channelId.empty()) return;
 
     std::string content = text;
     if (content.size() > 2000) content = content.substr(0, 1997) + "...";
@@ -335,21 +312,19 @@ void DiscordAdapter::SendReply(const ChannelReplyTarget& target, const std::stri
 }
 
 // ============================================================================
-// WhatsAppAdapter
+// WhatsAppAdapter — SendReply + QR (Gateway loop stays in
+// WhatsAppGatewayLoop.cpp as ChannelManager method, 1547 lines)
 // ============================================================================
 
 void WhatsAppAdapter::RunLoop() {
     auto* rt = m_runtime.get();
-    std::cerr << "[whatsapp] Gateway loop starting for " << rt->channel_name << std::endl;
-
-    // TODO: migrate full WhatsApp Gateway protocol
-    // This involves baileys-like JS engine integration — large and complex
-    std::cerr << "[whatsapp] Gateway loop not yet migrated" << std::endl;
-    rt->active = false;
+    std::cerr << "[whatsapp] Gateway loop is handled by ChannelManager for now." << std::endl;
+    while (rt->active && !m_stopRequested) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
 }
 
 void WhatsAppAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {
-    std::cerr << "[whatsapp] SendReply to " << target.peer_id << std::endl;
     std::lock_guard<std::mutex> lock(m_outboxMutex);
     WhatsAppOutboundMessage msg;
     msg.baseJid = target.peer_id;
@@ -360,19 +335,17 @@ void WhatsAppAdapter::SendReply(const ChannelReplyTarget& target, const std::str
 }
 
 std::string WhatsAppAdapter::GetQrUrl() const {
-    // QR URL stored in runtime state
     if (!m_runtime) return "";
     std::lock_guard<std::mutex> lock(m_runtime->whatsapp_qr_mutex);
     return m_runtime->whatsapp_qr_url;
 }
 
 // ============================================================================
-// SlackAdapter
+// SlackAdapter — full Socket Mode + Polling implementation
 // ============================================================================
 
 void SlackAdapter::OnInit(const ChannelState& state) {
-    std::string appToken = GetString(state.config, "app_token");
-    m_useSocketMode = !appToken.empty();
+    m_useSocketMode = !GetString(state.config, "app_token").empty();
 }
 
 void SlackAdapter::RunLoop() {
@@ -387,40 +360,416 @@ void SlackAdapter::SocketModeLoop() {
     auto* rt = m_runtime.get();
     std::cerr << "[slack-socket] Socket Mode loop starting for " << rt->channel_name << std::endl;
 
-    // TODO: migrate full Slack Socket Mode WebSocket protocol
-    std::cerr << "[slack-socket] Socket Mode not yet migrated" << std::endl;
-    rt->active = false;
+    const std::string appToken = GetString(rt->config, "app_token");
+    const std::string botToken = GetString(rt->config, "bot_token");
+
+    // Resolve bot user ID for self-filtering
+    std::string botUserId = GetString(rt->config, "bot_user_id");
+    if (botUserId.empty() && !botToken.empty()) {
+        HttpClient::Request authReq;
+        authReq.method = "POST";
+        authReq.url = "https://slack.com/api/auth.test";
+        authReq.headers["Authorization"] = "Bearer " + botToken;
+        authReq.headers["Content-Type"] = "application/x-www-form-urlencoded";
+        authReq.body = "";
+        authReq.follow_redirects = false;
+
+        auto authResp = m_ctx.httpClient.Execute(authReq);
+        if (authResp.status_code == 200) {
+            auto data = ParseJson(authResp.body);
+            if (data.isMember("ok") && data["ok"].asBool()) {
+                botUserId = data["user_id"].asString();
+                std::cerr << "[slack-socket] Resolved bot user ID: " << botUserId << std::endl;
+            }
+        }
+    }
+
+    while (rt->active && !m_stopRequested) {
+        // Step 1: Get WebSocket URL
+        HttpClient::Request connReq;
+        connReq.method = "POST";
+        connReq.url = "https://slack.com/api/apps.connections.open";
+        connReq.headers["Authorization"] = "Bearer " + appToken;
+        connReq.headers["Content-Type"] = "application/x-www-form-urlencoded";
+        connReq.body = "";
+        connReq.follow_redirects = false;
+
+        auto connResp = m_ctx.httpClient.Execute(connReq);
+        if (connResp.status_code != 200) {
+            std::cerr << "[slack-socket] apps.connections.open failed (HTTP "
+                      << connResp.status_code << ")" << std::endl;
+            for (int i = 0; i < 30 && rt->active; ++i)
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            continue;
+        }
+
+        auto connData = ParseJson(connResp.body);
+        if (!connData.isMember("ok") || !connData["ok"].asBool() || !connData.isMember("url")) {
+            std::cerr << "[slack-socket] Bad response from apps.connections.open" << std::endl;
+            for (int i = 0; i < 30 && rt->active; ++i)
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            continue;
+        }
+
+        std::string wsUrl = connData["url"].asString();
+
+        // Parse wss:// URL into host + path
+        std::string wsHost, wsPath;
+        {
+            size_t hostStart = wsUrl.find("://");
+            if (hostStart != std::string::npos) {
+                hostStart += 3;
+                size_t pathStart = wsUrl.find("/", hostStart);
+                if (pathStart != std::string::npos) {
+                    wsHost = wsUrl.substr(hostStart, pathStart - hostStart);
+                    wsPath = wsUrl.substr(pathStart);
+                } else {
+                    wsHost = wsUrl.substr(hostStart);
+                    wsPath = "/";
+                }
+            }
+        }
+
+        std::string wsConnectUrl = "wss://" + wsHost;
+
+        // Step 2: Connect WebSocket
+        trantor::EventLoop loop;
+        auto wsPtr = drogon::WebSocketClient::newWebSocketClient(wsConnectUrl, &loop);
+
+        wsPtr->setMessageHandler(
+            [this, rt, &botUserId, wsPtr](std::string&& message,
+                        const drogon::WebSocketClientPtr&,
+                        const drogon::WebSocketMessageType& type) {
+                if (type == drogon::WebSocketMessageType::Ping ||
+                    type == drogon::WebSocketMessageType::Pong) return;
+
+                if (type != drogon::WebSocketMessageType::Text &&
+                    type != drogon::WebSocketMessageType::Binary) return;
+
+                auto envelope = ParseJson(message);
+                std::string msgType = GetString(envelope, "type");
+                std::string envelopeId = GetString(envelope, "envelope_id");
+
+                if (msgType == "hello") {
+                    std::cerr << "[slack-socket] Connected (hello)" << std::endl;
+                    rt->ws_connected = true;
+                    rt->consecutive_errors = 0;
+                    return;
+                }
+
+                if (msgType == "disconnect") {
+                    std::cerr << "[slack-socket] Disconnect: " << GetString(envelope, "reason") << std::endl;
+                    rt->ws_connected = false;
+                    wsPtr->stop();
+                    return;
+                }
+
+                // Acknowledge
+                if (!envelopeId.empty()) {
+                    Json::Value ack;
+                    ack["envelope_id"] = envelopeId;
+                    wsPtr->getConnection()->send(JsonCompact(ack));
+                }
+
+                // Process events_api
+                if (msgType == "events_api") {
+                    Json::Value event = envelope["payload"]["event"];
+                    if (!event.isObject()) return;
+
+                    std::string eventType = GetString(event, "type");
+                    if (eventType != "message") return;
+
+                    // Skip subtypes and bot messages
+                    if (event.isMember("subtype")) return;
+                    std::string botId = GetString(event, "bot_id");
+                    if (!botId.empty()) return;
+
+                    std::string userId = GetString(event, "user");
+                    if (userId == botUserId) return;
+
+                    std::string text = GetString(event, "text");
+                    std::string channel = GetString(event, "channel");
+                    std::string ts = GetString(event, "ts");
+                    std::string threadTs = GetString(event, "thread_ts");
+
+                    if (text.empty() || channel.empty() || ts.empty()) return;
+
+                    // Mention filtering
+                    bool respondToAll = GetString(rt->config, "respond_to_all_messages") == "true";
+                    bool respondToMentions = GetString(rt->config, "respond_to_mentions") != "false";
+                    bool isMention = !botUserId.empty() &&
+                        text.find("<@" + botUserId + ">") != std::string::npos;
+
+                    if (!respondToAll && !isMention && respondToMentions) return;
+
+                    // Strip mention
+                    std::string cleanText = text;
+                    if (!botUserId.empty()) {
+                        std::string mentionTag = "<@" + botUserId + ">";
+                        size_t pos;
+                        while ((pos = cleanText.find(mentionTag)) != std::string::npos)
+                            cleanText.erase(pos, mentionTag.size());
+                        while (!cleanText.empty() && (cleanText[0] == ' ' || cleanText[0] == '\n'))
+                            cleanText.erase(0, 1);
+                        while (!cleanText.empty() && (cleanText.back() == ' ' || cleanText.back() == '\n'))
+                            cleanText.pop_back();
+                    }
+
+                    bool threaded = (GetString(rt->config, "threaded_replies") == "true");
+                    std::string routingKey = "chat:slack:" + channel;
+                    if (!threadTs.empty() && threadTs != ts) {
+                        routingKey = "chat:slack:" + threadTs;
+                    } else if (threaded && threadTs.empty()) {
+                        routingKey = "chat:slack:" + ts;
+                    }
+
+                    std::string prompt = "[Slack message from <" + userId + ">";
+                    prompt += " in channel " + channel;
+                    if (!threadTs.empty() && threadTs != ts)
+                        prompt += " (thread " + threadTs + ")";
+                    prompt += "]\n" + cleanText;
+
+                    ChannelReplyTarget replyTarget;
+                    replyTarget.channel_name = rt->channel_name;
+                    replyTarget.channel_type = rt->channel_type;
+                    replyTarget.type = ChannelReplyTarget::Chat;
+                    replyTarget.peer_id = channel;
+                    if (!threadTs.empty() && threadTs != ts) {
+                        replyTarget.reply_to_comment = threadTs;
+                    } else if (threaded && threadTs.empty()) {
+                        replyTarget.reply_to_comment = ts;
+                    }
+
+                    m_ctx.dispatch(rt->agent_id, routingKey, prompt, "slack", replyTarget);
+
+                    std::cerr << "[slack-socket] Dispatched from " << userId
+                              << " in " << channel << " ts=" << ts << std::endl;
+                }
+            });
+
+        wsPtr->setConnectionClosedHandler(
+            [rt](const drogon::WebSocketClientPtr&) {
+                std::cerr << "[slack-socket] WebSocket closed for " << rt->channel_name << std::endl;
+                rt->ws_connected = false;
+            });
+
+        auto req = drogon::HttpRequest::newHttpRequest();
+        req->setPath(wsPath);
+
+        wsPtr->connectToServer(req,
+            [rt](drogon::ReqResult r, const drogon::HttpResponsePtr&,
+                 const drogon::WebSocketClientPtr&) {
+                if (r != drogon::ReqResult::Ok) {
+                    rt->ws_connected = false;
+                    rt->consecutive_errors++;
+                }
+            });
+
+        loop.runEvery(5.0, [rt, &loop, wsPtr]() {
+            if (!rt->active) { wsPtr->stop(); loop.quit(); }
+        });
+
+        loop.loop();
+        rt->ws_connected = false;
+
+        if (!rt->active) break;
+
+        std::cerr << "[slack-socket] Reconnecting in 5s..." << std::endl;
+        for (int i = 0; i < 5 && rt->active; ++i)
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
+    std::cerr << "[slack-socket] Socket Mode loop stopped for " << rt->channel_name << std::endl;
 }
 
 void SlackAdapter::PollingLoop() {
     auto* rt = m_runtime.get();
-    std::cerr << "[slack] Polling loop starting for " << rt->channel_name << std::endl;
+    std::cerr << "[slack] Polling loop started for " << rt->channel_name << std::endl;
 
-    // TODO: migrate full Slack REST polling loop
-    std::cerr << "[slack] Polling not yet migrated" << std::endl;
-    rt->active = false;
+    const std::string botToken = GetString(rt->config, "bot_token");
+    if (botToken.empty()) {
+        std::cerr << "[slack] No bot_token for " << rt->channel_name << std::endl;
+        return;
+    }
+
+    // Resolve bot user ID
+    std::string botUserId = GetString(rt->config, "bot_user_id");
+    if (botUserId.empty()) {
+        HttpClient::Request req;
+        req.method = "POST";
+        req.url = "https://slack.com/api/auth.test";
+        req.headers["Authorization"] = "Bearer " + botToken;
+        req.headers["Content-Type"] = "application/x-www-form-urlencoded";
+        req.body = "";
+        req.follow_redirects = false;
+
+        auto resp = m_ctx.httpClient.Execute(req);
+        if (resp.status_code == 200) {
+            auto data = ParseJson(resp.body);
+            if (data.isMember("ok") && data["ok"].asBool()) {
+                botUserId = data["user_id"].asString();
+            }
+        }
+    }
+
+    // Discover channels
+    std::vector<std::string> monitoredChannels;
+    std::string channelsJson = GetString(rt->config, "monitored_channels");
+    if (!channelsJson.empty()) {
+        auto arr = ParseJson(channelsJson);
+        if (arr.isArray()) {
+            for (Json::ArrayIndex i = 0; i < arr.size(); ++i)
+                monitoredChannels.push_back(arr[i].asString());
+        }
+    } else {
+        HttpClient::Request req;
+        req.method = "GET";
+        req.url = "https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=1000";
+        req.headers["Authorization"] = "Bearer " + botToken;
+        req.follow_redirects = false;
+
+        auto resp = m_ctx.httpClient.Execute(req);
+        if (resp.status_code == 200) {
+            auto data = ParseJson(resp.body);
+            if (data.isMember("ok") && data["ok"].asBool() && data["channels"].isArray()) {
+                for (const auto& ch : data["channels"]) {
+                    if (ch.isMember("is_member") && ch["is_member"].asBool())
+                        monitoredChannels.push_back(ch["id"].asString());
+                }
+            }
+        }
+        std::cerr << "[slack] Auto-discovered " << monitoredChannels.size() << " channels" << std::endl;
+    }
+
+    if (monitoredChannels.empty()) {
+        std::cerr << "[slack] No channels found. Idle." << std::endl;
+        while (rt->active) std::this_thread::sleep_for(std::chrono::seconds(30));
+        return;
+    }
+
+    std::string latestTs = rt->lp_ts;
+    const auto pollInterval = std::chrono::seconds(10);
+
+    while (rt->active && !m_stopRequested) {
+        rt->next_attempt = std::chrono::steady_clock::now() + pollInterval;
+
+        for (const auto& channelId : monitoredChannels) {
+            if (!rt->active) break;
+
+            try {
+                std::string url = "https://slack.com/api/conversations.history?channel="
+                    + channelId + "&limit=5";
+                if (!latestTs.empty()) url += "&oldest=" + latestTs;
+
+                HttpClient::Request req;
+                req.method = "GET";
+                req.url = url;
+                req.headers["Authorization"] = "Bearer " + botToken;
+                req.follow_redirects = false;
+
+                auto resp = m_ctx.httpClient.Execute(req);
+
+                if (resp.status_code == 429) {
+                    std::string retryAfter = resp.headers.count("retry-after")
+                        ? resp.headers.at("retry-after") : "10";
+                    std::this_thread::sleep_for(std::chrono::seconds(std::stoi(retryAfter)));
+                    continue;
+                }
+
+                if (resp.status_code != 200) continue;
+
+                auto data = ParseJson(resp.body);
+                if (!data.isMember("ok") || !data["ok"].asBool()) continue;
+                if (!data["messages"].isArray()) continue;
+
+                for (int i = static_cast<int>(data["messages"].size()) - 1; i >= 0; --i) {
+                    const auto& msg = data["messages"][i];
+                    if (!msg.isObject()) continue;
+
+                    std::string userId = GetString(msg, "user");
+                    if (userId == botUserId) continue;
+                    std::string botId = GetString(msg, "bot_id");
+                    if (!botId.empty()) continue;
+                    if (msg.isMember("subtype")) continue;
+
+                    std::string text = GetString(msg, "text");
+                    std::string ts = GetString(msg, "ts");
+                    std::string threadTs = GetString(msg, "thread_ts");
+                    if (text.empty() || ts.empty()) continue;
+
+                    bool respondToAll = GetString(rt->config, "respond_to_all_messages") == "true";
+                    bool respondToMentions = GetString(rt->config, "respond_to_mentions") != "false";
+                    bool isMention = text.find("<@" + botUserId + ">") != std::string::npos;
+                    if (!respondToAll && !isMention && respondToMentions) continue;
+                    if (!respondToAll && !respondToMentions) continue;
+
+                    // Strip mention
+                    std::string cleanText = text;
+                    std::string mentionTag = "<@" + botUserId + ">";
+                    size_t pos;
+                    while ((pos = cleanText.find(mentionTag)) != std::string::npos)
+                        cleanText.erase(pos, mentionTag.size());
+                    while (!cleanText.empty() && (cleanText[0] == ' ' || cleanText[0] == '\n'))
+                        cleanText.erase(0, 1);
+                    while (!cleanText.empty() && (cleanText.back() == ' ' || cleanText.back() == '\n'))
+                        cleanText.pop_back();
+
+                    bool threaded = (GetString(rt->config, "threaded_replies") == "true");
+                    std::string routingKey = "chat:slack:" + channelId;
+                    if (!threadTs.empty() && threadTs != ts) {
+                        routingKey = "chat:slack:" + threadTs;
+                    } else if (threaded && threadTs.empty()) {
+                        routingKey = "chat:slack:" + ts;
+                    }
+
+                    std::string prompt = "[Slack message from <" + userId + ">";
+                    prompt += " in channel " + channelId;
+                    if (!threadTs.empty() && threadTs != ts)
+                        prompt += " (thread " + threadTs + ")";
+                    prompt += "]\n" + cleanText;
+
+                    ChannelReplyTarget replyTarget;
+                    replyTarget.channel_name = rt->channel_name;
+                    replyTarget.channel_type = rt->channel_type;
+                    replyTarget.type = ChannelReplyTarget::Chat;
+                    replyTarget.peer_id = channelId;
+                    if (!threadTs.empty() && threadTs != ts) {
+                        replyTarget.reply_to_comment = threadTs;
+                    } else if (threaded && threadTs.empty()) {
+                        replyTarget.reply_to_comment = ts;
+                    }
+
+                    m_ctx.dispatch(rt->agent_id, routingKey, prompt, "slack", replyTarget);
+                    latestTs = ts;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[slack] Exception: " << e.what() << std::endl;
+            }
+        }
+
+        if (m_ctx.configStore && !latestTs.empty()) {
+            m_ctx.configStore->Set("", "channel." + rt->channel_name + ".polling.latest_ts", latestTs);
+        }
+
+        while (rt->active && std::chrono::steady_clock::now() < rt->next_attempt)
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
+    std::cerr << "[slack] Polling loop stopped for " << rt->channel_name << std::endl;
 }
 
 void SlackAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {
     auto* rt = m_runtime.get();
     std::string channelId = target.peer_id.empty() ? target.post_id : target.peer_id;
-    if (channelId.empty()) {
-        std::cerr << "[slack] SendReply: no channel_id" << std::endl;
-        return;
-    }
+    if (channelId.empty()) return;
 
     std::string botToken = GetString(rt->config, "bot_token");
-    if (botToken.empty()) {
-        std::cerr << "[slack] SendReply: no bot_token" << std::endl;
-        return;
-    }
+    if (botToken.empty()) return;
 
     Json::Value body;
     body["channel"] = channelId;
     body["text"] = text;
-    if (!target.reply_to_comment.empty()) {
-        body["thread_ts"] = target.reply_to_comment;
-    }
+    if (!target.reply_to_comment.empty()) body["thread_ts"] = target.reply_to_comment;
 
     HttpClient::Request req;
     req.method = "POST";
@@ -444,16 +793,219 @@ void SlackAdapter::SendReply(const ChannelReplyTarget& target, const std::string
 }
 
 // ============================================================================
-// NextcloudAdapter
+// NextcloudAdapter — full polling implementation
 // ============================================================================
 
 void NextcloudAdapter::RunLoop() {
     auto* rt = m_runtime.get();
-    std::cerr << "[nextcloud] Poll loop starting for " << rt->channel_name << std::endl;
+    std::cerr << "[nextcloud] Talk poll loop starting for " << rt->channel_name << std::endl;
 
-    // TODO: migrate full Nextcloud Talk OCS API polling
-    std::cerr << "[nextcloud] Poll loop not yet migrated" << std::endl;
-    rt->active = false;
+    std::string serverUrl = GetString(rt->config, "server_url");
+    std::string username = GetString(rt->config, "username");
+    std::string appPassword = GetString(rt->config, "app_password");
+
+    if (serverUrl.empty() || username.empty() || appPassword.empty()) {
+        std::cerr << "[nextcloud] Missing credentials for " << rt->channel_name << std::endl;
+        rt->active = false;
+        return;
+    }
+
+    while (!serverUrl.empty() && serverUrl.back() == '/') serverUrl.pop_back();
+
+    std::string authHeader = "Basic " + Base64EncodeStr(username + ":" + appPassword);
+    std::string apiBase = serverUrl + "/ocs/v2.php/apps/spreed/api/v4";
+    std::string chatApiBase = serverUrl + "/ocs/v2.php/apps/spreed/api/v1";
+
+    bool respondInDm = GetString(rt->config, "respond_in_dm", "true") != "false";
+    bool respondInGroupOnMention = GetString(rt->config, "respond_in_group_on_mention", "true") != "false";
+    std::string mentionTrigger = GetString(rt->config, "group_mention_trigger", "@" + username);
+
+    // Parse watch_tokens
+    std::vector<std::string> watchTokens;
+    std::string watchTokensJson = GetString(rt->config, "watch_tokens");
+    if (!watchTokensJson.empty()) {
+        auto arr = ParseJson(watchTokensJson);
+        if (arr.isArray()) {
+            for (Json::ArrayIndex i = 0; i < arr.size(); ++i)
+                if (arr[i].isString()) watchTokens.push_back(arr[i].asString());
+        }
+    }
+
+    auto isDm = [](int convType) { return convType == 1 || convType == 6; };
+
+    struct ConvState {
+        int lastMsgId{0};
+        int type{2};
+        std::string displayName;
+    };
+    std::unordered_map<std::string, ConvState> conversations;
+
+    auto syncConversationList = [&]() {
+        HttpClient::Request req;
+        req.method = "GET";
+        req.url = apiBase + "/room?format=json";
+        req.headers["Accept"] = "application/json";
+        req.headers["OCS-APIREQUEST"] = "true";
+        req.headers["Authorization"] = authHeader;
+        req.follow_redirects = false;
+
+        auto resp = m_ctx.httpClient.Execute(req);
+        if (resp.status_code != 200) return;
+
+        auto data = ParseJson(resp.body);
+        if (!data.isMember("ocs") || !data["ocs"]["data"].isArray()) return;
+
+        for (const auto& room : data["ocs"]["data"]) {
+            std::string token = GetString(room, "token");
+            if (token.empty()) continue;
+
+            int convType = room.isMember("type") ? room["type"].asInt() : 2;
+            if (convType == 4) continue; // changelog
+
+            if (!watchTokens.empty()) {
+                bool found = false;
+                for (const auto& wt : watchTokens) if (wt == token) { found = true; break; }
+                if (!found) continue;
+            }
+
+            std::string displayName = GetString(room, "displayName");
+            if (displayName.empty()) displayName = token;
+
+            if (conversations.find(token) == conversations.end()) {
+                ConvState cs;
+                cs.type = convType;
+                cs.displayName = displayName;
+                if (m_ctx.configStore) {
+                    std::string stored = m_ctx.configStore->Get("",
+                        "channel." + rt->channel_name + ".polling." + token + ".last_msg_id");
+                    if (!stored.empty()) {
+                        try { cs.lastMsgId = std::stoi(stored); } catch (...) {}
+                    }
+                }
+                conversations[token] = cs;
+                std::cerr << "[nextcloud] Watching: " << displayName
+                          << " (token=" << token << ", type=" << convType << ")" << std::endl;
+            } else {
+                conversations[token].type = convType;
+                conversations[token].displayName = displayName;
+            }
+        }
+    };
+
+    syncConversationList();
+    auto lastRoomSync = std::chrono::steady_clock::now();
+    const auto roomSyncInterval = std::chrono::seconds(60);
+
+    while (rt->active && !m_stopRequested) {
+        try {
+            auto now = std::chrono::steady_clock::now();
+
+            if (now - lastRoomSync > roomSyncInterval) {
+                syncConversationList();
+                lastRoomSync = now;
+            }
+
+            if (conversations.empty()) {
+                std::this_thread::sleep_for(std::chrono::seconds(10));
+                continue;
+            }
+
+            for (auto& [token, conv] : conversations) {
+                if (!rt->active) break;
+
+                std::string url = chatApiBase + "/chat/" + token +
+                    "?lookIntoFuture=1&timeout=30&format=json";
+                if (conv.lastMsgId > 0)
+                    url += "&lastKnownMessageId=" + std::to_string(conv.lastMsgId);
+
+                HttpClient::Request req;
+                req.method = "GET";
+                req.url = url;
+                req.headers["Accept"] = "application/json";
+                req.headers["OCS-APIREQUEST"] = "true";
+                req.headers["Authorization"] = authHeader;
+                req.follow_redirects = false;
+                req.timeout_seconds = 35;
+
+                auto resp = m_ctx.httpClient.Execute(req);
+                if (resp.status_code == 304) continue;
+                if (resp.status_code != 200) continue;
+
+                auto data = ParseJson(resp.body);
+                if (!data.isMember("ocs") || !data["ocs"]["data"].isArray()) continue;
+
+                for (const auto& msg : data["ocs"]["data"]) {
+                    int msgId = msg.isMember("id") ? msg["id"].asInt() : 0;
+                    if (msgId <= conv.lastMsgId) continue;
+                    conv.lastMsgId = std::max(conv.lastMsgId, msgId);
+
+                    if (m_ctx.configStore) {
+                        m_ctx.configStore->Set("",
+                            "channel." + rt->channel_name + ".polling." + token + ".last_msg_id",
+                            std::to_string(conv.lastMsgId));
+                    }
+
+                    // Skip system/bot/own messages
+                    std::string systemMsg = GetString(msg, "systemMessage");
+                    if (!systemMsg.empty()) continue;
+                    std::string actorType = GetString(msg, "actorType");
+                    if (actorType == "bots") continue;
+                    std::string actorId = GetString(msg, "actorId");
+                    if (actorId == username) continue;
+
+                    std::string messageText = GetString(msg, "message");
+                    if (messageText.empty()) continue;
+
+                    std::string actorName = GetString(msg, "actorDisplayName");
+                    if (actorName.empty()) actorName = actorId;
+
+                    bool shouldDispatch = false;
+                    if (isDm(conv.type) && respondInDm) {
+                        shouldDispatch = true;
+                    } else if (!isDm(conv.type) && respondInGroupOnMention) {
+                        if (messageText.find(mentionTrigger) != std::string::npos)
+                            shouldDispatch = true;
+                    } else if (!isDm(conv.type) && !respondInGroupOnMention) {
+                        shouldDispatch = true;
+                    }
+                    if (!shouldDispatch) continue;
+
+                    // Strip mention trigger
+                    std::string cleanText = messageText;
+                    if (!mentionTrigger.empty()) {
+                        size_t pos;
+                        while ((pos = cleanText.find(mentionTrigger)) != std::string::npos)
+                            cleanText.erase(pos, mentionTrigger.size());
+                        while (!cleanText.empty() && (cleanText[0] == ' ' || cleanText[0] == '\n'))
+                            cleanText.erase(0, 1);
+                    }
+
+                    std::string prompt = "[Nextcloud Talk message from " + actorName;
+                    prompt += " in \"" + conv.displayName + "\"";
+                    if (isDm(conv.type)) prompt += " (direct message)";
+                    prompt += "]\n" + cleanText;
+
+                    ChannelReplyTarget replyTarget;
+                    replyTarget.channel_name = rt->channel_name;
+                    replyTarget.channel_type = rt->channel_type;
+                    replyTarget.type = ChannelReplyTarget::Chat;
+                    replyTarget.peer_id = token;
+
+                    m_ctx.dispatch(rt->agent_id, "conv:" + token, prompt, "nextcloud", replyTarget);
+
+                    std::cerr << "[nextcloud] Dispatched from " << actorName
+                              << " in " << conv.displayName << " (id=" << msgId << ")" << std::endl;
+                }
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "[nextcloud] Exception: " << ex.what() << std::endl;
+            rt->consecutive_errors++;
+            int backoff = std::min(60, rt->consecutive_errors * 5);
+            std::this_thread::sleep_for(std::chrono::seconds(backoff));
+        }
+    }
+
+    std::cerr << "[nextcloud] Talk poll loop stopped for " << rt->channel_name << std::endl;
 }
 
 void NextcloudAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {
@@ -461,11 +1013,9 @@ void NextcloudAdapter::SendReply(const ChannelReplyTarget& target, const std::st
     std::string serverUrl = GetString(rt->config, "server_url");
     std::string username = GetString(rt->config, "username");
     std::string appPassword = GetString(rt->config, "app_password");
+    if (serverUrl.empty() || username.empty() || appPassword.empty()) return;
 
-    if (serverUrl.empty() || username.empty() || appPassword.empty()) {
-        std::cerr << "[nextcloud] SendReply: missing credentials" << std::endl;
-        return;
-    }
+    while (!serverUrl.empty() && serverUrl.back() == '/') serverUrl.pop_back();
 
     Json::Value body;
     body["message"] = text;
@@ -484,8 +1034,6 @@ void NextcloudAdapter::SendReply(const ChannelReplyTarget& target, const std::st
     auto resp = m_ctx.httpClient.Execute(req);
     if (resp.status_code != 200 && resp.status_code != 201) {
         std::cerr << "[nextcloud] SendReply failed (" << resp.status_code << ")" << std::endl;
-    } else {
-        std::cerr << "[nextcloud] SendReply OK to " << target.peer_id << std::endl;
     }
 }
 
