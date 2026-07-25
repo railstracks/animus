@@ -45,7 +45,6 @@ namespace telegram {
     struct Update;
 }
 
-class IrcInterfaceRuntime;
 
 // ============================================================================
 // ChannelRouter — routes inbound events to agent sessions
@@ -138,14 +137,6 @@ public:
     // --- Runtime status ---
     bool IsChannelConnected(const std::string& name) const;
 
-    // --- WhatsApp-specific ---
-    std::string GetWhatsAppQrUrl(const std::string& name) const;
-
-    // --- IRC-specific: send PRIVMSG ---
-    bool SendIrcPrivmsg(const std::string& channelName,
-                        const std::string& target,
-                        const std::string& message);
-
     // --- Send auto-reply via the right connector ---
     void SendReply(const ReplyTarget& target, const std::string& text);
 
@@ -219,44 +210,10 @@ private:
         bool active{false};
     };
 
-    // IRC runtime wrapper
-    struct IrcRuntime {
-        std::string channel_name;
-        std::shared_ptr<IrcInterfaceRuntime> runtime;
-    };
-
-    // --- Connector threads ---
-    void VkLongPollLoop(PollerState* state);
-    void TelegramLongPollLoop(PollerState* state);
-
-    // --- VK event processing ---
-    void ProcessVKEvent(PollerState* state, const std::string& eventType,
-                        const std::string& objectJson);
-    void ProcessVKMessageNew(PollerState* state, const std::string& objectJson);
-    void ProcessVKWallPostNew(PollerState* state, const std::string& objectJson);
-    void ProcessVKWallReplyNew(PollerState* state, const std::string& objectJson);
-
-    // --- Telegram event processing ---
-    void ProcessTelegramMessage(PollerState* state,
-                                const struct telegram::Message& msg);
-    void ProcessTelegramChatMemberUpdate(PollerState* state,
-                                          const struct telegram::Update& update);
-
-    // --- Email connector ---
-    void EmailWebSocketLoop(PollerState* state);
-    void EmailPollLoop(PollerState* state);  // Fallback
+    // --- Legacy connector threads (Discord/WhatsApp) ---
+    // These remain as ChannelManager methods until adapter migration.
     void DiscordGatewayLoop(PollerState* state);
     void WhatsAppGatewayLoop(PollerState* state);
-    void WhatsAppGatewayLoopInner(PollerState* state);
-    void SlackPollingLoop(PollerState* state);
-    void SlackSocketModeLoop(PollerState* state);
-    void NextcloudTalkPollLoop(PollerState* state);
-    void ProcessEmailMessage(PollerState* state,
-                              const std::string& threadId,
-                              const std::string& messageId,
-                              const std::string& sender,
-                              const std::string& subject,
-                              const std::string& bodyText);
     void ProcessDiscordMessage(PollerState* state,
                                const std::string& channelId,
                                const std::string& messageId,
@@ -276,30 +233,6 @@ private:
                       const std::string& routingKey,
                       const std::string& message,
                       const std::string& sessionType);
-
-    // --- VK helpers ---
-    bool FetchVkLongPollServer(PollerState* state);
-    std::string BuildVkLongPollUrl(const PollerState* state) const;
-    std::unordered_map<std::string, std::string> ResolveVKUsers(
-        PollerState* state, const std::vector<std::string>& userIds);
-    std::string FetchVKChatHistory(PollerState* state,
-                                   const std::string& peerId,
-                                   int count);
-
-    // --- IRC helpers ---
-    void StartIrcChannel(const ChannelState& state);
-    void StopIrcChannel(const std::string& name);
-    void SyncIrcMessageCallback(
-        const std::string& channelName,
-        const std::string& botNick,
-        const std::string& sourceNick,
-        const std::string& target,
-        const std::string& message,
-        bool isNotice);
-    void SyncIrcStatusCallback(
-        const std::string& channelName,
-        bool connected,
-        std::uint64_t eventUnixMs);
 
     // --- Async restart queue ---
     // Channel restarts are enqueued and processed by a background thread
@@ -332,13 +265,9 @@ private:
     std::unordered_map<std::string, ChannelState> m_channels;
     mutable std::mutex m_channelsMutex;
 
-    // Poller runtimes (VK, Telegram, etc.) — legacy, for Discord/WhatsApp
+    // Poller runtimes — legacy path for Discord/WhatsApp only
     std::unordered_map<std::string, std::unique_ptr<PollerState>> m_pollers;
     mutable std::mutex m_pollersMutex;
-
-    // IRC runtimes — legacy, will migrate to IrcAdapter
-    std::unordered_map<std::string, IrcRuntime> m_ircRuntimes;
-    mutable std::mutex m_ircMutex;
 
     // Adapter instances — for connectors migrated to IChannelAdapter
     std::unordered_map<std::string, std::unique_ptr<IChannelAdapter>> m_adapters;
