@@ -1,3 +1,4 @@
+#include "animus_kernel/Log.h"
 #include "animus_kernel/PgDataStore.h"
 
 #include <atomic>
@@ -275,8 +276,8 @@ private:
 static std::unique_ptr<PgDataStore::PooledConnection> CreatePooledConnection(const std::string& connInfo, int id) {
     PGconn* conn = PQconnectdb(connInfo.c_str());
     if (!conn || PQstatus(conn) != CONNECTION_OK) {
-        std::cerr << "[datastore] Connection " << id << " failed: "
-                  << (conn ? PQerrorMessage(conn) : "null") << std::endl;
+        LOG_ERROR("datastore", "Connection " << id << " failed: "
+                  << (conn ? PQerrorMessage(conn) : "null"));
         if (conn) PQfinish(conn);
         return nullptr;
     }
@@ -309,7 +310,7 @@ PgDataStore::PgDataStore(const Config& config) {
     }
 
     if (m_allConnections.empty()) {
-        std::cerr << "[datastore] FATAL: no PostgreSQL connections established" << std::endl;
+        LOG_WARNING("datastore", "FATAL: no PostgreSQL connections established");
         return;
     }
 
@@ -321,12 +322,11 @@ PgDataStore::PgDataStore(const Config& config) {
         m_connStates.push_back(std::make_unique<ConnState>());
     }
 
-    std::cerr << "[datastore] PostgreSQL pool: " << m_allConnections.size()
+    LOG_DEBUG("datastore", "PostgreSQL pool: " << m_allConnections.size()
               << "/" << m_poolSize << " connections to "
               << config.host << ":" << config.port
               << "/" << config.database
-              << " (pgvector: " << (m_hasPgvector ? "yes" : "no") << ")"
-              << std::endl;
+              << " (pgvector: " << (m_hasPgvector ? "yes" : "no") << ")");
 }
 
 PgDataStore::~PgDataStore() {
@@ -362,7 +362,7 @@ PgDataStore::PooledConnection* PgDataStore::Acquire() {
         pc->conn = PQconnectdb(m_connInfo.c_str());
         if (!pc->conn || PQstatus(pc->conn) != CONNECTION_OK) {
             pc->healthy = false;
-            std::cerr << "[datastore] Connection " << pc->id << " reconnection failed" << std::endl;
+            LOG_WARNING("datastore", "Connection " << pc->id << " reconnection failed");
         } else {
             pc->healthy = true;
         }
@@ -433,7 +433,7 @@ std::unique_ptr<IStatement> PgDataStore::Prepare(const std::string& sql) {
     auto* pc = Acquire();
     if (!pc || !pc->conn) {
         if (pc) Release(pc);
-        std::cerr << "[datastore] Prepare: no available connection" << std::endl;
+        LOG_WARNING("datastore", "Prepare: no available connection");
         return nullptr;
     }
 
@@ -490,7 +490,7 @@ bool PgDataStore::DetectPgvector() {
         if (createResult) {
             if (PQresultStatus(createResult) == PGRES_COMMAND_OK) {
                 found = true;
-                std::cerr << "[datastore] pgvector extension created" << std::endl;
+                LOG_DEBUG("datastore", "pgvector extension created");
             }
             PQclear(createResult);
         }

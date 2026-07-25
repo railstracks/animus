@@ -1,3 +1,4 @@
+#include "animus_kernel/Log.h"
 #include "animus_kernel/SqliteDataStore.h"
 
 #include <cstring>
@@ -113,8 +114,8 @@ SqliteDataStore::SqliteDataStore(const std::string& dbPath) {
 
     int rc = sqlite3_open(dbPath.c_str(), &m_db);
     if (rc != SQLITE_OK) {
-        std::cerr << "[datastore] failed to open " << dbPath
-                  << ": " << (m_db ? sqlite3_errmsg(m_db) : "unknown error") << std::endl;
+        LOG_ERROR("datastore", "failed to open " << dbPath
+                  << ": " << (m_db ? sqlite3_errmsg(m_db) : "unknown error"));
         if (m_db) {
             sqlite3_close(m_db);
             m_db = nullptr;
@@ -126,7 +127,7 @@ SqliteDataStore::SqliteDataStore(const std::string& dbPath) {
     Exec("PRAGMA journal_mode=WAL;");
     Exec("PRAGMA foreign_keys=ON;");
 
-    std::cerr << "[datastore] opened " << dbPath << std::endl;
+    LOG_DEBUG("datastore", "opened " << dbPath);
 }
 
 SqliteDataStore::~SqliteDataStore() {
@@ -141,7 +142,7 @@ bool SqliteDataStore::Exec(const std::string& sql) {
     char* err = nullptr;
     int rc = sqlite3_exec(m_db, sql.c_str(), nullptr, nullptr, &err);
     if (rc != SQLITE_OK) {
-        std::cerr << "[datastore] SQL error: " << (err ? err : "unknown") << std::endl;
+        LOG_ERROR("datastore", "SQL error: " << (err ? err : "unknown"));
         sqlite3_free(err);
         return false;
     }
@@ -153,7 +154,7 @@ std::unique_ptr<IStatement> SqliteDataStore::Prepare(const std::string& sql) {
     sqlite3_stmt* stmt = nullptr;
     int rc = sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
-        std::cerr << "[datastore] prepare error: " << sqlite3_errmsg(m_db) << std::endl;
+        LOG_ERROR("datastore", "prepare error: " << sqlite3_errmsg(m_db));
         return nullptr;
     }
     return std::make_unique<SqliteStatement>(stmt);

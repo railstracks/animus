@@ -1,3 +1,4 @@
+#include "animus_kernel/Log.h"
 #include "animus_kernel/ChannelAdapters.h"
 #include "animus_kernel/ChannelContext.h"
 #include "animus_kernel/ChannelHelpers.h"
@@ -60,8 +61,8 @@ bool IrcAdapter::Start(const ChannelState& state, std::string* error) {
         });
 
     m_runtime->Start();
-    std::cerr << "[irc] Started: " << state.name
-              << " (" << ircCfg.host << ":" << ircCfg.port << ")" << std::endl;
+    LOG_INFO("irc", "Started: " << state.name
+              << " (" << ircCfg.host << ":" << ircCfg.port << ")");
     return true;
 }
 
@@ -72,7 +73,7 @@ void IrcAdapter::Stop() {
         runtime = std::move(m_runtime);
     }
     if (runtime) runtime->Stop();
-    std::cerr << "[irc] Stopped: " << m_channelName << std::endl;
+    LOG_INFO("irc", "Stopped: " << m_channelName);
 }
 
 void IrcAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {
@@ -135,8 +136,8 @@ void IrcAdapter::OnMessage(const std::string& sourceNick,
 }
 
 void IrcAdapter::OnStatus(bool connected, std::uint64_t eventUnixMs) {
-    std::cerr << "[irc] " << m_channelName << ": "
-              << (connected ? "connected" : "disconnected") << std::endl;
+    LOG_INFO("irc", "" << m_channelName << ": "
+              << (connected ? "connected" : "disconnected"));
 }
 
 } // namespace animus::kernel

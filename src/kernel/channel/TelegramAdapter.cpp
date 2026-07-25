@@ -1,3 +1,4 @@
+#include "animus_kernel/Log.h"
 #include "animus_kernel/ChannelAdapters.h"
 #include "animus_kernel/ChannelContext.h"
 #include "animus_kernel/ChannelHelpers.h"
@@ -21,11 +22,11 @@ using namespace channel_detail;
 
 void TelegramAdapter::RunLoop() {
     auto* rt = m_runtime.get();
-    std::cerr << "[telegram] Long Poll loop starting for " << rt->channel_name << std::endl;
+    LOG_DEBUG("telegram", "Long Poll loop starting for " << rt->channel_name);
 
     std::string token = GetString(rt->config, "access_token");
     if (token.empty()) {
-        std::cerr << "[telegram] No access token for " << rt->channel_name << std::endl;
+        LOG_WARNING("telegram", "No access token for " << rt->channel_name);
         rt->active = false;
         return;
     }
@@ -34,13 +35,13 @@ void TelegramAdapter::RunLoop() {
 
     auto botInfo = api.GetMe(token);
     if (!botInfo) {
-        std::cerr << "[telegram] getMe failed for " << rt->channel_name
-                  << " — check bot token" << std::endl;
+        LOG_WARNING("telegram", "getMe failed for " << rt->channel_name
+                  << " — check bot token");
         rt->active = false;
         return;
     }
-    std::cerr << "[telegram] Connected as @" << botInfo->username
-              << " (" << botInfo->first_name << ", id=" << botInfo->id << ")" << std::endl;
+    LOG_INFO("telegram", "Connected as @" << botInfo->username
+              << " (" << botInfo->first_name << ", id=" << botInfo->id << ")");
 
     while (rt->active && !m_stopRequested) {
         try {
@@ -85,15 +86,15 @@ void TelegramAdapter::RunLoop() {
 
             rt->consecutive_errors = 0;
         } catch (const std::exception& ex) {
-            std::cerr << "[telegram] Exception for " << rt->channel_name
-                      << ": " << ex.what() << std::endl;
+            LOG_ERROR("telegram", "Exception for " << rt->channel_name
+                      << ": " << ex.what());
             rt->consecutive_errors++;
             int backoff = std::min(60, rt->consecutive_errors * 5);
             rt->next_attempt = std::chrono::steady_clock::now() + std::chrono::seconds(backoff);
         }
     }
 
-    std::cerr << "[telegram] Loop ended for " << rt->channel_name << std::endl;
+    LOG_DEBUG("telegram", "Loop ended for " << rt->channel_name);
 }
 
 void TelegramAdapter::ProcessMessage(const telegram::Message& msg) {
@@ -128,11 +129,11 @@ void TelegramAdapter::ProcessChatMemberUpdate(const telegram::Update& update) {
     std::string chatId = std::to_string(update.member_chat_id);
 
     if (status == "member" || status == "administrator") {
-        std::cerr << "[telegram] Bot added to chat " << chatId
-                  << " (status: " << status << ")" << std::endl;
+        LOG_DEBUG("telegram", "Bot added to chat " << chatId
+                  << " (status: " << status << ")");
     } else if (status == "left" || status == "kicked") {
-        std::cerr << "[telegram] Bot removed from chat " << chatId
-                  << " (status: " << status << ")" << std::endl;
+        LOG_DEBUG("telegram", "Bot removed from chat " << chatId
+                  << " (status: " << status << ")");
     }
 }
 
@@ -140,14 +141,14 @@ void TelegramAdapter::SendReply(const ChannelReplyTarget& target, const std::str
     auto* rt = m_runtime.get();
     std::string token = GetString(rt->config, "access_token");
     if (token.empty()) {
-        std::cerr << "[telegram] Reply: no access token for " << target.channel_name << std::endl;
+        LOG_WARNING("telegram", "Reply: no access token for " << target.channel_name);
         return;
     }
 
     telegram::TelegramBotApi api(m_ctx.httpClient);
     int64_t chatId = 0;
     try { chatId = std::stoll(target.peer_id); } catch (...) {
-        std::cerr << "[telegram] Reply: invalid chat_id: " << target.peer_id << std::endl;
+        LOG_WARNING("telegram", "Reply: invalid chat_id: " << target.peer_id);
         return;
     }
 
@@ -157,10 +158,10 @@ void TelegramAdapter::SendReply(const ChannelReplyTarget& target, const std::str
 
     auto msgId = api.SendMessage(token, opts);
     if (msgId) {
-        std::cerr << "[telegram] Message sent to " << target.peer_id
-                  << " (msg_id=" << *msgId << ")" << std::endl;
+        LOG_DEBUG("telegram", "Message sent to " << target.peer_id
+                  << " (msg_id=" << *msgId << ")");
     } else {
-        std::cerr << "[telegram] Send failed to " << target.peer_id << std::endl;
+        LOG_WARNING("telegram", "Send failed to " << target.peer_id);
     }
 }
 

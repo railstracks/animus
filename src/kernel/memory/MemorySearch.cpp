@@ -1,3 +1,4 @@
+#include "animus_kernel/Log.h"
 #include "animus_kernel/MemorySearch.h"
 
 #include "animus_kernel/IDataStore.h"
@@ -152,9 +153,9 @@ void MemorySearch::EnsureSchema() {
         // Verify FTS sync — force rebuild if counts diverge
         auto obsStats = VerifyFtsSync("observations");
         if (obsStats.source_count != obsStats.fts_count) {
-            std::cerr << "[memory-search] Observations FTS out of sync: "
+            LOG_DEBUG("memory-search", "Observations FTS out of sync: "
                       << obsStats.fts_count << " indexed vs "
-                      << obsStats.source_count << " source, rebuilding" << std::endl;
+                      << obsStats.source_count << " source, rebuilding");
             store->Exec("DELETE FROM observations_fts");
             store->Exec(
                 "INSERT INTO observations_fts(rowid, text) "
@@ -192,8 +193,8 @@ void MemorySearch::EnsureSchema() {
         if (emptyObs && emptyObs->Step()) {
             int64_t count = emptyObs->ColumnInt64(0);
             if (count > 0) {
-                std::cerr << "[memory-search] Backfilling " << count
-                          << " observations with search vectors" << std::endl;
+                LOG_DEBUG("memory-search", "Backfilling " << count
+                          << " observations with search vectors");
                 store->Exec("UPDATE observations SET search_vector = to_tsvector('english', COALESCE(text, '')) WHERE search_vector IS NULL");
             }
         }
@@ -268,8 +269,8 @@ void MemorySearch::EnsureDiaryFtsSchema() {
         if (emptyDiary && emptyDiary->Step()) {
             int64_t count = emptyDiary->ColumnInt64(0);
             if (count > 0) {
-                std::cerr << "[memory-search] Backfilling " << count
-                          << " diary entries with search vectors" << std::endl;
+                LOG_DEBUG("memory-search", "Backfilling " << count
+                          << " diary entries with search vectors");
                 store->Exec("UPDATE diary_entries SET search_vector = to_tsvector('english', COALESCE(content, '')) WHERE search_vector IS NULL");
             }
         }
@@ -314,7 +315,7 @@ void MemorySearch::EnsureMemoryFilesFtsSchema() {
         if (empty && empty->Step()) {
             int64_t count = empty->ColumnInt64(0);
             if (count > 0) {
-                std::cerr << "[memory-search] Backfilling " << count
+                LOG_ERROR("memory-search", "Backfilling " << count
                           << " memory files with search vectors\n";
                 store->Exec("UPDATE memory_files SET search_vector = to_tsvector('english', COALESCE(content, '')) WHERE search_vector IS NULL");
             }
@@ -345,9 +346,9 @@ bool MemorySearch::RebuildDiaryIndex() {
 
     // Verify.
     auto stats = VerifyFtsSync("diary");
-    std::cerr << "[memory-search] Diary index rebuilt: "
+    LOG_INFO("memory-search", "Diary index rebuilt: "
               << stats.fts_count << "/" << stats.source_count
-              << " entries indexed.\n";
+              << " entries indexed.");
 
     return stats.source_count == stats.fts_count;
 }
@@ -763,4 +764,4 @@ std::vector<MemorySearchResult> MemorySearch::Search(
     return results;
 }
 
-} // namespace animus::kernel::memory
+} // namespace animus::kernel::memory);

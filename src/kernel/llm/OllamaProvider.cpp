@@ -1,3 +1,4 @@
+#include "animus_kernel/Log.h"
 #include "animus_kernel/llm/OllamaProvider.h"
 #include "animus_kernel/llm/OpenAICompat.h"
 
@@ -141,8 +142,8 @@ bool OllamaProvider::FetchCapabilities(const std::string& modelId) {
   int status = DoHTTPGet(modelsUrl, headers, &responseBody, &error);
 
   if (status != 200) {
-    std::cerr << "[ollama] Failed to fetch models (HTTP " << status
-              << "): " << error << std::endl;
+    LOG_ERROR("ollama", "Failed to fetch models (HTTP " << status
+              << "): " << error);
     // Keep safe defaults
     return false;
   }
@@ -153,13 +154,13 @@ bool OllamaProvider::FetchCapabilities(const std::string& modelId) {
   std::string parseErrors;
   std::istringstream stream(responseBody);
   if (!Json::parseFromStream(builder, stream, &root, &parseErrors)) {
-    std::cerr << "[ollama] Failed to parse models response: " << parseErrors << std::endl;
+    LOG_ERROR("ollama", "Failed to parse models response: " << parseErrors);
     return false;
   }
 
   const Json::Value& data = root["data"];
   if (!data.isArray()) {
-    std::cerr << "[ollama] No 'data' array in models response" << std::endl;
+    LOG_WARNING("ollama", "No 'data' array in models response");
     return false;
   }
 
@@ -173,7 +174,7 @@ bool OllamaProvider::FetchCapabilities(const std::string& modelId) {
   }
 
   if (found) {
-    std::cerr << "[ollama] Model '" << modelId << "' found in local models" << std::endl;
+    LOG_DEBUG("ollama", "Model '" << modelId << "' found in local models");
 
     // Query /api/show to get model info including context length.
     // The Ollama /api/show endpoint is separate from the OpenAI-compatible /v1/models.
@@ -205,15 +206,15 @@ bool OllamaProvider::FetchCapabilities(const std::string& modelId) {
             const Json::Value& ctxVal = modelInfo[ctxKey];
             if (ctxVal.isNumeric() && ctxVal.asUInt64() > 0) {
               m_capabilities.context_length = static_cast<std::uint32_t>(ctxVal.asUInt64());
-              std::cerr << "[ollama] Context length for '" << modelId
-                        << "': " << m_capabilities.context_length << std::endl;
+              LOG_DEBUG("ollama", "Context length for '" << modelId
+                        << "': " << m_capabilities.context_length);
             }
           }
         }
       }
     } else {
-      std::cerr << "[ollama] /api/show failed (HTTP " << showStatus
-                << "): " << showError << std::endl;
+      LOG_ERROR("ollama", "/api/show failed (HTTP " << showStatus
+                << "): " << showError);
     }
 
     // Vision capability detection: Ollama doesn't expose modality in /v1/models.
@@ -237,12 +238,12 @@ bool OllamaProvider::FetchCapabilities(const std::string& modelId) {
         break;
       }
     }
-    std::cerr << "[ollama] Vision "
+    LOG_DEBUG("ollama", "Vision "
               << (m_capabilities.supports_vision ? "detected" : "not detected")
-              << " for '" << modelId << "'" << std::endl;
+              << " for '" << modelId << "'");
   } else {
-    std::cerr << "[ollama] Model '" << modelId
-              << "' not in local models list (may need 'ollama pull')" << std::endl;
+    LOG_DEBUG("ollama", "Model '" << modelId
+              << "' not in local models list (may need 'ollama pull')");
     // Don't disable anything — the model might still work if it was pulled
     // after the listing, or Ollama might auto-pull. Log the warning only.
   }

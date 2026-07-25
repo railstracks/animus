@@ -1,3 +1,4 @@
+#include "animus_kernel/Log.h"
 #include "animus_kernel/AgentKernel.h"
 
 #include <cstdlib>
@@ -166,6 +167,11 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         return true;
     }
 
+    // Configure log level from environment
+    if (const char* lvl = std::getenv("ANIMUS_LOG_LEVEL"); lvl && *lvl) {
+        SetLogLevelFromString(lvl);
+    }
+
     m_config = config;
     m_startedAt = std::chrono::steady_clock::now();
 
@@ -231,9 +237,8 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             case ANIMUS_LOG_ERROR: lvl = "ERROR"; break;
             default: break;
         }
-        std::cerr << "[module:" << lvl << "] "
-                  << std::string(msg.data ? msg.data : "", msg.size)
-                  << "\n";
+        LOG_DEBUG("module", "[" << lvl << "] "
+                  << std::string(msg.data ? msg.data : "", msg.size));
     };
 
     std::string modErr;
@@ -325,7 +330,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         if (config.embedding_enabled) {
             m_embeddingService = new EmbeddingService(config.embedding_model_path);
             if (!m_embeddingService->IsAvailable()) {
-                std::cerr << "[kernel] Embedding service in degraded mode — keyword fallback active\n";
+                LOG_WARNING("kernel", "Embedding service in degraded mode — keyword fallback active");
             }
         }
 
@@ -411,16 +416,16 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         {
             auto diaryStats = m_memorySearch->VerifyFtsSync("diary");
             if (diaryStats.source_count != diaryStats.fts_count) {
-                std::cerr << "[kernel] Diary FTS out of sync ("
+                LOG_WARNING("kernel", "Diary FTS out of sync ("
                           << diaryStats.fts_count << "/" << diaryStats.source_count
                           << "), rebuilding...\n";
                 m_memorySearch->RebuildDiaryIndex();
             }
             auto obsStats = m_memorySearch->VerifyFtsSync("observations");
             if (obsStats.source_count != obsStats.fts_count) {
-                std::cerr << "[kernel] Observations FTS out of sync ("
+                LOG_WARNING("kernel", "Observations FTS out of sync ("
                           << obsStats.fts_count << "/" << obsStats.source_count
-                          << "), running backfill...\n";
+                          << "), running backfill...");
                 // Re-run the backfill SQL directly.
                 if (m_dataStore) {
                     m_dataStore->Exec(
@@ -529,18 +534,18 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
     // --- Diffusion store (must be initialized before RegisterBuiltinTools) ---
     m_diffusionStore = std::make_unique<DiffusionStore>(m_dataStore);
     m_adminServer->SetDiffusionStore(m_diffusionStore.get());
-    std::cerr << "[diffusion] Store initialized" << std::endl;
+    LOG_INFO("diffusion", "Store initialized");
 
     // --- Attachment store (Ticket 123) ---
     m_attachmentStore = std::make_unique<AttachmentStore>(m_dataStore);
     m_adminServer->SetAttachmentStore(m_attachmentStore.get());
-    std::cerr << "[attachment] Store initialized" << std::endl;
+    LOG_INFO("attachment", "Store initialized");
 
     // --- SOP store (Ticket 125) ---
     m_sopStore = std::make_unique<SopStore>(m_config.dataDir / "sops", &m_httpClient);
     m_sopStore->Refresh();
     m_adminServer->SetSopStore(m_sopStore.get());
-    std::cerr << "[sop] Store initialized" << std::endl;
+    LOG_INFO("sop", "Store initialized");
 
     // --- Register built-in tools ---
     RegisterBuiltinTools(m_config);
@@ -565,8 +570,8 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 std::string consolidationPrompt;
                 std::string sessionSubtype;
 
-                std::cerr << "[scheduler] consolidation fired: agent=" << agentId
-                          << " message=" << message << std::endl;
+                LOG_DEBUG("scheduler", "consolidation fired: agent=" << agentId
+                          << " message=" << message);
 
                 if (message.find("consolidate:") == 0) {
                     const std::string layerName = message.substr(12);
@@ -609,8 +614,8 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                                 std::chrono::duration_cast<std::chrono::milliseconds>(
                                     std::chrono::system_clock::now().time_since_epoch()).count());
                             if (dueForReview.empty()) {
-                                std::cerr << "[scheduler] skipping review: no observations due for layer "
-                                          << layerName << " agent=" << reviewAgentId << std::endl;
+                                LOG_WARNING("scheduler", "skipping review: no observations due for layer "
+                                          << layerName << " agent=" << reviewAgentId);
                                 return;
                             }
                         }
@@ -627,7 +632,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 } else if (message == "intake" || message.find("intake:") == 0) {
                     // Skip intake if there's no new data to process for any known agent
                     if (m_consolidation && !m_consolidation->HasAnyPendingIntakeData()) {
-                        std::cerr << "[scheduler] skipping intake: no pending data" << std::endl;
+                        LOG_WARNING("scheduler", "skipping intake: no pending data");
                         return;
                     }
                     sessionSubtype = "intake";
@@ -722,7 +727,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 }
                 } else {
                     // Unknown consolidation message — skip
-                    std::cerr << "[scheduler] unknown consolidation message: " << message << std::endl;
+                    LOG_DEBUG("scheduler", "unknown consolidation message: " << message);
                     return;
                 }
 
@@ -759,8 +764,8 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                         auto session = m_sessionManager->GetOrCreate(key);
                         if (!session) continue;
 
-                        std::cerr << "[scheduler] consolidation session created: key=" << consKey
-                                  << " agent=" << curAgent << std::endl;
+                        LOG_DEBUG("scheduler", "consolidation session created: key=" << consKey
+                                  << " agent=" << curAgent);
 
                         session->SetAgentId(curAgent);
                         session->SetSessionType("consolidation");
@@ -971,8 +976,8 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         {
             std::string consErr;
             if (!m_consolidation->Start(m_scheduler, &consErr)) {
-                std::cerr << "[kernel] consolidation pipeline start failed: "
-                          << consErr << std::endl;
+                LOG_WARNING("kernel", "consolidation pipeline start failed: "
+                          << consErr);
             }
         }
 
@@ -982,7 +987,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         {
             std::string schedErr;
             if (!m_scheduler->Start(&schedErr)) {
-                std::cerr << "[kernel] scheduler start failed: " << schedErr << std::endl;
+                LOG_WARNING("kernel", "scheduler start failed: " << schedErr);
             }
         }
 
@@ -1001,11 +1006,11 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         std::string staticToken = authToken ? authToken : "";
         m_adminServer->ConfigureAuth(staticToken, m_dataStore);
         if (!staticToken.empty()) {
-            std::cerr << "[auth] Static auth token configured from ANIMUS_AUTH_TOKEN" << std::endl;
+            LOG_DEBUG("auth", "Static auth token configured from ANIMUS_AUTH_TOKEN");
         } else if (m_adminServer->GetAuthManager().HasUsers()) {
-            std::cerr << "[auth] Authentication required (user accounts exist)" << std::endl;
+            LOG_DEBUG("auth", "Authentication required (user accounts exist)");
         } else {
-           std::cerr << "[auth] WARNING: No auth configured. Set ANIMUS_AUTH_TOKEN or create user accounts." << std::endl;
+           LOG_WARNING("auth", "WARNING: No auth configured. Set ANIMUS_AUTH_TOKEN or create user accounts.");
        }
     }
 
@@ -1129,9 +1134,9 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                                const std::string& message,
                                const std::string& sessionType,
                                const ChannelManager::ReplyTarget& replyTarget) {
-            std::cerr << "[channels:dispatch] agentId=" << agentId
+            LOG_DEBUG("channels:dispatch", "agentId=" << agentId
                       << " sessionKey=" << sessionKey
-                      << " type=" << sessionType << std::endl;
+                      << " type=" << sessionType);
 
             // Check if this channel has a minimum response interval configured
             const int interval = GetChannelInterval(replyTarget.channel_name);
@@ -1201,8 +1206,8 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             }
             if (m_agentStore && !session->AgentId().empty()
                 && !m_agentStore->GetById(session->AgentId()).has_value()) {
-                std::cerr << "[kernel] session references unknown agent: "
-                          << session->AgentId() << ", skipping dispatch" << std::endl;
+                LOG_DEBUG("kernel", "session references unknown agent: "
+                          << session->AgentId() << ", skipping dispatch");
             }
 
             ExecuteChannelDispatch(sessionKey, message, replyTarget, agentId);
@@ -1303,8 +1308,8 @@ void AgentKernel::ExecuteChannelDispatch(
         providerId = m_adminServer->GetDefaultProviderId();
     }
     if (providerId.empty()) {
-        std::cerr << "[channels:dispatch] No provider resolved for sessionKey="
-                  << sessionKey << " — dropping message" << std::endl;
+        LOG_WARNING("channels:dispatch", "No provider resolved for sessionKey="
+                  << sessionKey << " — dropping message");
         return;
     }
 
@@ -1382,8 +1387,8 @@ void AgentKernel::ExecuteChannelDispatch(
                 }
             }
             if (!result.success) {
-                std::cerr << "[channels:dispatch] LLM execution failed: "
-                          << result.error << std::endl;
+                LOG_ERROR("channels:dispatch", "LLM execution failed: "
+                          << result.error);
             }
             // Don't SendAutoReply here — the assistant message callback
             // already sent each message during the chain.
@@ -1481,13 +1486,13 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
             std::move(provider),
             m_config.search.default_count > 0 ? m_config.search.default_count : 5,
             20));
-        std::cerr << "[kernel] Web search tool registered (provider: brave)" << std::endl;
+        LOG_DEBUG("kernel", "Web search tool registered (provider: brave)");
     } else {
         m_tools.Register(std::make_unique<WebSearchTool>(
             nullptr,
             m_config.search.default_count > 0 ? m_config.search.default_count : 5,
             20));
-        std::cerr << "[kernel] Web search tool registered (no provider — API key not configured)" << std::endl;
+        LOG_WARNING("kernel", "Web search tool registered (no provider — API key not configured)");
     }
 
     // Utility tools (tickets 085, 097, 099)
@@ -1534,24 +1539,24 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
         diffCfg.output_dir = "media/generated";
         m_tools.Register(std::make_unique<DiffusionTool>(
             m_httpClient, m_diffusionStore.get(), std::move(diffCfg)));
-        std::cerr << "[diffusion] Tool registered" << std::endl;
+        LOG_DEBUG("diffusion", "Tool registered");
     }
 
     // Attachment tool (Ticket 123)
     if (m_attachmentStore) {
         m_tools.Register(std::make_unique<AttachmentTool>(
             m_attachmentStore.get(), m_sessionManager));
-        std::cerr << "[attachment] Tool registered" << std::endl;
+        LOG_DEBUG("attachment", "Tool registered");
     }
 
     // SOP tool (Ticket 125)
     if (m_sopStore && m_sopStore->HasSops()) {
         m_tools.Register(std::make_unique<SopTool>(
             m_sopStore.get(), m_memoryFileStore));
-        std::cerr << "[sop] Tool registered" << std::endl;
+        LOG_DEBUG("sop", "Tool registered");
     }
 
-    std::cerr << "[kernel] Registered " << m_tools.Size() << " built-in tools" << std::endl;
+    LOG_DEBUG("kernel", "Registered " << m_tools.Size() << " built-in tools");
 }
 
 void AgentKernel::Stop() {
@@ -1663,12 +1668,12 @@ void AgentKernel::LoadLuaScripts() {
                 try {
                     state.Eval(script.source, script.agent_id.empty() ? agentId : script.agent_id);
                     loadedSources[agentId][script.name] = "db";
-                    std::cerr << "[lua:startup] Loaded DB script '" << script.name
+                    LOG_ERROR("lua:startup", "Loaded DB script '" << script.name
                               << "' for agent='" << agentId << "'\n";
                 } catch (const LuaException& e) {
-                    std::cerr << "[lua:startup] ERROR loading DB script '" << script.name
+                    LOG_ERROR("lua:startup", "ERROR loading DB script '" << script.name
                               << "' for agent='" << agentId
-                              << "': " << e.what() << "\n";
+                              << "': " << e.what() ");
                 }
             }
         }
@@ -1702,7 +1707,7 @@ void AgentKernel::LoadLuaScripts() {
                             // But we need to actually reload the Lua state fresh
                             // since the DB script already ran. For safety, we
                             // just eval the filesystem script on top.
-                            std::cerr << "[lua:startup] Filesystem script '" << script.name
+                            LOG_INFO("lua:startup", "Filesystem script '" << script.name
                                       << "' overrides DB script for agent='" << effectiveAgentId << "'\n";
                         }
                     }
@@ -1714,12 +1719,12 @@ void AgentKernel::LoadLuaScripts() {
                 try {
                     state.Eval(script.source, effectiveAgentId);
                     loadedSources[effectiveAgentId][script.name] = "fs";
-                    std::cerr << "[lua:startup] Loaded FS script '" << script.name
+                    LOG_DEBUG("lua:startup", "Loaded FS script '" << script.name
                               << "' for agent='" << effectiveAgentId << "'\n";
                 } catch (const LuaException& e) {
-                    std::cerr << "[lua:startup] ERROR loading FS script '" << script.name
+                    LOG_ERROR("lua:startup", "ERROR loading FS script '" << script.name
                               << "' for agent='" << effectiveAgentId
-                              << "': " << e.what() << "\n";
+                              << "': " << e.what() ");
                 }
             }
         }
@@ -1739,7 +1744,7 @@ void AgentKernel::ComputePendingEmbeddings() {
 
     for (const auto& agent : agents) {
         auto files = m_memoryFileStore->ListFiles(std::nullopt, 1000, 0);
-        std::cerr << "[embedding] Agent " << agent.id << " (numeric=" << agent.numeric_id
+        LOG_DEBUG("embedding", "Agent " << agent.id << " (numeric=" << agent.numeric_id
                   << "): " << files.size() << " files total\n";
 
         for (const auto& file : files) {
@@ -1813,9 +1818,9 @@ void AgentKernel::ComputePendingEmbeddings() {
     }
 
     if (totalChunked > 0 || totalEmbedded > 0) {
-        std::cerr << "[embedding] Computed " << totalChunked << " chunks, "
+        LOG_INFO("embedding", "Computed " << totalChunked << " chunks, "
                   << totalEmbedded << " embeddings for " << agents.size() << " agents\n";
     }
 }
 
-} // namespace animus::kernel
+} // namespace animus::kernel);

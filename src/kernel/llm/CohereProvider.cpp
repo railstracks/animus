@@ -1,3 +1,4 @@
+#include "animus_kernel/Log.h"
 #include "animus_kernel/llm/CohereProvider.h"
 #include "animus_kernel/llm/OpenAICompat.h"
 
@@ -333,8 +334,8 @@ bool CohereProvider::FetchCapabilities(const std::string& modelId) {
   int status = DoHTTPGet(modelsUrl, headers, &responseBody, &error);
 
   if (status != 200) {
-    std::cerr << "[cohere] Failed to fetch models (HTTP " << status
-              << "): " << error << std::endl;
+    LOG_ERROR("cohere", "Failed to fetch models (HTTP " << status
+              << "): " << error);
     // Fall back to safe defaults — assume everything supported
     m_capabilities.supports_tools = true;
     m_capabilities.supports_tool_choice = true;
@@ -349,7 +350,7 @@ bool CohereProvider::FetchCapabilities(const std::string& modelId) {
   std::string parseErrors;
   std::istringstream stream(responseBody);
   if (!Json::parseFromStream(builder, stream, &root, &parseErrors)) {
-    std::cerr << "[cohere] Failed to parse models response: " << parseErrors << std::endl;
+    LOG_ERROR("cohere", "Failed to parse models response: " << parseErrors);
     m_capabilities.supports_tools = true;
     m_capabilities.supports_tool_choice = true;
     m_capabilities.supports_reasoning = true;
@@ -360,7 +361,7 @@ bool CohereProvider::FetchCapabilities(const std::string& modelId) {
   // Parse the response and build both capabilities and model catalog
   const Json::Value& models = root["models"];
   if (!models.isArray()) {
-    std::cerr << "[cohere] No 'models' array in response" << std::endl;
+    LOG_WARNING("cohere", "No 'models' array in response");
     return false;
   }
 
@@ -386,19 +387,18 @@ bool CohereProvider::FetchCapabilities(const std::string& modelId) {
         }
       }
 
-      std::cerr << "[cohere] Capabilities for " << modelId << ": "
+      LOG_DEBUG("cohere", "Capabilities for " << modelId << ": "
                 << "tools=" << m_capabilities.supports_tools
                 << " tool_choice=" << m_capabilities.supports_tool_choice
                 << " reasoning=" << m_capabilities.supports_reasoning
                 << " context=" << m_capabilities.context_length
-                << " (" << m_capabilities.raw_features.size() << " models listed)"
-                << std::endl;
+                << " (" << m_capabilities.raw_features.size() << " models listed)");
       return true;
     }
   }
 
   // Model not found in the list — fall back to safe defaults
-  std::cerr << "[cohere] Model '" << modelId << "' not found in models list, using defaults" << std::endl;
+  LOG_WARNING("cohere", "Model '" << modelId << "' not found in models list, using defaults");
   m_capabilities.supports_tools = true;
   m_capabilities.supports_tool_choice = true;
   m_capabilities.supports_reasoning = true;

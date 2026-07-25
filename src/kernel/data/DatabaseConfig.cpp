@@ -1,3 +1,4 @@
+#include "animus_kernel/Log.h"
 #include "animus_kernel/DatabaseConfig.h"
 #include "animus_kernel/KernelConfig.h"
 
@@ -19,7 +20,7 @@ bool DatabaseConfig::LoadFromFile(const std::string& path) {
     Json::CharReaderBuilder builder;
     std::string errors;
     if (!Json::parseFromStream(builder, file, &root, &errors)) {
-        std::cerr << "[db-config] failed to parse " << path << ": " << errors << std::endl;
+        LOG_ERROR("db-config", "failed to parse " << path << ": " << errors);
         return false;
     }
 
@@ -42,8 +43,8 @@ bool DatabaseConfig::LoadFromFile(const std::string& path) {
         if (pg.isMember("pool_size")) pgPoolSize = pg["pool_size"].asInt();
     }
 
-    std::cerr << "[db-config] loaded " << path
-              << " (backend=" << backend << ")" << std::endl;
+    LOG_INFO("db-config", "loaded " << path
+              << " (backend=" << backend << ")");
     return true;
 }
 

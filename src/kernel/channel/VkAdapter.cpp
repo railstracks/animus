@@ -1,3 +1,4 @@
+#include "animus_kernel/Log.h"
 #include "animus_kernel/ChannelAdapters.h"
 #include "animus_kernel/ChannelContext.h"
 #include "animus_kernel/ChannelHelpers.h"
@@ -20,11 +21,11 @@ using namespace channel_detail;
 
 void VkAdapter::RunLoop() {
     auto* rt = m_runtime.get();
-    std::cerr << "[vk] Long Poll loop starting for " << rt->channel_name << std::endl;
+    LOG_DEBUG("vk", "Long Poll loop starting for " << rt->channel_name);
 
     std::string token = GetString(rt->config, "access_token");
     if (token.empty()) {
-        std::cerr << "[vk] No access token for " << rt->channel_name << std::endl;
+        LOG_WARNING("vk", "No access token for " << rt->channel_name);
         rt->active = false;
         return;
     }
@@ -33,7 +34,7 @@ void VkAdapter::RunLoop() {
 
     if (rt->lp_server.empty()) {
         if (!FetchLongPollServer()) {
-            std::cerr << "[vk] Failed to get Long Poll server for " << rt->channel_name << std::endl;
+            LOG_WARNING("vk", "Failed to get Long Poll server for " << rt->channel_name);
             rt->active = false;
             return;
         }
@@ -98,7 +99,7 @@ void VkAdapter::RunLoop() {
                     std::string objectJson = JsonCompact(update["object"]);
                     ProcessEvent(eventType, objectJson);
                 } catch (const std::exception& ex) {
-                    std::cerr << "[vk] Exception processing event: " << ex.what() << std::endl;
+                    LOG_ERROR("vk", "Exception processing event: " << ex.what());
                 }
             }
         }
@@ -106,7 +107,7 @@ void VkAdapter::RunLoop() {
         m_ctx.router.PruneExpired(std::chrono::seconds(86400));
     }
 
-    std::cerr << "[vk] Long Poll loop ended for " << rt->channel_name << std::endl;
+    LOG_DEBUG("vk", "Long Poll loop ended for " << rt->channel_name);
 }
 
 void VkAdapter::ProcessEvent(const std::string& eventType, const std::string& objectJson) {
@@ -138,7 +139,7 @@ void VkAdapter::ProcessMessageNew(const std::string& objectJson) {
 
     if (!rt->RememberEvent(messageId)) return;
 
-    std::cerr << "[vk] message_new: peer=" << peerId << " from=" << fromId << std::endl;
+    LOG_DEBUG("vk", "message_new: peer=" << peerId << " from=" << fromId);
 
     auto names = ResolveUsers({fromId});
     std::string displayName = names.count(fromId) ? names[fromId] : fromId;
@@ -372,8 +373,8 @@ void VkAdapter::SendReply(const ChannelReplyTarget& target, const std::string& t
         req.follow_redirects = false;
 
         auto resp = m_ctx.httpClient.Execute(req);
-        std::cerr << "[vk] Chat reply: " << resp.status_code
-                  << " body=" << resp.body.substr(0, 200) << std::endl;
+        LOG_DEBUG("vk", "Chat reply: " << resp.status_code
+                  << " body=" << resp.body.substr(0, 200));
     } else if (target.type == ChannelReplyTarget::Wall) {
         std::string ownerId = "-" + groupId;
         std::string body = "post_id=" + target.post_id +
@@ -392,8 +393,8 @@ void VkAdapter::SendReply(const ChannelReplyTarget& target, const std::string& t
         req.follow_redirects = false;
 
         auto resp = m_ctx.httpClient.Execute(req);
-        std::cerr << "[vk] Wall reply: " << resp.status_code
-                  << " body=" << resp.body.substr(0, 200) << std::endl;
+        LOG_DEBUG("vk", "Wall reply: " << resp.status_code
+                  << " body=" << resp.body.substr(0, 200));
     }
 }
 

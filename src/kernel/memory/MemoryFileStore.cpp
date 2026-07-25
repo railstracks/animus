@@ -1,4 +1,5 @@
 
+#include "animus_kernel/Log.h"
 #include "animus_kernel/SchemaHelpers.h"
 #include "animus_kernel/MemoryFileStore.h"
 
@@ -213,7 +214,7 @@ MemoryFile MemoryFileStore::CreateFile(const MemoryFile& file) {
         stmt->BindInt(9, static_cast<int64_t>(file.status));
         stmt->ExecDML();
         if (!DidWriteRows(m_store)) {
-            std::cerr << "[memory_files] create failed: " << m_store->ErrMsg() << std::endl;
+            LOG_WARNING("memory_files", "create failed: " << m_store->ErrMsg());
             return {};
         }
         newId = m_store->LastInsertRowId();
@@ -221,15 +222,15 @@ MemoryFile MemoryFileStore::CreateFile(const MemoryFile& file) {
     }
 
     if (newId <= 0) {
-        std::cerr << "[memory_files] LastInsertRowId returned " << newId
-                  << " after successful insert" << std::endl;
+        LOG_DEBUG("memory_files", "LastInsertRowId returned " << newId
+                  << " after successful insert");
         return {};
     }
 
     auto result = GetFile(newId);
     if (!result) {
-        std::cerr << "[memory_files] GetFile(" << newId
-                  << ") returned nullopt after insert" << std::endl;
+        LOG_DEBUG("memory_files", "GetFile(" << newId
+                  << ") returned nullopt after insert");
         return {};
     }
     return *result;
@@ -360,16 +361,16 @@ int64_t MemoryFileStore::CountUnprocessed(int64_t agentId) {
         "SELECT COUNT(*) FROM memory_files WHERE status = 0 AND superseded = 0 "
         "AND (agent_id = ? OR agent_id = 0)");
     if (!stmt) {
-        std::cerr << "[memory-file-store] CountUnprocessed: Prepare failed: " << m_store->ErrMsg() << std::endl;
+        LOG_WARNING("memory-file-store", "CountUnprocessed: Prepare failed: " << m_store->ErrMsg());
         return 0;
     }
     stmt->BindInt64(1, agentId);
     if (!stmt->Step()) {
-        std::cerr << "[memory-file-store] CountUnprocessed: Step failed: " << m_store->ErrMsg() << std::endl;
+        LOG_WARNING("memory-file-store", "CountUnprocessed: Step failed: " << m_store->ErrMsg());
         return 0;
     }
     int64_t count = stmt->ColumnInt64(0);
-    std::cerr << "[memory-file-store] CountUnprocessed(" << agentId << ") = " << count << std::endl;
+    LOG_DEBUG("memory-file-store", "CountUnprocessed(" << agentId << ") = " << count);
     return count;
 }
 

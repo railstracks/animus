@@ -1,3 +1,4 @@
+#include "animus_kernel/Log.h"
 #include "animus_kernel/llm/LLMProviderBase.h"
 
 #include <cstring>
@@ -302,13 +303,13 @@ bool LLMProviderBase::FetchCapabilities(const std::string& modelId) {
               }
             }
           }
-          std::cerr << "[llm] Fetched " << m_capabilities.raw_features.size()
-                    << " models from " << modelsUrl << std::endl;
+          LOG_DEBUG("llm", "Fetched " << m_capabilities.raw_features.size()
+                    << " models from " << modelsUrl);
         }
       }
     } else {
-      std::cerr << "[llm] /v1/models fetch failed (HTTP " << status
-                << "): " << httpError << std::endl;
+      LOG_ERROR("llm", "/v1/models fetch failed (HTTP " << status
+                << "): " << httpError);
     }
   }
 
@@ -350,7 +351,7 @@ bool LLMProviderBase::ProcessSSELine(const std::string& line,
     if (valStart != std::string::npos) {
       auto valEnd = data.find('\"', valStart + 1);
       if (valEnd != std::string::npos) {
-        std::cerr << "[sse] event: " << data.substr(valStart + 1, valEnd - valStart - 1) << std::endl;
+        LOG_DEBUG("sse", "event: " << data.substr(valStart + 1, valEnd - valStart - 1));
       }
     }
   }
@@ -462,13 +463,11 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
 
   // Verbose request logging (truncated — full body can be 100KB+)
   const std::size_t bodyLogLen = std::min(body.size(), static_cast<std::size_t>(200));
-  std::cerr << "[llm] POST " << url << " body_size=" << body.size();
   if (body.size() > bodyLogLen) {
-    std::cerr << " body_preview=" << body.substr(0, bodyLogLen) << "...";
+    LOG_DEBUG("llm", "POST " << url << " body_size=" << body.size() << " body_preview=" << body.substr(0, bodyLogLen) << "...");
   } else {
-    std::cerr << " body=" << body;
+    LOG_DEBUG("llm", "POST " << url << " body_size=" << body.size() << " body=" << body);
   }
-  std::cerr << std::endl;
 
   if (stream) {
     m_http->tokenCallback = std::move(tokenCallback);
@@ -491,7 +490,7 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
 
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    if (httpCode >= 400) std::cerr << "[llm] HTTP " << httpCode << " response=" << m_http->responseBody.substr(0, 1000) << std::endl;
+    LOG_DEBUG("llm", "HTTP " << httpCode << " response=" << m_http->responseBody.substr(0, 1000));
     return static_cast<int>(httpCode);
 
   } else {
@@ -515,7 +514,7 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
       *responseBody = m_http->responseBody;
     }
 
-    if (httpCode >= 400) std::cerr << "[llm] HTTP " << httpCode << " response=" << m_http->responseBody.substr(0, 1000) << std::endl;
+    LOG_DEBUG("llm", "HTTP " << httpCode << " response=" << m_http->responseBody.substr(0, 1000));
     return static_cast<int>(httpCode);
   }
 }
@@ -568,7 +567,7 @@ int LLMProviderBase::DoHTTPGet(
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &m_http->responseBody);
 
-  std::cerr << "[llm] GET " << url << std::endl;
+  LOG_DEBUG("llm", "GET " << url);
 
   CURLcode res = curl_easy_perform(curl);
   if (res != CURLE_OK) {
@@ -585,7 +584,7 @@ int LLMProviderBase::DoHTTPGet(
     *responseBody = m_http->responseBody;
   }
 
-  std::cerr << "[llm] GET " << url << " -> " << httpCode << std::endl;
+  LOG_DEBUG("llm", "GET " << url << " -> " << httpCode);
   return static_cast<int>(httpCode);
 }
 
@@ -635,7 +634,7 @@ int LLMProviderBase::DoHTTPPost(
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &m_http->responseBody);
 
-  std::cerr << "[llm] POST " << url << std::endl;
+  LOG_DEBUG("llm", "POST " << url);
 
   CURLcode res = curl_easy_perform(curl);
   if (res != CURLE_OK) {
@@ -652,7 +651,7 @@ int LLMProviderBase::DoHTTPPost(
     *responseBody = m_http->responseBody;
   }
 
-  std::cerr << "[llm] POST " << url << " -> " << httpCode << std::endl;
+  LOG_DEBUG("llm", "POST " << url << " -> " << httpCode);
   return static_cast<int>(httpCode);
 }
 

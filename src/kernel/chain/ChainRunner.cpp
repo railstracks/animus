@@ -1,4 +1,5 @@
 #include "animus_kernel/ChainRunner.h"
+#include "animus_kernel/Log.h"
 #include <algorithm>
 #include <chrono>
 #include <iostream>
@@ -257,11 +258,11 @@ ChainResult ChainRunner::ExecuteOnSession(
         // Non-streaming execution must request a non-stream response body.
         assembly.request.stream = false;
 
-        std::cerr << "[chain] ExecuteOnSession id=" << session.Id()
+        LOG_DEBUG("chain", "ExecuteOnSession id=" << session.Id()
                   << " conv_id=" << session.Key().conversation_id
                   << " turns=" << session.Turns().size()
                   << " -> " << assembly.request.messages.size()
-                  << " messages to LLM" << std::endl;
+                  << " messages to LLM");
 
         result.triggered_compaction = assembly.needs_compaction;
 
@@ -326,8 +327,8 @@ ChainResult ChainRunner::ExecuteOnSession(
 
         // Check tool budget
         if (totalToolCalls >= static_cast<int>(req.maxToolCallsPerChain)) {
-            std::cerr << "[chain] tool call budget exhausted (" << totalToolCalls
-                      << "/" << req.maxToolCallsPerChain << ")" << std::endl;
+            LOG_WARNING("chain", "tool call budget exhausted (" << totalToolCalls
+                      << "/" << req.maxToolCallsPerChain << ")");
             shouldContinue = false;
         }
 
@@ -349,7 +350,7 @@ ChainResult ChainRunner::ExecuteOnSession(
                     interjectionTurn.content = injected;
                     interjectionTurn.unix_ms = NowUnixMs();
                     session.AddTurn(std::move(interjectionTurn));
-                    std::cerr << "[chain] Injected interjection: " << injected.size() << " chars" << std::endl;
+                    LOG_DEBUG("chain", "Injected interjection: " << injected.size() << " chars");
                 }
             }
         }
@@ -425,8 +426,8 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     if (m_contextRegistry) {
         auto agentOpt = m_agentStore ? m_agentStore->GetById(session.AgentId()) : std::nullopt;
         if (!agentOpt) {
-            std::cerr << "[chain/stream] WARNING: agent lookup failed for agent_id=" << session.AgentId()
-                      << " store=" << (m_agentStore ? "set" : "null") << " — falling back to Agent{}" << std::endl;
+            LOG_WARNING("chain", "agent lookup failed for agent_id=" << session.AgentId()
+                      << " store=" << (m_agentStore ? "set" : "null") << " — falling back to Agent{}");
         }
         const Agent& agentRef = agentOpt ? *agentOpt : Agent{};
         auto blocks = m_contextRegistry->Assemble(agentRef, session);
@@ -458,11 +459,11 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
             req.model, req.contextWindow);
         assembly.request.stream = true;
 
-        std::cerr << "[chain] StreamingOnSession id=" << session.Id()
+        LOG_DEBUG("chain", "StreamingOnSession id=" << session.Id()
                   << " conv_id=" << session.Key().conversation_id
                   << " turns=" << session.Turns().size()
                   << " -> " << assembly.request.messages.size()
-                  << " messages to LLM" << std::endl;
+                  << " messages to LLM");
 
         result.triggered_compaction = assembly.needs_compaction;
 
@@ -484,11 +485,10 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         }
         toolResultMessages.clear();
 
-        std::cerr << "[chain/stream] Step " << step
+        LOG_DEBUG("chain/stream", "Step " << step
                   << ": toolResultMessages=" << toolResultMessages.size()
                   << " sessionTurns=" << session.Turns().size()
-                  << " messages=" << assembly.request.messages.size()
-                  << std::endl;
+                  << " messages=" << assembly.request.messages.size());
 
         // Build the per-step token callback that routes thinking vs. content
         std::string accumulatedThinking;
@@ -530,29 +530,26 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         }
 
         // Diagnostic: log what the LLM returned
-        std::cerr << "[chain] LLM response: content_len=" << response.content.size()
+        LOG_DEBUG("chain", "LLM response: content_len=" << response.content.size()
                   << " thinking_len=" << accumulatedThinking.size()
                   << " tool_calls=" << response.tool_calls.size()
-                  << " finish_reason=" << response.finish_reason
-                  << std::endl;
+                  << " finish_reason=" << response.finish_reason);
         for (const auto& tc : response.tool_calls) {
-            std::cerr << "[chain]   tool_call: id=" << tc.id
+            LOG_TRACE("chain", "  tool_call: id=" << tc.id
                       << " name=" << tc.name
-                      << " args_len=" << tc.arguments.size()
-                      << std::endl;
+                      << " args_len=" << tc.arguments.size());
         }
         if (!response.content.empty()) {
-            std::cerr << "[chain]   content: "
+            LOG_TRACE("chain", "  content: "
                       << response.content.substr(0, 200)
-                      << (response.content.size() > 200 ? "..." : "")
-                      << std::endl;
+                      << (response.content.size() > 200 ? "..." : ""));
         }
 
         // Process response: store turns, execute tools
         std::string userVisibleText;
         std::string toolOutputText;
         int toolCallsThisStep = 0;
-        std::cerr << "[chain/stream] Calling ProcessResponse, tool_calls=" << response.tool_calls.size() << std::endl;
+        LOG_DEBUG("chain/stream", "Calling ProcessResponse, tool_calls=" << response.tool_calls.size());
         bool shouldContinue = false;
         try {
           shouldContinue = ProcessResponse(
@@ -561,7 +558,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
               toolResultMessages, userVisibleText, toolOutputText, toolCallsThisStep,
               toolEventCallback, toolCallCallback);
         } catch (const std::exception& e) {
-          std::cerr << "[chain/stream] EXCEPTION in ProcessResponse: " << e.what() << std::endl;
+          LOG_ERROR("chain/stream", "EXCEPTION in ProcessResponse: " << e.what());
           result.error = std::string("ProcessResponse exception: ") + e.what();
           break;
         }
@@ -569,11 +566,10 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         totalToolCalls += toolCallsThisStep;
         result.tool_calls_executed = totalToolCalls;
 
-        std::cerr << "[chain/stream] ProcessResponse done: shouldContinue=" << shouldContinue
+        LOG_DEBUG("chain/stream", "ProcessResponse done: shouldContinue=" << shouldContinue
                   << " toolCallsThisStep=" << toolCallsThisStep
                   << " totalToolCalls=" << totalToolCalls
-                  << " toolResultMessages=" << toolResultMessages.size()
-                  << std::endl;
+                  << " toolResultMessages=" << toolResultMessages.size());
 
         // Stream tool output text to caller (from stream_to_user tool results only).
         if (!toolOutputText.empty()) {
@@ -591,8 +587,8 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
 
         // Check tool budget
         if (totalToolCalls >= static_cast<int>(req.maxToolCallsPerChain)) {
-            std::cerr << "[chain] tool call budget exhausted (" << totalToolCalls
-                      << "/" << req.maxToolCallsPerChain << ")" << std::endl;
+            LOG_WARNING("chain", "tool call budget exhausted (" << totalToolCalls
+                      << "/" << req.maxToolCallsPerChain << ")");
             shouldContinue = false;
         }
 
@@ -607,8 +603,8 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
                     interjectionTurn.content = injected;
                     interjectionTurn.unix_ms = NowUnixMs();
                     session.AddTurn(std::move(interjectionTurn));
-                    std::cerr << "[chain/stream] Injected interjection: "
-                              << injected.size() << " chars" << std::endl;
+                    LOG_DEBUG("chain/stream", "Injected interjection: "
+                              << injected.size() << " chars");
                 }
             }
         }
@@ -738,10 +734,9 @@ bool ChainRunner::ProcessResponse(
     ChainToolEventCallback toolEventCallback,
     ChainToolCallCallback toolCallCallback) {
 
-    std::cerr << "[chain] ProcessResponse: tool_calls=" << response.tool_calls.size()
+    LOG_DEBUG("chain", "ProcessResponse: tool_calls=" << response.tool_calls.size()
               << " content_len=" << content.size()
-              << " thinking_len=" << thinkingContent.size()
-              << std::endl;
+              << " thinking_len=" << thinkingContent.size());
 
     // 1. Store assistant turn with thinking_content as a property.
     //    thinking_content is never sent to the LLM (excluded by PromptAssembler),
@@ -791,10 +786,9 @@ bool ChainRunner::ProcessResponse(
             toolCallCallback(tcNotif);
         }
 
-        std::cerr << "[chain] Executing tool: name=" << call.name
+        LOG_INFO("chain", "Executing tool: name=" << call.name
                   << " id=" << call.id
-                  << " args_len=" << call.arguments.size()
-                  << std::endl;
+                  << " args_len=" << call.arguments.size());
 
         // Delegate execution to ToolExecutionService
         ToolRouteResult routeResult = ToolRouteResult::deliver_to_model;
