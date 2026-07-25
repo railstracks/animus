@@ -884,7 +884,14 @@ bool ChainRunner::ProcessResponse(
             auto* handler = m_tools.Find(call.name);
 
             if (handler) {
-                toolResult = handler->Execute(tc);
+                try {
+                    toolResult = handler->Execute(tc);
+                } catch (const std::exception& e) {
+                    std::cerr << "[chain] Tool execution threw: " << e.what() << std::endl;
+                    toolResult.call_id = call.id;
+                    toolResult.success = false;
+                    toolResult.error = std::string("Tool execution failed: ") + e.what();
+                }
                 std::cerr << "[chain] Tool result: success=" << toolResult.success
                           << " output_len=" << toolResult.output.size()
                           << " error=" << toolResult.error

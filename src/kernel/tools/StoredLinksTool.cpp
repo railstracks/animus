@@ -125,7 +125,7 @@ ToolResult StoredLinksTool::Execute(const ToolCall& call) {
     auto it = std::find_if(activeLinks.begin(), activeLinks.end(),
         [&](const StoredLink& l) { return l.id == id; });
 
-    if (it == m_links.end()) {
+    if (it == activeLinks.end()) {
         result.success = false;
         result.error = "No stored link with id \"" + id + "\". Use \"list\" to see available links.";
         return result;
