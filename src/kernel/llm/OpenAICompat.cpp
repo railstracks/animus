@@ -108,7 +108,13 @@ std::string BuildOpenAIRequestBody(const LLMRequest& request) {
       }
       ss << "]";
     } else {
-      ss << ",\"content\":\"" << EscapeJson(msg.content) << "\"";
+      // OpenAI spec: content should be null (not empty string) when tool_calls present.
+      // Some providers (Mistral, Qwen via Ollama Cloud) reject content:"" with HTTP 400.
+      if (msg.role == "assistant" && msg.content.empty() && !msg.tool_calls.empty()) {
+        ss << ",\"content\":null";
+      } else {
+        ss << ",\"content\":\"" << EscapeJson(msg.content) << "\"";
+      }
     }
 
     // Add tool_calls for assistant messages

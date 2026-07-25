@@ -32,7 +32,33 @@ void SSEToolCallAccumulator::ProcessLine(const std::string& line) {
         }
         int index = tc["index"].asInt();
 
-        auto& partial = m_partials[index];
+        // Check for a new tool call at this index: if this fragment has an
+        // "id" that differs from the last one we saw at this index, it's a
+        // new tool call (some providers reuse index 0 for multiple calls).
+        std::string fragmentId;
+        if (tc.isMember("id")) {
+            fragmentId = tc["id"].asString();
+        }
+
+        int subIndex = 0;
+        if (!fragmentId.empty()) {
+            auto it = m_lastIdByIndex.find(index);
+            if (it != m_lastIdByIndex.end() && it->second != fragmentId) {
+                // New tool call at the same index — increment sub-index
+                subIndex = ++m_nextSubIndex[index];
+            } else if (it == m_lastIdByIndex.end()) {
+                // First tool call at this index
+                m_nextSubIndex[index] = 0;
+            }
+            m_lastIdByIndex[index] = fragmentId;
+        } else {
+            // Continuation fragment — use the current sub-index for this index
+            auto it = m_nextSubIndex.find(index);
+            subIndex = (it != m_nextSubIndex.end()) ? it->second : 0;
+        }
+
+        int key = CompositeKey(index, subIndex);
+        auto& partial = m_partials[key];
 
         // First chunk for this index: has id, type, function.name
         if (tc.isMember("id")) {
@@ -58,16 +84,16 @@ void SSEToolCallAccumulator::ProcessLine(const std::string& line) {
 std::vector<LLMToolCall> SSEToolCallAccumulator::Finalize() {
     std::vector<LLMToolCall> result;
 
-    // Sort by index to maintain order
-    std::vector<int> indices;
-    indices.reserve(m_partials.size());
-    for (const auto& [idx, _] : m_partials) {
-        indices.push_back(idx);
+    // Sort by composite key to maintain order (index first, then sub-index)
+    std::vector<int> keys;
+    keys.reserve(m_partials.size());
+    for (const auto& [key, _] : m_partials) {
+        keys.push_back(key);
     }
-    std::sort(indices.begin(), indices.end());
+    std::sort(keys.begin(), keys.end());
 
-    for (int idx : indices) {
-        const auto& partial = m_partials[idx];
+    for (int key : keys) {
+        const auto& partial = m_partials[key];
         if (!partial.name.empty()) {
             LLMToolCall call;
             call.id = partial.id;
@@ -78,6 +104,8 @@ std::vector<LLMToolCall> SSEToolCallAccumulator::Finalize() {
     }
 
     m_partials.clear();
+    m_lastIdByIndex.clear();
+    m_nextSubIndex.clear();
     return result;
 }
 
