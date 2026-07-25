@@ -310,6 +310,8 @@ add_library(animus_kernel
   src/kernel/session/SessionManager.cpp
   src/kernel/chain/PromptAssembler.cpp
   src/kernel/chain/ChainRunner.cpp
+  src/kernel/chain/ToolSchemaService.cpp
+  src/kernel/chain/ToolExecutionService.cpp
   src/kernel/PromptLogStore.cpp
   src/kernel/auth/AuthStore.cpp
  src/kernel/auth/AuthManager.cpp

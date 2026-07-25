@@ -6,11 +6,8 @@
 #include <json/json.h>
 
 #include "animus_kernel/SessionManager.h"
-#include <set>
-#include "animus_kernel/AgentStore.h"
 #include "animus_kernel/ContextProviderRegistry.h"
 #include "animus_kernel/llm/LLMProviderBase.h"
-#include "animus_kernel/tools/ChannelsTool.h"
 
 namespace animus::kernel {
 
@@ -22,7 +19,9 @@ ChainRunner::ChainRunner(
     : m_providers(providers)
     , m_sessions(sessions)
     , m_tools(tools)
-    , m_configLookup(std::move(configLookup)) {
+    , m_configLookup(std::move(configLookup))
+    , m_schemaService(std::make_unique<ToolSchemaService>(tools))
+    , m_execService(std::make_unique<ToolExecutionService>(tools)) {
 }
 
 void ChainRunner::SetReasoningEnabled(bool enabled) {
@@ -135,75 +134,6 @@ bool ParseJsonObject(const std::string& text, Json::Value* out) {
     std::istringstream stream(text);
     std::string errors;
     return Json::parseFromStream(builder, stream, out, &errors) && out->isObject();
-}
-
-std::string InjectFilePolicy(const std::string& argumentsJson, const std::string& toolConfigsJson) {
-    Json::Value toolConfigs(Json::objectValue);
-    if (!ParseJsonObject(toolConfigsJson, &toolConfigs)) return argumentsJson;
-    if (!toolConfigs.isMember("file") || !toolConfigs["file"].isObject()) return argumentsJson;
-
-    Json::Value args(Json::objectValue);
-    if (!ParseJsonObject(argumentsJson, &args)) return argumentsJson;
-
-    const Json::Value& filePolicy = toolConfigs["file"];
-    Json::Value policy(Json::objectValue);
-    if (filePolicy.isMember("restrict_to_workspace")) {
-        policy["restrict_to_workspace"] = filePolicy["restrict_to_workspace"];
-    }
-    if (filePolicy.isMember("workspace_root")) {
-        policy["workspace_root"] = filePolicy["workspace_root"];
-    }
-    if (filePolicy.isMember("path_allowlist")) {
-        policy["path_allowlist"] = filePolicy["path_allowlist"];
-    }
-    if (filePolicy.isMember("path_denylist")) {
-        policy["path_denylist"] = filePolicy["path_denylist"];
-    }
-    if (policy.empty()) return argumentsJson;
-    args["__policy"] = policy;
-
-    Json::StreamWriterBuilder wb;
-    wb["indentation"] = "";
-    return Json::writeString(wb, args);
-}
-
-// Inject per-agent tool config for stored_links and rss tools.
-// tool_configs.stored_links → __config.links
-// tool_configs.rss_feeds   → __config.feeds
-std::string InjectToolConfig(const std::string& toolName,
-                             const std::string& argumentsJson,
-                             const std::string& toolConfigsJson) {
-    if (toolName == "file") {
-        return InjectFilePolicy(argumentsJson, toolConfigsJson);
-    }
-
-    Json::Value toolConfigs(Json::objectValue);
-    if (!ParseJsonObject(toolConfigsJson, &toolConfigs)) return argumentsJson;
-
-    std::string configKey;
-    std::string injectKey;
-    if (toolName == "stored_links") {
-        configKey = "stored_links";
-        injectKey = "links";
-    } else if (toolName == "rss") {
-        configKey = "rss_feeds";
-        injectKey = "feeds";
-    } else {
-        return argumentsJson;
-    }
-
-    if (!toolConfigs.isMember(configKey) || !toolConfigs[configKey].isArray()) return argumentsJson;
-
-    Json::Value args(Json::objectValue);
-    if (!ParseJsonObject(argumentsJson, &args)) return argumentsJson;
-
-    Json::Value config(Json::objectValue);
-    config[injectKey] = toolConfigs[configKey];
-    args["__config"] = config;
-
-    Json::StreamWriterBuilder wb;
-    wb["indentation"] = "";
-    return Json::writeString(wb, args);
 }
 
 } // namespace
@@ -843,87 +773,32 @@ bool ChainRunner::ProcessResponse(
     toolCallsExecuted = 0;
     bool shouldContinueLoop = false;
 
+    // Build the execution context for this session
+    ToolExecutionContext execCtx;
+    execCtx.sessionKey = session.Key().ToString();
+    execCtx.agentId = session.AgentId();
+    if (m_agentStore && !session.AgentId().empty()) {
+        auto agent = m_agentStore->GetById(session.AgentId());
+        if (agent) {
+            execCtx.toolConfigs = agent->tool_configs_json;
+        }
+    }
+
     for (const auto& call : response.tool_calls) {
-        ToolCall tc = FromLLM(call);
-        if ((tc.name == "file" || tc.name == "stored_links" || tc.name == "rss") &&
-            m_agentStore && !session.AgentId().empty()) {
-            auto agent = m_agentStore->GetById(session.AgentId());
-            if (agent.has_value()) {
-                tc.arguments = InjectToolConfig(tc.name, tc.arguments, agent->tool_configs_json);
-            }
+        // Notify before execution (for real-time UI feedback)
+        ToolCall tcNotif = FromLLM(call);
+        if (toolCallCallback) {
+            toolCallCallback(tcNotif);
         }
-        // Inject session context for agent-scoped tools
-        {
-            Json::Value args;
-            if (ParseJsonObject(tc.arguments, &args)) {
-                args["__session_key"] = session.Key().ToString();
-                args["__agent_id"] = session.AgentId();
-                Json::StreamWriterBuilder wb;
-                wb["indentation"] = "";
-                tc.arguments = Json::writeString(wb, args);
-            }
-        }
+
         std::cerr << "[chain] Executing tool: name=" << call.name
                   << " id=" << call.id
-                  << " args_len=" << tc.arguments.size()
+                  << " args_len=" << call.arguments.size()
                   << std::endl;
 
-        // Check for __node parameter — if present, forward to remote node
-        ToolResult toolResult;
-        std::string nodeName;
-        {
-            Json::Value argsJson;
-            Json::CharReaderBuilder rb;
-            std::string parseErr;
-            auto reader = std::unique_ptr<Json::CharReader>(rb.newCharReader());
-            if (reader->parse(tc.arguments.c_str(), tc.arguments.c_str() + tc.arguments.size(), &argsJson, &parseErr)) {
-                nodeName = argsJson.get("__node", "").asString();
-            }
-        }
-
-        // Notify before execution (for real-time UI feedback)
-        if (toolCallCallback) {
-            toolCallCallback(tc);
-        }
-
-        if (!nodeName.empty() && m_nodeManager) {
-            // Forward to remote node
-            std::cerr << "[chain] Forwarding to node: " << nodeName << std::endl;
-            toolResult = m_nodeManager->ExecuteOnNode(nodeName, tc);
-            std::cerr << "[chain] Node result: success=" << toolResult.success
-                      << " output_len=" << toolResult.output.size() << std::endl;
-        } else {
-            auto* handler = m_tools.Find(call.name);
-
-            if (handler) {
-                try {
-                    toolResult = handler->Execute(tc);
-                } catch (const std::exception& e) {
-                    std::cerr << "[chain] Tool execution threw: " << e.what() << std::endl;
-                    toolResult.call_id = call.id;
-                    toolResult.success = false;
-                    toolResult.error = std::string("Tool execution failed: ") + e.what();
-                }
-                std::cerr << "[chain] Tool result: success=" << toolResult.success
-                          << " output_len=" << toolResult.output.size()
-                          << " error=" << toolResult.error
-                          << std::endl;
-            } else {
-                toolResult.call_id = call.id;
-                toolResult.success = false;
-                toolResult.error = "unknown tool: " + call.name;
-            }
-        }
-
-        // Determine result mode from the handler (or default for unknown tools)
-        ToolResultMode resultMode = ToolResultMode::deliver_to_model;
-        // For remote node calls, default mode is used
-        if (nodeName.empty()) {
-            auto* handler = m_tools.Find(call.name);
-            if (handler) {
-                resultMode = handler->GetResultMode();
-            }
-        }
+        // Delegate execution to ToolExecutionService
+        ToolRouteResult routeResult = ToolRouteResult::deliver_to_model;
+        ToolResult toolResult = m_execService->Execute(call, execCtx, &routeResult);
 
         toolCallsExecuted++;
 
@@ -944,33 +819,27 @@ bool ChainRunner::ProcessResponse(
         session.AddTurn(std::move(toolResultTurn));
 
         if (toolEventCallback) {
-            toolEventCallback(tc, toolResult);
+            toolEventCallback(tcNotif, toolResult);
         }
 
         // Route the result based on the tool's result mode
-        // Note: tool result is already stored as a session turn above (line 554),
+        // Tool result is already stored as a session turn,
         // so it will be included in BuildFromAccess on the next chain step.
-        // We do NOT push it to toolResultMessages — that would duplicate it.
-        switch (resultMode) {
-            case ToolResultMode::stream_to_user:
-                // Result goes directly to the user, not back into the LLM loop
+        switch (routeResult) {
+            case ToolRouteResult::stream_to_user:
                 if (toolResult.success) {
                     toolOutputText += toolResult.output;
                 }
                 break;
 
-            case ToolResultMode::deliver_to_model:
-                // Result feeds back into the LLM loop for the next chain step
-                // (already stored as session turn, no need to duplicate in toolResultMessages)
+            case ToolRouteResult::deliver_to_model:
                 shouldContinueLoop = true;
                 break;
 
-            case ToolResultMode::both:
-                // Result streams to user AND feeds back to model
+            case ToolRouteResult::both:
                 if (toolResult.success) {
                     userVisibleText += toolResult.output;
                 }
-                // (already stored as session turn, no need to duplicate in toolResultMessages)
                 shouldContinueLoop = true;
                 break;
         }
@@ -986,218 +855,13 @@ bool ChainRunner::ProcessResponse(
 }
 
 // ============================================================================
-// Tool definitions
+// Tool definitions — thin wrapper delegating to ToolSchemaService
 // ============================================================================
-
-llm::LLMToolDef ChainRunner::ConvertToolDef(const ToolDefinition& def) const {
-    llm::LLMToolDef ltd;
-    ltd.type = "function";
-    ltd.name = def.name;
-    ltd.description = def.description;
-
-    Json::Value schema(Json::objectValue);
-    schema["type"] = "object";
-    Json::Value properties(Json::objectValue);
-    Json::Value required(Json::arrayValue);
-
-    for (const auto& param : def.parameters) {
-        Json::Value prop(Json::objectValue);
-        prop["type"] = param.type;
-        prop["description"] = param.description;
-        if (!param.enum_values.empty()) {
-            Json::Value en(Json::arrayValue);
-            for (const auto& e : param.enum_values) {
-                en.append(e);
-            }
-            prop["enum"] = en;
-        }
-        if (!param.properties.empty()) {
-            Json::Value nestedProps(Json::objectValue);
-            for (const auto& np : param.properties) {
-                Json::Value npVal(Json::objectValue);
-                npVal["type"] = np.type;
-                npVal["description"] = np.description;
-                nestedProps[np.name] = npVal;
-            }
-            prop["properties"] = nestedProps;
-        }
-        properties[param.name] = prop;
-        if (param.required) {
-            required.append(param.name);
-        }
-    }
-
-    schema["properties"] = properties;
-    if (required.size() > 0) {
-        schema["required"] = required;
-    }
-
-    Json::StreamWriterBuilder builder;
-    builder["indentation"] = "";
-    ltd.parameters = Json::writeString(builder, schema);
-
-    return ltd;
-}
-
-std::vector<llm::LLMToolDef> ChainRunner::GetToolDefinitionsForRequest() const {
-    std::vector<llm::LLMToolDef> defs;
-
-    for (const auto& def : m_tools.GetAllDefinitions()) {
-        defs.push_back(ConvertToolDef(def));
-    }
-
-    return defs;
-}
-
-
-std::vector<llm::LLMToolDef> ChainRunner::GetToolDefinitionsForAgent(const std::string& agent_id) const {
-    // If no agent store or empty agent_id, fall back to all tools
-    if (!m_agentStore || agent_id.empty()) {
-        return GetToolDefinitionsForRequest();
-    }
-
-    auto agent = m_agentStore->GetById(agent_id);
-    if (!agent || agent->enabled_tools.empty()) {
-        // Empty whitelist = all tools (backwards compat)
-        return GetToolDefinitionsForRequest();
-    }
-
-    // Set agent context on ChannelsTool for per-agent schema filtering
-    auto* channelsHandler = m_tools.Find("channels");
-    if (channelsHandler) {
-        auto* channelsTool = dynamic_cast<ChannelsTool*>(channelsHandler);
-        if (channelsTool) {
-            channelsTool->SetCurrentAgentId(agent_id);
-        }
-    }
-
-    // Filter: only include tools in the whitelist
-    std::vector<llm::LLMToolDef> defs;
-    for (const auto& def : m_tools.GetAllDefinitions()) {
-        if (std::find(agent->enabled_tools.begin(), agent->enabled_tools.end(), def.name)
-            != agent->enabled_tools.end()) {
-            llm::LLMToolDef ltd;
-            ltd.type = "function";
-            ltd.name = def.name;
-            ltd.description = def.description;
-
-            Json::Value schema(Json::objectValue);
-            schema["type"] = "object";
-            Json::Value properties(Json::objectValue);
-            Json::Value required(Json::arrayValue);
-
-            for (const auto& param : def.parameters) {
-                Json::Value prop(Json::objectValue);
-                prop["type"] = param.type;
-                prop["description"] = param.description;
-                if (!param.enum_values.empty()) {
-                    Json::Value en(Json::arrayValue);
-                    for (const auto& e : param.enum_values) en.append(e);
-                    prop["enum"] = en;
-                }
-                if (!param.properties.empty()) {
-                    Json::Value nestedProps(Json::objectValue);
-                    for (const auto& np : param.properties) {
-                        Json::Value npVal(Json::objectValue);
-                        npVal["type"] = np.type;
-                        npVal["description"] = np.description;
-                        nestedProps[np.name] = npVal;
-                    }
-                    prop["properties"] = nestedProps;
-                }
-                properties[param.name] = prop;
-                if (param.required) required.append(param.name);
-            }
-
-            schema["properties"] = properties;
-            if (required.size() > 0) schema["required"] = required;
-
-            Json::StreamWriterBuilder builder;
-            builder["indentation"] = "";
-            ltd.parameters = Json::writeString(builder, schema);
-
-            defs.push_back(ltd);
-        }
-    }
-
-    // Clear agent context to avoid state leakage
-    if (channelsHandler) {
-        auto* channelsTool = dynamic_cast<ChannelsTool*>(channelsHandler);
-        if (channelsTool) {
-            channelsTool->SetCurrentAgentId("");
-        }
-    }
-
-    return defs;
-}
 
 std::vector<llm::LLMToolDef> ChainRunner::GetToolDefinitionsForSession(
     const std::string& agent_id,
     const std::string& session_type) const {
-
-    // For consolidation sessions: bypass agent whitelist, use dedicated
-    // toolset — the consolidation tool is infrastructure, not user-facing.
-    if (session_type == "consolidation") {
-        // Tools available in consolidation sessions:
-        // - Tools with session_types containing "consolidation" (explicit opt-in)
-        // - Tools with empty session_types on a safe allowlist
-        static const std::set<std::string> kConsolidationSafe = {
-            "diary", "memory", "sessions"
-        };
-
-        std::vector<llm::LLMToolDef> defs;
-        for (const auto& def : m_tools.GetAllDefinitions()) {
-            auto* handler = m_tools.Find(def.name);
-            if (!handler) continue;
-            const auto& td = handler->GetDefinition();
-
-            if (!td.session_types.empty()) {
-                // Explicit session_types — include if "consolidation" is listed
-                for (const auto& st : td.session_types) {
-                    if (st == "consolidation") {
-                        defs.push_back(ConvertToolDef(def));
-                        break;
-                    }
-                }
-            } else {
-                // No session_types restriction — include only if on safe list
-                if (kConsolidationSafe.count(def.name)) {
-                    defs.push_back(ConvertToolDef(def));
-                }
-            }
-        }
-        return defs;
-    }
-
-    // Default path: agent whitelist + session type filter
-    auto agentDefs = GetToolDefinitionsForAgent(agent_id);
-
-    // Filter: include tools with no session_types restriction, plus tools
-    // explicitly available for this session type.
-    // This applies even when session_type is empty — tools that opt into
-    // specific session types (e.g. consolidation) should never appear in
-    // untyped sessions.
-    std::vector<llm::LLMToolDef> defs;
-    for (const auto& def : agentDefs) {
-        // Look up the original ToolDefinition to check session_types
-        auto* handler = m_tools.Find(def.name);
-        if (!handler) continue;
-        const auto& td = handler->GetDefinition();
-        if (td.session_types.empty()) {
-            // No restriction — always available
-            defs.push_back(def);
-        } else {
-            // Only available in listed session types
-            // "default" matches empty session_type (normal chat sessions)
-            for (const auto& st : td.session_types) {
-                if (st == session_type || (st == "default" && session_type.empty())) {
-                    defs.push_back(def);
-                    break;
-                }
-            }
-        }
-    }
-    return defs;
+    return m_schemaService->GetForSession(agent_id, session_type);
 }
 // Provider creation
 // ============================================================================

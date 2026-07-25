@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <string>
 
 #include "animus_kernel/IncomingEvent.h"
@@ -22,6 +23,8 @@
 
 #include "animus_kernel/PromptLogStore.h"
 #include "animus_kernel/ExecutionRequest.h"
+#include "animus_kernel/ToolSchemaService.h"
+#include "animus_kernel/ToolExecutionService.h"
 
 namespace animus::kernel {
 
@@ -154,14 +157,21 @@ public:
         bool hasReasoningEnabledOverride = false);
 
     // Set the agent store for per-agent tool filtering.
-    void SetAgentStore(AgentStore* store) { m_agentStore = store; }
+    void SetAgentStore(AgentStore* store) {
+        m_agentStore = store;
+        m_schemaService->SetAgentStore(store);
+        m_execService->SetAgentStore(store);
+    }
 
     // Set the session notes store for preamble injection.
     void SetSessionNotesStore(SessionNotesStore* store) { m_sessionNotesStore = store; }
 
     // Set the context provider registry for prompt assembly.
     void SetContextRegistry(ContextProviderRegistry* registry) { m_contextRegistry = registry; }
-    void SetNodeManager(NodeManager* nm) { m_nodeManager = nm; }
+    void SetNodeManager(NodeManager* nm) {
+        m_nodeManager = nm;
+        m_execService->SetNodeManager(nm);
+    }
 
     // Set the message queue for interjection (injecting messages into active chains).
     void SetMessageQueue(MessageQueue* mq) { m_messageQueue = mq; }
@@ -228,20 +238,15 @@ private:
         ChainToolEventCallback toolEventCallback = nullptr,
         ChainToolCallCallback toolCallCallback = nullptr);
 
-    std::vector<llm::LLMToolDef> GetToolDefinitionsForRequest() const;
-
-    // Get tool definitions filtered by an agent's enabled_tools whitelist.
-    // If agent has empty enabled_tools, returns all (backwards compat).
-    std::vector<llm::LLMToolDef> GetToolDefinitionsForAgent(const std::string& agent_id) const;
-
-    // Get tool definitions filtered by agent whitelist AND session type.
-    // Session-type-specific tools (e.g. "consolidation" for consolidation sessions)
-    // are only included when session_type matches.
-    llm::LLMToolDef ConvertToolDef(const ToolDefinition& def) const;
-
+    // Schema generation delegated to ToolSchemaService.
+    // These are thin wrappers retained for internal use within ChainRunner.
     std::vector<llm::LLMToolDef> GetToolDefinitionsForSession(
         const std::string& agent_id,
         const std::string& session_type) const;
+
+    // Access the schema and execution services (for external callers like AgentKernel).
+    ToolSchemaService& SchemaService() { return *m_schemaService; }
+    ToolExecutionService& ExecutionService() { return *m_execService; }
 
     /// Resolve agent-level overrides (provider, model, reasoning, budgets)
     /// onto a partially-filled ExecutionRequest. This replaces the duplicated
@@ -267,6 +272,10 @@ private:
 
     // Agent store for per-agent tool filtering (may be null if not set)
     AgentStore* m_agentStore{nullptr};
+
+    // Tool services (own the schema generation and tool execution)
+    std::unique_ptr<ToolSchemaService> m_schemaService;
+    std::unique_ptr<ToolExecutionService> m_execService;
 
     // Session notes store for preamble injection (may be null if not set)
     SessionNotesStore* m_sessionNotesStore{nullptr};
