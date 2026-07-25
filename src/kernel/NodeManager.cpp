@@ -100,7 +100,7 @@ std::string NodeManager::GenerateToken(const std::string& description) {
     stmt->BindText(1, hash);
     stmt->BindText(2, description);
     stmt->BindInt64(3, NowMs());
-    stmt->Step();
+    stmt->ExecDML();
 
     NodeToken t;
     t.id = m_store->LastInsertRowId();
@@ -139,7 +139,7 @@ bool NodeManager::RevokeToken(int64_t tokenId) {
         "UPDATE node_tokens SET revoked = 1 WHERE id = ?");
     if (!stmt) return false;
     stmt->BindInt64(1, tokenId);
-    stmt->Step();
+    stmt->ExecDML();
 
     // Remove from cache
     std::lock_guard<std::mutex> lock(m_mutex);

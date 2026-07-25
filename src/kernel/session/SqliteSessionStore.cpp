@@ -68,7 +68,7 @@ static void WriteTurns(IDataStore& store, SessionId sessionId, const std::vector
         stmt->BindInt64(14, static_cast<int64_t>(t.token_count));
         stmt->BindInt(15, t.is_compacted ? 1 : 0);
 
-        stmt->Step();
+        stmt->ExecDML();
     }
 }
 
@@ -450,7 +450,7 @@ void SqliteSessionStore::PersistSession(const Session& s) {
     stmt->BindInt64(9, s.LastActiveUnixMs());
     stmt->BindInt64(10, s.IsTerminated() ? 1 : 0);
     stmt->BindText(11, s.SessionType());
-    if (!stmt->Step()) {
+    if (!stmt->ExecDML()) {
         std::cerr << "[session-store] PersistSession: Step() failed for session " << s.Id()
                   << ": " << m_store->ErrMsg() << std::endl;
     }
@@ -458,7 +458,7 @@ void SqliteSessionStore::PersistSession(const Session& s) {
     // Delete old turns + compaction summary, then re-insert
     {
         auto delTurns = m_store->Prepare("DELETE FROM session_turns WHERE session_id=?");
-        if (delTurns) { delTurns->BindInt64(1, s.Id()); delTurns->Step(); }
+        if (delTurns) { delTurns->BindInt64(1, s.Id()); delTurns->ExecDML(); }
     }
     {
         auto delSummary = m_store->Prepare("DELETE FROM session_compaction_summaries WHERE session_id=?");
@@ -489,7 +489,7 @@ void SqliteSessionStore::DeleteSessionFromDb(SessionId id) {
     auto stmt = m_store->Prepare("DELETE FROM sessions WHERE id=?");
     if (stmt) {
         stmt->BindInt64(1, id);
-        stmt->Step();
+        stmt->ExecDML();
     }
     // ON DELETE CASCADE handles turns + compaction summaries
 }

@@ -46,6 +46,15 @@ public:
         return false;
     }
 
+    bool ExecDML() override {
+        int rc = sqlite3_step(m_stmt);
+        // SQLITE_DONE: successful DML (INSERT/UPDATE/DELETE)
+        // SQLITE_ROW: should not happen for DML, but treat as success
+        if (rc == SQLITE_DONE || rc == SQLITE_ROW) return true;
+        // Any other code is an error
+        return false;
+    }
+
     int64_t ColumnInt64(int col) override {
         return sqlite3_column_int64(m_stmt, col);
     }

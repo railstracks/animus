@@ -104,25 +104,24 @@ bool AuthStore::CreateUser(const AuthUser& user) {
     stmt->BindText(2, user.username);
     stmt->BindText(3, user.password_hash);
     stmt->BindText(4, user.role);
-    stmt->BindInt64(5, user.created_at);
-    if (!stmt->Step()) return false;
-    return schema::DidAffectRows(m_store);
+   stmt->BindInt64(5, user.created_at);
+    return stmt->ExecDML();
 }
 
 bool AuthStore::UpdateUserPassword(const std::string& id, const std::string& passwordHash) {
     if (!m_store) return false;
     auto stmt = m_store->Prepare("UPDATE auth_users SET password_hash = ? WHERE id = ?");
     stmt->BindText(1, passwordHash);
-    stmt->BindText(2, id);
-    return stmt->Step();
+   stmt->BindText(2, id);
+    return stmt->ExecDML();
 }
 
 bool AuthStore::UpdateUserRole(const std::string& id, const std::string& role) {
     if (!m_store) return false;
     auto stmt = m_store->Prepare("UPDATE auth_users SET role = ? WHERE id = ?");
     stmt->BindText(1, role);
-    stmt->BindText(2, id);
-    return stmt->Step();
+   stmt->BindText(2, id);
+    return stmt->ExecDML();
 }
 
 bool AuthStore::DeleteUser(const std::string& id) {
@@ -130,8 +129,8 @@ bool AuthStore::DeleteUser(const std::string& id) {
     // Delete tokens first
     DeleteTokensForUser(id);
     auto stmt = m_store->Prepare("DELETE FROM auth_users WHERE id = ?");
-    stmt->BindText(1, id);
-    return stmt->Step();
+   stmt->BindText(1, id);
+    return stmt->ExecDML();
 }
 
 // ---- Tokens ----
@@ -143,8 +142,8 @@ bool AuthStore::CreateToken(const AuthToken& token) {
     stmt->BindText(1, token.token_hash);
     stmt->BindText(2, token.user_id);
     stmt->BindInt64(3, token.expires_at);
-    stmt->BindInt64(4, token.created_at);
-    return stmt->Step();
+   stmt->BindInt64(4, token.created_at);
+    return stmt->ExecDML();
 }
 
 std::optional<AuthToken> AuthStore::GetToken(const std::string& tokenHash) {
@@ -165,15 +164,15 @@ std::optional<AuthToken> AuthStore::GetToken(const std::string& tokenHash) {
 bool AuthStore::DeleteToken(const std::string& tokenHash) {
     if (!m_store) return false;
     auto stmt = m_store->Prepare("DELETE FROM auth_tokens WHERE token_hash = ?");
-    stmt->BindText(1, tokenHash);
-    return stmt->Step();
+   stmt->BindText(1, tokenHash);
+    return stmt->ExecDML();
 }
 
 bool AuthStore::DeleteTokensForUser(const std::string& userId) {
     if (!m_store) return false;
     auto stmt = m_store->Prepare("DELETE FROM auth_tokens WHERE user_id = ?");
-    stmt->BindText(1, userId);
-    return stmt->Step();
+   stmt->BindText(1, userId);
+    return stmt->ExecDML();
 }
 
 std::vector<AuthToken> AuthStore::ListTokensForUser(const std::string& userId) {
@@ -197,9 +196,9 @@ bool AuthStore::CleanExpiredTokens() {
     if (!m_store) return false;
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    auto stmt = m_store->Prepare("DELETE FROM auth_tokens WHERE expires_at < ?");
-    stmt->BindInt64(1, now);
-    return stmt->Step();
+   auto stmt = m_store->Prepare("DELETE FROM auth_tokens WHERE expires_at < ?");
+   stmt->BindInt64(1, now);
+    return stmt->ExecDML();
 }
 
 int AuthStore::UserCount() {

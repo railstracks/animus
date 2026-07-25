@@ -48,7 +48,7 @@ SessionNote SessionNotesStore::Create(const std::string& sessionKey,
     stmt->BindInt(4, sortOrder);
     stmt->BindInt64(5, now);
     stmt->BindInt64(6, now);
-    stmt->Step();
+    stmt->ExecDML();
     stmt->Finalize();
 
     SessionNote note;
@@ -126,7 +126,7 @@ bool SessionNotesStore::Update(int64_t noteId, const std::string& agentId,
     stmt->BindInt64(2, NowUnixMs());
     stmt->BindInt64(3, noteId);
     stmt->BindText(4, agentId);
-    stmt->Step();
+    stmt->ExecDML();
 
     // Check rows affected
     return m_store->Changes() > 0;
@@ -139,7 +139,7 @@ bool SessionNotesStore::Delete(int64_t noteId, const std::string& agentId) {
 
     stmt->BindInt64(1, noteId);
     stmt->BindText(2, agentId);
-    stmt->Step();
+    stmt->ExecDML();
 
     return m_store->Changes() > 0;
 }
@@ -156,7 +156,7 @@ bool SessionNotesStore::Reorder(const std::vector<int64_t>& noteIds,
         stmt->BindInt64(2, NowUnixMs());
         stmt->BindInt64(3, noteIds[i]);
         stmt->BindText(4, agentId);
-        stmt->Step();
+        stmt->ExecDML();
     }
     return true;
 }

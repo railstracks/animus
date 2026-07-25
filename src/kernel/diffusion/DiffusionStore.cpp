@@ -46,7 +46,7 @@ bool DiffusionStore::CreateProvider(const DiffusionProviderConfig& config) {
     stmt->BindText(6, config.default_aspect_ratio);
     stmt->BindInt64(7, config.created_at);
     stmt->BindInt64(8, config.updated_at);
-    stmt->Step();
+    stmt->ExecDML();
     return schema::DidAffectRows(m_store);
 }
 
@@ -67,7 +67,7 @@ bool DiffusionStore::UpdateProvider(const DiffusionProviderConfig& config) {
     stmt->BindText(5, config.default_aspect_ratio);
     stmt->BindInt64(6, config.updated_at);
     stmt->BindText(7, config.id);
-    stmt->Step();
+    stmt->ExecDML();
     return schema::DidAffectRows(m_store);
 }
 
@@ -78,7 +78,7 @@ bool DiffusionStore::DeleteProvider(const std::string& id) {
     auto stmt = m_store->Prepare("DELETE FROM diffusion_providers WHERE id = ?");
     if (!stmt) return false;
     stmt->BindText(1, id);
-    stmt->Step();
+    stmt->ExecDML();
     return schema::DidAffectRows(m_store);
 }
 

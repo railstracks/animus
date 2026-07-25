@@ -87,7 +87,7 @@ void ConsolidationStore::SetWatermark(const ConsolidationWatermark& wm) {
     stmt->BindText(2, wm.source);
     stmt->BindInt64(3, wm.last_processed_id);
     stmt->BindInt64(4, wm.last_run_unix_ms);
-    stmt->Step();
+    stmt->ExecDML();
 }
 
 std::vector<ConsolidationWatermark> ConsolidationStore::ListWatermarks(
@@ -126,7 +126,7 @@ int64_t ConsolidationStore::CreateRun(const ConsolidationRun& run) {
     stmt->BindText(4, run.status.empty() ? std::string("running") : run.status);
     stmt->BindText(5, run.summary_json.empty() ? std::string("{}") : run.summary_json);
     stmt->BindText(6, run.error);
-    stmt->Step();
+    stmt->ExecDML();
 
     return m_store->LastInsertRowId();
 }
@@ -143,7 +143,7 @@ bool ConsolidationStore::FinishRun(int64_t runId, const std::string& status,
     stmt->BindText(3, summaryJson);
     stmt->BindText(4, error);
     stmt->BindInt64(5, runId);
-    stmt->Step();
+    stmt->ExecDML();
     return true;
 }
 

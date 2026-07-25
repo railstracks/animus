@@ -99,6 +99,20 @@ public:
         return false;
     }
 
+    bool ExecDML() override {
+        if (!m_hasResult) {
+            if (!Execute()) {
+                return false;
+            }
+            m_hasResult = true;
+        }
+        // Success if the result is COMMAND_OK (DML) or TUPLES_OK (SELECT used as DML).
+        // Error if anything else.
+        if (!m_result) return false;
+        ExecStatusType status = PQresultStatus(m_result);
+        return (status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK);
+    }
+
     int64_t ColumnInt64(int col) override {
         if (!m_result || m_currentRow >= PQntuples(m_result) || col >= PQnfields(m_result)) return 0;
         if (PQgetisnull(m_result, m_currentRow, col)) return 0;

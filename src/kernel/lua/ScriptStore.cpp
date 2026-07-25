@@ -124,7 +124,7 @@ bool ScriptStore::Create(const ScriptDescriptor& script, std::string* error) {
     stmt->BindText(7, script.created_at);
     stmt->BindText(8, script.updated_at);
 
-    stmt->Step();
+    stmt->ExecDML();
     return true;
 }
 
@@ -219,7 +219,7 @@ bool ScriptStore::Update(const ScriptDescriptor& script, std::string* error) {
     stmt->BindText(5, NowISO8601());
     stmt->BindText(6, script.id);
 
-    stmt->Step();
+    stmt->ExecDML();
     return true;
 }
 
@@ -233,7 +233,7 @@ bool ScriptStore::Delete(const std::string& id, std::string* error) {
     }
 
     stmt->BindText(1, id);
-    stmt->Step();
+    stmt->ExecDML();
     return true;
 }
 

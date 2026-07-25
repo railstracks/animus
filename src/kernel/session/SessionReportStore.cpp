@@ -92,7 +92,7 @@ SessionReport SessionReportStore::Upsert(int64_t sessionId,
     stmt->BindText(6, forwardLook);
     stmt->BindInt64(7, now);
     stmt->BindInt64(8, now);
-    stmt->Step();
+    stmt->ExecDML();
     stmt->Finalize();
 
     // Return the upserted row
@@ -200,7 +200,7 @@ bool SessionReportStore::Delete(int64_t sessionId, const std::string& agentId) {
 
     stmt->BindInt64(1, sessionId);
     stmt->BindText(2, agentId);
-    stmt->Step();
+    stmt->ExecDML();
 
     return m_store->Changes() > 0;
 }
@@ -222,7 +222,7 @@ bool SessionReportStore::StoreEmbedding(int64_t reportId,
     stmt->BindBlob(1, blob.data(), blob.size());
     stmt->BindInt(2, static_cast<int>(embedding.size()));
     stmt->BindInt64(3, reportId);
-    stmt->Step();
+    stmt->ExecDML();
 
     return m_store->Changes() > 0;
 }

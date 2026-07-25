@@ -211,7 +211,7 @@ MemoryFile MemoryFileStore::CreateFile(const MemoryFile& file) {
         stmt->BindInt64(7, createdAt);
         stmt->BindInt64(8, importedAt);
         stmt->BindInt(9, static_cast<int64_t>(file.status));
-        stmt->Step();
+        stmt->ExecDML();
         if (!DidWriteRows(m_store)) {
             std::cerr << "[memory_files] create failed: " << m_store->ErrMsg() << std::endl;
             return {};
@@ -307,7 +307,7 @@ bool MemoryFileStore::UpdateFile(const MemoryFile& file) {
     stmt->BindInt64(8, importedAt);
     stmt->BindInt(9, static_cast<int32_t>(file.status));
     stmt->BindInt64(10, file.id);
-    stmt->Step();
+    stmt->ExecDML();
     return DidWriteRows(m_store);
 }
 
@@ -315,7 +315,7 @@ bool MemoryFileStore::DeleteFile(int64_t id) {
     auto stmt = m_store->Prepare("DELETE FROM memory_files WHERE id=?");
     if (!stmt) return false;
     stmt->BindInt64(1, id);
-    stmt->Step();
+    stmt->ExecDML();
     return DidWriteRows(m_store);
 }
 
@@ -351,7 +351,7 @@ bool MemoryFileStore::MarkProcessed(int64_t id) {
         "UPDATE memory_files SET status = 1 WHERE id = ?");
     if (!stmt) return false;
     stmt->BindInt64(1, id);
-    stmt->Step();
+    stmt->ExecDML();
     return DidWriteRows(m_store);
 }
 
@@ -429,7 +429,7 @@ void MemoryFileStore::ReplaceChunks(int64_t fileId, const std::vector<MemoryFile
         stmt->BindNull(9); // embedding = NULL initially
         stmt->BindInt(10, 0);
         stmt->BindInt64(11, c.start_line > 0 ? c.start_line : 0);
-        stmt->Step();
+        stmt->ExecDML();
     }
 }
 
@@ -493,7 +493,7 @@ bool MemoryFileStore::UpdateChunkEmbedding(int64_t chunkId, const std::vector<fl
     stmt->BindBlob(1, blob.data(), blob.size());
     stmt->BindInt(2, static_cast<int32_t>(embedding.size()));
     stmt->BindInt64(3, chunkId);
-    stmt->Step();
+    stmt->ExecDML();
     return true;
 }
 

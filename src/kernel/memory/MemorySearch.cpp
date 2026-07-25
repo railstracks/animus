@@ -423,7 +423,7 @@ void MemorySearch::RefreshOntologyDocs() {
             if (stmt) {
                 stmt->BindInt64(1, entity.id);
                 stmt->BindText(2, entity.full_path + " " + entity.name);
-                stmt->Step();
+                stmt->ExecDML();
             }
         }
 
@@ -435,7 +435,7 @@ void MemorySearch::RefreshOntologyDocs() {
             if (!stmt) continue;
             stmt->BindInt64(1, entity.id);
             stmt->BindText(2, property.key + " " + property.value);
-            stmt->Step();
+            stmt->ExecDML();
         }
     }
 

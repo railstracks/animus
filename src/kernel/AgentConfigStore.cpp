@@ -105,7 +105,7 @@ void AgentConfigStore::Set(const std::string& agentId,
             stmt->BindText(1, agentId);
             stmt->BindText(2, key);
             stmt->BindText(3, value);
-            stmt->Step();
+            stmt->ExecDML();
             stmt->Finalize();
         }
     }
@@ -123,7 +123,7 @@ void AgentConfigStore::Delete(const std::string& agentId,
         if (stmt) {
             stmt->BindText(1, agentId);
             stmt->BindText(2, key);
-            stmt->Step();
+            stmt->ExecDML();
             stmt->Finalize();
         }
     }
@@ -192,7 +192,7 @@ void AgentConfigStore::DeleteByPrefix(const std::string& agentId,
         if (stmt) {
             stmt->BindText(1, agentId);
             stmt->BindText(2, prefix + "%");
-            stmt->Step();
+            stmt->ExecDML();
             stmt->Finalize();
         }
     }

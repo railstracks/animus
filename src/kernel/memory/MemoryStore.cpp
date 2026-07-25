@@ -379,7 +379,7 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer) {
     stmt->BindInt64(12, now);
     stmt->BindInt64(13, now);
 
-    stmt->Step();
+    stmt->ExecDML();
     if (!DidWriteRows(m_store)) {
         std::cerr << "[memory] insert layer failed: " << m_store->ErrMsg() << std::endl;
         return {};
@@ -550,7 +550,7 @@ bool MemoryStore::UpdateLayer(const MemoryLayer& layer) {
     stmt->BindInt64(11, now);
     stmt->BindInt64(12, layer.id);
 
-    stmt->Step();
+    stmt->ExecDML();
     return DidWriteRows(m_store);
 }
 
@@ -558,7 +558,7 @@ bool MemoryStore::DeleteLayer(int64_t id) {
     auto stmt = m_store->Prepare("DELETE FROM memory_layers WHERE id=?");
     if (!stmt) return false;
     stmt->BindInt64(1, id);
-    stmt->Step();
+    stmt->ExecDML();
     return DidWriteRows(m_store);
 }
 
@@ -671,7 +671,7 @@ Observation MemoryStore::CreateObservation(const Observation& obs) {
     stmt->BindInt64(12, MemoryStateToInt(obs.memory_state));
     stmt->BindInt64(13, obs.superseded_by);
 
-    stmt->Step();
+    stmt->ExecDML();
     if (!DidWriteRows(m_store)) {
         std::cerr << "[memory] insert observation failed: changes=" << m_store->Changes()
                   << " err=" << m_store->ErrMsg()
@@ -718,7 +718,7 @@ bool MemoryStore::UpdateObservation(const Observation& obs) {
     stmt->BindInt64(11, MemoryStateToInt(obs.memory_state));
     stmt->BindInt64(12, obs.id);
 
-    stmt->Step();
+    stmt->ExecDML();
     return DidWriteRows(m_store);
 }
 
@@ -738,7 +738,7 @@ bool MemoryStore::SetObservationMemoryState(
     stmt->BindInt64(1, MemoryStateToInt(memory_state));
     stmt->BindInt64(2, now);
     stmt->BindInt64(3, obs_id);
-    stmt->Step();
+    stmt->ExecDML();
     if (!DidWriteRows(m_store)) return false;
 
     MemoryMutation m;
@@ -756,7 +756,7 @@ bool MemoryStore::DeleteObservation(int64_t id) {
     auto stmt = m_store->Prepare("DELETE FROM observations WHERE id=?");
     if (!stmt) return false;
     stmt->BindInt64(1, id);
-    stmt->Step();
+    stmt->ExecDML();
     return DidWriteRows(m_store);
 }
 
@@ -787,7 +787,7 @@ bool MemoryStore::MoveObservation(int64_t obs_id, int64_t to_layer_id,
     stmt->BindInt64(4, nextReviewAt);
     stmt->BindInt64(5, obs_id);
 
-    stmt->Step();
+    stmt->ExecDML();
     if (!DidWriteRows(m_store)) return false;
 
     MemoryMutation m;
@@ -823,7 +823,7 @@ bool MemoryStore::TouchEvaluation(int64_t obs_id) {
     stmt->BindInt64(1, now);
     stmt->BindInt64(2, nextReviewAt);
     stmt->BindInt64(3, obs_id);
-    stmt->Step();
+    stmt->ExecDML();
     return DidWriteRows(m_store);
 }
 
@@ -870,7 +870,7 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
     stmt->BindInt64(12, MemoryStateToInt(newVersion.memory_state));
     stmt->BindInt64(13, 0);  // current version
 
-    stmt->Step();
+    stmt->ExecDML();
     if (!DidWriteRows(m_store)) {
         std::cerr << "[memory] ReviseObservation: insert new version failed: " << m_store->ErrMsg() << std::endl;
         return {};
@@ -1022,7 +1022,7 @@ LayerPerspective MemoryStore::SetPerspective(const LayerPerspective& p) {
     stmt->BindText(14, p.future_valence);
     stmt->BindInt64(15, now);
 
-    stmt->Step();
+    stmt->ExecDML();
     if (!DidWriteRows(m_store)) {
         std::cerr << "[memory] upsert perspective failed: " << m_store->ErrMsg() << std::endl;
         return {};
@@ -1062,7 +1062,7 @@ void MemoryStore::LogMutation(const MemoryMutation& m) {
     stmt->BindText(7, m.motivation);
     stmt->BindInt64(8, m.unix_ms);
 
-    stmt->Step();
+    stmt->ExecDML();
     if (!DidWriteRows(m_store)) {
         std::cerr << "[memory] insert mutation failed: " << m_store->ErrMsg() << std::endl;
     }

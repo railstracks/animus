@@ -109,7 +109,7 @@ Project ProjectStore::CreateProject(const std::string& agentId, const std::strin
     stmt->BindText(5, p.status);
     stmt->BindInt64(6, p.created_at);
     stmt->BindInt64(7, p.updated_at);
-    stmt->Step();
+    stmt->ExecDML();
 
     return p;
 }
@@ -166,7 +166,7 @@ bool ProjectStore::UpdateProjectStatus(const std::string& agentId, const std::st
     stmt->BindInt64(2, NowMs());
     stmt->BindText(3, projectId);
     stmt->BindText(4, agentId);
-    stmt->Step();
+    stmt->ExecDML();
     return schema::DidAffectRows(m_store);
 }
 
@@ -234,7 +234,7 @@ ProjectTask ProjectStore::AddTask(const std::string& agentId, const std::string&
     stmt->BindText(9, t.result);
     stmt->BindInt64(10, t.created_at);
     stmt->BindInt64(11, t.updated_at);
-    stmt->Step();
+    stmt->ExecDML();
 
     return t;
 }
@@ -306,7 +306,7 @@ bool ProjectStore::UpdateTask(const std::string& agentId, const ProjectTask& tas
     stmt->BindInt64(6, NowMs());
     stmt->BindText(7, task.id);
     stmt->BindText(8, agentId);
-    stmt->Step();
+    stmt->ExecDML();
     return schema::DidAffectRows(m_store);
 }
 

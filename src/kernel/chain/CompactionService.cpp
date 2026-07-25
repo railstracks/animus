@@ -321,7 +321,7 @@ void CompactionService::StoreCompaction(const CompactionEntry& entry) {
     stmt->BindInt64(4, entry.token_count);
     stmt->BindText(5, entry.model);
     stmt->BindInt64(6, entry.created_at_unix_ms);
-    stmt->Step();
+    stmt->ExecDML();
 }
 
 std::vector<CompactionEntry> CompactionService::GetCompactions(SessionId sessionId) {
@@ -381,7 +381,7 @@ void CompactionService::DeleteCompactions(SessionId sessionId) {
         "DELETE FROM session_compactions WHERE session_id=?");
     if (!stmt) return;
     stmt->BindInt64(1, sessionId);
-    stmt->Step();
+    stmt->ExecDML();
 }
 
 } // namespace animus::kernel

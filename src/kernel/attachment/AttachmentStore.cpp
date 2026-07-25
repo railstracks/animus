@@ -53,7 +53,7 @@ bool AttachmentStore::Save(const Attachment& att) {
     stmt->BindInt64(8, att.size_bytes);
     stmt->BindInt64(9, att.created_at);
 
-    stmt->Step();
+    stmt->ExecDML();
     return schema::DidAffectRows(m_store);
 }
 
@@ -138,7 +138,7 @@ bool AttachmentStore::DeleteForTurn(std::uint64_t turnId) {
     auto stmt = m_store->Prepare("DELETE FROM session_attachments WHERE turn_id=?");
     if (!stmt) return false;
     stmt->BindInt64(1, static_cast<int64_t>(turnId));
-    stmt->Step();
+    stmt->ExecDML();
     return schema::DidAffectRows(m_store);
 }
 

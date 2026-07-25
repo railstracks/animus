@@ -412,7 +412,7 @@ OntologyEntity OntologyStore::CreateEntity(
     stmt->BindText(6, entity.agent_id);
     stmt->BindInt64(7, now);
     stmt->BindInt64(8, now);
-    stmt->Step();
+    stmt->ExecDML();
     if (!DidWriteRows(m_store)) {
         auto existing = FindByPath(entity.root_category, entity.full_path);
         return existing.value_or(OntologyEntity{});
@@ -452,7 +452,7 @@ bool OntologyStore::UpdateEntity(const OntologyEntity& entity, const std::string
     stmt->BindInt(5, entity.sort_order);
     stmt->BindInt64(6, now);
     stmt->BindInt64(7, entity.id);
-    stmt->Step();
+    stmt->ExecDML();
     if (!DidWriteRows(m_store)) return false;
 
     auto updated = GetEntity(entity.id).value_or(entity);
@@ -506,7 +506,7 @@ bool OntologyStore::DeleteEntity(int64_t id, const std::string& motivation) {
     auto stmt = m_store->Prepare("DELETE FROM ontology_entities WHERE id=?");
     if (!stmt) return false;
     stmt->BindInt64(1, id);
-    stmt->Step();
+    stmt->ExecDML();
     if (!DidWriteRows(m_store)) return false;
 
     OntologyMutation m;
@@ -581,7 +581,7 @@ OntologyProperty OntologyStore::SetProperty(const OntologyProperty& prop, const 
         else stmt->BindNull(4);
         stmt->BindInt64(5, now);
         stmt->BindInt64(6, existing->id);
-        stmt->Step();
+        stmt->ExecDML();
         success = DidWriteRows(m_store);
     } else {
         auto stmt = m_store->Prepare(
@@ -599,7 +599,7 @@ OntologyProperty OntologyStore::SetProperty(const OntologyProperty& prop, const 
         else stmt->BindNull(6);
         stmt->BindInt64(7, now);
         stmt->BindInt64(8, now);
-        stmt->Step();
+        stmt->ExecDML();
         success = DidWriteRows(m_store);
     }
 
@@ -634,7 +634,7 @@ bool OntologyStore::DeleteProperty(int64_t id, const std::string& motivation) {
     auto stmt = m_store->Prepare("DELETE FROM ontology_properties WHERE id=?");
     if (!stmt) return false;
     stmt->BindInt64(1, id);
-    stmt->Step();
+    stmt->ExecDML();
     if (!DidWriteRows(m_store)) return false;
 
     OntologyMutation m;
@@ -716,7 +716,7 @@ void OntologyStore::LogMutation(const OntologyMutation& m) {
     stmt->BindText(5, m.new_state);
     stmt->BindText(6, m.motivation);
     stmt->BindInt64(7, m.unix_ms);
-    stmt->Step();
+    stmt->ExecDML();
 }
 
 std::vector<OntologyMutation> OntologyStore::QueryMutations(int64_t since_unix_ms, int64_t limit) {

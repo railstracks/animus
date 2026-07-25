@@ -41,8 +41,21 @@ public:
     virtual bool BindNull(int idx) = 0;
 
     // Execution
-    // Returns true if a row is available, false if done (or error — check ErrMsg).
+
+    // Step() — advance the statement one row.
+    // Returns true if a row is available (use Column* to read it).
+    // Returns false if done or error.
+    // WARNING: For DML (INSERT/UPDATE/DELETE), Step() return values differ
+    // between backends. SQLite returns false on success (SQLITE_DONE).
+    // PostgreSQL returns true on success (PGRES_COMMAND_OK).
+    // For DML, use ExecDML() instead.
     virtual bool Step() = 0;
+
+    // ExecDML() — execute a DML statement (INSERT/UPDATE/DELETE).
+    // Returns true on success, false on error (check IDataStore::ErrMsg()).
+    // This is backend-agnostic and should be used for all write operations
+    // instead of Step().
+    virtual bool ExecDML() = 0;
 
     // Column access (only valid after Step() returned true)
     virtual int64_t ColumnInt64(int col) = 0;

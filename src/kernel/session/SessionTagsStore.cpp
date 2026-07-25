@@ -74,7 +74,7 @@ SessionTag SessionTagsStore::Add(const std::string& sessionKey,
     stmt->BindText(3, tag);
     stmt->BindText(4, source);
     stmt->BindInt64(5, now);
-    stmt->Step();
+    stmt->ExecDML();
 
     SessionTag result;
     result.id = m_store->LastInsertRowId();
@@ -95,7 +95,7 @@ bool SessionTagsStore::Remove(const std::string& sessionKey,
     stmt->BindText(1, sessionKey);
     stmt->BindText(2, agentId);
     stmt->BindText(3, tag);
-    stmt->Step();
+    stmt->ExecDML();
 
     return m_store->Changes() > 0;
 }
@@ -195,7 +195,7 @@ std::size_t SessionTagsStore::RemoveAutoTags(const std::string& sessionKey) {
     if (!stmt) return 0;
 
     stmt->BindText(1, sessionKey);
-    stmt->Step();
+    stmt->ExecDML();
 
     return static_cast<std::size_t>(m_store->Changes());
 }

@@ -172,7 +172,7 @@ bool ScheduleStore::Create(const ScheduleDescriptor& sched, std::string* error) 
         stmt->BindInt(11, sched.max_fires);
     }
 
-    stmt->Step();
+    stmt->ExecDML();
     return true;
 }
 
@@ -269,7 +269,7 @@ bool ScheduleStore::Update(const ScheduleDescriptor& sched, std::string* error) 
     // Trust Step() result, not Changes(). m_lastChanges is a shared atomic
     // across all connections/threads — concurrent queries overwrite it
     // between Execute() and Changes(), causing false negatives.
-    stmt->Step();
+    stmt->ExecDML();
     return true;
 }
 
@@ -280,7 +280,7 @@ bool ScheduleStore::Delete(const std::string& id, std::string* error) {
         return false;
     }
     stmt->BindText(1, id);
-    stmt->Step();
+    stmt->ExecDML();
     return true;
 }
 

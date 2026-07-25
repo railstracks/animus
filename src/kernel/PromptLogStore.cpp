@@ -161,7 +161,7 @@ void PromptLogStore::Log(
         stmt->BindNull(idx++);
     }
 
-    if (!stmt->Step()) {
+    if (!stmt->ExecDML()) {
         std::cerr << "[prompt-log] INSERT failed: " << m_store->ErrMsg() << std::endl;
     }
 }

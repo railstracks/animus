@@ -586,7 +586,7 @@ Agent AgentStore::Create(const Agent& agent) {
 
     // For non-SELECT statements, Step() returns false on SQLITE_DONE.
     // Treat the operation as successful if the row is now queryable.
-    bool stepResult = stmt->Step();
+    bool stepResult = stmt->ExecDML();
     std::cerr << "[agent-store] Create: Step()=" << (stepResult ? "true" : "false")
               << " ErrMsg=" << m_store->ErrMsg() << std::endl;
     auto result = GetById(id);
@@ -640,7 +640,7 @@ bool AgentStore::Update(const Agent& agent) {
 
     // For non-SELECT statements, Step() returns false on SQLITE_DONE.
     // Verify success by checking that exactly one row was affected.
-    stmt->Step();
+    stmt->ExecDML();
     return m_store->Changes() > 0;
 }
 
@@ -649,7 +649,7 @@ bool AgentStore::Delete(const std::string& id) {
     if (!stmt) return false;
     stmt->BindText(1, id);
     // For non-SELECT statements, Step() returns false on SQLITE_DONE.
-    stmt->Step();
+    stmt->ExecDML();
     return m_store->Changes() > 0;
 }
 

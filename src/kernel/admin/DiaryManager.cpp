@@ -109,9 +109,8 @@ DiaryEntry DiaryStore::Create(const DiaryEntry& entry) {
     stmt->BindText(6, entry.tags_json);
     stmt->BindText(7, entry.session_id);
 
-    if (!stmt->Step()) {
-        // INSERT should not return rows; Step() returning false is normal for successful INSERT
-        // Error check via ErrMsg if needed
+    if (!stmt->ExecDML()) {
+        std::cerr << "[diary] INSERT failed: " << m_store->ErrMsg() << std::endl;
     }
     stmt->Finalize();
 
@@ -225,7 +224,7 @@ bool DiaryStore::Delete(const std::string& id) {
     if (!stmt) return false;
 
     stmt->BindText(1, id);
-    stmt->Step();
+    stmt->ExecDML();
     stmt->Finalize();
 
     // Check rows affected

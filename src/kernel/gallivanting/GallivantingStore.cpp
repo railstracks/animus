@@ -164,7 +164,7 @@ GallivantingThread GallivantingStore::CreateThread(const GallivantingThread& thr
     stmt->BindInt64(6, thread.enabled ? 1 : 0);
     stmt->BindInt64(7, now);
     stmt->BindInt64(8, now);
-    stmt->Step();
+    stmt->ExecDML();
 
     auto created = GetThread(m_store->LastInsertRowId());
     return created.value_or(GallivantingThread{});
@@ -187,8 +187,8 @@ bool GallivantingStore::UpdateThread(const GallivantingThread& thread) {
     stmt->BindText(4, thread.prompt_template);
     stmt->BindInt64(5, thread.enabled ? 1 : 0);
     stmt->BindInt64(6, now);
-    stmt->BindInt64(7, thread.id);
-    return stmt->Step();
+   stmt->BindInt64(7, thread.id);
+    return stmt->ExecDML();
 }
 
 bool GallivantingStore::DeleteThread(int64_t id) {
@@ -199,8 +199,8 @@ bool GallivantingStore::DeleteThread(int64_t id) {
 
     auto stmt = m_store->Prepare("DELETE FROM gallivanting_threads WHERE id = ?");
     if (!stmt) return false;
-    stmt->BindInt64(1, id);
-    return stmt->Step();
+   stmt->BindInt64(1, id);
+    return stmt->ExecDML();
 }
 
 // ============================================================================
@@ -289,7 +289,7 @@ GallivantingSession GallivantingStore::CreateSession(const GallivantingSession& 
     stmt->BindText(7, session.sdt_scores_json.empty() ? std::string("{}") : session.sdt_scores_json);
     stmt->BindText(8, session.tools_used_json.empty() ? std::string("[]") : session.tools_used_json);
     stmt->BindInt64(9, now);
-    stmt->Step();
+    stmt->ExecDML();
 
     GallivantingSession created = session;
     created.id = m_store->LastInsertRowId();
@@ -302,8 +302,8 @@ bool GallivantingStore::DeleteSessionsForThread(int64_t thread_id) {
 
     auto stmt = m_store->Prepare("DELETE FROM gallivanting_sessions WHERE thread_id = ?");
     if (!stmt) return false;
-    stmt->BindInt64(1, thread_id);
-    return stmt->Step();
+   stmt->BindInt64(1, thread_id);
+    return stmt->ExecDML();
 }
 
 // ============================================================================

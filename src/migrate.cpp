@@ -372,7 +372,7 @@ int main(int argc, char* argv[]) {
             std::string sql = "SELECT setval('" + seqName + "', COALESCE((SELECT MAX(id) FROM " + table + "), 1))";
             auto stmt = pgDb->Prepare(sql);
             if (stmt) {
-                stmt->Step();
+                stmt->ExecDML();
                 std::cout << "  " << seqName << ": updated\n";
             } else {
                 std::cout << "  " << seqName << ": skipped (sequence may not exist)\n";
