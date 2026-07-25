@@ -388,16 +388,13 @@ inline std::vector<uint8_t> encodeClientPayload(
         ua.writeStringField(4, "000");
         // osVersion (field 5)
         ua.writeStringField(5, "0.1");
-        // manufacturer (field 6) = "" (empty)
-        ua.writeStringField(6, "");
+        // manufacturer (field 6) — OMITTED (Baileys doesn't include it; proto3 default is "")
         // device (field 7)
         ua.writeStringField(7, "Desktop");
         // osBuildNumber (field 8)
         ua.writeStringField(8, "0.1");
-        // phoneId (field 9)
-        ua.writeStringField(9, "000000000000000");
+        // phoneId (field 9) — OMITTED (Baileys does NOT include this for registration)
         // releaseChannel (field 10) = RELEASE = 0 — OMITTED (proto3 default)
-        // ua.writeVarintField(10, 0);
         // localeLanguageIso6391 (field 11)
         ua.writeStringField(11, "en");
         // localeCountryIso31661Alpha2 (field 12)
@@ -407,15 +404,15 @@ inline std::vector<uint8_t> encodeClientPayload(
     // WebInfo (field 6)
     {
         Writer wi;
-        // webSubPlatform (field 4) = DARWIN = 3 (matches Baileys with syncFullHistory=true)
-        wi.writeVarintField(4, 3);
+        // webSubPlatform (field 4) = WEB_BROWSER = 0 (Baileys default)
+        // DARWIN (3) requires syncFullHistory=true AND browser="Mac OS"+"Desktop"
+        // We're a web client, not a Mac app
+        wi.writeVarintField(4, 0);
         w.writeMessageField(6, wi.buf);
     }
-    // pushName (field 7)
-    // Baileys omits pushName for registration, includes it for login
-    if (!isNewLogin) {
-        w.writeStringField(7, "Kestrel");
-    }
+    // pushName (field 7) — include for both registration and login
+    // Baileys includes config.pushName if set, even for new registration
+    w.writeStringField(7, "Kestrel");
 
     // connectType (field 12) = WIFI_UNKNOWN = 1
     w.writeVarintField(12, 1);
