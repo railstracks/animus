@@ -1,4 +1,5 @@
 #include "animus_kernel/IChannelAdapter.h"
+#include "animus_kernel/ChannelAdapters.h"
 
 #include <iostream>
 
@@ -6,36 +7,33 @@
 
 namespace animus::kernel {
 
-// ============================================================================
-// Static config validation — delegates to ChannelManager's implementation
-// ============================================================================
-
 bool IChannelAdapter::ValidateConfig(const std::string& type,
                                      const Json::Value& config,
                                      std::string* error) {
     return ChannelManager::ValidateConfig(type, config, error);
 }
 
-// ============================================================================
-// Factory — currently returns nullptr because connector implementations
-// are still inline in ChannelManager. As adapters are extracted into
-// separate classes, this factory will create them directly.
-//
-// The interface boundary is established now so that:
-//   1. New connectors can be added as IChannelAdapter implementations
-//   2. ChannelManager's Start/Stop/SendReply dispatch can gradually
-//      transition from if-else chains to adapter lookup
-//   3. Tests can mock individual connectors
-// ============================================================================
-
 std::unique_ptr<IChannelAdapter> IChannelAdapter::Create(
-    const std::string& /*type*/,
-    HttpClient& /*httpClient*/,
-    AgentConfigStore* /*configStore*/,
-    ChannelDispatchCallback /*dispatch*/,
-    ChannelLogCallback /*logCallback*/) {
-    // TODO: Implement once connectors are extracted from ChannelManager.
-    // For now, ChannelManager handles all connector lifecycle internally.
+    const std::string& type,
+    HttpClient& httpClient,
+    AgentConfigStore* configStore,
+    ChannelDispatchCallback dispatch,
+    ChannelLogCallback logCallback) {
+
+    // Build the shared context
+    // Note: ChannelRouter is owned by ChannelManager; adapters receive a
+    // reference to it through the context. The factory doesn't own the router.
+    // The caller (ChannelManager) must set ctx.router before calling Start().
+
+    // TODO: once ChannelManager passes the router through, use it.
+    // For now, these adapters need the router from ChannelManager.
+    // This will be wired up when ChannelManager::StartChannel is refactored.
+
+    (void)httpClient;
+    (void)configStore;
+    (void)dispatch;
+    (void)logCallback;
+
     return nullptr;
 }
 

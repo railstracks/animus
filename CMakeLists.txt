@@ -313,6 +313,12 @@ add_library(animus_kernel
   src/kernel/chain/ToolSchemaService.cpp
   src/kernel/chain/ToolExecutionService.cpp
   src/kernel/ChannelAdapterFactory.cpp
+  src/kernel/ChannelDispatch.cpp
+  src/kernel/channel/PollerAdapterBase.cpp
+  src/kernel/channel/IrcAdapter.cpp
+  src/kernel/channel/TelegramAdapter.cpp
+  src/kernel/channel/VkAdapter.cpp
+  src/kernel/channel/RemainingAdapters.cpp
   src/kernel/PromptLogStore.cpp
   src/kernel/auth/AuthStore.cpp
  src/kernel/auth/AuthManager.cpp
