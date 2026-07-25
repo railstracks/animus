@@ -334,7 +334,7 @@ bool CohereProvider::FetchCapabilities(const std::string& modelId) {
   int status = DoHTTPGet(modelsUrl, headers, &responseBody, &error);
 
   if (status != 200) {
-    LOG_ERROR("cohere", "Failed to fetch models (HTTP " << status
+    ALOG_ERROR("cohere", "Failed to fetch models (HTTP " << status
               << "): " << error);
     // Fall back to safe defaults — assume everything supported
     m_capabilities.supports_tools = true;
@@ -350,7 +350,7 @@ bool CohereProvider::FetchCapabilities(const std::string& modelId) {
   std::string parseErrors;
   std::istringstream stream(responseBody);
   if (!Json::parseFromStream(builder, stream, &root, &parseErrors)) {
-    LOG_ERROR("cohere", "Failed to parse models response: " << parseErrors);
+    ALOG_ERROR("cohere", "Failed to parse models response: " << parseErrors);
     m_capabilities.supports_tools = true;
     m_capabilities.supports_tool_choice = true;
     m_capabilities.supports_reasoning = true;
@@ -361,7 +361,7 @@ bool CohereProvider::FetchCapabilities(const std::string& modelId) {
   // Parse the response and build both capabilities and model catalog
   const Json::Value& models = root["models"];
   if (!models.isArray()) {
-    LOG_WARNING("cohere", "No 'models' array in response");
+    ALOG_WARNING("cohere", "No 'models' array in response");
     return false;
   }
 
@@ -387,7 +387,7 @@ bool CohereProvider::FetchCapabilities(const std::string& modelId) {
         }
       }
 
-      LOG_DEBUG("cohere", "Capabilities for " << modelId << ": "
+      ALOG_DEBUG("cohere", "Capabilities for " << modelId << ": "
                 << "tools=" << m_capabilities.supports_tools
                 << " tool_choice=" << m_capabilities.supports_tool_choice
                 << " reasoning=" << m_capabilities.supports_reasoning
@@ -398,7 +398,7 @@ bool CohereProvider::FetchCapabilities(const std::string& modelId) {
   }
 
   // Model not found in the list — fall back to safe defaults
-  LOG_WARNING("cohere", "Model '" << modelId << "' not found in models list, using defaults");
+  ALOG_WARNING("cohere", "Model '" << modelId << "' not found in models list, using defaults");
   m_capabilities.supports_tools = true;
   m_capabilities.supports_tool_choice = true;
   m_capabilities.supports_reasoning = true;

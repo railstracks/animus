@@ -20,7 +20,7 @@ bool DatabaseConfig::LoadFromFile(const std::string& path) {
     Json::CharReaderBuilder builder;
     std::string errors;
     if (!Json::parseFromStream(builder, file, &root, &errors)) {
-        LOG_ERROR("db-config", "failed to parse " << path << ": " << errors);
+        ALOG_ERROR("db-config", "failed to parse " << path << ": " << errors);
         return false;
     }
 
@@ -43,7 +43,7 @@ bool DatabaseConfig::LoadFromFile(const std::string& path) {
         if (pg.isMember("pool_size")) pgPoolSize = pg["pool_size"].asInt();
     }
 
-    LOG_INFO("db-config", "loaded " << path
+    ALOG_INFO("db-config", "loaded " << path
               << " (backend=" << backend << ")");
     return true;
 }

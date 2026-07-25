@@ -303,12 +303,12 @@ bool LLMProviderBase::FetchCapabilities(const std::string& modelId) {
               }
             }
           }
-          LOG_DEBUG("llm", "Fetched " << m_capabilities.raw_features.size()
+          ALOG_DEBUG("llm", "Fetched " << m_capabilities.raw_features.size()
                     << " models from " << modelsUrl);
         }
       }
     } else {
-      LOG_ERROR("llm", "/v1/models fetch failed (HTTP " << status
+      ALOG_ERROR("llm", "/v1/models fetch failed (HTTP " << status
                 << "): " << httpError);
     }
   }
@@ -351,7 +351,7 @@ bool LLMProviderBase::ProcessSSELine(const std::string& line,
     if (valStart != std::string::npos) {
       auto valEnd = data.find('\"', valStart + 1);
       if (valEnd != std::string::npos) {
-        LOG_DEBUG("sse", "event: " << data.substr(valStart + 1, valEnd - valStart - 1));
+        ALOG_DEBUG("sse", "event: " << data.substr(valStart + 1, valEnd - valStart - 1));
       }
     }
   }
@@ -464,9 +464,9 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
   // Verbose request logging (truncated — full body can be 100KB+)
   const std::size_t bodyLogLen = std::min(body.size(), static_cast<std::size_t>(200));
   if (body.size() > bodyLogLen) {
-    LOG_DEBUG("llm", "POST " << url << " body_size=" << body.size() << " body_preview=" << body.substr(0, bodyLogLen) << "...");
+    ALOG_DEBUG("llm", "POST " << url << " body_size=" << body.size() << " body_preview=" << body.substr(0, bodyLogLen) << "...");
   } else {
-    LOG_DEBUG("llm", "POST " << url << " body_size=" << body.size() << " body=" << body);
+    ALOG_DEBUG("llm", "POST " << url << " body_size=" << body.size() << " body=" << body);
   }
 
   if (stream) {
@@ -490,7 +490,7 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
 
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    LOG_DEBUG("llm", "HTTP " << httpCode << " response=" << m_http->responseBody.substr(0, 1000));
+    ALOG_DEBUG("llm", "HTTP " << httpCode << " response=" << m_http->responseBody.substr(0, 1000));
     return static_cast<int>(httpCode);
 
   } else {
@@ -514,7 +514,7 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
       *responseBody = m_http->responseBody;
     }
 
-    LOG_DEBUG("llm", "HTTP " << httpCode << " response=" << m_http->responseBody.substr(0, 1000));
+    ALOG_DEBUG("llm", "HTTP " << httpCode << " response=" << m_http->responseBody.substr(0, 1000));
     return static_cast<int>(httpCode);
   }
 }
@@ -567,7 +567,7 @@ int LLMProviderBase::DoHTTPGet(
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &m_http->responseBody);
 
-  LOG_DEBUG("llm", "GET " << url);
+  ALOG_DEBUG("llm", "GET " << url);
 
   CURLcode res = curl_easy_perform(curl);
   if (res != CURLE_OK) {
@@ -584,7 +584,7 @@ int LLMProviderBase::DoHTTPGet(
     *responseBody = m_http->responseBody;
   }
 
-  LOG_DEBUG("llm", "GET " << url << " -> " << httpCode);
+  ALOG_DEBUG("llm", "GET " << url << " -> " << httpCode);
   return static_cast<int>(httpCode);
 }
 
@@ -634,7 +634,7 @@ int LLMProviderBase::DoHTTPPost(
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &m_http->responseBody);
 
-  LOG_DEBUG("llm", "POST " << url);
+  ALOG_DEBUG("llm", "POST " << url);
 
   CURLcode res = curl_easy_perform(curl);
   if (res != CURLE_OK) {
@@ -651,7 +651,7 @@ int LLMProviderBase::DoHTTPPost(
     *responseBody = m_http->responseBody;
   }
 
-  LOG_DEBUG("llm", "POST " << url << " -> " << httpCode);
+  ALOG_DEBUG("llm", "POST " << url << " -> " << httpCode);
   return static_cast<int>(httpCode);
 }
 

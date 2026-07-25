@@ -31,13 +31,13 @@ void EmailAdapter::RunLoop() {
 
 void EmailAdapter::WebSocketLoop() {
     auto* rt = m_runtime.get();
-    LOG_DEBUG("email", "WebSocket loop starting for " << rt->channel_name);
+    ALOG_DEBUG("email", "WebSocket loop starting for " << rt->channel_name);
 
     std::string apiKey = GetString(rt->config, "api_key");
     std::string inboxId = GetString(rt->config, "inbox_id");
 
     if (apiKey.empty() || inboxId.empty()) {
-        LOG_WARNING("email", "WS: missing api_key or inbox_id — falling back to polling");
+        ALOG_WARNING("email", "WS: missing api_key or inbox_id — falling back to polling");
         PollLoop();
         return;
     }
@@ -56,13 +56,13 @@ void EmailAdapter::WebSocketLoop() {
             std::string msgType = GetString(root, "type");
 
             if (msgType == "subscribed") {
-                LOG_DEBUG("email", "WS: subscribed");
+                ALOG_DEBUG("email", "WS: subscribed");
                 return;
             }
 
             if (msgType == "error") {
                 std::string errName = GetString(root, "name");
-                LOG_ERROR("email", "WS error: " << errName
+                ALOG_ERROR("email", "WS error: " << errName
                           << ": " << GetString(root, "message"));
                 if (errName == "authentication_error" || errName == "authorization_error" ||
                     errName == "invalid_api_key") {
@@ -100,7 +100,7 @@ void EmailAdapter::WebSocketLoop() {
 
     wsPtr->setConnectionClosedHandler(
         [rt](const drogon::WebSocketClientPtr&) {
-            LOG_DEBUG("email", "WS: closed for " << rt->channel_name);
+            ALOG_DEBUG("email", "WS: closed for " << rt->channel_name);
             rt->ws_connected = false;
         });
 
@@ -161,7 +161,7 @@ void EmailAdapter::WebSocketLoop() {
 
 void EmailAdapter::PollLoop() {
     auto* rt = m_runtime.get();
-    LOG_INFO("email", "Poll loop started for " << rt->channel_name);
+    ALOG_INFO("email", "Poll loop started for " << rt->channel_name);
 
     while (rt->active) {
         auto now = std::chrono::steady_clock::now();
@@ -249,7 +249,7 @@ void EmailAdapter::SendReply(const ChannelReplyTarget& target, const std::string
     req.body = JsonCompact(payload);
 
     auto resp = m_ctx.httpClient.Execute(req);
-    LOG_DEBUG("email", "Reply: " << resp.status_code
+    ALOG_DEBUG("email", "Reply: " << resp.status_code
               << " thread=" << target.email_thread_id);
 }
 
@@ -264,7 +264,7 @@ void DiscordAdapter::RunLoop() {
     // ChannelManager method. It will be migrated to this adapter in a
     // future refactor. For now, this adapter handles SendReply only.
     auto* rt = m_runtime.get();
-    LOG_DEBUG("discord", "Gateway loop is handled by ChannelManager for now. "
+    ALOG_DEBUG("discord", "Gateway loop is handled by ChannelManager for now. "
               << "SendReply is handled by DiscordAdapter.");
     // Keep the thread alive
     while (rt->active && !m_stopRequested) {
@@ -308,7 +308,7 @@ void DiscordAdapter::SendReply(const ChannelReplyTarget& target, const std::stri
 
     auto resp = m_ctx.httpClient.Execute(req);
     if (resp.status_code != 200 && resp.status_code != 201) {
-        LOG_WARNING("discord", "SendReply failed (" << resp.status_code << ")");
+        ALOG_WARNING("discord", "SendReply failed (" << resp.status_code << ")");
     }
 }
 
@@ -319,7 +319,7 @@ void DiscordAdapter::SendReply(const ChannelReplyTarget& target, const std::stri
 
 void WhatsAppAdapter::RunLoop() {
     auto* rt = m_runtime.get();
-    LOG_DEBUG("whatsapp", "Gateway loop is handled by ChannelManager for now.");
+    ALOG_DEBUG("whatsapp", "Gateway loop is handled by ChannelManager for now.");
     while (rt->active && !m_stopRequested) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
@@ -359,7 +359,7 @@ void SlackAdapter::RunLoop() {
 
 void SlackAdapter::SocketModeLoop() {
     auto* rt = m_runtime.get();
-    LOG_DEBUG("slack-socket", "Socket Mode loop starting for " << rt->channel_name);
+    ALOG_DEBUG("slack-socket", "Socket Mode loop starting for " << rt->channel_name);
 
     const std::string appToken = GetString(rt->config, "app_token");
     const std::string botToken = GetString(rt->config, "bot_token");
@@ -380,7 +380,7 @@ void SlackAdapter::SocketModeLoop() {
             auto data = ParseJson(authResp.body);
             if (data.isMember("ok") && data["ok"].asBool()) {
                 botUserId = data["user_id"].asString();
-                LOG_DEBUG("slack-socket", "Resolved bot user ID: " << botUserId);
+                ALOG_DEBUG("slack-socket", "Resolved bot user ID: " << botUserId);
             }
         }
     }
@@ -397,7 +397,7 @@ void SlackAdapter::SocketModeLoop() {
 
         auto connResp = m_ctx.httpClient.Execute(connReq);
         if (connResp.status_code != 200) {
-            LOG_WARNING("slack-socket", "apps.connections.open failed (HTTP "
+            ALOG_WARNING("slack-socket", "apps.connections.open failed (HTTP "
                       << connResp.status_code << ")");
             for (int i = 0; i < 30 && rt->active; ++i)
                 std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -406,7 +406,7 @@ void SlackAdapter::SocketModeLoop() {
 
         auto connData = ParseJson(connResp.body);
         if (!connData.isMember("ok") || !connData["ok"].asBool() || !connData.isMember("url")) {
-            LOG_DEBUG("slack-socket", "Bad response from apps.connections.open");
+            ALOG_DEBUG("slack-socket", "Bad response from apps.connections.open");
             for (int i = 0; i < 30 && rt->active; ++i)
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             continue;
@@ -452,14 +452,14 @@ void SlackAdapter::SocketModeLoop() {
                 std::string envelopeId = GetString(envelope, "envelope_id");
 
                 if (msgType == "hello") {
-                    LOG_INFO("slack-socket", "Connected (hello)");
+                    ALOG_INFO("slack-socket", "Connected (hello)");
                     rt->ws_connected = true;
                     rt->consecutive_errors = 0;
                     return;
                 }
 
                 if (msgType == "disconnect") {
-                    LOG_DEBUG("slack-socket", "Disconnect: " << GetString(envelope, "reason"));
+                    ALOG_DEBUG("slack-socket", "Disconnect: " << GetString(envelope, "reason"));
                     rt->ws_connected = false;
                     wsPtr->stop();
                     return;
@@ -543,14 +543,14 @@ void SlackAdapter::SocketModeLoop() {
 
                     m_ctx.dispatch(rt->agent_id, routingKey, prompt, "slack", replyTarget);
 
-                    LOG_DEBUG("slack-socket", "Dispatched from " << userId
+                    ALOG_DEBUG("slack-socket", "Dispatched from " << userId
                               << " in " << channel << " ts=" << ts);
                 }
             });
 
         wsPtr->setConnectionClosedHandler(
             [rt](const drogon::WebSocketClientPtr&) {
-                LOG_DEBUG("slack-socket", "WebSocket closed for " << rt->channel_name);
+                ALOG_DEBUG("slack-socket", "WebSocket closed for " << rt->channel_name);
                 rt->ws_connected = false;
             });
 
@@ -575,21 +575,21 @@ void SlackAdapter::SocketModeLoop() {
 
         if (!rt->active) break;
 
-        LOG_DEBUG("slack-socket", "Reconnecting in 5s...");
+        ALOG_DEBUG("slack-socket", "Reconnecting in 5s...");
         for (int i = 0; i < 5 && rt->active; ++i)
             std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
-    LOG_INFO("slack-socket", "Socket Mode loop stopped for " << rt->channel_name);
+    ALOG_INFO("slack-socket", "Socket Mode loop stopped for " << rt->channel_name);
 }
 
 void SlackAdapter::PollingLoop() {
     auto* rt = m_runtime.get();
-    LOG_INFO("slack", "Polling loop started for " << rt->channel_name);
+    ALOG_INFO("slack", "Polling loop started for " << rt->channel_name);
 
     const std::string botToken = GetString(rt->config, "bot_token");
     if (botToken.empty()) {
-        LOG_WARNING("slack", "No bot_token for " << rt->channel_name);
+        ALOG_WARNING("slack", "No bot_token for " << rt->channel_name);
         return;
     }
 
@@ -639,11 +639,11 @@ void SlackAdapter::PollingLoop() {
                 }
             }
         }
-        LOG_DEBUG("slack", "Auto-discovered " << monitoredChannels.size() << " channels");
+        ALOG_DEBUG("slack", "Auto-discovered " << monitoredChannels.size() << " channels");
     }
 
     if (monitoredChannels.empty()) {
-        LOG_WARNING("slack", "No channels found. Idle.");
+        ALOG_WARNING("slack", "No channels found. Idle.");
         while (rt->active) std::this_thread::sleep_for(std::chrono::seconds(30));
         return;
     }
@@ -744,7 +744,7 @@ void SlackAdapter::PollingLoop() {
                     latestTs = ts;
                 }
             } catch (const std::exception& e) {
-                LOG_ERROR("slack", "Exception: " << e.what());
+                ALOG_ERROR("slack", "Exception: " << e.what());
             }
         }
 
@@ -756,7 +756,7 @@ void SlackAdapter::PollingLoop() {
             std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
-    LOG_INFO("slack", "Polling loop stopped for " << rt->channel_name);
+    ALOG_INFO("slack", "Polling loop stopped for " << rt->channel_name);
 }
 
 void SlackAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {
@@ -782,13 +782,13 @@ void SlackAdapter::SendReply(const ChannelReplyTarget& target, const std::string
 
     auto resp = m_ctx.httpClient.Execute(req);
     if (resp.status_code != 200) {
-        LOG_WARNING("slack", "SendReply failed (" << resp.status_code << ")");
+        ALOG_WARNING("slack", "SendReply failed (" << resp.status_code << ")");
     } else {
         auto rdata = ParseJson(resp.body);
         if (rdata.isMember("ok") && rdata["ok"].asBool()) {
-            LOG_DEBUG("slack", "SendReply OK to " << channelId);
+            ALOG_DEBUG("slack", "SendReply OK to " << channelId);
         } else if (rdata.isMember("error")) {
-            LOG_ERROR("slack", "SendReply API error: " << rdata["error"].asString());
+            ALOG_ERROR("slack", "SendReply API error: " << rdata["error"].asString());
         }
     }
 }
@@ -799,14 +799,14 @@ void SlackAdapter::SendReply(const ChannelReplyTarget& target, const std::string
 
 void NextcloudAdapter::RunLoop() {
     auto* rt = m_runtime.get();
-    LOG_DEBUG("nextcloud", "Talk poll loop starting for " << rt->channel_name);
+    ALOG_DEBUG("nextcloud", "Talk poll loop starting for " << rt->channel_name);
 
     std::string serverUrl = GetString(rt->config, "server_url");
     std::string username = GetString(rt->config, "username");
     std::string appPassword = GetString(rt->config, "app_password");
 
     if (serverUrl.empty() || username.empty() || appPassword.empty()) {
-        LOG_WARNING("nextcloud", "Missing credentials for " << rt->channel_name);
+        ALOG_WARNING("nextcloud", "Missing credentials for " << rt->channel_name);
         rt->active = false;
         return;
     }
@@ -884,7 +884,7 @@ void NextcloudAdapter::RunLoop() {
                     }
                 }
                 conversations[token] = cs;
-                LOG_DEBUG("nextcloud", "Watching: " << displayName
+                ALOG_DEBUG("nextcloud", "Watching: " << displayName
                           << " (token=" << token << ", type=" << convType << ")");
             } else {
                 conversations[token].type = convType;
@@ -994,19 +994,19 @@ void NextcloudAdapter::RunLoop() {
 
                     m_ctx.dispatch(rt->agent_id, "conv:" + token, prompt, "nextcloud", replyTarget);
 
-                    LOG_DEBUG("nextcloud", "Dispatched from " << actorName
+                    ALOG_DEBUG("nextcloud", "Dispatched from " << actorName
                               << " in " << conv.displayName << " (id=" << msgId << ")");
                 }
             }
         } catch (const std::exception& ex) {
-            LOG_ERROR("nextcloud", "Exception: " << ex.what());
+            ALOG_ERROR("nextcloud", "Exception: " << ex.what());
             rt->consecutive_errors++;
             int backoff = std::min(60, rt->consecutive_errors * 5);
             std::this_thread::sleep_for(std::chrono::seconds(backoff));
         }
     }
 
-    LOG_INFO("nextcloud", "Talk poll loop stopped for " << rt->channel_name);
+    ALOG_INFO("nextcloud", "Talk poll loop stopped for " << rt->channel_name);
 }
 
 void NextcloudAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {
@@ -1034,7 +1034,7 @@ void NextcloudAdapter::SendReply(const ChannelReplyTarget& target, const std::st
 
     auto resp = m_ctx.httpClient.Execute(req);
     if (resp.status_code != 200 && resp.status_code != 201) {
-        LOG_WARNING("nextcloud", "SendReply failed (" << resp.status_code << ")");
+        ALOG_WARNING("nextcloud", "SendReply failed (" << resp.status_code << ")");
     }
 }
 

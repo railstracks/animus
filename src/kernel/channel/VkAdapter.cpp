@@ -21,11 +21,11 @@ using namespace channel_detail;
 
 void VkAdapter::RunLoop() {
     auto* rt = m_runtime.get();
-    LOG_DEBUG("vk", "Long Poll loop starting for " << rt->channel_name);
+    ALOG_DEBUG("vk", "Long Poll loop starting for " << rt->channel_name);
 
     std::string token = GetString(rt->config, "access_token");
     if (token.empty()) {
-        LOG_WARNING("vk", "No access token for " << rt->channel_name);
+        ALOG_WARNING("vk", "No access token for " << rt->channel_name);
         rt->active = false;
         return;
     }
@@ -34,7 +34,7 @@ void VkAdapter::RunLoop() {
 
     if (rt->lp_server.empty()) {
         if (!FetchLongPollServer()) {
-            LOG_WARNING("vk", "Failed to get Long Poll server for " << rt->channel_name);
+            ALOG_WARNING("vk", "Failed to get Long Poll server for " << rt->channel_name);
             rt->active = false;
             return;
         }
@@ -99,7 +99,7 @@ void VkAdapter::RunLoop() {
                     std::string objectJson = JsonCompact(update["object"]);
                     ProcessEvent(eventType, objectJson);
                 } catch (const std::exception& ex) {
-                    LOG_ERROR("vk", "Exception processing event: " << ex.what());
+                    ALOG_ERROR("vk", "Exception processing event: " << ex.what());
                 }
             }
         }
@@ -107,7 +107,7 @@ void VkAdapter::RunLoop() {
         m_ctx.router.PruneExpired(std::chrono::seconds(86400));
     }
 
-    LOG_DEBUG("vk", "Long Poll loop ended for " << rt->channel_name);
+    ALOG_DEBUG("vk", "Long Poll loop ended for " << rt->channel_name);
 }
 
 void VkAdapter::ProcessEvent(const std::string& eventType, const std::string& objectJson) {
@@ -139,7 +139,7 @@ void VkAdapter::ProcessMessageNew(const std::string& objectJson) {
 
     if (!rt->RememberEvent(messageId)) return;
 
-    LOG_DEBUG("vk", "message_new: peer=" << peerId << " from=" << fromId);
+    ALOG_DEBUG("vk", "message_new: peer=" << peerId << " from=" << fromId);
 
     auto names = ResolveUsers({fromId});
     std::string displayName = names.count(fromId) ? names[fromId] : fromId;
@@ -373,7 +373,7 @@ void VkAdapter::SendReply(const ChannelReplyTarget& target, const std::string& t
         req.follow_redirects = false;
 
         auto resp = m_ctx.httpClient.Execute(req);
-        LOG_DEBUG("vk", "Chat reply: " << resp.status_code
+        ALOG_DEBUG("vk", "Chat reply: " << resp.status_code
                   << " body=" << resp.body.substr(0, 200));
     } else if (target.type == ChannelReplyTarget::Wall) {
         std::string ownerId = "-" + groupId;
@@ -393,7 +393,7 @@ void VkAdapter::SendReply(const ChannelReplyTarget& target, const std::string& t
         req.follow_redirects = false;
 
         auto resp = m_ctx.httpClient.Execute(req);
-        LOG_DEBUG("vk", "Wall reply: " << resp.status_code
+        ALOG_DEBUG("vk", "Wall reply: " << resp.status_code
                   << " body=" << resp.body.substr(0, 200));
     }
 }

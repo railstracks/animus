@@ -22,11 +22,11 @@ using namespace channel_detail;
 
 void TelegramAdapter::RunLoop() {
     auto* rt = m_runtime.get();
-    LOG_DEBUG("telegram", "Long Poll loop starting for " << rt->channel_name);
+    ALOG_DEBUG("telegram", "Long Poll loop starting for " << rt->channel_name);
 
     std::string token = GetString(rt->config, "access_token");
     if (token.empty()) {
-        LOG_WARNING("telegram", "No access token for " << rt->channel_name);
+        ALOG_WARNING("telegram", "No access token for " << rt->channel_name);
         rt->active = false;
         return;
     }
@@ -35,12 +35,12 @@ void TelegramAdapter::RunLoop() {
 
     auto botInfo = api.GetMe(token);
     if (!botInfo) {
-        LOG_WARNING("telegram", "getMe failed for " << rt->channel_name
+        ALOG_WARNING("telegram", "getMe failed for " << rt->channel_name
                   << " — check bot token");
         rt->active = false;
         return;
     }
-    LOG_INFO("telegram", "Connected as @" << botInfo->username
+    ALOG_INFO("telegram", "Connected as @" << botInfo->username
               << " (" << botInfo->first_name << ", id=" << botInfo->id << ")");
 
     while (rt->active && !m_stopRequested) {
@@ -86,7 +86,7 @@ void TelegramAdapter::RunLoop() {
 
             rt->consecutive_errors = 0;
         } catch (const std::exception& ex) {
-            LOG_ERROR("telegram", "Exception for " << rt->channel_name
+            ALOG_ERROR("telegram", "Exception for " << rt->channel_name
                       << ": " << ex.what());
             rt->consecutive_errors++;
             int backoff = std::min(60, rt->consecutive_errors * 5);
@@ -94,7 +94,7 @@ void TelegramAdapter::RunLoop() {
         }
     }
 
-    LOG_DEBUG("telegram", "Loop ended for " << rt->channel_name);
+    ALOG_DEBUG("telegram", "Loop ended for " << rt->channel_name);
 }
 
 void TelegramAdapter::ProcessMessage(const telegram::Message& msg) {
@@ -129,10 +129,10 @@ void TelegramAdapter::ProcessChatMemberUpdate(const telegram::Update& update) {
     std::string chatId = std::to_string(update.member_chat_id);
 
     if (status == "member" || status == "administrator") {
-        LOG_DEBUG("telegram", "Bot added to chat " << chatId
+        ALOG_DEBUG("telegram", "Bot added to chat " << chatId
                   << " (status: " << status << ")");
     } else if (status == "left" || status == "kicked") {
-        LOG_DEBUG("telegram", "Bot removed from chat " << chatId
+        ALOG_DEBUG("telegram", "Bot removed from chat " << chatId
                   << " (status: " << status << ")");
     }
 }
@@ -141,14 +141,14 @@ void TelegramAdapter::SendReply(const ChannelReplyTarget& target, const std::str
     auto* rt = m_runtime.get();
     std::string token = GetString(rt->config, "access_token");
     if (token.empty()) {
-        LOG_WARNING("telegram", "Reply: no access token for " << target.channel_name);
+        ALOG_WARNING("telegram", "Reply: no access token for " << target.channel_name);
         return;
     }
 
     telegram::TelegramBotApi api(m_ctx.httpClient);
     int64_t chatId = 0;
     try { chatId = std::stoll(target.peer_id); } catch (...) {
-        LOG_WARNING("telegram", "Reply: invalid chat_id: " << target.peer_id);
+        ALOG_WARNING("telegram", "Reply: invalid chat_id: " << target.peer_id);
         return;
     }
 
@@ -158,10 +158,10 @@ void TelegramAdapter::SendReply(const ChannelReplyTarget& target, const std::str
 
     auto msgId = api.SendMessage(token, opts);
     if (msgId) {
-        LOG_DEBUG("telegram", "Message sent to " << target.peer_id
+        ALOG_DEBUG("telegram", "Message sent to " << target.peer_id
                   << " (msg_id=" << *msgId << ")");
     } else {
-        LOG_WARNING("telegram", "Send failed to " << target.peer_id);
+        ALOG_WARNING("telegram", "Send failed to " << target.peer_id);
     }
 }
 

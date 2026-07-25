@@ -17,12 +17,12 @@ namespace animus::kernel {
 // No external dependencies. Thread-safe via atomic level threshold.
 //
 // Usage:
-//   LOG_INFO("chain", "Executing tool " << toolName);
-//   LOG_ERROR("provider", "HTTP " << status << ": " << body);
-//   LOG_DEBUG("channel", "Polling " << url);   // compiled out unless ANIMUS_LOG_DEBUG
+//   ALOG_INFO("chain", "Executing tool " << toolName);
+//   ALOG_ERROR("provider", "HTTP " << status << ": " << body);
+//   ALOG_DEBUG("channel", "Polling " << url);   // compiled out unless ANIMUS_ALOG_DEBUG
 //
 // Level threshold is set globally. Default: Info (Debug/Trace compiled out
-// in release builds via ANIMUS_LOG_DEBUG preprocessor flag).
+// in release builds via ANIMUS_ALOG_DEBUG preprocessor flag).
 //
 // Categories are free-form strings — no enum needed. Common categories:
 //   chain, provider, channel, tool, store, context, memory, scheduler,
@@ -91,14 +91,14 @@ inline void SetLogLevelFromString(const std::string& s) {
 // --- Logging macros ---
 
 // Always-on logs (Warning + Error)
-#define LOG_WARNING(cat, msg) \
+#define ALOG_WARNING(cat, msg) \
     do { \
         if (detail::GetLogLevel() <= LogLevel::Warning) \
             ::animus::kernel::detail::LogImpl(LogLevel::Warning, cat, \
                 (static_cast<std::ostringstream&&>(std::ostringstream() << msg)).str()); \
     } while(0)
 
-#define LOG_ERROR(cat, msg) \
+#define ALOG_ERROR(cat, msg) \
     do { \
         if (detail::GetLogLevel() <= LogLevel::Error) \
             ::animus::kernel::detail::LogImpl(LogLevel::Error, cat, \
@@ -106,31 +106,31 @@ inline void SetLogLevelFromString(const std::string& s) {
     } while(0)
 
 // Info-level — always evaluated, may be filtered at runtime
-#define LOG_INFO(cat, msg) \
+#define ALOG_INFO(cat, msg) \
     do { \
         if (detail::GetLogLevel() <= LogLevel::Info) \
             ::animus::kernel::detail::LogImpl(LogLevel::Info, cat, \
                 (static_cast<std::ostringstream&&>(std::ostringstream() << msg)).str()); \
     } while(0)
 
-// Debug-level — compiled out unless ANIMUS_LOG_DEBUG is defined
-#ifdef ANIMUS_LOG_DEBUG
-#define LOG_DEBUG(cat, msg) \
+// Debug-level — compiled out unless ANIMUS_ALOG_DEBUG is defined
+#ifdef ANIMUS_ALOG_DEBUG
+#define ALOG_DEBUG(cat, msg) \
     do { \
         if (detail::GetLogLevel() <= LogLevel::Debug) \
             ::animus::kernel::detail::LogImpl(LogLevel::Debug, cat, \
                 (static_cast<std::ostringstream&&>(std::ostringstream() << msg)).str()); \
     } while(0)
 
-#define LOG_TRACE(cat, msg) \
+#define ALOG_TRACE(cat, msg) \
     do { \
         if (detail::GetLogLevel() <= LogLevel::Trace) \
             ::animus::kernel::detail::LogImpl(LogLevel::Trace, cat, \
                 (static_cast<std::ostringstream&&>(std::ostringstream() << msg)).str()); \
     } while(0)
 #else
-#define LOG_DEBUG(cat, msg) do {} while(0)
-#define LOG_TRACE(cat, msg) do {} while(0)
+#define ALOG_DEBUG(cat, msg) do {} while(0)
+#define ALOG_TRACE(cat, msg) do {} while(0)
 #endif
 
 } // namespace animus::kernel

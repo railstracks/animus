@@ -460,7 +460,7 @@ void ChannelManager::SendReply(const ReplyTarget& target, const std::string& tex
     // IRC is fully adapter-based now; if we reach here for IRC, the adapter wasn't found.
 
     if (target.channel_type == "irc") {
-        LOG_WARNING("channels", "IRC adapter not found for: "
+        ALOG_WARNING("channels", "IRC adapter not found for: "
                   << target.channel_name);
         return;
     }
@@ -495,7 +495,7 @@ void ChannelManager::SendReply(const ReplyTarget& target, const std::string& tex
 
         auto resp = m_httpClient.Execute(req);
         if (resp.status_code != 200 && resp.status_code != 201) {
-            LOG_WARNING("discord", "SendReply failed (" << resp.status_code << ")");
+            ALOG_WARNING("discord", "SendReply failed (" << resp.status_code << ")");
         }
         return;
     }
@@ -529,11 +529,11 @@ void ChannelManager::SendReply(const ReplyTarget& target, const std::string& tex
     }
 
     if (target.channel_type == "twitter") {
-        LOG_DEBUG("channels", "Twitter auto-reply not yet wired");
+        ALOG_DEBUG("channels", "Twitter auto-reply not yet wired");
         return;
     }
 
-    LOG_DEBUG("channels", "SendReply: unsupported type: "
+    ALOG_DEBUG("channels", "SendReply: unsupported type: "
               << target.channel_type);
 }
 
@@ -626,10 +626,10 @@ void ChannelManager::StartChannel(const ChannelState& state) {
             std::lock_guard<std::mutex> lock(m_adaptersMutex);
             m_adapters[state.name] = std::move(adapter);
             m_adapterTypes[state.name] = state.type;
-            LOG_INFO("channels", "Started " << state.type
+            ALOG_INFO("channels", "Started " << state.type
                       << " adapter: " << state.name);
         } else {
-            LOG_WARNING("channels", "Failed to start " << state.type
+            ALOG_WARNING("channels", "Failed to start " << state.type
                       << " adapter: " << state.name
                       << " — " << err);
         }
@@ -656,7 +656,7 @@ void ChannelManager::StartChannel(const ChannelState& state) {
             m_pollers[name] = std::move(poller);
         }
 
-        LOG_INFO("channels", "Started Discord Gateway (legacy): " << state.name);
+        ALOG_INFO("channels", "Started Discord Gateway (legacy): " << state.name);
         return;
     }
 
@@ -677,11 +677,11 @@ void ChannelManager::StartChannel(const ChannelState& state) {
             m_pollers[name] = std::move(poller);
         }
 
-        LOG_INFO("channels", "Started WhatsApp Gateway (legacy): " << state.name);
+        ALOG_INFO("channels", "Started WhatsApp Gateway (legacy): " << state.name);
         return;
     }
 
-    LOG_DEBUG("channels", "Unknown channel type: " << state.type);
+    ALOG_DEBUG("channels", "Unknown channel type: " << state.type);
 }
 
 void ChannelManager::StopChannel(const std::string& name) {
@@ -693,7 +693,7 @@ void ChannelManager::StopChannel(const std::string& name) {
             it->second->Stop();
             m_adapters.erase(it);
             m_adapterTypes.erase(name);
-            LOG_INFO("channels", "Stopped adapter: " << name);
+            ALOG_INFO("channels", "Stopped adapter: " << name);
             return;
         }
     }
@@ -748,12 +748,12 @@ void ChannelManager::LoadChannelsFromConfigStore() {
         state.enabled = enabled;
         state.config = config;
 
-        LOG_DEBUG("channels", "Found channel: " << name << " type=" << type
+        ALOG_DEBUG("channels", "Found channel: " << name << " type=" << type
                   << " enabled=" << enabledStr);
         m_channels[name] = state;
     }
 
-    LOG_INFO("channels", "Loaded " << m_channels.size() << " channels from config store");
+    ALOG_INFO("channels", "Loaded " << m_channels.size() << " channels from config store");
 }
 
 std::string ChannelManager::GetConfigString(const std::string& name,
@@ -947,7 +947,7 @@ int ChannelManager::MigrateFromLegacy() {
         // Delete old keys
         m_configStore->DeleteByPrefix("", "social." + platformId + ".");
 
-        LOG_DEBUG("channels", "Migrated social instance: " << platformId);
+        ALOG_DEBUG("channels", "Migrated social instance: " << platformId);
         migrated++;
     }
 
@@ -955,7 +955,7 @@ int ChannelManager::MigrateFromLegacy() {
     // TODO: Read interfaces.json file, write to config store, rename file
 
     if (migrated > 0) {
-        LOG_DEBUG("channels", "Migrated " << migrated << " legacy social instances");
+        ALOG_DEBUG("channels", "Migrated " << migrated << " legacy social instances");
     }
     return migrated;
 }

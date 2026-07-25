@@ -258,7 +258,7 @@ ChainResult ChainRunner::ExecuteOnSession(
         // Non-streaming execution must request a non-stream response body.
         assembly.request.stream = false;
 
-        LOG_DEBUG("chain", "ExecuteOnSession id=" << session.Id()
+        ALOG_DEBUG("chain", "ExecuteOnSession id=" << session.Id()
                   << " conv_id=" << session.Key().conversation_id
                   << " turns=" << session.Turns().size()
                   << " -> " << assembly.request.messages.size()
@@ -327,7 +327,7 @@ ChainResult ChainRunner::ExecuteOnSession(
 
         // Check tool budget
         if (totalToolCalls >= static_cast<int>(req.maxToolCallsPerChain)) {
-            LOG_WARNING("chain", "tool call budget exhausted (" << totalToolCalls
+            ALOG_WARNING("chain", "tool call budget exhausted (" << totalToolCalls
                       << "/" << req.maxToolCallsPerChain << ")");
             shouldContinue = false;
         }
@@ -350,7 +350,7 @@ ChainResult ChainRunner::ExecuteOnSession(
                     interjectionTurn.content = injected;
                     interjectionTurn.unix_ms = NowUnixMs();
                     session.AddTurn(std::move(interjectionTurn));
-                    LOG_DEBUG("chain", "Injected interjection: " << injected.size() << " chars");
+                    ALOG_DEBUG("chain", "Injected interjection: " << injected.size() << " chars");
                 }
             }
         }
@@ -426,7 +426,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     if (m_contextRegistry) {
         auto agentOpt = m_agentStore ? m_agentStore->GetById(session.AgentId()) : std::nullopt;
         if (!agentOpt) {
-            LOG_WARNING("chain", "agent lookup failed for agent_id=" << session.AgentId()
+            ALOG_WARNING("chain", "agent lookup failed for agent_id=" << session.AgentId()
                       << " store=" << (m_agentStore ? "set" : "null") << " — falling back to Agent{}");
         }
         const Agent& agentRef = agentOpt ? *agentOpt : Agent{};
@@ -459,7 +459,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
             req.model, req.contextWindow);
         assembly.request.stream = true;
 
-        LOG_DEBUG("chain", "StreamingOnSession id=" << session.Id()
+        ALOG_DEBUG("chain", "StreamingOnSession id=" << session.Id()
                   << " conv_id=" << session.Key().conversation_id
                   << " turns=" << session.Turns().size()
                   << " -> " << assembly.request.messages.size()
@@ -485,7 +485,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         }
         toolResultMessages.clear();
 
-        LOG_DEBUG("chain/stream", "Step " << step
+        ALOG_DEBUG("chain/stream", "Step " << step
                   << ": toolResultMessages=" << toolResultMessages.size()
                   << " sessionTurns=" << session.Turns().size()
                   << " messages=" << assembly.request.messages.size());
@@ -530,17 +530,17 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         }
 
         // Diagnostic: log what the LLM returned
-        LOG_DEBUG("chain", "LLM response: content_len=" << response.content.size()
+        ALOG_DEBUG("chain", "LLM response: content_len=" << response.content.size()
                   << " thinking_len=" << accumulatedThinking.size()
                   << " tool_calls=" << response.tool_calls.size()
                   << " finish_reason=" << response.finish_reason);
         for (const auto& tc : response.tool_calls) {
-            LOG_TRACE("chain", "  tool_call: id=" << tc.id
+            ALOG_TRACE("chain", "  tool_call: id=" << tc.id
                       << " name=" << tc.name
                       << " args_len=" << tc.arguments.size());
         }
         if (!response.content.empty()) {
-            LOG_TRACE("chain", "  content: "
+            ALOG_TRACE("chain", "  content: "
                       << response.content.substr(0, 200)
                       << (response.content.size() > 200 ? "..." : ""));
         }
@@ -549,7 +549,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         std::string userVisibleText;
         std::string toolOutputText;
         int toolCallsThisStep = 0;
-        LOG_DEBUG("chain/stream", "Calling ProcessResponse, tool_calls=" << response.tool_calls.size());
+        ALOG_DEBUG("chain/stream", "Calling ProcessResponse, tool_calls=" << response.tool_calls.size());
         bool shouldContinue = false;
         try {
           shouldContinue = ProcessResponse(
@@ -558,7 +558,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
               toolResultMessages, userVisibleText, toolOutputText, toolCallsThisStep,
               toolEventCallback, toolCallCallback);
         } catch (const std::exception& e) {
-          LOG_ERROR("chain/stream", "EXCEPTION in ProcessResponse: " << e.what());
+          ALOG_ERROR("chain/stream", "EXCEPTION in ProcessResponse: " << e.what());
           result.error = std::string("ProcessResponse exception: ") + e.what();
           break;
         }
@@ -566,7 +566,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         totalToolCalls += toolCallsThisStep;
         result.tool_calls_executed = totalToolCalls;
 
-        LOG_DEBUG("chain/stream", "ProcessResponse done: shouldContinue=" << shouldContinue
+        ALOG_DEBUG("chain/stream", "ProcessResponse done: shouldContinue=" << shouldContinue
                   << " toolCallsThisStep=" << toolCallsThisStep
                   << " totalToolCalls=" << totalToolCalls
                   << " toolResultMessages=" << toolResultMessages.size());
@@ -587,7 +587,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
 
         // Check tool budget
         if (totalToolCalls >= static_cast<int>(req.maxToolCallsPerChain)) {
-            LOG_WARNING("chain", "tool call budget exhausted (" << totalToolCalls
+            ALOG_WARNING("chain", "tool call budget exhausted (" << totalToolCalls
                       << "/" << req.maxToolCallsPerChain << ")");
             shouldContinue = false;
         }
@@ -603,7 +603,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
                     interjectionTurn.content = injected;
                     interjectionTurn.unix_ms = NowUnixMs();
                     session.AddTurn(std::move(interjectionTurn));
-                    LOG_DEBUG("chain/stream", "Injected interjection: "
+                    ALOG_DEBUG("chain/stream", "Injected interjection: "
                               << injected.size() << " chars");
                 }
             }
@@ -734,7 +734,7 @@ bool ChainRunner::ProcessResponse(
     ChainToolEventCallback toolEventCallback,
     ChainToolCallCallback toolCallCallback) {
 
-    LOG_DEBUG("chain", "ProcessResponse: tool_calls=" << response.tool_calls.size()
+    ALOG_DEBUG("chain", "ProcessResponse: tool_calls=" << response.tool_calls.size()
               << " content_len=" << content.size()
               << " thinking_len=" << thinkingContent.size());
 
@@ -786,7 +786,7 @@ bool ChainRunner::ProcessResponse(
             toolCallCallback(tcNotif);
         }
 
-        LOG_INFO("chain", "Executing tool: name=" << call.name
+        ALOG_INFO("chain", "Executing tool: name=" << call.name
                   << " id=" << call.id
                   << " args_len=" << call.arguments.size());
 

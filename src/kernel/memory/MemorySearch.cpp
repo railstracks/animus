@@ -153,7 +153,7 @@ void MemorySearch::EnsureSchema() {
         // Verify FTS sync — force rebuild if counts diverge
         auto obsStats = VerifyFtsSync("observations");
         if (obsStats.source_count != obsStats.fts_count) {
-            LOG_WARNING("memory-search", "Observations FTS out of sync: "
+            ALOG_WARNING("memory-search", "Observations FTS out of sync: "
                       << obsStats.fts_count << " indexed vs "
                       << obsStats.source_count << " source, rebuilding");
             store->Exec("DELETE FROM observations_fts");
@@ -193,7 +193,7 @@ void MemorySearch::EnsureSchema() {
         if (emptyObs && emptyObs->Step()) {
             int64_t count = emptyObs->ColumnInt64(0);
             if (count > 0) {
-                LOG_INFO("memory-search", "Backfilling " << count
+                ALOG_INFO("memory-search", "Backfilling " << count
                           << " observations with search vectors");
                 store->Exec("UPDATE observations SET search_vector = to_tsvector('english', COALESCE(text, '')) WHERE search_vector IS NULL");
             }
@@ -269,7 +269,7 @@ void MemorySearch::EnsureDiaryFtsSchema() {
         if (emptyDiary && emptyDiary->Step()) {
             int64_t count = emptyDiary->ColumnInt64(0);
             if (count > 0) {
-                LOG_INFO("memory-search", "Backfilling " << count
+                ALOG_INFO("memory-search", "Backfilling " << count
                           << " diary entries with search vectors");
                 store->Exec("UPDATE diary_entries SET search_vector = to_tsvector('english', COALESCE(content, '')) WHERE search_vector IS NULL");
             }
@@ -315,7 +315,7 @@ void MemorySearch::EnsureMemoryFilesFtsSchema() {
         if (empty && empty->Step()) {
             int64_t count = empty->ColumnInt64(0);
             if (count > 0) {
-                LOG_INFO("memory-search", "Backfilling " << count
+                ALOG_INFO("memory-search", "Backfilling " << count
                           << " memory files with search vectors");
                 store->Exec("UPDATE memory_files SET search_vector = to_tsvector('english', COALESCE(content, '')) WHERE search_vector IS NULL");
             }
@@ -346,7 +346,7 @@ bool MemorySearch::RebuildDiaryIndex() {
 
     // Verify.
     auto stats = VerifyFtsSync("diary");
-    LOG_INFO("memory-search", "Diary index rebuilt: "
+    ALOG_INFO("memory-search", "Diary index rebuilt: "
               << stats.fts_count << "/" << stats.source_count
               << " entries indexed.");
 

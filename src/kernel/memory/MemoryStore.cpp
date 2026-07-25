@@ -78,7 +78,7 @@ void MemoryStore::EnsureSchema() {
     // Only needed for SQLite — PostgreSQL tables are created fresh with correct schema
     if (m_store->Dialect() == DataStoreDialect::SQLite) {
         if (!schema::ColumnExists(m_store, "memory_layers", "agent_id")) {
-            LOG_DEBUG("memory", "migrating memory_layers: adding agent_id column...");
+            ALOG_DEBUG("memory", "migrating memory_layers: adding agent_id column...");
             // Disable foreign keys for the table swap
             schema::Pragma(m_store, "PRAGMA foreign_keys=OFF");
             m_store->Exec("CREATE TABLE IF NOT EXISTS memory_layers_v2 ("
@@ -108,7 +108,7 @@ void MemoryStore::EnsureSchema() {
             m_store->Exec("DROP TABLE memory_layers");
             m_store->Exec("ALTER TABLE memory_layers_v2 RENAME TO memory_layers");
             schema::Pragma(m_store, "PRAGMA foreign_keys=ON");
-            LOG_DEBUG("memory", "migrated memory_layers: added agent_id, unique(agent_id, name)");
+            ALOG_DEBUG("memory", "migrated memory_layers: added agent_id, unique(agent_id, name)");
         }
     }
 
@@ -382,7 +382,7 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer) {
 
     stmt->ExecDML();
     if (!DidWriteRows(m_store)) {
-        LOG_WARNING("memory", "insert layer failed: " << m_store->ErrMsg());
+        ALOG_WARNING("memory", "insert layer failed: " << m_store->ErrMsg());
         return {};
     }
 
@@ -517,7 +517,7 @@ bool MemoryStore::CreateDefaultLayersForAgent(const std::string& agent_id) {
 
         auto created = CreateLayer(layer);
         if (created.id == 0) {
-            LOG_WARNING("memory", "failed to seed layer: " << def.name);
+            ALOG_WARNING("memory", "failed to seed layer: " << def.name);
         }
     }
 
@@ -674,7 +674,7 @@ Observation MemoryStore::CreateObservation(const Observation& obs) {
 
     stmt->ExecDML();
     if (!DidWriteRows(m_store)) {
-        LOG_WARNING("memory", "insert observation failed: changes=" << m_store->Changes()
+        ALOG_WARNING("memory", "insert observation failed: changes=" << m_store->Changes()
                   << " err=" << m_store->ErrMsg()
                   << " layer_id=" << obs.layer_id
                   << " agent=" << obs.agent_id
@@ -831,7 +831,7 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
                                            double new_weight, const std::string& new_tags_json) {
     auto original = GetObservation(obs_id);
     if (!original) {
-        LOG_WARNING("memory", "ReviseObservation: observation " << obs_id << " not found");
+        ALOG_WARNING("memory", "ReviseObservation: observation " << obs_id << " not found");
         return {};
     }
 
@@ -872,7 +872,7 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
 
     stmt->ExecDML();
     if (!DidWriteRows(m_store)) {
-        LOG_WARNING("memory", "ReviseObservation: insert new version failed: " << m_store->ErrMsg());
+        ALOG_WARNING("memory", "ReviseObservation: insert new version failed: " << m_store->ErrMsg());
         return {};
     }
 
@@ -1024,7 +1024,7 @@ LayerPerspective MemoryStore::SetPerspective(const LayerPerspective& p) {
 
     stmt->ExecDML();
     if (!DidWriteRows(m_store)) {
-        LOG_WARNING("memory", "upsert perspective failed: " << m_store->ErrMsg());
+        ALOG_WARNING("memory", "upsert perspective failed: " << m_store->ErrMsg());
         return {};
     }
 
@@ -1064,7 +1064,7 @@ void MemoryStore::LogMutation(const MemoryMutation& m) {
 
     stmt->ExecDML();
     if (!DidWriteRows(m_store)) {
-        LOG_WARNING("memory", "insert mutation failed: " << m_store->ErrMsg());
+        ALOG_WARNING("memory", "insert mutation failed: " << m_store->ErrMsg());
     }
 }
 

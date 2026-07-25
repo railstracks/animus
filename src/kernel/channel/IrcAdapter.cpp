@@ -61,7 +61,7 @@ bool IrcAdapter::Start(const ChannelState& state, std::string* error) {
         });
 
     m_runtime->Start();
-    LOG_INFO("irc", "Started: " << state.name
+    ALOG_INFO("irc", "Started: " << state.name
               << " (" << ircCfg.host << ":" << ircCfg.port << ")");
     return true;
 }
@@ -73,7 +73,7 @@ void IrcAdapter::Stop() {
         runtime = std::move(m_runtime);
     }
     if (runtime) runtime->Stop();
-    LOG_INFO("irc", "Stopped: " << m_channelName);
+    ALOG_INFO("irc", "Stopped: " << m_channelName);
 }
 
 void IrcAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {
@@ -136,7 +136,7 @@ void IrcAdapter::OnMessage(const std::string& sourceNick,
 }
 
 void IrcAdapter::OnStatus(bool connected, std::uint64_t eventUnixMs) {
-    LOG_INFO("irc", "" << m_channelName << ": "
+    ALOG_INFO("irc", "" << m_channelName << ": "
               << (connected ? "connected" : "disconnected"));
 }
 
