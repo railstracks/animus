@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <iostream>
 #include <random>
 #include <sstream>
 #include <iomanip>
