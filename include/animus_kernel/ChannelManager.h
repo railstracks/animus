@@ -17,6 +17,7 @@
 #include <json/value.h>
 
 #include "animus_kernel/ChannelState.h"
+#include "animus_kernel/IChannelAdapter.h"
 
 namespace drogon {
 class WebSocketClient;
@@ -97,38 +98,12 @@ private:
 
 class ChannelManager {
 public:
-    // Auto-reply context — tells the dispatcher how to route the
-    // assistant's text response back to the originating conversation.
-    struct ReplyTarget {
-        std::string channel_name;    // Channel instance name
-        std::string channel_type;    // "irc", "telegram", "vk", "bluesky", etc.
-        enum Type { Chat, Wall } type{Chat};
-        std::string peer_id;         // Chat: peer/user/chat ID to send to
-        std::string post_id;         // Wall: post ID to comment on
-        std::string reply_to_comment;// Wall: comment ID for threading
-        std::string group_id;        // VK wall: owner group ID
-        // IRC-specific
-        std::string irc_target;      // IRC: channel or nick to send to
-        std::string interface_name;  // IRC: interface name for SendPrivmsg
-        // Email-specific
-        std::string email_thread_id;   // AgentMail thread ID for reply threading
-        std::string email_inbox_id;    // Which inbox to send from
-    };
-
-    // Callback to invoke the chain runner on a (possibly new) session.
-    using DispatchCallback = std::function<void(
-        const std::string& agentId,
-        const std::string& sessionKey,
-        const std::string& message,
-        const std::string& sessionType,
-        const ReplyTarget& replyTarget)>;
-
-    // Callback to log a message to session history without triggering a chain.
-    using LogCallback = std::function<void(
-        const std::string& agentId,
-        const std::string& sessionKey,
-        const std::string& message,
-        const std::string& sessionType)>;
+    // ReplyTarget and dispatch callbacks are now defined in IChannelAdapter.h
+    // as ChannelReplyTarget, ChannelDispatchCallback, ChannelLogCallback.
+    // These aliases preserve backward compatibility for existing callers.
+    using ReplyTarget = ChannelReplyTarget;
+    using DispatchCallback = ChannelDispatchCallback;
+    using LogCallback = ChannelLogCallback;
 
     ChannelManager(HttpClient& httpClient,
                    AgentConfigStore* configStore,
