@@ -1,5 +1,5 @@
-#include "animus_kernel/Log.h"
 #include "animus_kernel/NodeDaemon.h"
+#include "animus_kernel/Log.h"
 #include "animus_kernel/tools/ToolRegistry.h"
 #include "animus_kernel/tools/ToolTypes.h"
 #include "animus_kernel/tools/ShellExecTool.h"
@@ -56,8 +56,8 @@ public:
         RegisterLocalTools();
 
         if (m_tools.Size() == 0) {
-            LOG_ERROR("node", "WARNING: No tools registered. "
-                      << "The node will connect but cannot execute any tool calls.\n";
+            LOG_WARNING("node", "No tools registered. "
+                      << "The node will connect but cannot execute any tool calls.");
         }
 
         // The WebSocket client + event loop must run in a dedicated thread
@@ -76,7 +76,7 @@ public:
             // Shutdown checker: poll every 200ms, quit loop when signaled
             loop.runEvery(0.2, [&loop]() {
                 if (g_nodeStopRequested.load()) {
-                    LOG_DEBUG("node", "Shutdown requested, stopping event loop...);
+                    LOG_INFO("node", "Shutdown requested, stopping event loop...");
                     loop.quit();
                 }
             });
@@ -86,7 +86,7 @@ public:
 
             // Run the event loop (blocks until loop.quit())
             LOG_INFO("node", "Daemon running as '" << m_config.name
-                      << "'. Send SIGTERM to stop.);
+                      << "'. Send SIGTERM to stop.");
             loop.loop();
         });
 
@@ -99,11 +99,11 @@ public:
         }
 
         if (initFailed.load()) {
-            LOG_ERROR("node", "Daemon exited: initialization failed);
+            LOG_INFO("node", "Daemon exited: initialization failed");
             return 1;
         }
 
-        LOG_INFO("node", "Daemon stopped.);
+        LOG_INFO("node", "Daemon stopped.");
         return 0;
     }
 
@@ -122,7 +122,7 @@ private:
         auto wsClient = drogon::WebSocketClient::newWebSocketClient(
             m_config.serverUrl, loop);
         if (!wsClient) {
-            LOG_ERROR("node", "Failed to create WebSocket client);
+            LOG_INFO("node", "Failed to create WebSocket client");
             return;
         }
         m_wsClient = wsClient;
@@ -139,7 +139,7 @@ private:
 
         wsClient->setConnectionClosedHandler(
             [this, loop](const drogon::WebSocketClientPtr&) {
-                LOG_INFO("node", "Disconnected from server);
+                LOG_INFO("node", "Disconnected from server");
                 m_wsConn.reset();
                 m_registered = false;
 
@@ -157,10 +157,10 @@ private:
         req->addHeader("Authorization", "Bearer " + m_config.token);
 
         if (m_connectAttempts == 0) {
-            LOG_DEBUG("node", "Connecting to " << m_config.serverUrl << "...);
+            LOG_INFO("node", "Connecting to " << m_config.serverUrl << "...");
         } else {
-            LOG_DEBUG("node", "Reconnecting (attempt " << (m_connectAttempts + 1)
-                      << ", backoff " << (int)m_currentBackoff << "s)...);
+            LOG_INFO("node", "Reconnecting (attempt " << (m_connectAttempts + 1)
+                      << ", backoff " << (int)m_currentBackoff << "s)...");
         }
 
         wsClient->connectToServer(
@@ -173,10 +173,10 @@ private:
                     m_registered = false;
                     m_connectAttempts = 0;
                     m_currentBackoff = kInitialBackoffSec;
-                    LOG_INFO("node", "WebSocket connected);
+                    LOG_INFO("node", "WebSocket connected");
                     SendRegistration();
                 } else {
-                    LOG_ERROR("node", "WebSocket connection failed);
+                    LOG_INFO("node", "WebSocket connection failed");
                     m_wsConn.reset();
 
                     if (!g_nodeStopRequested.load()) {
@@ -193,7 +193,7 @@ private:
     /// Schedule a reconnect attempt after m_currentBackoff seconds.
     void ScheduleReconnect(trantor::EventLoop* loop) {
         double delay = m_currentBackoff;
-        LOG_DEBUG("node", "Will reconnect in " << (int)delay << "s);
+        LOG_DEBUG("node", "Will reconnect in " << (int)delay << "s");
 
         loop->runAfter(delay, [this, loop]() {
             if (!g_nodeStopRequested.load()) {
@@ -211,16 +211,16 @@ private:
             if (toolName == "system" || toolName == "exec") {
                 auto shellTool = std::make_unique<ShellExecTool>("");
                 m_tools.Register(std::move(shellTool));
-                LOG_DEBUG("node", "Registered tool: exec);
+                LOG_INFO("node", "Registered tool: exec");
             } else if (toolName == "file") {
                 auto fileTool = std::make_unique<FileTool>("");
                 m_tools.Register(std::move(fileTool));
-                LOG_DEBUG("node", "Registered tool: file);
+                LOG_INFO("node", "Registered tool: file");
             } else {
-                LOG_DEBUG("node", "Unknown tool in allowlist: " << toolName << ");
+                LOG_INFO("node", "Unknown tool in allowlist: " << toolName);
             }
         }
-        LOG_DEBUG("node", "" << m_tools.Size() << " tools registered);
+        LOG_INFO("node", m_tools.Size() << " tools registered");
     }
 
     // -----------------------------------------------------------------------
@@ -279,8 +279,8 @@ private:
         reg["tools"] = toolsArr;
 
         SendJson(reg);
-        LOG_DEBUG("node", "Registration sent for '" << m_config.name
-                  << "' (" << hostname << ", " << osInfo << "));
+        LOG_INFO("node", "Registration sent for '" << m_config.name
+                  << "' (" << hostname << ", " << osInfo << ")");
     }
 
     void SendHeartbeat() {
@@ -308,7 +308,7 @@ private:
         auto reader = std::unique_ptr<Json::CharReader>(builder.newCharReader());
         if (!reader->parse(message.c_str(), message.c_str() + message.size(),
                            &payload, &parseErr)) {
-            LOG_ERROR("node", "Failed to parse server message: " << parseErr << ");
+            LOG_INFO("node", "Failed to parse server message: " << parseErr);
             return;
         }
 
@@ -318,9 +318,9 @@ private:
             HandleToolCall(payload);
         } else if (msgType == "registered") {
             m_registered = true;
-            LOG_DEBUG("node", "Server confirmed registration);
+            LOG_INFO("node", "Server confirmed registration");
         } else {
-            LOG_DEBUG("node", "Unknown server message type: " << msgType << ");
+            LOG_INFO("node", "Unknown server message type: " << msgType);
         }
     }
 
@@ -340,13 +340,13 @@ private:
         ToolResult result;
         auto* handler = m_tools.Find(toolName);
         if (handler) {
-            LOG_DEBUG("node", "Executing tool: " << toolName << ");
+            LOG_INFO("node", "Executing tool: " << toolName);
             result = handler->Execute(tc);
         } else {
             result.call_id = callId;
             result.success = false;
             result.error = "unknown tool: " + toolName;
-            LOG_DEBUG("node", "Unknown tool requested: " << toolName << ");
+            LOG_INFO("node", "Unknown tool requested: " << toolName);
         }
 
         Json::Value resultMsg(Json::objectValue);
@@ -386,4 +386,4 @@ int RunNodeDaemon(const NodeDaemonConfig& config) {
     return daemon.Run();
 }
 
-} // namespace animus::kernel);
+} // namespace animus::kernel

@@ -1,5 +1,5 @@
-#include "animus_kernel/Log.h"
 #include "animus_kernel/AgentKernel.h"
+#include "animus_kernel/Log.h"
 
 #include <cstdlib>
 #include <algorithm>
@@ -237,8 +237,9 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             case ANIMUS_LOG_ERROR: lvl = "ERROR"; break;
             default: break;
         }
-        LOG_DEBUG("module", "[" << lvl << "] "
-                  << std::string(msg.data ? msg.data : "", msg.size));
+        LOG_ERROR("this", "[module:" << lvl << "] "
+                  << std::string(msg.data ? msg.data : "", msg.size)
+                  ");
     };
 
     std::string modErr;
@@ -418,7 +419,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             if (diaryStats.source_count != diaryStats.fts_count) {
                 LOG_WARNING("kernel", "Diary FTS out of sync ("
                           << diaryStats.fts_count << "/" << diaryStats.source_count
-                          << "), rebuilding...\n";
+                          << "), rebuilding...");
                 m_memorySearch->RebuildDiaryIndex();
             }
             auto obsStats = m_memorySearch->VerifyFtsSync("observations");
