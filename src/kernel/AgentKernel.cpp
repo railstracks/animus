@@ -1668,8 +1668,8 @@ void AgentKernel::LoadLuaScripts() {
                 try {
                     state.Eval(script.source, script.agent_id.empty() ? agentId : script.agent_id);
                     loadedSources[agentId][script.name] = "db";
-                    ALOG_ERROR("lua:startup", "Loaded DB script '" << script.name
-                              << "' for agent='" << agentId << "'\n";
+                    ALOG_DEBUG("lua:startup", "Loaded DB script '" << script.name
+                              << "' for agent='" << agentId << "'");
                 } catch (const LuaException& e) {
                     ALOG_ERROR("lua:startup", "ERROR loading DB script '" << script.name
                               << "' for agent='" << agentId
@@ -1708,7 +1708,7 @@ void AgentKernel::LoadLuaScripts() {
                             // since the DB script already ran. For safety, we
                             // just eval the filesystem script on top.
                             ALOG_INFO("lua:startup", "Filesystem script '" << script.name
-                                      << "' overrides DB script for agent='" << effectiveAgentId << "'\n";
+                                      << "' overrides DB script for agent='" << effectiveAgentId << "'");
                         }
                     }
                 }
@@ -1720,7 +1720,7 @@ void AgentKernel::LoadLuaScripts() {
                     state.Eval(script.source, effectiveAgentId);
                     loadedSources[effectiveAgentId][script.name] = "fs";
                     ALOG_DEBUG("lua:startup", "Loaded FS script '" << script.name
-                              << "' for agent='" << effectiveAgentId << "'\n";
+                              << "' for agent='" << effectiveAgentId << "'");
                 } catch (const LuaException& e) {
                     ALOG_ERROR("lua:startup", "ERROR loading FS script '" << script.name
                               << "' for agent='" << effectiveAgentId
@@ -1745,7 +1745,7 @@ void AgentKernel::ComputePendingEmbeddings() {
     for (const auto& agent : agents) {
         auto files = m_memoryFileStore->ListFiles(std::nullopt, 1000, 0);
         ALOG_DEBUG("embedding", "Agent " << agent.id << " (numeric=" << agent.numeric_id
-                  << "): " << files.size() << " files total\n";
+                  << "): " << files.size() << " files total");
 
         for (const auto& file : files) {
             if (file.agent_id != agent.numeric_id) continue;
@@ -1819,8 +1819,8 @@ void AgentKernel::ComputePendingEmbeddings() {
 
     if (totalChunked > 0 || totalEmbedded > 0) {
         ALOG_INFO("embedding", "Computed " << totalChunked << " chunks, "
-                  << totalEmbedded << " embeddings for " << agents.size() << " agents\n";
+                  << totalEmbedded << " embeddings for " << agents.size() << " agents");
     }
 }
 
-} // namespace animus::kernel);
+} // namespace animus::kernel
