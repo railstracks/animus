@@ -73,7 +73,7 @@ WhatsAppVersionInfo WhatsAppVersionResolver::refresh() {
 // ---------------------------------------------------------------------------
 WhatsAppVersionInfo WhatsAppVersionResolver::doFetch() {
     constexpr const char* HOST = "web.whatsapp.com";
-    constexpr const char* PATH = "/sw.js";
+    constexpr const char* SW_PATH = "/sw.js";
     constexpr int PORT = 443;
 
     // --- TCP connect ---
@@ -132,7 +132,7 @@ WhatsAppVersionInfo WhatsAppVersionResolver::doFetch() {
 
     // --- HTTP GET ---
     std::string req =
-        "GET " PATH " HTTP/1.1\r\n"
+        "GET " SW_PATH " HTTP/1.1\r\n"
         "Host: " HOST "\r\n"
         "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\r\n"
