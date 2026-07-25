@@ -1,6 +1,7 @@
 #include "animus_kernel/ChannelContext.h"
 
-#include "animus_kernel/ChannelManager.h"  // ChannelRouter
+#include "animus_kernel/AgentConfigStore.h"
+#include "animus_kernel/ChannelManager.h"
 
 namespace animus::kernel {
 

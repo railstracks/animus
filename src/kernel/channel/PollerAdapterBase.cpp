@@ -4,6 +4,8 @@
 #include <iostream>
 
 #include "animus_kernel/ChannelState.h"
+#include "animus_kernel/AgentConfigStore.h"
+#include "animus_kernel/ChannelManager.h"
 
 namespace animus::kernel {
 

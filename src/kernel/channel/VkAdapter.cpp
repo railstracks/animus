@@ -6,6 +6,8 @@
 #include <random>
 
 #include "animus_kernel/ChannelState.h"
+#include "animus_kernel/AgentConfigStore.h"
+#include "animus_kernel/ChannelManager.h"
 #include "animus_kernel/tools/HttpClient.h"
 
 namespace animus::kernel {
