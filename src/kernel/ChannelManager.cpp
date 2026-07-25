@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "animus_kernel/AgentConfigStore.h"
+#include "animus_kernel/ChannelHelpers.h"
 #include "animus_kernel/tools/HttpClient.h"
 #include "animus_kernel/interfaces/IrcInterface.h"
 #include "animus_kernel/social/TelegramTypes.h"
@@ -492,7 +493,7 @@ void ChannelManager::SendReply(const ReplyTarget& target, const std::string& tex
         req.url = "https://discord.com/api/v10/channels/" + channelId + "/messages";
         req.headers["Authorization"] = "Bot " + botToken;
         req.headers["Content-Type"] = "application/json";
-        req.body = JsonCompact(body);
+        req.body = channel_detail::JsonCompact(body);
         req.follow_redirects = false;
 
         auto resp = m_httpClient.Execute(req);
