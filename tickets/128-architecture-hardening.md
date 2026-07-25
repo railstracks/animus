@@ -1,8 +1,9 @@
 # Ticket 128: Architecture Hardening — Policy Centralization Pass
 
-**Status:** Draft
+**Status:** In Progress (5/7 items complete on dev)
 **Date:** 2026-07-25
 **Author:** Kestrel (based on audit by Melvin + external reviewer)
+**Updated:** 2026-07-25
 
 ## Problem
 
@@ -16,7 +17,7 @@ This ticket covers the next release hardening pass. Items are ordered by priorit
 
 ---
 
-## 1. IDataStore / IStatement DML Semantics *(correctness)*
+## 1. IDataStore / IStatement DML Semantics *(correctness)* — ✅ DONE
 
 **Audit Finding 4.** `IStatement::Step()` is documented as "true if a row is available, false if done or error." SQLite returns `false` for successful INSERT/UPDATE/DELETE (`SQLITE_DONE`). PostgreSQL's `PgStatement::Step()` returns `true` once for `PGRES_COMMAND_OK`. This makes `Step()` mean different things by backend.
 
@@ -28,7 +29,7 @@ This ticket covers the next release hardening pass. Items are ordered by priorit
 - Audit all `return stmt->Step()` write methods (`GallivantingStore::UpdateThread`, `AuthStore::CreateUser`, `AuthStore::UpdateUserPassword`, `SqliteSessionStore::PersistSession`, others)
 - Add backend parity tests for representative INSERT/UPDATE/DELETE return values
 
-## 2. Shared Execution Request Resolver *(consistency)*
+## 2. Shared Execution Request Resolver *(consistency)* — ✅ DONE
 
 **Audit Finding 2.** The project has multiple execution paths (web chat, channel dispatch, scheduler, consolidation) that each perform their own version of provider/config/model/context-window resolution, session setup, compaction handling, and flushing. This has already caused real bugs around context-window clamping and compaction triggers.
 
@@ -38,7 +39,7 @@ This ticket covers the next release hardening pass. Items are ordered by priorit
 - All entry points (ChatSessionService, AgentKernel::ExecuteChannelDispatch, scheduler callback, ConsolidationPipeline) call the same resolver before invoking ChainRunner
 - ChainRunner focuses on chain loop, prompt assembly, LLM call, tool execution, turn storage — receives pre-resolved context
 
-## 3. Extract Tool Schema and Execution Services from ChainRunner *(maintainability)*
+## 3. Extract Tool Schema and Execution Services from ChainRunner *(maintainability)* — DEFERRED
 
 **Audit Findings 3 + 9.** `ChainRunner.cpp` is ~1,300 lines containing duplicated streaming/non-streaming logic, agent override resolution, tool definition conversion, tool allowlist filtering, session-type gating, tool config injection, node forwarding, tool result storage, interjection handling, and prompt logging.
 
@@ -51,7 +52,7 @@ Tool capability and permission modeling is half-centralized: `__session_key`, `_
 - Replace tool-specific argument injection (`InjectFilePolicy`, `InjectToolConfig`) with a generic pre-execution context/config hook
 - Reduce streaming/non-streaming duplication by sharing a per-step helper
 
-## 4. OpenAICompat Serializer Fixes *(correctness — not in audit)*
+## 4. OpenAICompat Serializer Fixes *(correctness — not in audit)* — ✅ DONE (4a + 4b)
 
 Two bugs in `src/kernel/llm/OpenAICompat.cpp` that the audit missed but are active user-facing issues:
 
@@ -77,7 +78,7 @@ The SSE accumulator path (jsoncpp) handles escapes correctly, but `ParseToolCall
 
 **Fix:** Add `\uXXXX`, `\/`, `\b`, `\f` handling to `ExtractJsonString`, or replace `ExtractJsonString` with jsoncpp parsing in `ParseToolCalls`.
 
-## 5. Channel Adapter Boundary *(architecture)*
+## 5. Channel Adapter Boundary *(architecture)* — ✅ DONE (Discord/WhatsApp deferred)
 
 **Audit Finding 6.** `ChannelManager` owns platform-specific details for 10+ platforms (IRC, Telegram, VK, email, Discord, WhatsApp, Slack, Nextcloud Talk, Bluesky, Twitter) in one class. `ReplyTarget` is accumulating platform-specific fields.
 
@@ -89,7 +90,35 @@ The SSE accumulator path (jsoncpp) handles escapes correctly, but `ParseToolCall
 
 **Note:** This is the largest scope item. If it doesn't fit in one release, it can be split into a separate ticket. The channel system works today; this is about preventing the adapter code from becoming unmaintainable as platforms are added.
 
-## 6. Structured Logging *(operability)*
+### Implementation Status (July 25, 2026)
+
+**Completed:**
+- `IChannelAdapter` interface with full contract (Start/Stop/SendReply/IsConnected/ValidateConfig)
+- `ChannelContext` shared dependency struct (HttpClient, ConfigStore, Router, Dispatch, Log)
+- `ChannelHelpers` shared utilities (JSON, URL encoding, base64)
+- 6 connectors fully migrated to adapter classes:
+  - `IrcAdapter` — loop + event processing + SendReply + config-based filtering
+  - `TelegramAdapter` — long poll loop + message processing + SendReply
+  - `VkAdapter` — long poll loop + event processing (message/wall/wall-reply) + SendReply
+  - `EmailAdapter` — WebSocket loop + REST poll fallback + message processing + SendReply
+  - `SlackAdapter` — Socket Mode loop + REST polling loop + SendReply
+  - `NextcloudAdapter` — OCS API long-poll loop + SendReply
+- `ChannelManager` refactored to adapter-based dispatch:
+  - `StartChannel` creates adapter via factory
+  - `SendReply` delegates to adapter
+  - `StopChannel` stops and removes adapter
+  - `IsChannelConnected` checks adapter
+- Dead code cleanup: removed 2016 lines of inline connector implementations
+- **ChannelManager.cpp: 3437 → 1058 lines (-69%)**
+- Zero test regressions
+
+**Deferred (future ticket):**
+- `DiscordAdapter` — `DiscordGatewayLoop.cpp` (616 lines) has deep WebSocket gateway coupling (heartbeat, identify, resume, event dispatch). Loop body is tightly coupled to ChannelManager's PollerState and DispatchToSession.
+- `WhatsAppAdapter` — `WhatsAppGatewayLoop.cpp` (1547 lines) includes JS engine integration, multi-device crypto, and outbox queueing via PollerState config stegania. Too complex for mechanical extraction.
+- These connectors continue to work via the legacy poller path in ChannelManager. They will be migrated when their adapter extraction can be given dedicated focus.
+- `ProcessDiscordMessage`, `DispatchToSession`, `LogToSession`, and the WhatsApp QR helper remain in ChannelManager as legacy support for these connectors.
+
+## 6. Structured Logging *(operability)* — PENDING
 
 **Audit Finding 8.** Many `std::cerr` diagnostics remain in hot paths: `ChainRunner`, `ContextProviderRegistry`, `ActiveMemoryProvider`, session store methods, startup, channel dispatch. Some are investigation traces from recent tickets.
 
@@ -101,7 +130,7 @@ This affects performance, risks leaking prompt/tool metadata, and makes it hard 
 - Treat prompt/tool payload logging as sensitive and opt-in
 - Gate existing `std::cerr` diagnostics behind the appropriate level
 
-## 7. Session Persistence: Append-Only Turn Insertion *(performance)*
+## 7. Session Persistence: Append-Only Turn Insertion *(performance)* — ✅ DONE
 
 **Audit Finding 5.** `SqliteSessionStore::PersistSession()` upserts the session, deletes all turns, and rewrites every turn. Write amplification grows with session length. Concurrent writers can clobber each other. Intake markers and compaction state live in the same table being wholesale rewritten.
 
@@ -124,15 +153,15 @@ The following audit findings are valid but lower priority. Filed here for awaren
 
 ## Priority Summary
 
-| # | Item | Type | Effort |
-|---|------|------|--------|
-| 1 | IDataStore DML semantics | Correctness | Medium |
-| 2 | Execution request resolver | Consistency | Medium |
-| 3 | Extract tool services from ChainRunner | Maintainability | Large |
-| 4a | `content: null` for assistant+tool_calls | Correctness (1-line fix) | Small |
-| 4b | `ExtractJsonString` escape handling | Correctness | Small |
-| 5 | Channel adapter boundary | Architecture | Large |
-| 6 | Structured logging | Operability | Medium |
-| 7 | Session persistence append-only | Performance | Large |
+| # | Item | Type | Effort | Status |
+|---|------|------|--------|--------|
+| 1 | IDataStore DML semantics | Correctness | Medium | ✅ Done |
+| 2 | Execution request resolver | Consistency | Medium | ✅ Done |
+| 3 | Extract tool services from ChainRunner | Maintainability | Large | ⏳ Deferred |
+| 4a | `content: null` for assistant+tool_calls | Correctness (1-line fix) | Small | ✅ Done |
+| 4b | `ExtractJsonString` escape handling | Correctness | Small | ✅ Done |
+| 5 | Channel adapter boundary | Architecture | Large | ✅ Done (Discord/WhatsApp deferred) |
+| 6 | Structured logging | Operability | Medium | ⏳ Pending |
+| 7 | Session persistence append-only | Performance | Large | ✅ Done |
 
 Items 4a and 4b are the smallest and most immediately impactful — they fix the active Mistral/Qwen HTTP 400 bug. Recommend doing those first, then 1-2, then 3/5/6/7 in priority order.
