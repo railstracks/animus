@@ -1673,7 +1673,7 @@ void AgentKernel::LoadLuaScripts() {
                 } catch (const LuaException& e) {
                     ALOG_ERROR("lua:startup", "ERROR loading DB script '" << script.name
                               << "' for agent='" << agentId
-                              << "': " << e.what() ");
+                              << "': " << e.what());
                 }
             }
         }
@@ -1724,7 +1724,7 @@ void AgentKernel::LoadLuaScripts() {
                 } catch (const LuaException& e) {
                     ALOG_ERROR("lua:startup", "ERROR loading FS script '" << script.name
                               << "' for agent='" << effectiveAgentId
-                              << "': " << e.what() ");
+                              << "': " << e.what());
                 }
             }
         }
