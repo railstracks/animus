@@ -417,7 +417,15 @@ bool ChannelManager::RestartChannel(const std::string& name, std::string* error)
 // ============================================================================
 
 bool ChannelManager::IsChannelConnected(const std::string& name) const {
-    // Check pollers (Telegram, VK, Discord, WhatsApp, Slack, Email)
+    // Check adapters first
+    {
+        std::lock_guard<std::mutex> lock(m_adaptersMutex);
+        auto it = m_adapters.find(name);
+        if (it != m_adapters.end()) {
+            return it->second->IsConnected();
+        }
+    }
+    // Check pollers (Discord, WhatsApp — legacy)
     {
         std::lock_guard<std::mutex> lock(m_pollersMutex);
         auto it = m_pollers.find(name);
@@ -425,25 +433,11 @@ bool ChannelManager::IsChannelConnected(const std::string& name) const {
             return it->second->active && it->second->consecutive_errors == 0;
         }
     }
-    // Check IRC
-    {
-        std::lock_guard<std::mutex> lock(m_ircMutex);
-        auto it = m_ircRuntimes.find(name);
-        if (it != m_ircRuntimes.end() && it->second.runtime) {
-            // IRC doesn't expose IsConnected() — check via last status callback
-            return true; // connected flag updated via SyncIrcStatusCallback
-        }
-    }
-    // Check if channel exists in m_channels (Bluesky, Twitter — no poller thread)
-    // These channels use Lua adapters for REST operations and don't have
-    // a persistent connection. If they're in m_channels, they're "configured"
-    // and the Lua adapter handles connectivity.
+    // Check if channel exists in m_channels (configured but no poller — Bluesky, Twitter)
     {
         std::lock_guard<std::mutex> lock(m_channelsMutex);
         auto it = m_channels.find(name);
-        if (it != m_channels.end()) {
-            return true;
-        }
+        if (it != m_channels.end()) return true;
     }
     return false;
 }
@@ -453,363 +447,91 @@ bool ChannelManager::IsChannelConnected(const std::string& name) const {
 // ============================================================================
 
 void ChannelManager::SendReply(const ReplyTarget& target, const std::string& text) {
+    // --- Adapter-based dispatch ---
+    // For connectors migrated to IChannelAdapter, delegate directly.
+    {
+        std::lock_guard<std::mutex> lock(m_adaptersMutex);
+        auto it = m_adapters.find(target.channel_name);
+        if (it != m_adapters.end()) {
+            it->second->SendReply(target, text);
+            return;
+        }
+    }
+
+    // --- Legacy dispatch ---
+    // For connectors not yet migrated (Discord, WhatsApp, IRC, Twitter).
+    // These read from m_channels/m_pollers directly.
+
     if (target.channel_type == "irc") {
         SendIrcPrivmsg(target.channel_name, target.irc_target, text);
         return;
     }
 
-    if (target.channel_type == "telegram") {
-        ChannelState state;
-        {
-            std::lock_guard<std::mutex> lock(m_channelsMutex);
-            auto it = m_channels.find(target.channel_name);
-            if (it == m_channels.end()) {
-                std::cerr << "[channels] Telegram reply: channel not found: "
-                          << target.channel_name << std::endl;
-                return;
-            }
-            state = it->second;
-        }
-
-        std::string token = GetString(state.config, "access_token");
-        if (token.empty()) {
-            std::cerr << "[channels] Telegram reply: no access token for "
-                      << target.channel_name << std::endl;
-            return;
-        }
-
-        telegram::TelegramBotApi api(m_httpClient);
-        int64_t chatId = 0;
-        try { chatId = std::stoll(target.peer_id); } catch (...) {
-            std::cerr << "[channels] Telegram reply: invalid chat_id: "
-                      << target.peer_id << std::endl;
-            return;
-        }
-
-        telegram::TelegramBotApi::SendMessageOptions opts;
-        opts.chat_id = chatId;
-        opts.text = text;
-
-        auto msgId = api.SendMessage(token, opts);
-        if (msgId) {
-            std::cerr << "[channels] Telegram message sent to "
-                      << target.peer_id << " (msg_id=" << *msgId << ")" << std::endl;
-        } else {
-            std::cerr << "[channels] Telegram send failed to "
-                      << target.peer_id << std::endl;
-        }
-        return;
-    }
-
-    if (target.channel_type == "vk") {
-        ChannelState state;
-        {
-            std::lock_guard<std::mutex> lock(m_channelsMutex);
-            auto it = m_channels.find(target.channel_name);
-            if (it == m_channels.end()) return;
-            state = it->second;
-        }
-
-        std::string token = GetString(state.config, "access_token");
-        if (token.empty()) return;
-
-        std::string groupId = GetString(state.config, "group_id");
-
-        if (target.type == ReplyTarget::Chat) {
-            std::string body = "peer_id=" + target.peer_id +
-                "&message=" + UrlEncode(text) +
-                "&random_id=" + std::to_string(rand()) +
-                "&access_token=" + token + "&v=5.131";
-
-            HttpClient::Request req;
-            req.url = "https://api.vk.ru/method/messages.send";
-            req.method = "POST";
-            req.headers["Content-Type"] = "application/x-www-form-urlencoded";
-            req.body = body;
-            req.follow_redirects = false;
-
-            auto resp = m_httpClient.Execute(req);
-            std::cerr << "[channels] VK Chat reply: " << resp.status_code
-                      << " body=" << resp.body.substr(0, 200) << std::endl;
-        } else if (target.type == ReplyTarget::Wall) {
-            std::string ownerId = "-" + groupId;
-            std::string body = "post_id=" + target.post_id +
-                "&owner_id=" + ownerId +
-                "&message=" + UrlEncode(text) +
-                "&access_token=" + token + "&v=5.131";
-            if (!target.reply_to_comment.empty() && target.reply_to_comment != "0") {
-                body += "&reply_to_comment=" + target.reply_to_comment;
-            }
-
-            HttpClient::Request req;
-            req.url = "https://api.vk.ru/method/wall.createComment";
-            req.method = "POST";
-            req.headers["Content-Type"] = "application/x-www-form-urlencoded";
-            req.body = body;
-            req.follow_redirects = false;
-
-            auto resp = m_httpClient.Execute(req);
-            std::cerr << "[channels] VK Wall reply: " << resp.status_code
-                      << " body=" << resp.body.substr(0, 200) << std::endl;
-        }
-        return;
-    }
-
     if (target.channel_type == "discord") {
-        // Channel ID for Discord: peer_id for DMs (peer:CHANNEL_ID), post_id for guild channels (post:CHANNEL_ID)
         std::string channelId;
-        if (!target.peer_id.empty()) {
-            channelId = target.peer_id;   // DM: peer_id holds the DM channel ID
-        } else if (!target.post_id.empty()) {
-            channelId = target.post_id;   // Guild channel: post_id holds the channel ID
-        }
+        if (!target.peer_id.empty()) channelId = target.peer_id;
+        else if (!target.post_id.empty()) channelId = target.post_id;
+
         std::string botToken;
         {
             std::lock_guard<std::mutex> lock(m_channelsMutex);
             auto it = m_channels.find(target.channel_name);
-            if (it != m_channels.end()) {
+            if (it != m_channels.end())
                 botToken = GetString(it->second.config, "bot_token");
-            }
         }
-        if (botToken.empty()) {
-            std::cerr << "[discord] SendReply: no bot_token for " << target.channel_name << std::endl;
-            return;
-        }
+        if (botToken.empty() || channelId.empty()) return;
 
         std::string content = text;
-        if (content.size() > 2000) {
-            content = content.substr(0, 1997) + "...";
-        }
+        if (content.size() > 2000) content = content.substr(0, 1997) + "...";
 
         Json::Value body;
         body["content"] = content;
-        // TODO: message_reference for replying to specific messages
-        // Requires tracking message_id in ReplyTarget (currently not stored)
 
         HttpClient::Request req;
         req.method = "POST";
         req.url = "https://discord.com/api/v10/channels/" + channelId + "/messages";
         req.headers["Authorization"] = "Bot " + botToken;
         req.headers["Content-Type"] = "application/json";
-        req.follow_redirects = false;  // POST must not follow redirects (causes 405)
+        req.body = JsonCompact(body);
+        req.follow_redirects = false;
 
-        Json::StreamWriterBuilder wb;
-        wb.settings_["indentation"] = "";
-        req.body = Json::writeString(wb, body);
-
-        HttpClient::Response resp = m_httpClient.Execute(req);
+        auto resp = m_httpClient.Execute(req);
         if (resp.status_code != 200 && resp.status_code != 201) {
-            std::cerr << "[discord] SendReply failed (" << resp.status_code << "): "
-                      << resp.body.substr(0, 200) << std::endl;
-        } else {
-            std::cerr << "[discord] SendReply OK to channel " << channelId << std::endl;
+            std::cerr << "[discord] SendReply failed (" << resp.status_code << ")" << std::endl;
         }
-        return;  // Discord reply sent, don't fall through
+        return;
     }
-    if (target.channel_type == "whatsapp") {
-        // WhatsApp SendReply: queue message for the gateway loop to encrypt and send
-        std::cerr << "[whatsapp] SendReply to " << target.peer_id
-                  << ": " << text.substr(0, 100) << std::endl;
 
-        // Find the poller state to access the outbox
+    if (target.channel_type == "whatsapp") {
         std::lock_guard<std::mutex> lock(m_pollersMutex);
         auto it = m_pollers.find(target.channel_name);
-        if (it == m_pollers.end()) {
-            std::cerr << "[whatsapp] No active poller for " << target.channel_name << std::endl;
-            return;
-        }
+        if (it == m_pollers.end()) return;
         auto* pState = it->second.get();
 
-        // Recover outbox pointers from poller state config
-        if (!pState->config.isMember("_wa_outbox_mutex") || !pState->config.isMember("_wa_outbox")) {
-            std::cerr << "[whatsapp] Gateway loop not initialized yet" << std::endl;
+        if (!pState->config.isMember("_wa_outbox_mutex") || !pState->config.isMember("_wa_outbox"))
             return;
-        }
 
         auto* outboxMutex = reinterpret_cast<std::mutex*>(
             pState->config["_wa_outbox_mutex"].asUInt64());
         auto* outbox = reinterpret_cast<std::vector<OutboundMessage>*>(
             pState->config["_wa_outbox"].asUInt64());
 
-        if (!outboxMutex || !outbox) {
-            std::cerr << "[whatsapp] Invalid outbox pointers" << std::endl;
-            return;
-        }
+        if (!outboxMutex || !outbox) return;
 
         {
             std::lock_guard<std::mutex> olk(*outboxMutex);
             OutboundMessage msg;
-            msg.baseJid = target.peer_id;  // Base JID for message routing
-            msg.jid = target.peer_id;      // Default: same as base (will be resolved to device JID in send)
+            msg.baseJid = target.peer_id;
+            msg.jid = target.peer_id;
             msg.text = text;
             msg.is_group = animus::whatsapp::isJidGroup(target.peer_id);
             outbox->push_back(std::move(msg));
-        }
-        std::cerr << "[whatsapp] Queued message for " << target.peer_id << std::endl;
-        return;
-    }
-
-    if (target.channel_type == "nextcloud") {
-        ChannelState state;
-        {
-            std::lock_guard<std::mutex> lock(m_channelsMutex);
-            auto it = m_channels.find(target.channel_name);
-            if (it == m_channels.end()) return;
-            state = it->second;
-        }
-
-        std::string serverUrl = GetString(state.config, "server_url");
-        std::string username = GetString(state.config, "username");
-        std::string appPassword = GetString(state.config, "app_password");
-
-        if (serverUrl.empty() || username.empty() || appPassword.empty()) {
-            std::cerr << "[nextcloud] SendReply: missing server_url/username/app_password" << std::endl;
-            return;
-        }
-
-        // POST /ocs/v2.php/apps/spreed/api/v1/chat/{token}
-        std::string url = serverUrl + "/ocs/v2.php/apps/spreed/api/v1/chat/" + target.peer_id;
-
-        Json::Value body;
-        body["message"] = text;
-        body["silent"] = false;
-
-        Json::StreamWriterBuilder wb;
-        wb.settings_["indentation"] = "";
-
-        HttpClient::Request req;
-        req.method = "POST";
-        req.url = url;
-        req.headers["Content-Type"] = "application/json";
-        req.headers["Accept"] = "application/json";
-        req.headers["OCS-APIREQUEST"] = "true";
-        req.headers["Authorization"] = "Basic " + Base64EncodeStr(username + ":" + appPassword);
-        req.body = Json::writeString(wb, body);
-        req.follow_redirects = false;
-
-        auto resp = m_httpClient.Execute(req);
-        if (resp.status_code != 200 && resp.status_code != 201) {
-            std::cerr << "[nextcloud] SendReply failed (" << resp.status_code
-                      << "): " << resp.body.substr(0, 200) << std::endl;
-        } else {
-            std::cerr << "[nextcloud] SendReply OK to conversation " << target.peer_id << std::endl;
-        }
-        return;
-    }
-
-    if (target.channel_type == "email") {
-        ChannelState state;
-        {
-            std::lock_guard<std::mutex> lock(m_channelsMutex);
-            auto it = m_channels.find(target.channel_name);
-            if (it == m_channels.end()) return;
-            state = it->second;
-        }
-
-        std::string apiKey = GetString(state.config, "api_key");
-        std::string inboxId = target.email_inbox_id.empty()
-            ? GetString(state.config, "inbox_id")
-            : target.email_inbox_id;
-        if (apiKey.empty() || inboxId.empty()) {
-            std::cerr << "[channels] Email reply: missing api_key or inbox_id" << std::endl;
-            return;
-        }
-
-        // Build reply payload
-        Json::Value payload(Json::objectValue);
-        payload["text"] = text;
-        if (!target.email_thread_id.empty()) {
-            payload["thread_id"] = target.email_thread_id;
-        }
-
-        Json::StreamWriterBuilder wb;
-        wb.settings_["indentation"] = "";
-        std::string bodyStr = Json::writeString(wb, payload);
-
-        HttpClient::Request req;
-        req.method = "POST";
-        req.url = std::string("https://api.agentmail.to/v0/inboxes/") + inboxId + "/messages/send";
-        req.headers["Authorization"] = "Bearer " + apiKey;
-        req.headers["Content-Type"] = "application/json";
-        req.body = bodyStr;
-
-        auto resp = m_httpClient.Execute(req);
-        std::cerr << "[channels] Email reply: " << resp.status_code
-                  << " to thread=" << target.email_thread_id << std::endl;
-        return;
-    }
-
-    if (target.channel_type == "slack") {
-        // Slack auto-reply: send via chat.postMessage
-        std::string channelId = target.peer_id;
-        if (channelId.empty()) channelId = target.post_id;
-        if (channelId.empty()) {
-            std::cerr << "[slack] SendReply: no channel_id in reply target" << std::endl;
-            return;
-        }
-
-        std::string botToken;
-        {
-            std::lock_guard<std::mutex> lock(m_channelsMutex);
-            auto it = m_channels.find(target.channel_name);
-            if (it != m_channels.end()) {
-                botToken = GetString(it->second.config, "bot_token");
-            }
-        }
-        if (botToken.empty()) {
-            std::cerr << "[slack] SendReply: no bot_token for " << target.channel_name << std::endl;
-            return;
-        }
-
-        // Build JSON body
-        Json::Value body;
-        body["channel"] = channelId;
-        body["text"] = text;
-        // Thread support: if reply_to_comment holds a thread_ts, thread the reply
-        if (!target.reply_to_comment.empty()) {
-            body["thread_ts"] = target.reply_to_comment;
-        }
-
-        HttpClient::Request req;
-        req.method = "POST";
-        req.url = "https://slack.com/api/chat.postMessage";
-        req.headers["Authorization"] = "Bearer " + botToken;
-        req.headers["Content-Type"] = "application/json; charset=utf-8";
-        req.follow_redirects = false;
-
-        Json::StreamWriterBuilder wb;
-        wb.settings_["indentation"] = "";
-        req.body = Json::writeString(wb, body);
-
-        HttpClient::Response resp = m_httpClient.Execute(req);
-        if (resp.status_code != 200) {
-            std::cerr << "[slack] SendReply failed (HTTP " << resp.status_code << "): "
-                      << resp.body.substr(0, 200) << std::endl;
-        } else {
-            // Slack returns 200 even on API errors — check {ok: true}
-            Json::Value rdata;
-            Json::CharReaderBuilder crb;
-            std::istringstream iss(resp.body);
-            std::string errs;
-            if (Json::parseFromStream(crb, iss, &rdata, &errs) && rdata.isMember("ok")) {
-                if (rdata["ok"].asBool()) {
-                    std::cerr << "[slack] SendReply OK to " << channelId << std::endl;
-                } else {
-                    std::cerr << "[slack] SendReply API error: "
-                              << (rdata.isMember("error") ? rdata["error"].asString() : "unknown")
-                              << std::endl;
-                }
-            }
         }
         return;
     }
 
     if (target.channel_type == "twitter") {
-        // Twitter auto-reply: routed through Lua social tool, not direct API call.
-        // The agent session produces a response → SendAutoReply → this path.
-        // For now, log and skip — full implementation with polling comes later.
-        std::cerr << "[channels] Twitter auto-reply not yet wired: channel="
-                  << target.channel_name << " peer=" << target.peer_id << std::endl;
+        std::cerr << "[channels] Twitter auto-reply not yet wired" << std::endl;
         return;
     }
 
@@ -1040,84 +762,56 @@ void ChannelManager::ProcessPendingRestarts() {
 // ============================================================================
 
 void ChannelManager::StartChannel(const ChannelState& state) {
-    if (state.type == "irc") {
-        StartIrcChannel(state);
-    } else if (state.type == "vk" || state.type == "telegram" || state.type == "bluesky" || state.type == "twitter") {
-        // Poller-based connectors
-        auto poller = std::make_unique<PollerState>();
-        poller->channel_name = state.name;
-        poller->channel_type = state.type;
-        poller->config = state.config;
-        poller->next_attempt = std::chrono::steady_clock::now();
+    // --- Adapter-based connectors ---
+    // These use IChannelAdapter implementations with their own loop threads.
+    // Discord and WhatsApp still use the legacy poller path (deep coupling).
+    if (state.type == "irc" || state.type == "telegram" || state.type == "vk" ||
+        state.type == "email" || state.type == "slack" || state.type == "nextcloud") {
 
-        // Agent association (which agent to dispatch events to)
-        poller->agent_id = GetString(state.config, "agent_id", "");
-
-        // Load persisted state from config
-        if (m_configStore) {
-            // Telegram: restore last_update_id
-            std::string stored = m_configStore->Get("",
-                "channel." + state.name + ".polling.last_update_id");
-            if (!stored.empty()) {
-                try { poller->last_update_id = std::stoll(stored); } catch (...) {}
-            }
-
-            // VK: restore long poll state
-            poller->lp_ts = m_configStore->Get("",
-                "channel." + state.name + ".polling.ts");
-            poller->lp_key = m_configStore->Get("",
-                "channel." + state.name + ".polling.key");
-            poller->lp_server = m_configStore->Get("",
-                "channel." + state.name + ".polling.server");
+        // Ensure channel context is initialized
+        if (!m_channelCtx) {
+            m_channelCtx = std::make_unique<ChannelContext>(
+                ChannelContext{
+                    m_httpClient, m_configStore, m_router,
+                    m_dispatch, m_logCallback
+                });
         }
 
-        poller->active = true;
+        std::unique_ptr<IChannelAdapter> adapter;
+        std::string err;
 
-        std::string name = state.name;
-        if (state.type == "telegram") {
-            poller->thread = std::thread(&ChannelManager::TelegramLongPollLoop, this, poller.get());
+        if (state.type == "irc") {
+            adapter = std::make_unique<IrcAdapter>(*m_channelCtx);
+        } else if (state.type == "telegram") {
+            adapter = std::make_unique<TelegramAdapter>(*m_channelCtx);
         } else if (state.type == "vk") {
-            poller->thread = std::thread(&ChannelManager::VkLongPollLoop, this, poller.get());
+            adapter = std::make_unique<VkAdapter>(*m_channelCtx);
+        } else if (state.type == "email") {
+            adapter = std::make_unique<EmailAdapter>(*m_channelCtx);
+        } else if (state.type == "slack") {
+            adapter = std::make_unique<SlackAdapter>(*m_channelCtx);
+        } else if (state.type == "nextcloud") {
+            adapter = std::make_unique<NextcloudAdapter>(*m_channelCtx);
+        }
+
+        if (adapter && adapter->Start(state, &err)) {
+            std::lock_guard<std::mutex> lock(m_adaptersMutex);
+            m_adapters[state.name] = std::move(adapter);
+            m_adapterTypes[state.name] = state.type;
+            std::cerr << "[channels] Started " << state.type
+                      << " adapter: " << state.name << std::endl;
         } else {
-            // Bluesky / Twitter — REST polling (TODO)
-            std::cerr << "[channels] REST polling not yet implemented for "
-                      << state.type << std::endl;
-            return;
+            std::cerr << "[channels] Failed to start " << state.type
+                      << " adapter: " << state.name
+                      << " — " << err << std::endl;
         }
+        return;
+    }
 
-        {
-            std::lock_guard<std::mutex> lock(m_pollersMutex);
-            m_pollers[name] = std::move(poller);
-        }
-
-        std::cerr << "[channels] Started " << state.type << " poller: " << state.name << std::endl;
-    } else if (state.type == "email") {
-        // Email — WebSocket (real-time) with REST polling fallback
-        auto poller = std::make_unique<PollerState>();
-        poller->channel_name = state.name;
-        poller->channel_type = state.type;
-        poller->config = state.config;
-        poller->agent_id = GetString(state.config, "agent_id", "");
-        poller->next_attempt = std::chrono::steady_clock::now();
-
-        // Restore last seen event timestamp (for polling fallback)
-        if (m_configStore) {
-            poller->lp_ts = m_configStore->Get(poller->agent_id,
-                "channel." + state.name + ".polling.last_before");
-        }
-
-        poller->active = true;
-
-        std::string name = state.name;
-        poller->thread = std::thread(&ChannelManager::EmailWebSocketLoop, this, poller.get());
-
-        {
-            std::lock_guard<std::mutex> lock(m_pollersMutex);
-            m_pollers[name] = std::move(poller);
-        }
-
-        std::cerr << "[channels] Started email connector (WebSocket): " << state.name << std::endl;
-    } else if (state.type == "discord") {
+    // --- Legacy connectors (Discord, WhatsApp) ---
+    // These still use PollerState + ChannelManager loop methods.
+    // They will be migrated to adapters in a future refactor.
+    if (state.type == "discord") {
         auto poller = std::make_unique<PollerState>();
         poller->channel_name = state.name;
         poller->channel_type = state.type;
@@ -1134,8 +828,11 @@ void ChannelManager::StartChannel(const ChannelState& state) {
             m_pollers[name] = std::move(poller);
         }
 
-        std::cerr << "[channels] Started Discord Gateway: " << state.name << std::endl;
-    } else if (state.type == "whatsapp") {
+        std::cerr << "[channels] Started Discord Gateway (legacy): " << state.name << std::endl;
+        return;
+    }
+
+    if (state.type == "whatsapp") {
         auto poller = std::make_unique<PollerState>();
         poller->channel_name = state.name;
         poller->channel_type = state.type;
@@ -1152,76 +849,31 @@ void ChannelManager::StartChannel(const ChannelState& state) {
             m_pollers[name] = std::move(poller);
         }
 
-        std::cerr << "[channels] Started WhatsApp Gateway: " << state.name << std::endl;
-    } else if (state.type == "slack") {
-        // Slack: Socket Mode (Phase 2) when app_token is available,
-        // REST polling (Phase 1) as fallback.
-        auto poller = std::make_unique<PollerState>();
-        poller->channel_name = state.name;
-        poller->channel_type = state.type;
-        poller->config = state.config;
-        poller->agent_id = GetString(state.config, "agent_id", "");
-        poller->next_attempt = std::chrono::steady_clock::now();
-        poller->active = true;
-
-        // Restore last-seen message timestamp for polling watermark
-        if (m_configStore) {
-            poller->lp_ts = m_configStore->Get("",
-                "channel." + state.name + ".polling.latest_ts");
-        }
-
-        std::string name = state.name;
-
-        // Use Socket Mode if app_token is configured, otherwise fall back to REST polling
-        std::string appToken = GetString(state.config, "app_token");
-        if (!appToken.empty()) {
-            poller->thread = std::thread(&ChannelManager::SlackSocketModeLoop, this, poller.get());
-            std::cerr << "[channels] Started Slack Socket Mode: " << state.name << std::endl;
-        } else {
-            poller->thread = std::thread(&ChannelManager::SlackPollingLoop, this, poller.get());
-            std::cerr << "[channels] Started Slack polling (no app_token): " << state.name << std::endl;
-        }
-
-        {
-            std::lock_guard<std::mutex> lock(m_pollersMutex);
-            m_pollers[name] = std::move(poller);
-        }
-    } else if (state.type == "nextcloud") {
-        // Nextcloud Talk — OCS API long-polling
-        auto poller = std::make_unique<PollerState>();
-        poller->channel_name = state.name;
-        poller->channel_type = state.type;
-        poller->config = state.config;
-        poller->agent_id = GetString(state.config, "agent_id", "");
-        poller->next_attempt = std::chrono::steady_clock::now();
-        poller->active = true;
-
-        // Restore last-known message IDs from config store
-        // (per-conversation watermarks stored as channel.{name}.polling.{token}.last_msg_id)
-        if (m_configStore) {
-            poller->lp_ts = m_configStore->Get("",
-                "channel." + state.name + ".polling.last_room_sync");
-        }
-
-        std::string name = state.name;
-        poller->thread = std::thread(&ChannelManager::NextcloudTalkPollLoop, this, poller.get());
-
-        {
-            std::lock_guard<std::mutex> lock(m_pollersMutex);
-            m_pollers[name] = std::move(poller);
-        }
-
-        std::cerr << "[channels] Started Nextcloud Talk poller: " << state.name << std::endl;
-    } else {
-        std::cerr << "[channels] Unknown channel type: " << state.type << std::endl;
+        std::cerr << "[channels] Started WhatsApp Gateway (legacy): " << state.name << std::endl;
+        return;
     }
+
+    std::cerr << "[channels] Unknown channel type: " << state.type << std::endl;
 }
 
 void ChannelManager::StopChannel(const std::string& name) {
-    // Stop IRC
+    // Stop adapter-based connector
+    {
+        std::lock_guard<std::mutex> lock(m_adaptersMutex);
+        auto it = m_adapters.find(name);
+        if (it != m_adapters.end()) {
+            it->second->Stop();
+            m_adapters.erase(it);
+            m_adapterTypes.erase(name);
+            std::cerr << "[channels] Stopped adapter: " << name << std::endl;
+            return;
+        }
+    }
+
+    // Stop IRC (legacy)
     StopIrcChannel(name);
 
-    // Stop poller
+    // Stop poller (legacy — Discord/WhatsApp)
     {
         std::lock_guard<std::mutex> lock(m_pollersMutex);
         auto it = m_pollers.find(name);

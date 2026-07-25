@@ -18,6 +18,7 @@
 
 #include "animus_kernel/ChannelState.h"
 #include "animus_kernel/IChannelAdapter.h"
+#include "animus_kernel/ChannelAdapters.h"
 
 namespace drogon {
 class WebSocketClient;
@@ -331,13 +332,21 @@ private:
     std::unordered_map<std::string, ChannelState> m_channels;
     mutable std::mutex m_channelsMutex;
 
-    // Poller runtimes (VK, Telegram, etc.)
+    // Poller runtimes (VK, Telegram, etc.) — legacy, for Discord/WhatsApp
     std::unordered_map<std::string, std::unique_ptr<PollerState>> m_pollers;
     mutable std::mutex m_pollersMutex;
 
-    // IRC runtimes
+    // IRC runtimes — legacy, will migrate to IrcAdapter
     std::unordered_map<std::string, IrcRuntime> m_ircRuntimes;
     mutable std::mutex m_ircMutex;
+
+    // Adapter instances — for connectors migrated to IChannelAdapter
+    std::unordered_map<std::string, std::unique_ptr<IChannelAdapter>> m_adapters;
+    std::unordered_map<std::string, std::string> m_adapterTypes; // name → type
+    mutable std::mutex m_adaptersMutex;
+
+    // Shared context for adapters
+    std::unique_ptr<ChannelContext> m_channelCtx;
 
     std::atomic<bool> m_running{false};
     std::atomic<bool> m_stopRequested{false};
