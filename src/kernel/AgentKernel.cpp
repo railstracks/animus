@@ -231,15 +231,14 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
     host.log = [](void* /*ctx*/, animus_log_level_t level, animus_string_view msg) {
         const char* lvl = "INFO";
         switch (level) {
-            case ANIMUS_ALOG_DEBUG: lvl = "DEBUG"; break;
-            case ANIMUS_ALOG_INFO: lvl = "INFO"; break;
+            case ANIMUS_LOG_DEBUG: lvl = "DEBUG"; break;
+            case ANIMUS_LOG_INFO: lvl = "INFO"; break;
             case ANIMUS_LOG_WARN: lvl = "WARN"; break;
-            case ANIMUS_ALOG_ERROR: lvl = "ERROR"; break;
+            case ANIMUS_LOG_ERROR: lvl = "ERROR"; break;
             default: break;
         }
-        ALOG_ERROR("this", "[module:" << lvl << "] "
-                  << std::string(msg.data ? msg.data : "", msg.size)
-                  ");
+        ALOG_DEBUG("module", "[" << lvl << "] "
+                  << std::string(msg.data ? msg.data : "", msg.size));
     };
 
     std::string modErr;

@@ -19,10 +19,10 @@ namespace animus::kernel {
 // Usage:
 //   ALOG_INFO("chain", "Executing tool " << toolName);
 //   ALOG_ERROR("provider", "HTTP " << status << ": " << body);
-//   ALOG_DEBUG("channel", "Polling " << url);   // compiled out unless ANIMUS_ALOG_DEBUG
+//   ALOG_DEBUG("channel", "Polling " << url);   // compiled out unless ANIMUS_LOG_DEBUG
 //
 // Level threshold is set globally. Default: Info (Debug/Trace compiled out
-// in release builds via ANIMUS_ALOG_DEBUG preprocessor flag).
+// in release builds via ANIMUS_LOG_DEBUG preprocessor flag).
 //
 // Categories are free-form strings — no enum needed. Common categories:
 //   chain, provider, channel, tool, store, context, memory, scheduler,
@@ -113,8 +113,8 @@ inline void SetLogLevelFromString(const std::string& s) {
                 (static_cast<std::ostringstream&&>(std::ostringstream() << msg)).str()); \
     } while(0)
 
-// Debug-level — compiled out unless ANIMUS_ALOG_DEBUG is defined
-#ifdef ANIMUS_ALOG_DEBUG
+// Debug-level — compiled out unless ANIMUS_LOG_DEBUG is defined
+#ifdef ANIMUS_LOG_DEBUG
 #define ALOG_DEBUG(cat, msg) \
     do { \
         if (detail::GetLogLevel() <= LogLevel::Debug) \
