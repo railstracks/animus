@@ -3,6 +3,7 @@
 #include "animus_kernel/social/TelegramBotApi.h"
 #include "animus_kernel/AgentConfigStore.h"
 #include "animus_kernel/tools/HttpClient.h"
+#include "animus_kernel/Log.h"
 
 #include <json/json.h>
 #include <json/writer.h>
@@ -12,6 +13,7 @@
 #include <thread>
 #include <iostream>
 #include <algorithm>
+#include <iomanip>
 #include <set>
 
 namespace animus::kernel {
@@ -41,6 +43,16 @@ int64_t GetInt(const Json::Value& v, const char* key, int64_t def = 0) {
     if (v.isMember(key) && v[key].isInt64()) return v[key].asInt64();
     if (v.isMember(key) && v[key].isInt()) return v[key].asInt();
     return def;
+}
+
+// ISO 8601 UTC timestamp for Bluesky API calls
+std::string iso_now_bsky() {
+    auto t = std::time(nullptr);
+    std::tm tm{};
+    gmtime_r(&t, &tm);
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%S.000Z");
+    return oss.str();
 }
 
 std::string ExtractAdapterType(const std::string& platformId) {
@@ -253,6 +265,28 @@ void SocialEventPoller::AddInstance(const PollerConfig& config) {
             "social." + config.platform_id + ".polling.key");
         state->lp_server = m_configStore->Get(agentId,
             "social." + config.platform_id + ".polling.server");
+
+        // Bluesky: load channel config (handle, app_password, pds, cached JWTs)
+        if (config.adapter_type == "bluesky") {
+            const std::string& pid = config.platform_id;
+            state->bsky_auth.handle = m_configStore->Get(agentId,
+                "channels." + pid + ".handle");
+            // Store app_password in access_token for the Start() check
+            std::string appPassword = m_configStore->Get(agentId,
+                "channels." + pid + ".app_password");
+            state->access_token = appPassword;  // non-empty = has credentials
+            std::string pds = m_configStore->Get(agentId,
+                "channels." + pid + ".pds");
+            state->bsky_auth.pds = pds.empty() ? "https://bsky.social" : pds;
+            state->bsky_auth.access_jwt = m_configStore->Get(agentId,
+                "channels." + pid + ".access_jwt");
+            state->bsky_auth.refresh_jwt = m_configStore->Get(agentId,
+                "channels." + pid + ".refresh_jwt");
+            state->bsky_auth.did = m_configStore->Get(agentId,
+                "channels." + pid + ".did");
+            state->bsky_last_seen = m_configStore->Get(agentId,
+                "social." + pid + ".last_seen");
+        }
     }
 
     m_instances[config.platform_id] = std::move(state);
@@ -279,6 +313,8 @@ bool SocialEventPoller::Start() {
 
         if (state->config.adapter_type == "telegram") {
             state->thread = std::thread(&SocialEventPoller::TelegramLongPollLoop, this, state.get());
+        } else if (state->config.adapter_type == "bluesky") {
+            state->thread = std::thread(&SocialEventPoller::BlueskyPollLoop, this, state.get());
         } else if (state->config.method == "long_poll") {
             state->thread = std::thread(&SocialEventPoller::LongPollLoop, this, state.get());
         } else {
@@ -521,12 +557,319 @@ void SocialEventPoller::LongPollLoop(InstanceState* state) {
 }
 
 // ============================================================================
-// REST Poll Loop (placeholder for Bluesky, etc.)
+// Bluesky REST Poll Loop
+// Authenticates via AT Protocol, polls app.bsky.notification.listNotifications,
+// dispatches mentions/replies/quotes to agent sessions.
+// Also handles proactive JWT refresh to keep sessions alive.
+// ============================================================================
+
+std::string SocialEventPoller::BlueskyResolveHandle(InstanceState* state,
+                                                     const std::string& handle,
+                                                     const std::string& pds) {
+    // POST com.atproto.identity.resolveHandle
+    Json::Value body;
+    body["handle"] = handle;
+
+    HttpClient::Request req;
+    req.method = "POST";
+    req.url = pds + "/xrpc/com.atproto.identity.resolveHandle";
+    req.headers["Content-Type"] = "application/json";
+    req.body = Json::FastWriter().write(body);
+
+    auto resp = m_httpClient.Execute(req);
+    if (resp.status_code != 200) return "";
+
+    auto data = ParseJson(resp.body);
+    return GetString(data, "did");
+}
+
+bool SocialEventPoller::BlueskyRefreshToken(InstanceState* state, BlueskyAuth& auth) {
+    if (auth.refresh_jwt.empty()) return false;
+
+    HttpClient::Request req;
+    req.method = "POST";
+    req.url = auth.pds + "/xrpc/com.atproto.server.refreshSession";
+    req.headers["Content-Type"] = "application/json";
+    req.headers["Authorization"] = "Bearer " + auth.refresh_jwt;
+    req.body = "";
+
+    auto resp = m_httpClient.Execute(req);
+    if (resp.status_code != 200) return false;
+
+    auto data = ParseJson(resp.body);
+    auth.access_jwt = GetString(data, "accessJwt");
+    auth.refresh_jwt = GetString(data, "refreshJwt");
+    std::string newDid = GetString(data, "did");
+    if (!newDid.empty()) auth.did = newDid;
+
+    // Persist updated tokens
+    if (m_configStore) {
+        const std::string agentId;
+        const std::string& pid = state->config.platform_id;
+        m_configStore->Set(agentId, "channels." + pid + ".access_jwt", auth.access_jwt);
+        m_configStore->Set(agentId, "channels." + pid + ".refresh_jwt", auth.refresh_jwt);
+        m_configStore->Set(agentId, "channels." + pid + ".did", auth.did);
+    }
+    return !auth.access_jwt.empty();
+}
+
+SocialEventPoller::BlueskyAuth SocialEventPoller::BlueskyAuthenticate(InstanceState* state) {
+    BlueskyAuth& auth = state->bsky_auth;
+
+    // If we have a cached access_jwt, check if it's still valid
+    // (JWTs are valid for ~2 hours; we refresh proactively at 90 min)
+    auto now = std::chrono::steady_clock::now();
+    if (!auth.access_jwt.empty() && now < state->bsky_next_refresh) {
+        return auth;  // Token still fresh
+    }
+
+    // Try refresh first
+    if (!auth.refresh_jwt.empty()) {
+        ALOG_INFO("social", "[bluesky] refreshing session for " << state->config.platform_id);
+        if (BlueskyRefreshToken(state, auth)) {
+            state->bsky_next_refresh = now + std::chrono::minutes(90);
+            return auth;
+        }
+    }
+
+    // Full re-auth with handle + app_password
+    if (auth.handle.empty()) {
+        ALOG_ERROR("social", "[bluesky] no handle configured for " << state->config.platform_id);
+        return auth;
+    }
+
+    // Read app_password from config (stored in access_token field)
+    std::string appPassword = state->access_token;
+    if (appPassword.empty()) {
+        ALOG_ERROR("social", "[bluesky] no app_password for " << state->config.platform_id);
+        return auth;
+    }
+
+    ALOG_INFO("social", "[bluesky] createSession for " << state->config.platform_id
+              << " (handle=" << auth.handle << ")");
+
+    Json::Value body;
+    body["identifier"] = auth.handle;
+    body["password"] = appPassword;
+
+    HttpClient::Request req;
+    req.method = "POST";
+    req.url = auth.pds + "/xrpc/com.atproto.server.createSession";
+    req.headers["Content-Type"] = "application/json";
+    req.body = Json::FastWriter().write(body);
+
+    auto resp = m_httpClient.Execute(req);
+    if (resp.status_code != 200) {
+        ALOG_ERROR("social", "[bluesky] createSession failed (" << resp.status_code
+                  << "): " << resp.body.substr(0, 200));
+        return auth;
+    }
+
+    auto data = ParseJson(resp.body);
+    auth.access_jwt = GetString(data, "accessJwt");
+    auth.refresh_jwt = GetString(data, "refreshJwt");
+    auth.did = GetString(data, "did");
+    std::string returnedHandle = GetString(data, "handle");
+    if (!returnedHandle.empty()) auth.handle = returnedHandle;
+
+    // Persist tokens
+    if (m_configStore) {
+        const std::string agentId;
+        const std::string& pid = state->config.platform_id;
+        m_configStore->Set(agentId, "channels." + pid + ".access_jwt", auth.access_jwt);
+        m_configStore->Set(agentId, "channels." + pid + ".refresh_jwt", auth.refresh_jwt);
+        m_configStore->Set(agentId, "channels." + pid + ".did", auth.did);
+        m_configStore->Set(agentId, "channels." + pid + ".handle", auth.handle);
+    }
+
+    state->bsky_next_refresh = now + std::chrono::minutes(90);
+    ALOG_INFO("social", "[bluesky] authenticated as " << auth.did
+              << " (" << auth.handle << ")");
+    return auth;
+}
+
+void SocialEventPoller::BlueskyPollLoop(InstanceState* state) {
+    ALOG_INFO("social", "[bluesky] poll loop starting for " << state->config.platform_id);
+
+    // Initial authentication
+    state->bsky_auth = BlueskyAuthenticate(state);
+    if (state->bsky_auth.access_jwt.empty()) {
+        ALOG_ERROR("social", "[bluesky] initial auth failed for " << state->config.platform_id);
+        state->active = false;
+        return;
+    }
+
+    // Poll interval: default 60 seconds for Bluesky (notifications API is cheap)
+    int pollInterval = state->config.interval_seconds > 0 ? state->config.interval_seconds : 60;
+
+    while (state->active && !m_stopRequested) {
+        auto now = std::chrono::steady_clock::now();
+        if (now < state->next_attempt) {
+            auto sleepMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                state->next_attempt - now).count();
+            std::this_thread::sleep_for(std::chrono::milliseconds(
+                std::min(sleepMs, (int64_t)30000)));
+            continue;
+        }
+
+        // Ensure auth is fresh
+        BlueskyAuth auth = BlueskyAuthenticate(state);
+        if (auth.access_jwt.empty()) {
+            state->consecutive_errors++;
+            int backoff = std::min(300, 30 * state->consecutive_errors);
+            ALOG_WARNING("social", "[bluesky] auth failed, backing off " << backoff << "s");
+            state->next_attempt = now + std::chrono::seconds(backoff);
+            continue;
+        }
+
+        // Fetch notifications
+        std::string url = auth.pds + "/xrpc/app.bsky.notification.listNotifications?limit=50";
+        if (!state->bsky_last_seen.empty()) {
+            // No cursor-based pagination needed — we filter by indexedAt
+        }
+
+        HttpClient::Request req;
+        req.method = "GET";
+        req.url = url;
+        req.headers["Authorization"] = "Bearer " + auth.access_jwt;
+
+        auto resp = m_httpClient.Execute(req);
+
+        if (resp.status_code == 401 || resp.status_code == 400) {
+            // Token expired — force refresh on next iteration
+            ALOG_WARNING("social", "[bluesky] got " << resp.status_code
+                      << " — forcing token refresh");
+            state->bsky_next_refresh = std::chrono::steady_clock::time_point::min();
+            state->next_attempt = now + std::chrono::seconds(5);
+            continue;
+        }
+
+        if (resp.status_code != 200) {
+            ALOG_WARNING("social", "[bluesky] listNotifications failed ("
+                      << resp.status_code << "): " << resp.body.substr(0, 200));
+            state->consecutive_errors++;
+            int backoff = std::min(300, 30 * state->consecutive_errors);
+            state->next_attempt = now + std::chrono::seconds(backoff);
+            continue;
+        }
+
+        state->consecutive_errors = 0;
+
+        // Parse notifications
+        auto data = ParseJson(resp.body);
+        if (data.isNull() || !data.isMember("notifications")) {
+            state->next_attempt = now + std::chrono::seconds(pollInterval);
+            continue;
+        }
+
+        const auto& notifs = data["notifications"];
+        std::string latestSeen = state->bsky_last_seen;
+        int processed = 0;
+
+        for (const auto& n : notifs) {
+            std::string reason = GetString(n, "reason");
+            std::string indexedAt = GetString(n, "indexedAt");
+
+            // Skip already-seen notifications (by timestamp)
+            if (!state->bsky_last_seen.empty() && indexedAt <= state->bsky_last_seen) {
+                continue;
+            }
+
+            // Only process mentions, replies, and quotes
+            if (reason != "mention" && reason != "reply" && reason != "quote" && reason != "custom-feed") {
+                continue;
+            }
+
+            // Extract author info
+            std::string authorHandle, authorDisplayName;
+            if (n.isMember("author")) {
+                authorHandle = GetString(n["author"], "handle");
+                authorDisplayName = GetString(n["author"], "displayName");
+                if (authorDisplayName.empty()) authorDisplayName = authorHandle;
+            }
+
+            // Extract post text
+            std::string postText;
+            std::string postUri;
+            if (n.isMember("record")) {
+                postText = GetString(n["record"], "text");
+            }
+            if (n.isMember("uri")) {
+                postUri = GetString(n, "uri");
+            }
+
+            if (postText.empty() && reason != "custom-feed") continue;
+
+            // Build the message for the agent
+            std::string sessionType = (reason == "reply") ? "chat" : "chat";
+            std::string routingKey = "post:" + postUri;
+
+            std::string message;
+            if (reason == "mention") {
+                message = "[Bluesky mention from " + authorDisplayName + " (@"
+                          + authorHandle + ")]\n" + postText;
+            } else if (reason == "reply") {
+                message = "[Bluesky reply from " + authorDisplayName + " (@"
+                          + authorHandle + ")]\n" + postText;
+            } else if (reason == "quote") {
+                message = "[Bluesky quote from " + authorDisplayName + " (@"
+                          + authorHandle + ")]\n" + postText;
+            } else {
+                continue;  // Skip unknown reasons
+            }
+
+            ALOG_INFO("social", "[bluesky] dispatching " << reason
+                      << " from @" << authorHandle << " for " << state->config.platform_id);
+
+            DispatchToSession(state, routingKey, message, sessionType);
+
+            processed++;
+
+            // Track latest timestamp
+            if (latestSeen.empty() || indexedAt > latestSeen) {
+                latestSeen = indexedAt;
+            }
+        }
+
+        // Update last_seen watermark
+        if (latestSeen != state->bsky_last_seen) {
+            state->bsky_last_seen = latestSeen;
+            if (m_configStore) {
+                const std::string agentId;
+                m_configStore->Set(agentId,
+                    "social." + state->config.platform_id + ".last_seen",
+                    latestSeen);
+            }
+        }
+
+        // Mark notifications as seen (so they don't show as unread in the app)
+        if (processed > 0 || true) {
+            // Always update seen — cheap call
+            Json::Value seenBody;
+            seenBody["seenAt"] = iso_now_bsky();
+
+            HttpClient::Request seenReq;
+            seenReq.method = "POST";
+            seenReq.url = auth.pds + "/xrpc/app.bsky.notification.updateSeen";
+            seenReq.headers["Authorization"] = "Bearer " + auth.access_jwt;
+            seenReq.headers["Content-Type"] = "application/json";
+            seenReq.body = Json::FastWriter().write(seenBody);
+            m_httpClient.Execute(seenReq);
+        }
+
+        state->next_attempt = now + std::chrono::seconds(pollInterval);
+    }
+
+    ALOG_INFO("social", "[bluesky] poll loop ended for " << state->config.platform_id);
+}
+
+// ============================================================================
+// Generic REST Poll Loop (for future adapters)
 // ============================================================================
 
 void SocialEventPoller::RestPollLoop(InstanceState* state) {
-    std::cerr << "[social:poller] REST poll loop starting for "
-              << state->config.platform_id << "\n";
+    ALOG_INFO("social", "[social:poller] REST poll loop starting for "
+              << state->config.platform_id);
 
     while (state->active && !m_stopRequested) {
         auto now = std::chrono::steady_clock::now();
@@ -538,14 +881,15 @@ void SocialEventPoller::RestPollLoop(InstanceState* state) {
             continue;
         }
 
-        // TODO: Implement REST polling for Bluesky notifications
-        // This will use app.bsky.notification.listNotifications
+        // Generic REST polling not yet implemented for this adapter type
+        ALOG_DEBUG("social", "[social:poller] REST poll not implemented for "
+                  << state->config.adapter_type);
 
         state->next_attempt = now + std::chrono::seconds(state->config.interval_seconds);
     }
 
-    std::cerr << "[social:poller] REST poll loop ended for "
-              << state->config.platform_id << "\n";
+    ALOG_INFO("social", "[social:poller] REST poll loop ended for "
+              << state->config.platform_id);
 }
 
 // ============================================================================

@@ -693,6 +693,55 @@ local function do_browse(args)
     }
 end
 
+-- ---------------------------------------------------------------------------
+-- Heartbeat — proactive auth health check
+-- Called periodically by the poller to keep the session alive.
+-- Checks if access_jwt is expired and refreshes if needed.
+-- Returns status info for logging.
+-- ---------------------------------------------------------------------------
+
+local function do_heartbeat(args)
+    local pid = args.platform_id
+    local jwt_key = cfg_key(pid, "access_jwt")
+    local jwt = config.get(jwt_key)
+
+    if not jwt or jwt == "" then
+        -- No cached token — try full auth
+        local ok, err = refresh_auth(pid)
+        if not ok then
+            return { success = false, error = tostring(err) }
+        end
+        return { success = true, output = json.encode({ refreshed = true, method = "createSession" }) }
+    end
+
+    if is_jwt_expired(jwt) then
+        log.warn("[bluesky] heartbeat: token expired for " .. pid .. ", refreshing")
+        local refreshed = try_refresh_session(pid)
+        if refreshed then
+            return { success = true, output = json.encode({ refreshed = true, method = "refreshSession" }) }
+        end
+        local ok, err = refresh_auth(pid)
+        if not ok then
+            return { success = false, error = tostring(err) }
+        end
+        return { success = true, output = json.encode({ refreshed = true, method = "createSession" }) }
+    end
+
+    -- Token still valid — verify with a lightweight API call
+    local resp = auth_get(pid, "/xrpc/app.bsky.notification.listNotifications", { limit = "1" })
+    if resp.status == 200 then
+        return { success = true, output = json.encode({ refreshed = false, healthy = true }) }
+    end
+
+    -- Token passed expiry check but server rejected it — force re-auth
+    log.warn("[bluesky] heartbeat: token passed expiry check but server returned " .. tostring(resp.status) .. ", re-authing")
+    local ok, err = refresh_auth(pid)
+    if not ok then
+        return { success = false, error = tostring(err) }
+    end
+    return { success = true, output = json.encode({ refreshed = true, method = "createSession", reason = "server_rejected" }) }
+end
+
 local function do_delete(args)
     local pid = args.platform_id
     if not args.post_id or args.post_id == "" then
@@ -733,7 +782,7 @@ animus.register_channel({
     id = "bluesky",
     name = "Bluesky",
     capabilities = {"read", "write", "search"},
-    actions = {"post", "reply", "like", "browse", "search", "get_notifications", "delete"},
+    actions = {"post", "reply", "like", "browse", "search", "get_notifications", "delete", "heartbeat"},
     schema = {
         post = {
             { name = "content", type = "string", required = true, description = "Post text (max 300 graphemes)" },
@@ -764,6 +813,9 @@ animus.register_channel({
         },
         delete = {
             { name = "post_id", type = "string", required = true, description = "AT-URI of the post to delete" }
+        },
+        heartbeat = {
+            { name = "platform_id", type = "string", required = true, description = "Platform instance ID" }
         }
     },
     handler = function(args)
@@ -779,6 +831,7 @@ animus.register_channel({
         elseif action == "browse" then return do_browse(args)
         elseif action == "get_notifications" then return do_get_notifications(args)
         elseif action == "delete" then return do_delete(args)
+        elseif action == "heartbeat" then return do_heartbeat(args)
         else return { success = false, error = "unknown action: " .. tostring(action) }
         end
     end
