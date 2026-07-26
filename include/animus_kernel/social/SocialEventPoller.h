@@ -151,6 +151,16 @@ public:
 
 private:
     // Per-instance poller state
+
+    // Bluesky auth state
+    struct BlueskyAuth {
+        std::string access_jwt;
+        std::string refresh_jwt;
+        std::string did;
+        std::string handle;
+        std::string pds;  // PDS base URL
+    };
+
     struct InstanceState {
         PollerConfig config;
         std::string access_token;
@@ -169,12 +179,26 @@ private:
         std::set<int64_t> seenEventIds;
         static constexpr size_t kMaxSeenIds = 200;  // keep bounded
 
+        // Bluesky state
+        std::string bsky_last_seen;  // ISO timestamp of last processed notification
+        BlueskyAuth bsky_auth;
+        std::chrono::steady_clock::time_point bsky_next_refresh;
         std::thread thread;
         bool active{false};
     };
 
     void LongPollLoop(InstanceState* state);
     void RestPollLoop(InstanceState* state);
+
+    // Bluesky REST poll loop — authenticates via AT Protocol, polls
+    // notifications, dispatches mentions/replies to agent sessions.
+    void BlueskyPollLoop(InstanceState* state);
+
+    // Bluesky auth helpers
+    BlueskyAuth BlueskyAuthenticate(InstanceState* state);
+    bool BlueskyRefreshToken(InstanceState* state, BlueskyAuth& auth);
+    std::string BlueskyResolveHandle(InstanceState* state, const std::string& handle,
+                                     const std::string& pds);
 
     // Telegram Long Poll
     void TelegramLongPollLoop(InstanceState* state);

@@ -9,6 +9,8 @@
 #include <set>
 #include <thread>
 #include <vector>
+#include <iomanip>
+#include <ctime>
 
 #include "animus_kernel/AgentConfigStore.h"
 #include "animus_kernel/ChannelHelpers.h"
@@ -53,17 +55,31 @@ std::string GetConfigString(const Json::Value& config, const std::string& key,
 }
 
 std::string UrlEncode(const std::string& input) {
+    // RFC 3986 unreserved characters
+    static const std::string unreserved =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
     std::string result;
-    for (char c : input) {
-        if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '~') {
-            result += c;
+    result.reserve(input.size() * 3);
+    for (unsigned char c : input) {
+        if (unreserved.find(c) != std::string::npos) {
+            result += static_cast<char>(c);
         } else {
             char buf[4];
-            std::snprintf(buf, sizeof(buf), "%%%02X", static_cast<unsigned char>(c));
+            snprintf(buf, sizeof(buf), "%%%02X", c);
             result += buf;
         }
     }
     return result;
+}
+
+// ISO 8601 UTC timestamp for Bluesky API
+std::string iso_now_bsky_cm() {
+    auto t = std::time(nullptr);
+    std::tm tm{};
+    gmtime_r(&t, &tm);
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%S.000Z");
+    return oss.str();
 }
 
 // Base64 encoder for HTTP Basic auth
@@ -533,6 +549,136 @@ void ChannelManager::SendReply(const ReplyTarget& target, const std::string& tex
         return;
     }
 
+    if (target.channel_type == "bluesky") {
+        // Bluesky auto-reply: post a reply via AT Protocol
+        std::string pds, accessJwt, did;
+
+        // Try poller state first (has fresh JWTs from polling)
+        {
+            std::lock_guard<std::mutex> lock(m_pollersMutex);
+            auto it = m_pollers.find(target.channel_name);
+            if (it != m_pollers.end()) {
+                accessJwt = it->second->bsky_access_jwt;
+                did = it->second->bsky_did;
+                pds = GetString(it->second->config, "pds");
+            }
+        }
+
+        // Fallback to channel config
+        if (accessJwt.empty()) {
+            std::lock_guard<std::mutex> lock(m_channelsMutex);
+            auto it = m_channels.find(target.channel_name);
+            if (it != m_channels.end()) {
+                const auto& cfg = it->second.config;
+                accessJwt = GetString(cfg, "access_jwt");
+                did = GetString(cfg, "did");
+                pds = GetString(cfg, "pds");
+                std::string handle = GetString(cfg, "handle");
+                std::string appPassword = GetString(cfg, "app_password");
+
+                // If no JWT but we have credentials, create a session
+                if (accessJwt.empty() && !handle.empty() && !appPassword.empty()) {
+                    Json::Value body;
+                    body["identifier"] = handle;
+                    body["password"] = appPassword;
+
+                    HttpClient::Request authReq;
+                    authReq.method = "POST";
+                    authReq.url = (pds.empty() ? "https://bsky.social" : pds)
+                        + "/xrpc/com.atproto.server.createSession";
+                    authReq.headers["Content-Type"] = "application/json";
+                    authReq.body = channel_detail::JsonCompact(body);
+
+                    auto authResp = m_httpClient.Execute(authReq);
+                    if (authResp.status_code == 200) {
+                        auto authData = ParseJson(authResp.body);
+                        accessJwt = GetString(authData, "accessJwt");
+                        did = GetString(authData, "did");
+                    }
+                }
+            }
+        }
+
+        if (pds.empty()) pds = "https://bsky.social";
+
+        // Build the reply record
+        std::string parentUri = target.post_id;
+        if (parentUri.empty()) {
+            ALOG_WARNING("bluesky", "SendReply: no post_id for reply target");
+            return;
+        }
+
+        // Resolve parent CID via getRecord
+        std::string parentCid;
+        {
+            // Parse AT-URI: at://<repo>/<collection>/<rkey>
+            std::string repo, collection, rkey;
+            size_t pos = parentUri.find("//");
+            if (pos != std::string::npos) {
+                size_t slashPos = parentUri.find('/', pos + 2);
+                if (slashPos != std::string::npos) {
+                    repo = parentUri.substr(pos + 2, slashPos - pos - 2);
+                    size_t nextSlash = parentUri.find('/', slashPos + 1);
+                    if (nextSlash != std::string::npos) {
+                        collection = parentUri.substr(slashPos + 1, nextSlash - slashPos - 1);
+                        rkey = parentUri.substr(nextSlash + 1);
+                    }
+                }
+            }
+            if (!repo.empty() && !collection.empty() && !rkey.empty()) {
+                std::string recordUrl = pds + "/xrpc/com.atproto.repo.getRecord?repo="
+                    + UrlEncode(repo) + "&collection=" + UrlEncode(collection)
+                    + "&rkey=" + UrlEncode(rkey);
+                HttpClient::Request recReq;
+                recReq.method = "GET";
+                recReq.url = recordUrl;
+                recReq.headers["Authorization"] = "Bearer " + accessJwt;
+                auto recResp = m_httpClient.Execute(recReq);
+                if (recResp.status_code == 200) {
+                    auto recData = ParseJson(recResp.body);
+                    parentCid = GetString(recData, "cid");
+                }
+            }
+        }
+        if (parentCid.empty()) {
+            ALOG_WARNING("bluesky", "SendReply: could not resolve parent CID for " << parentUri);
+            return;
+        }
+
+        // Build reply record
+        Json::Value record;
+        record["$type"] = "app.bsky.feed.post";
+        record["text"] = text;
+        record["createdAt"] = iso_now_bsky_cm();
+        record["langs"][0] = "en";
+        Json::Value replyObj;
+        replyObj["root"]["uri"] = parentUri;
+        replyObj["root"]["cid"] = parentCid;
+        replyObj["parent"]["uri"] = parentUri;
+        replyObj["parent"]["cid"] = parentCid;
+        record["reply"] = replyObj;
+
+        Json::Value createBody;
+        createBody["repo"] = did;
+        createBody["collection"] = "app.bsky.feed.post";
+        createBody["record"] = record;
+
+        HttpClient::Request postReq;
+        postReq.method = "POST";
+        postReq.url = pds + "/xrpc/com.atproto.repo.createRecord";
+        postReq.headers["Authorization"] = "Bearer " + accessJwt;
+        postReq.headers["Content-Type"] = "application/json";
+        postReq.body = channel_detail::JsonCompact(createBody);
+
+        auto postResp = m_httpClient.Execute(postReq);
+        if (postResp.status_code != 200) {
+            ALOG_WARNING("bluesky", "SendReply: createRecord failed (" << postResp.status_code << ")");
+        } else {
+            ALOG_DEBUG("bluesky", "SendReply: posted reply to " << parentUri);
+        }
+        return;
+    }
+
     ALOG_DEBUG("channels", "SendReply: unsupported type: "
               << target.channel_type);
 }
@@ -678,6 +824,28 @@ void ChannelManager::StartChannel(const ChannelState& state) {
         }
 
         ALOG_INFO("channels", "Started WhatsApp Gateway (legacy): " << state.name);
+        return;
+    }
+
+    // --- Bluesky (REST polling via AT Protocol) ---
+    if (state.type == "bluesky") {
+        auto poller = std::make_unique<PollerState>();
+        poller->channel_name = state.name;
+        poller->channel_type = state.type;
+        poller->config = state.config;
+        poller->agent_id = GetString(state.config, "agent_id", "");
+        poller->next_attempt = std::chrono::steady_clock::now();
+        poller->active = true;
+
+        std::string name = state.name;
+        poller->thread = std::thread(&ChannelManager::BlueskyPollLoop, this, poller.get());
+
+        {
+            std::lock_guard<std::mutex> lock(m_pollersMutex);
+            m_pollers[name] = std::move(poller);
+        }
+
+        ALOG_INFO("channels", "Started Bluesky poller: " << state.name);
         return;
     }
 
@@ -986,6 +1154,240 @@ void ChannelManager::LogToSession(PollerState* state,
 
     // Log the message without triggering a chain
     m_logCallback(state->agent_id, sessionKey, message, sessionType);
+}
+
+// ============================================================================
+// Bluesky Poll Loop
+// ============================================================================
+
+bool ChannelManager::BlueskyReAuth(PollerState* state) {
+    std::string handle = GetString(state->config, "handle");
+    std::string appPassword = GetString(state->config, "app_password");
+    std::string pds = GetString(state->config, "pds");
+    if (pds.empty()) pds = "https://bsky.social";
+
+    if (handle.empty() || appPassword.empty()) {
+        ALOG_ERROR("bluesky", "missing handle or app_password for " << state->channel_name);
+        return false;
+    }
+
+    Json::Value body;
+    body["identifier"] = handle;
+    body["password"] = appPassword;
+
+    HttpClient::Request req;
+    req.method = "POST";
+    req.url = pds + "/xrpc/com.atproto.server.createSession";
+    req.headers["Content-Type"] = "application/json";
+    req.body = channel_detail::JsonCompact(body);
+
+    auto resp = m_httpClient.Execute(req);
+    if (resp.status_code != 200) {
+        ALOG_ERROR("bluesky", "createSession failed (" << resp.status_code
+                  << "): " << resp.body.substr(0, 200));
+        return false;
+    }
+
+    auto data = ParseJson(resp.body);
+    state->bsky_access_jwt = GetString(data, "accessJwt");
+    state->bsky_refresh_jwt = GetString(data, "refreshJwt");
+    state->bsky_did = GetString(data, "did");
+
+    state->bsky_next_refresh = std::chrono::steady_clock::now() + std::chrono::minutes(90);
+    ALOG_INFO("bluesky", "authenticated as " << state->bsky_did
+              << " (" << GetString(data, "handle") << ")");
+    return true;
+}
+
+std::string ChannelManager::BlueskyResolveParentCid(PollerState* state, const std::string& uri) {
+    // Parse AT-URI: at://<repo>/<collection>/<rkey>
+    size_t pos = uri.find("//");
+    if (pos == std::string::npos) return "";
+    size_t slashPos = uri.find('/', pos + 2);
+    if (slashPos == std::string::npos) return "";
+    std::string repo = uri.substr(pos + 2, slashPos - pos - 2);
+
+    size_t nextSlash = uri.find('/', slashPos + 1);
+    if (nextSlash == std::string::npos) return "";
+    std::string collection = uri.substr(slashPos + 1, nextSlash - slashPos - 1);
+    std::string rkey = uri.substr(nextSlash + 1);
+
+    std::string pds = GetString(state->config, "pds");
+    if (pds.empty()) pds = "https://bsky.social";
+
+    std::string url = pds + "/xrpc/com.atproto.repo.getRecord?repo="
+        + UrlEncode(repo) + "&collection=" + UrlEncode(collection)
+        + "&rkey=" + UrlEncode(rkey);
+
+    HttpClient::Request req;
+    req.method = "GET";
+    req.url = url;
+    req.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
+
+    auto resp = m_httpClient.Execute(req);
+    if (resp.status_code != 200) return "";
+
+    auto data = ParseJson(resp.body);
+    return GetString(data, "cid");
+}
+
+void ChannelManager::BlueskyPollLoop(PollerState* state) {
+    ALOG_INFO("bluesky", "poll loop starting for " << state->channel_name);
+
+    // Initial auth
+    if (!BlueskyReAuth(state)) {
+        ALOG_ERROR("bluesky", "initial auth failed for " << state->channel_name);
+        state->active = false;
+        return;
+    }
+
+    while (state->active && !m_stopRequested) {
+        auto now = std::chrono::steady_clock::now();
+
+        // Sleep until next poll
+        if (now < state->next_attempt) {
+            auto sleepMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                state->next_attempt - now).count();
+            std::this_thread::sleep_for(std::chrono::milliseconds(
+                std::min(sleepMs, (int64_t)30000)));
+            continue;
+        }
+
+        // Refresh auth if needed
+        if (now >= state->bsky_next_refresh || state->bsky_access_jwt.empty()) {
+            // Try refresh token first
+            bool refreshed = false;
+            if (!state->bsky_refresh_jwt.empty()) {
+                std::string pds = GetString(state->config, "pds");
+                if (pds.empty()) pds = "https://bsky.social";
+
+                HttpClient::Request refreshReq;
+                refreshReq.method = "POST";
+                refreshReq.url = pds + "/xrpc/com.atproto.server.refreshSession";
+                refreshReq.headers["Authorization"] = "Bearer " + state->bsky_refresh_jwt;
+                refreshReq.headers["Content-Type"] = "application/json";
+                refreshReq.body = "";
+
+                auto refreshResp = m_httpClient.Execute(refreshReq);
+                if (refreshResp.status_code == 200) {
+                    auto refreshData = ParseJson(refreshResp.body);
+                    state->bsky_access_jwt = GetString(refreshData, "accessJwt");
+                    state->bsky_refresh_jwt = GetString(refreshData, "refreshJwt");
+                    if (!GetString(refreshData, "did").empty())
+                        state->bsky_did = GetString(refreshData, "did");
+                    state->bsky_next_refresh = now + std::chrono::minutes(90);
+                    ALOG_INFO("bluesky", "token refreshed for " << state->channel_name);
+                    refreshed = true;
+                }
+            }
+            if (!refreshed) {
+                ALOG_WARNING("bluesky", "refresh failed, full re-auth for " << state->channel_name);
+                if (!BlueskyReAuth(state)) {
+                    state->consecutive_errors++;
+                    int backoff = std::min(300, 30 * state->consecutive_errors);
+                    state->next_attempt = now + std::chrono::seconds(backoff);
+                    continue;
+                }
+            }
+        }
+
+        // Fetch notifications
+        std::string pds = GetString(state->config, "pds");
+        if (pds.empty()) pds = "https://bsky.social";
+
+        HttpClient::Request req;
+        req.method = "GET";
+        req.url = pds + "/xrpc/app.bsky.notification.listNotifications?limit=50";
+        req.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
+
+        auto resp = m_httpClient.Execute(req);
+
+        if (resp.status_code == 401 || resp.status_code == 400) {
+            ALOG_WARNING("bluesky", "got " << resp.status_code << " — forcing re-auth");
+            state->bsky_next_refresh = std::chrono::steady_clock::time_point::min();
+            state->next_attempt = now + std::chrono::seconds(5);
+            continue;
+        }
+
+        if (resp.status_code != 200) {
+            ALOG_WARNING("bluesky", "listNotifications failed (" << resp.status_code << ")");
+            state->consecutive_errors++;
+            int backoff = std::min(300, 30 * state->consecutive_errors);
+            state->next_attempt = now + std::chrono::seconds(backoff);
+            continue;
+        }
+
+        state->consecutive_errors = 0;
+        auto data = ParseJson(resp.body);
+
+        if (data.isNull() || !data.isMember("notifications")) {
+            state->next_attempt = now + std::chrono::seconds(60);
+            continue;
+        }
+
+        const auto& notifs = data["notifications"];
+        std::string latestSeen = state->bsky_last_seen;
+        int processed = 0;
+
+        for (const auto& n : notifs) {
+            std::string reason = GetString(n, "reason");
+            std::string indexedAt = GetString(n, "indexedAt");
+
+            if (!state->bsky_last_seen.empty() && indexedAt <= state->bsky_last_seen)
+                continue;
+
+            if (reason != "mention" && reason != "reply" && reason != "quote")
+                continue;
+
+            std::string authorHandle, authorDisplayName;
+            if (n.isMember("author")) {
+                authorHandle = GetString(n["author"], "handle");
+                authorDisplayName = GetString(n["author"], "displayName");
+                if (authorDisplayName.empty()) authorDisplayName = authorHandle;
+            }
+
+            std::string postText;
+            std::string postUri;
+            if (n.isMember("record"))
+                postText = GetString(n["record"], "text");
+            postUri = GetString(n, "uri");
+
+            if (postText.empty()) continue;
+
+            std::string message = "[Bluesky " + reason + " from " + authorDisplayName
+                + " (@" + authorHandle + ")]\n" + postText;
+
+            ALOG_INFO("bluesky", "dispatching " << reason << " from @"
+                      << authorHandle << " for " << state->channel_name);
+
+            DispatchToSession(state, "post:" + postUri, message, "chat");
+
+            processed++;
+            if (latestSeen.empty() || indexedAt > latestSeen)
+                latestSeen = indexedAt;
+        }
+
+        if (latestSeen != state->bsky_last_seen)
+            state->bsky_last_seen = latestSeen;
+
+        // Mark as seen
+        {
+            Json::Value seenBody;
+            seenBody["seenAt"] = iso_now_bsky_cm();
+
+            HttpClient::Request seenReq;
+            seenReq.method = "POST";
+            seenReq.url = pds + "/xrpc/app.bsky.notification.updateSeen";
+            seenReq.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
+            seenReq.headers["Content-Type"] = "application/json";
+            seenReq.body = channel_detail::JsonCompact(seenBody);
+            m_httpClient.Execute(seenReq);
+        }
+
+        state->next_attempt = now + std::chrono::seconds(60);
+    }
+
+    ALOG_INFO("bluesky", "poll loop ended for " << state->channel_name);
 }
 
 void ChannelManager::DispatchToSession(PollerState* state,
