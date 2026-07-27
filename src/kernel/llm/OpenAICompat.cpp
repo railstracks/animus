@@ -32,6 +32,45 @@ std::string ExtractJsonString(const std::string& json, const std::string& key) {
         case 'n':  result += '\n'; pos += 2; break;
         case 't':  result += '\t'; pos += 2; break;
         case 'r':  result += '\r'; pos += 2; break;
+        case '/':  result += '/';  pos += 2; break;
+        case 'b':  result += '\b'; pos += 2; break;
+        case 'f':  result += '\f'; pos += 2; break;
+        case 'u': {
+          // \uXXXX — decode Unicode escape (4 hex digits)
+          if (pos + 5 < json.size()) {
+            std::string hex = json.substr(pos + 2, 4);
+            unsigned int codepoint = 0;
+            bool valid = true;
+            for (char hc : hex) {
+              codepoint <<= 4;
+              if (hc >= '0' && hc <= '9') codepoint |= (hc - '0');
+              else if (hc >= 'a' && hc <= 'f') codepoint |= (hc - 'a' + 10);
+              else if (hc >= 'A' && hc <= 'F') codepoint |= (hc - 'A' + 10);
+              else { valid = false; break; }
+            }
+            if (valid) {
+              if (codepoint < 0x80) {
+                // ASCII range — single byte
+                result += static_cast<char>(codepoint);
+              } else if (codepoint < 0x800) {
+                // 2-byte UTF-8
+                result += static_cast<char>(0xC0 | (codepoint >> 6));
+                result += static_cast<char>(0x80 | (codepoint & 0x3F));
+              } else {
+                // 3-byte UTF-8 (BMP plane, no surrogates in practice)
+                result += static_cast<char>(0xE0 | (codepoint >> 12));
+                result += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+                result += static_cast<char>(0x80 | (codepoint & 0x3F));
+              }
+              pos += 6;
+            } else {
+              result += next; pos += 2;
+            }
+          } else {
+            result += next; pos += 2;
+          }
+          break;
+        }
         default:   result += next; pos += 2; break;
       }
     } else {

@@ -17,9 +17,11 @@
 #include "animus_kernel/llm/LLMProviderRegistry.h"
 #include "animus_kernel/llm/LLMTypes.h"
 #include "animus_kernel/llm/OpenAICodexProvider.h"
+#include "animus_kernel/llm/OpenAICompat.h"
 #include "animus_kernel/KernelConfig.h"
 
 using namespace animus::kernel::llm;
+using animus::kernel::llm::openai_compat::ExtractJsonString;
 
 // ============================================================================
 // Mock Provider — minimal concrete subclass for testing the base class API
@@ -464,6 +466,54 @@ void TestOpenAICodexParseResponseAndStreamEvents() {
   PASS();
 }
 
+void TestExtractJsonStringUnicodeEscapes() {
+  TEST("ExtractJsonString decodes \\uXXXX escapes");
+
+  // \u0026 = '&' — the exact case from the Telegram bug
+  {
+    std::string json = R"({"content":"S\u0026P 500 Snapshot"})";
+    auto result = ExtractJsonString(json, "content");
+    if (result == "S&P 500 Snapshot") {
+      PASS();
+    } else {
+      FAIL("expected 'S&P 500 Snapshot', got '" + result + "'");
+    }
+  }
+
+  // \u00e9 = 'é'
+  {
+    std::string json = R"({"content":"caf\u00e9"})";
+    auto result = ExtractJsonString(json, "content");
+    if (result == "caf\xc3\xa9") {
+      PASS();
+    } else {
+      FAIL("expected 'café' (UTF-8), got different bytes");
+    }
+  }
+
+  // \u0041 = 'A' (ASCII range)
+  {
+    std::string json = R"({"content":"\u0041BC"})";
+    auto result = ExtractJsonString(json, "content");
+    if (result == "ABC") {
+      PASS();
+    } else {
+      FAIL("expected 'ABC', got '" + result + "'");
+    }
+  }
+
+  // No \u escape — regular string still works
+  {
+    std::string json = R"({"content":"hello world"})";
+    auto result = ExtractJsonString(json, "content");
+    if (result == "hello world") {
+      PASS();
+    } else {
+      FAIL("expected 'hello world', got '" + result + "'");
+    }
+  }
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -487,6 +537,7 @@ int main() {
   TestOpenAICodexEndpointURL();
   TestOpenAICodexBuildRequestBody();
   TestOpenAICodexParseResponseAndStreamEvents();
+  TestExtractJsonStringUnicodeEscapes();
 
   std::cout << "\n";
   std::cout << "Results: " << testsPassed << " passed, " << testsFailed
