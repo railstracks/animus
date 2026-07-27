@@ -137,6 +137,60 @@ void TelegramAdapter::ProcessChatMemberUpdate(const telegram::Update& update) {
     }
 }
 
+namespace {
+
+// Telegram message size limit
+constexpr size_t kTelegramMaxMsgLen = 4096;
+
+// Split text into chunks ≤ maxLen, trying to break on natural boundaries.
+std::vector<std::string> SplitForTelegram(const std::string& text, size_t maxLen) {
+    if (text.size() <= maxLen) return {text};
+
+    std::vector<std::string> chunks;
+    size_t pos = 0;
+
+    while (pos < text.size()) {
+        size_t end = pos + maxLen;
+        if (end >= text.size()) {
+            chunks.push_back(text.substr(pos));
+            break;
+        }
+
+        // Try to find a good break point: prefer double newline, then single newline,
+        // then space, then last resort: hard cut.
+        size_t breakPoint = std::string::npos;
+
+        // Search backwards from end for "\n\n"
+        size_t searchFrom = (end > 100) ? end - 100 : pos;
+        size_t dd = text.rfind("\n\n", end);
+        if (dd != std::string::npos && dd > searchFrom) {
+            breakPoint = dd + 2;
+        } else {
+            // Single "\n"
+            size_t sd = text.rfind('\n', end);
+            if (sd != std::string::npos && sd > searchFrom) {
+                breakPoint = sd + 1;
+            } else {
+                // Space
+                size_t sp = text.rfind(' ', end);
+                if (sp != std::string::npos && sp > searchFrom) {
+                    breakPoint = sp + 1;
+                } else {
+                    // Hard cut
+                    breakPoint = end;
+                }
+            }
+        }
+
+        chunks.push_back(text.substr(pos, breakPoint - pos));
+        pos = breakPoint;
+    }
+
+    return chunks;
+}
+
+} // namespace
+
 void TelegramAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {
     auto* rt = m_runtime.get();
     std::string token = GetString(rt->config, "access_token");
@@ -152,16 +206,22 @@ void TelegramAdapter::SendReply(const ChannelReplyTarget& target, const std::str
         return;
     }
 
-    telegram::TelegramBotApi::SendMessageOptions opts;
-    opts.chat_id = chatId;
-    opts.text = text;
+    auto chunks = SplitForTelegram(text, kTelegramMaxMsgLen);
+    for (size_t i = 0; i < chunks.size(); ++i) {
+        telegram::TelegramBotApi::SendMessageOptions opts;
+        opts.chat_id = chatId;
+        opts.text = chunks[i];
 
-    auto msgId = api.SendMessage(token, opts);
-    if (msgId) {
-        ALOG_DEBUG("telegram", "Message sent to " << target.peer_id
-                  << " (msg_id=" << *msgId << ")");
-    } else {
-        ALOG_WARNING("telegram", "Send failed to " << target.peer_id);
+        auto msgId = api.SendMessage(token, opts);
+        if (msgId) {
+            ALOG_DEBUG("telegram", "Message sent to " << target.peer_id
+                      << " (msg_id=" << *msgId << ")"
+                      << (chunks.size() > 1 ? " [" + std::to_string(i + 1) + "/" + std::to_string(chunks.size()) + "]" : ""));
+        } else {
+            ALOG_WARNING("telegram", "Send failed to " << target.peer_id
+                        << " [chunk " << (i + 1) << "/" << chunks.size() << "]");
+            // Continue sending remaining chunks even if one fails
+        }
     }
 }
 
