@@ -57,6 +57,7 @@ export const agents = {
       maxToolCallsPerChain: 'Cuộc gọi / Chuỗi công cụ tối đa',
       timeoutSeconds: 'Thời gian chờ (giây)',
       tokenBudgetPerPrompt: 'Ngân sách mã thông báo / Lời nhắc',
+      contextWindow: 'Context Window',
       episodicTokenBudget: 'Ngân sách bộ nhớ phân đoạn (mã thông báo)',
       semanticTokenBudget: 'Ngân sách bộ nhớ ngữ nghĩa (mã thông báo)',
       perspectivesTokenBudget: 'Ngân sách quan điểm (mã thông báo)',

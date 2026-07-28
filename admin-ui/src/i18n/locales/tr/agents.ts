@@ -57,6 +57,7 @@ export const agents = {
       maxToolCallsPerChain: 'Maksimum Takım Çağrısı / Zincir',
       timeoutSeconds: 'Zaman aşımı (saniye)',
       tokenBudgetPerPrompt: 'Token Bütçesi / İstemi',
+      contextWindow: 'Context Window',
       episodicTokenBudget: 'Epizodik Bellek Bütçesi (jetonlar)',
       semanticTokenBudget: 'Anlamsal Bellek Bütçesi (belirteçler)',
       perspectivesTokenBudget: 'Perspektif Bütçesi (jetonlar)',

@@ -57,6 +57,7 @@ export const agents = {
       maxToolCallsPerChain: 'Max Tool Calls / Chain',
       timeoutSeconds: 'تایم اوت (ثانیه)',
       tokenBudgetPerPrompt: 'بودجه رمزی / درخواست',
+      contextWindow: 'Context Window',
       episodicTokenBudget: 'بودجه حافظه اپیزودیک (توکن)',
       semanticTokenBudget: 'بودجه حافظه معنایی (توکن ها)',
       perspectivesTokenBudget: 'بودجه چشم انداز (توکن ها)',

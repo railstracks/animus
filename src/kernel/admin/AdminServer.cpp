@@ -513,7 +513,6 @@ Json::Value BuildAgentJson(const KernelConfig::AgentRuntimeConfig& config, std::
     budget["max_chain_steps"] = config.budget.maxChainSteps;
     budget["max_tool_calls_per_chain"] = config.budget.maxToolCallsPerChain;
     budget["timeout_seconds"] = config.budget.timeoutSeconds;
-    budget["token_budget_per_prompt"] = config.budget.tokenBudgetPerPrompt;
     budget["episodic_token_budget"] = config.budget.episodicTokenBudget;
     budget["semantic_token_budget"] = config.budget.semanticTokenBudget;
     budget["perspectives_token_budget"] = config.budget.perspectivesTokenBudget;
@@ -576,12 +575,12 @@ Json::Value BuildAgentEntityJson(const Agent& a) {
     out["reasoning"] = reasoning;
 
     out["pad_context"] = a.pad_context;
+    out["context_window"] = static_cast<Json::UInt>(a.context_window);
 
     Json::Value budget(Json::objectValue);
     budget["max_chain_steps"] = static_cast<Json::UInt>(a.budget.maxChainSteps);
     budget["max_tool_calls_per_chain"] = static_cast<Json::UInt>(a.budget.maxToolCallsPerChain);
     budget["timeout_seconds"] = static_cast<Json::UInt>(a.budget.timeoutSeconds);
-    budget["token_budget_per_prompt"] = static_cast<Json::UInt>(a.budget.tokenBudgetPerPrompt);
     budget["episodic_token_budget"] = static_cast<Json::UInt>(a.budget.episodicTokenBudget);
     budget["semantic_token_budget"] = static_cast<Json::UInt>(a.budget.semanticTokenBudget);
     budget["perspectives_token_budget"] = static_cast<Json::UInt>(a.budget.perspectivesTokenBudget);
@@ -1154,7 +1153,6 @@ bool AdminServer::SaveAgentConfigToDisk(
     root["budget"]["max_chain_steps"] = config.budget.maxChainSteps;
     root["budget"]["max_tool_calls_per_chain"] = config.budget.maxToolCallsPerChain;
     root["budget"]["timeout_seconds"] = config.budget.timeoutSeconds;
-    root["budget"]["token_budget_per_prompt"] = config.budget.tokenBudgetPerPrompt;
     root["budget"]["episodic_token_budget"] = config.budget.episodicTokenBudget;
     root["budget"]["semantic_token_budget"] = config.budget.semanticTokenBudget;
     root["budget"]["perspectives_token_budget"] = config.budget.perspectivesTokenBudget;

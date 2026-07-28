@@ -57,6 +57,7 @@ export const agents = {
       maxToolCallsPerChain: 'ការហៅឧបករណ៍អតិបរមា / ខ្សែសង្វាក់',
       timeoutSeconds: 'អស់ពេល (វិនាទី)',
       tokenBudgetPerPrompt: 'ថវិកាថូខឹន / ជម្រុញ',
+      contextWindow: 'Context Window',
       episodicTokenBudget: 'ថវិកានៃការចងចាំ Episodic (សញ្ញាសម្ងាត់)',
       semanticTokenBudget: 'ថវិកា​អង្គ​ចងចាំ​និម្មិត (ថូខឹន)',
       perspectivesTokenBudget: 'ថវិកាទស្សនវិស័យ (និមិត្តសញ្ញា)',

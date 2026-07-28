@@ -57,6 +57,7 @@ export const agents = {
       maxToolCallsPerChain: 'मैक्स टूल कॉल/चेन',
       timeoutSeconds: 'टाइमआउट (सेकंड)',
       tokenBudgetPerPrompt: 'सांकेतिक बजट/संकेत',
+      contextWindow: 'Context Window',
       episodicTokenBudget: 'एपिसोडिक मेमोरी बजट (टोकन)',
       semanticTokenBudget: 'सिमेंटिक मेमोरी बजट (टोकन)',
       perspectivesTokenBudget: 'परिप्रेक्ष्य बजट (टोकन)',

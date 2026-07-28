@@ -150,7 +150,7 @@ const agentForm = ref({
   avatar: '',
   model_provider: '',
   model_id: '',
-  context_window: 128000,
+  context_window: 0,
   temperature: 0.7,
 });
 
@@ -471,7 +471,6 @@ async function completeWizard() {
         max_chain_steps: 200,
         max_tool_calls_per_chain: 50,
         timeout_seconds: 1800,
-        token_budget_per_prompt: agentForm.value.context_window,
         episodic_token_budget: 10000,
         semantic_token_budget: 10000,
         perspectives_token_budget: 3000,
@@ -775,7 +774,7 @@ onMounted(() => {
               <v-text-field v-model.number="agentForm.context_window"
                 label="Context Window"
                 type="number"
-                hint="Maximum tokens the model can process at once."
+                hint="0 = uncapped (use provider/model limit)"
                 persistent-hint class="mb-3"
               />
 

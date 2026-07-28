@@ -217,13 +217,6 @@ bool AgentManager::ApplyRuntimeConfigPatch(
         if (!ParseUInt32Field(budget, "timeout_seconds", &config->budget.timeoutSeconds, error)) {
             return false;
         }
-        if (!ParseUInt32Field(
-                budget,
-                "token_budget_per_prompt",
-                &config->budget.tokenBudgetPerPrompt,
-                error)) {
-            return false;
-        }
         ParseUInt32Field(budget, "episodic_token_budget", &config->budget.episodicTokenBudget, nullptr);
     }
 
@@ -332,8 +325,7 @@ bool AgentManager::ValidateRuntimeConfig(
     }
     if (config.budget.maxChainSteps == 0U
         || config.budget.maxToolCallsPerChain == 0U
-        || config.budget.timeoutSeconds == 0U
-        || config.budget.tokenBudgetPerPrompt == 0U) {
+        || config.budget.timeoutSeconds == 0U) {
         if (error) {
             *error = "budget values must be greater than 0";
         }
@@ -477,6 +469,15 @@ bool AgentManager::ApplyAgentEntityPatch(
     if (!ParseStringField(patch, "identity", &agent->identity, error)) return false;
     if (!ParseStringField(patch, "avatar", &agent->avatar, error)) return false;
 
+    // Context window — top-level agent field (unified single limit)
+    if (patch.isMember("context_window")) {
+        if (!patch["context_window"].isUInt()) {
+            if (error) *error = "context_window must be a positive integer";
+            return false;
+        }
+        agent->context_window = patch["context_window"].asUInt();
+    }
+
     if (patch.isMember("model")) {
         const Json::Value& model = patch["model"];
         if (!model.isObject()) {
@@ -485,6 +486,7 @@ bool AgentManager::ApplyAgentEntityPatch(
         }
         if (!ParseStringField(model, "provider", &agent->default_provider, error)) return false;
         if (!ParseStringField(model, "model_id", &agent->default_model, error)) return false;
+        // Also accept context_window under model for backward compat
         if (model.isMember("context_window")) {
             if (!model["context_window"].isUInt()) {
                 if (error) *error = "model.context_window must be a positive integer";
@@ -541,7 +543,6 @@ bool AgentManager::ApplyAgentEntityPatch(
         if (!ParseUInt32Field(budget, "max_chain_steps", &agent->budget.maxChainSteps, error)) return false;
         if (!ParseUInt32Field(budget, "max_tool_calls_per_chain", &agent->budget.maxToolCallsPerChain, error)) return false;
         if (!ParseUInt32Field(budget, "timeout_seconds", &agent->budget.timeoutSeconds, error)) return false;
-        if (!ParseUInt32Field(budget, "token_budget_per_prompt", &agent->budget.tokenBudgetPerPrompt, error)) return false;
         ParseUInt32Field(budget, "episodic_token_budget", &agent->budget.episodicTokenBudget, nullptr);
         ParseUInt32Field(budget, "semantic_token_budget", &agent->budget.semanticTokenBudget, nullptr);
         ParseUInt32Field(budget, "perspectives_token_budget", &agent->budget.perspectivesTokenBudget, nullptr);

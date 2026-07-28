@@ -55,7 +55,6 @@ interface Agent {
     max_chain_steps: number;
     max_tool_calls_per_chain: number;
     timeout_seconds: number;
-    token_budget_per_prompt: number;
     episodic_token_budget: number;
     semantic_token_budget: number;
     perspectives_token_budget: number;
@@ -73,6 +72,7 @@ interface Agent {
   created_at_unix_ms: number;
   updated_at_unix_ms: number;
   pad_context: boolean;
+  context_window: number;
 }
 
 interface ProviderInfo {
@@ -120,7 +120,7 @@ const formData = ref({
   max_chain_steps: 200,
   max_tool_calls_per_chain: 10,
   timeout_seconds: 1800,
-  token_budget_per_prompt: 200000,
+  context_window: 0,
   episodic_token_budget: 10000,
   semantic_token_budget: 10000,
   perspectives_token_budget: 3000,
@@ -321,7 +321,7 @@ function openCreate() {
     max_chain_steps: 200,
     max_tool_calls_per_chain: 10,
     timeout_seconds: 1800,
-    token_budget_per_prompt: 200000,
+    context_window: 0,
     episodic_token_budget: 10000,
     semantic_token_budget: 10000,
     perspectives_token_budget: 3000,
@@ -362,7 +362,7 @@ function openEdit(a: Agent) {
     max_chain_steps: a.budget.max_chain_steps,
     max_tool_calls_per_chain: a.budget.max_tool_calls_per_chain,
     timeout_seconds: a.budget.timeout_seconds,
-    token_budget_per_prompt: a.budget.token_budget_per_prompt,
+    context_window: a.context_window || 0,
     episodic_token_budget: a.budget.episodic_token_budget,
     semantic_token_budget: a.budget.semantic_token_budget,
     perspectives_token_budget: a.budget.perspectives_token_budget,
@@ -407,11 +407,11 @@ async function submitForm() {
         effort: formData.value.reasoning_effort,
       },
       pad_context: formData.value.pad_context,
+      context_window: Number(formData.value.context_window),
       budget: {
         max_chain_steps: Number(formData.value.max_chain_steps),
         max_tool_calls_per_chain: Number(formData.value.max_tool_calls_per_chain),
         timeout_seconds: Number(formData.value.timeout_seconds),
-        token_budget_per_prompt: Number(formData.value.token_budget_per_prompt),
         episodic_token_budget: Number(formData.value.episodic_token_budget),
         semantic_token_budget: Number(formData.value.semantic_token_budget),
         perspectives_token_budget: Number(formData.value.perspectives_token_budget),
@@ -727,9 +727,11 @@ watch(
                 :label="t('agents.form.timeoutSeconds')"
                 type="number"
               />
-              <v-text-field v-model="formData.token_budget_per_prompt"
-                :label="t('agents.form.tokenBudgetPerPrompt')"
+              <v-text-field v-model="formData.context_window"
+                :label="t('agents.form.contextWindow')"
                 type="number"
+                hint="0 = uncapped (use provider/model limit)"
+                persistent-hint
               />
               <v-text-field v-model="formData.episodic_token_budget"
                 :label="t('agents.form.episodicTokenBudget')"

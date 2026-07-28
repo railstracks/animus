@@ -57,6 +57,7 @@ export const agents = {
       maxToolCallsPerChain: 'مكالمات / سلسلة ماكس للأدوات',
       timeoutSeconds: 'المهلة (ثواني)',
       tokenBudgetPerPrompt: 'ميزانية الرمز المميز / موجه',
+      contextWindow: 'Context Window',
       episodicTokenBudget: 'ميزانية الذاكرة العرضية (الرموز المميزة)',
       semanticTokenBudget: 'ميزانية الذاكرة الدلالية (الرموز المميزة)',
       perspectivesTokenBudget: 'ميزانية المنظورات (الرموز المميزة)',

@@ -57,6 +57,7 @@ export const agents = {
       maxToolCallsPerChain: 'Max Tool Kira / Sarkar',
       timeoutSeconds: 'Lokaci ya ƙare (dakika)',
       tokenBudgetPerPrompt: 'Token Budget / Gaggauta',
+      contextWindow: 'Context Window',
       episodicTokenBudget: 'Kasafin Kuɗi na Ƙwaƙwalwar Ƙwaƙwalwa (alamu)',
       semanticTokenBudget: 'Kasafin Kuɗi na Ƙwaƙwalwar Semantic (alamu)',
       perspectivesTokenBudget: 'Kasafin Kudi (alamu)',

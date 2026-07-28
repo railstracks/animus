@@ -177,7 +177,6 @@ int TestReloadFromDisk() {
             << "    \"max_chain_steps\" : 44,\n"
             << "    \"max_tool_calls_per_chain\" : 11,\n"
             << "    \"timeout_seconds\" : 1900,\n"
-            << "    \"token_budget_per_prompt\" : 210000\n"
             << "  }\n"
             << "}\n";
     }

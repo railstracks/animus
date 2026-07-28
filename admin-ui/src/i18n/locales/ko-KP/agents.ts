@@ -57,6 +57,7 @@ export const agents = {
       maxToolCallsPerChain: '최대 공구 호출/체인',
       timeoutSeconds: '시간 초과(초)',
       tokenBudgetPerPrompt: '토큰예산 / 프롬프트',
+      contextWindow: 'Context Window',
       episodicTokenBudget: '에피소드 메모리 예산(토큰)',
       semanticTokenBudget: '의미론적 메모리 예산(토큰)',
       perspectivesTokenBudget: '관점 예산(토큰)',

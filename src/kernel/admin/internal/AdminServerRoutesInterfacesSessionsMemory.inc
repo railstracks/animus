@@ -729,23 +729,60 @@
                     return;
                 }
 
-                KernelConfig::AgentRuntimeConfig agentSnapshot;
-                {
-                    std::lock_guard<std::mutex> lock(server->m_agentMutex);
-                    agentSnapshot = server->m_agentConfig;
+                // Resolve agent for this session
+                Agent agent;
+                if (server->m_agentStore && !session->AgentId().empty()) {
+                    auto loaded = server->m_agentStore->GetById(session->AgentId());
+                    if (loaded) agent = *loaded;
                 }
 
+                // Resolve provider + model + context window (same path as ChainRunner)
+                std::string providerId = session->ProviderId();
+                if (providerId.empty() && !agent.default_provider.empty()) {
+                    providerId = agent.default_provider;
+                }
+                if (providerId.empty()) {
+                    providerId = server->GetDefaultProviderId();
+                }
+                std::string model = session->Model();
+                if (model.empty()) model = agent.default_model;
+
+                std::size_t contextWindow = 128000;
+                bool hasProviderState = false;
+                ProviderState providerState;
+                if (const auto provider = server->GetProvider(providerId)) {
+                    providerState = *provider;
+                    hasProviderState = true;
+                    if (model.empty()) model = providerState.defaultModel;
+                }
+                std::uint32_t agentCtxWindow = agent.context_window;
+                if (hasProviderState) {
+                    contextWindow = AdminServer::ResolveProviderContextWindow(
+                        providerState, model,
+                        static_cast<std::uint32_t>(contextWindow),
+                        agentCtxWindow);
+                } else if (agentCtxWindow > 0) {
+                    contextWindow = std::min(contextWindow, static_cast<std::size_t>(agentCtxWindow));
+                }
+
+                // Compute consumed tokens from session turns
+                std::size_t consumedTokens = 0;
+                for (const auto& turn : session->Turns()) {
+                    consumedTokens += turn.token_count;
+                }
+
+                // Build output
                 Json::Value out(Json::objectValue);
                 out["session_id"] = static_cast<Json::UInt64>(sessionId);
                 out["memory_layers_loaded"] = Json::Value(Json::arrayValue);
                 out["tools_available"] = Json::Value(Json::arrayValue);
-                out["token_budget_state"]["configured_token_budget_per_prompt"] =
-                    agentSnapshot.budget.tokenBudgetPerPrompt;
-                out["token_budget_state"]["consumed_tokens"] = 0;
+                out["token_budget_state"]["context_window"] =
+                    static_cast<Json::UInt64>(contextWindow);
+                out["token_budget_state"]["consumed_tokens"] =
+                    static_cast<Json::UInt64>(consumedTokens);
                 out["token_budget_state"]["remaining_tokens"] =
-                    agentSnapshot.budget.tokenBudgetPerPrompt;
-                out["note"] =
-                    "ChainRunner/memory/tool runtime not yet implemented; current context is empty.";
+                    static_cast<Json::UInt64>(contextWindow > consumedTokens
+                                              ? contextWindow - consumedTokens : 0);
 
                 callback(drogon::HttpResponse::newHttpJsonResponse(out));
             },

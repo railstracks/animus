@@ -18,7 +18,6 @@ struct AgentBudgetConfig {
     std::uint32_t maxToolCallsPerChain{50};
     std::uint32_t consolidationToolBudget{100};  // Min tool calls for consolidation sessions
     std::uint32_t timeoutSeconds{1800};
-    std::uint32_t tokenBudgetPerPrompt{200000};
     std::uint32_t episodicTokenBudget{10000}; // Max tokens for episodic observations in active memory
     std::uint32_t semanticTokenBudget{10000};   // Max tokens for semantic/ontology entities in active memory
     std::uint32_t perspectivesTokenBudget{3000}; // Max tokens for temporal perspectives in active memory
@@ -43,7 +42,7 @@ struct Agent {
     // Intake (agent-level, not per-layer)
     std::string intake_interval;       // cron expression, empty = no scheduled intake
     std::string intake_prompt;         // override for intake LLM prompt, empty = use default
-    std::uint32_t context_window{128000}; // Legacy field; context is now resolved at provider/model level.
+    std::uint32_t context_window{0}; // Agent-level context window cap (0 = uncapped, use provider/model limit). Clamped via std::min in ResolveContextWindow.
     double temperature{0.7};
 
     // Reasoning
@@ -113,7 +112,7 @@ private:
                      bool reasoningEnabled, const std::string& reasoningEffort,
                      bool padContext,
                      std::uint32_t maxChainSteps, std::uint32_t maxToolCallsPerChain,
-                     std::uint32_t timeoutSeconds, std::uint32_t tokenBudgetPerPrompt,
+                     std::uint32_t timeoutSeconds,
                      std::uint32_t episodicTokenBudget,
                      std::uint32_t semanticTokenBudget,
                      std::uint32_t perspectivesTokenBudget,

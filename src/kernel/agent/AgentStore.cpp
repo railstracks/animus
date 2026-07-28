@@ -213,14 +213,13 @@ void AgentStore::EnsureSchema() {
             default_vision_model TEXT NOT NULL DEFAULT '',
             intake_interval TEXT NOT NULL DEFAULT '',
             intake_prompt TEXT NOT NULL DEFAULT '',
-            context_window INTEGER NOT NULL DEFAULT 128000,
+            context_window INTEGER NOT NULL DEFAULT 0,
             temperature REAL NOT NULL DEFAULT 0.7,
             reasoning_enabled INTEGER NOT NULL DEFAULT 0,
             reasoning_effort TEXT NOT NULL DEFAULT 'high',
             max_chain_steps INTEGER NOT NULL DEFAULT 200,
             max_tool_calls_per_chain INTEGER NOT NULL DEFAULT 50,
             timeout_seconds INTEGER NOT NULL DEFAULT 1800,
-            token_budget_per_prompt INTEGER NOT NULL DEFAULT 200000,
             episodic_token_budget INTEGER NOT NULL DEFAULT 10000,
             semantic_token_budget INTEGER NOT NULL DEFAULT 10000,
             perspectives_token_budget INTEGER NOT NULL DEFAULT 3000,
@@ -313,6 +312,14 @@ void AgentStore::EnsureSchema() {
                 "  WHERE agent_id = agents.id AND consolidation_intake_prompt <> '' LIMIT 1"
                 ") WHERE intake_prompt = ''");
         }
+
+        // Migration: reset context_window from old default (128000) to 0 (uncapped).
+        // The old default was set when context_window was a legacy field. Now it's
+        // the single agent-level context limit. 0 means "use provider/model limit".
+        // We only reset values that are exactly 128000 (the old default) — if a user
+        // has explicitly set a different value, we respect it.
+        m_store->Exec(
+            "UPDATE agents SET context_window = 0 WHERE context_window = 128000");
     }
 }
 
@@ -332,7 +339,7 @@ Agent AgentStore::RowToAgent(
         bool reasoningEnabled, const std::string& reasoningEffort,
         bool padContext,
         std::uint32_t maxChainSteps, std::uint32_t maxToolCallsPerChain,
-        std::uint32_t timeoutSeconds, std::uint32_t tokenBudgetPerPrompt,
+        std::uint32_t timeoutSeconds,
         std::uint32_t episodicTokenBudget,
         std::uint32_t semanticTokenBudget,
         std::uint32_t perspectivesTokenBudget,
@@ -363,7 +370,6 @@ Agent AgentStore::RowToAgent(
     a.budget.maxChainSteps = maxChainSteps;
     a.budget.maxToolCallsPerChain = maxToolCallsPerChain;
     a.budget.timeoutSeconds = timeoutSeconds;
-    a.budget.tokenBudgetPerPrompt = tokenBudgetPerPrompt;
     a.budget.episodicTokenBudget = episodicTokenBudget;
     a.budget.semanticTokenBudget = semanticTokenBudget;
     a.budget.perspectivesTokenBudget = perspectivesTokenBudget;
@@ -391,7 +397,7 @@ std::vector<Agent> AgentStore::List() {
         "SELECT id, agent_id, name, description, identity, avatar, "
         "default_provider, default_model, default_vision_model, intake_interval, intake_prompt, context_window, temperature, "
         "reasoning_enabled, reasoning_effort, pad_context, "
-        "max_chain_steps, max_tool_calls_per_chain, timeout_seconds, token_budget_per_prompt, episodic_token_budget, semantic_token_budget, perspectives_token_budget, consolidation_tool_budget, memory_file_token_budget, ambient_context_limit, "
+        "max_chain_steps, max_tool_calls_per_chain, timeout_seconds, episodic_token_budget, semantic_token_budget, perspectives_token_budget, consolidation_tool_budget, memory_file_token_budget, ambient_context_limit, "
         "enabled_tools, tool_configs, allowed_nodes, session_report_token_budget, "
         "created_at_unix_ms, updated_at_unix_ms, diary_secret "
         "FROM agents ORDER BY created_at_unix_ms ASC");
@@ -419,12 +425,11 @@ std::vector<Agent> AgentStore::List() {
             static_cast<std::uint32_t>(stmt->ColumnInt64(22)),
             static_cast<std::uint32_t>(stmt->ColumnInt64(23)),
             static_cast<std::uint32_t>(stmt->ColumnInt64(24)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(25)),
-            stmt->ColumnText(26), stmt->ColumnText(27),
-            stmt->ColumnText(28),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(29)),
-            stmt->ColumnText(32),
-            stmt->ColumnInt64(30), stmt->ColumnInt64(31)));
+            stmt->ColumnText(25), stmt->ColumnText(26),
+            stmt->ColumnText(27),
+            static_cast<std::uint32_t>(stmt->ColumnInt64(28)),
+            stmt->ColumnText(31),
+            stmt->ColumnInt64(29), stmt->ColumnInt64(30)));
     }
     return result;
 }
@@ -434,7 +439,7 @@ std::optional<Agent> AgentStore::GetById(const std::string& id) {
         "SELECT id, agent_id, name, description, identity, avatar, "
         "default_provider, default_model, default_vision_model, intake_interval, intake_prompt, context_window, temperature, "
         "reasoning_enabled, reasoning_effort, pad_context, "
-        "max_chain_steps, max_tool_calls_per_chain, timeout_seconds, token_budget_per_prompt, episodic_token_budget, semantic_token_budget, perspectives_token_budget, consolidation_tool_budget, memory_file_token_budget, ambient_context_limit, "
+        "max_chain_steps, max_tool_calls_per_chain, timeout_seconds, episodic_token_budget, semantic_token_budget, perspectives_token_budget, consolidation_tool_budget, memory_file_token_budget, ambient_context_limit, "
         "enabled_tools, tool_configs, allowed_nodes, session_report_token_budget, "
         "created_at_unix_ms, updated_at_unix_ms, diary_secret "
         "FROM agents WHERE agent_id=?");
@@ -442,33 +447,33 @@ std::optional<Agent> AgentStore::GetById(const std::string& id) {
     stmt->BindText(1, id);
 
     if (stmt->Step()) {
-        return RowToAgent(
-            stmt->ColumnInt64(0), stmt->ColumnText(1),
-            stmt->ColumnText(2), stmt->ColumnText(3),
-            stmt->ColumnText(4), stmt->ColumnText(5),
-            stmt->ColumnText(6), stmt->ColumnText(7),
-            stmt->ColumnText(8),
-            stmt->ColumnText(9), stmt->ColumnText(10),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(11)),
-            stmt->ColumnDouble(12),
-            stmt->ColumnInt64(13) != 0,
-            stmt->ColumnText(14),
-            stmt->ColumnInt64(15) != 0,
-            static_cast<std::uint32_t>(stmt->ColumnInt64(16)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(17)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(18)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(19)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(20)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(21)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(22)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(23)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(24)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(25)),
-            stmt->ColumnText(26), stmt->ColumnText(27),
-            stmt->ColumnText(28),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(29)),
-            stmt->ColumnText(32),
-            stmt->ColumnInt64(30), stmt->ColumnInt64(31));
+       return RowToAgent(
+           stmt->ColumnInt64(0), stmt->ColumnText(1),
+           stmt->ColumnText(2), stmt->ColumnText(3),
+           stmt->ColumnText(4), stmt->ColumnText(5),
+           stmt->ColumnText(6), stmt->ColumnText(7),
+           stmt->ColumnText(8),
+           stmt->ColumnText(9), stmt->ColumnText(10),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(11)),
+           stmt->ColumnDouble(12),
+           stmt->ColumnInt64(13) != 0,
+           stmt->ColumnText(14),
+           stmt->ColumnInt64(15) != 0,
+           static_cast<std::uint32_t>(stmt->ColumnInt64(16)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(17)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(18)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(19)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(20)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(21)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(22)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(23)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(24)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(25)),
+           stmt->ColumnText(26), stmt->ColumnText(27),
+           stmt->ColumnText(28),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(29)),
+           stmt->ColumnText(32),
+           stmt->ColumnInt64(30), stmt->ColumnInt64(31));
     }
     return std::nullopt;
 }
@@ -478,7 +483,7 @@ std::optional<Agent> AgentStore::GetByName(const std::string& name) {
         "SELECT id, agent_id, name, description, identity, avatar, "
         "default_provider, default_model, default_vision_model, intake_interval, intake_prompt, context_window, temperature, "
         "reasoning_enabled, reasoning_effort, pad_context, "
-        "max_chain_steps, max_tool_calls_per_chain, timeout_seconds, token_budget_per_prompt, episodic_token_budget, semantic_token_budget, perspectives_token_budget, consolidation_tool_budget, memory_file_token_budget, ambient_context_limit, "
+        "max_chain_steps, max_tool_calls_per_chain, timeout_seconds, episodic_token_budget, semantic_token_budget, perspectives_token_budget, consolidation_tool_budget, memory_file_token_budget, ambient_context_limit, "
         "enabled_tools, tool_configs, allowed_nodes, session_report_token_budget, "
         "created_at_unix_ms, updated_at_unix_ms, diary_secret "
         "FROM agents WHERE name=?");
@@ -486,33 +491,33 @@ std::optional<Agent> AgentStore::GetByName(const std::string& name) {
     stmt->BindText(1, name);
 
     if (stmt->Step()) {
-        return RowToAgent(
-            stmt->ColumnInt64(0), stmt->ColumnText(1),
-            stmt->ColumnText(2), stmt->ColumnText(3),
-            stmt->ColumnText(4), stmt->ColumnText(5),
-            stmt->ColumnText(6), stmt->ColumnText(7),
-            stmt->ColumnText(8),
-            stmt->ColumnText(9), stmt->ColumnText(10),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(11)),
-            stmt->ColumnDouble(12),
-            stmt->ColumnInt64(13) != 0,
-            stmt->ColumnText(14),
-            stmt->ColumnInt64(15) != 0,
-            static_cast<std::uint32_t>(stmt->ColumnInt64(16)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(17)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(18)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(19)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(20)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(21)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(22)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(23)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(24)),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(25)),
-            stmt->ColumnText(26), stmt->ColumnText(27),
-            stmt->ColumnText(28),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(29)),
-            stmt->ColumnText(32),
-            stmt->ColumnInt64(30), stmt->ColumnInt64(31));
+       return RowToAgent(
+           stmt->ColumnInt64(0), stmt->ColumnText(1),
+           stmt->ColumnText(2), stmt->ColumnText(3),
+           stmt->ColumnText(4), stmt->ColumnText(5),
+           stmt->ColumnText(6), stmt->ColumnText(7),
+           stmt->ColumnText(8),
+           stmt->ColumnText(9), stmt->ColumnText(10),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(11)),
+           stmt->ColumnDouble(12),
+           stmt->ColumnInt64(13) != 0,
+           stmt->ColumnText(14),
+           stmt->ColumnInt64(15) != 0,
+           static_cast<std::uint32_t>(stmt->ColumnInt64(16)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(17)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(18)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(19)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(20)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(21)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(22)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(23)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(24)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(25)),
+           stmt->ColumnText(26), stmt->ColumnText(27),
+           stmt->ColumnText(28),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(29)),
+           stmt->ColumnText(32),
+           stmt->ColumnInt64(30), stmt->ColumnInt64(31));
     }
     return std::nullopt;
 }
@@ -539,7 +544,7 @@ Agent AgentStore::Create(const Agent& agent) {
         "INSERT INTO agents (agent_id, name, description, identity, avatar, "
         "default_provider, default_model, default_vision_model, intake_interval, intake_prompt, context_window, temperature, "
         "reasoning_enabled, reasoning_effort, pad_context, "
-        "max_chain_steps, max_tool_calls_per_chain, timeout_seconds, token_budget_per_prompt, episodic_token_budget, semantic_token_budget, perspectives_token_budget, consolidation_tool_budget, memory_file_token_budget, ambient_context_limit, "
+        "max_chain_steps, max_tool_calls_per_chain, timeout_seconds, episodic_token_budget, semantic_token_budget, perspectives_token_budget, consolidation_tool_budget, memory_file_token_budget, ambient_context_limit, "
         "enabled_tools, tool_configs, allowed_nodes, session_report_token_budget, "
         "created_at_unix_ms, updated_at_unix_ms, diary_secret) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
@@ -569,20 +574,19 @@ Agent AgentStore::Create(const Agent& agent) {
     stmt->BindInt64(16, static_cast<int64_t>(agent.budget.maxChainSteps));
     stmt->BindInt64(17, static_cast<int64_t>(agent.budget.maxToolCallsPerChain));
     stmt->BindInt64(18, static_cast<int64_t>(agent.budget.timeoutSeconds));
-    stmt->BindInt64(19, static_cast<int64_t>(agent.budget.tokenBudgetPerPrompt));
-    stmt->BindInt64(20, static_cast<int64_t>(agent.budget.episodicTokenBudget));
-    stmt->BindInt64(21, static_cast<int64_t>(agent.budget.semanticTokenBudget));
-    stmt->BindInt64(22, static_cast<int64_t>(agent.budget.perspectivesTokenBudget));
-    stmt->BindInt64(23, static_cast<int64_t>(agent.budget.consolidationToolBudget));
-    stmt->BindInt64(24, static_cast<int64_t>(agent.budget.memoryFileTokenBudget));
-    stmt->BindInt64(25, static_cast<int64_t>(agent.budget.ambientContextLimit));
-    stmt->BindText(26, VectorToJsonArray(agent.enabled_tools));
-    stmt->BindText(27, agent.tool_configs_json.empty() ? "{}" : agent.tool_configs_json);
-    stmt->BindText(28, VectorToJsonArray(agent.allowed_nodes));
-    stmt->BindInt(29, agent.budget.sessionReportTokenBudget);
+    stmt->BindInt64(19, static_cast<int64_t>(agent.budget.episodicTokenBudget));
+    stmt->BindInt64(20, static_cast<int64_t>(agent.budget.semanticTokenBudget));
+    stmt->BindInt64(21, static_cast<int64_t>(agent.budget.perspectivesTokenBudget));
+    stmt->BindInt64(22, static_cast<int64_t>(agent.budget.consolidationToolBudget));
+    stmt->BindInt64(23, static_cast<int64_t>(agent.budget.memoryFileTokenBudget));
+    stmt->BindInt64(24, static_cast<int64_t>(agent.budget.ambientContextLimit));
+    stmt->BindText(25, VectorToJsonArray(agent.enabled_tools));
+    stmt->BindText(26, agent.tool_configs_json.empty() ? "{}" : agent.tool_configs_json);
+    stmt->BindText(27, VectorToJsonArray(agent.allowed_nodes));
+    stmt->BindInt(28, agent.budget.sessionReportTokenBudget);
+    stmt->BindInt64(29, now);
     stmt->BindInt64(30, now);
-    stmt->BindInt64(31, now);
-    stmt->BindText(32, diarySecret);
+    stmt->BindText(31, diarySecret);
 
     // For non-SELECT statements, Step() returns false on SQLITE_DONE.
     // Treat the operation as successful if the row is now queryable.
@@ -602,7 +606,7 @@ bool AgentStore::Update(const Agent& agent) {
         "UPDATE agents SET name=?, description=?, identity=?, avatar=?, "
         "default_provider=?, default_model=?, default_vision_model=?, intake_interval=?, intake_prompt=?, context_window=?, temperature=?, "
         "reasoning_enabled=?, reasoning_effort=?, pad_context=?, "
-        "max_chain_steps=?, max_tool_calls_per_chain=?, timeout_seconds=?, token_budget_per_prompt=?, episodic_token_budget=?, semantic_token_budget=?, perspectives_token_budget=?, consolidation_tool_budget=?, memory_file_token_budget=?, ambient_context_limit=?, "
+        "max_chain_steps=?, max_tool_calls_per_chain=?, timeout_seconds=?, episodic_token_budget=?, semantic_token_budget=?, perspectives_token_budget=?, consolidation_tool_budget=?, memory_file_token_budget=?, ambient_context_limit=?, "
         "enabled_tools=?, tool_configs=?, allowed_nodes=?, session_report_token_budget=?, updated_at_unix_ms=? "
         "WHERE agent_id=?");
     if (!stmt) return false;
@@ -624,19 +628,18 @@ bool AgentStore::Update(const Agent& agent) {
     stmt->BindInt64(15, static_cast<int64_t>(agent.budget.maxChainSteps));
     stmt->BindInt64(16, static_cast<int64_t>(agent.budget.maxToolCallsPerChain));
     stmt->BindInt64(17, static_cast<int64_t>(agent.budget.timeoutSeconds));
-    stmt->BindInt64(18, static_cast<int64_t>(agent.budget.tokenBudgetPerPrompt));
-    stmt->BindInt64(19, static_cast<int64_t>(agent.budget.episodicTokenBudget));
-    stmt->BindInt64(20, static_cast<int64_t>(agent.budget.semanticTokenBudget));
-    stmt->BindInt64(21, static_cast<int64_t>(agent.budget.perspectivesTokenBudget));
-    stmt->BindInt64(22, static_cast<int64_t>(agent.budget.consolidationToolBudget));
-    stmt->BindInt64(23, static_cast<int64_t>(agent.budget.memoryFileTokenBudget));
-    stmt->BindInt64(24, static_cast<int64_t>(agent.budget.ambientContextLimit));
-    stmt->BindText(25, VectorToJsonArray(agent.enabled_tools));
-    stmt->BindText(26, agent.tool_configs_json.empty() ? "{}" : agent.tool_configs_json);
-    stmt->BindText(27, VectorToJsonArray(agent.allowed_nodes));
-    stmt->BindInt(28, agent.budget.sessionReportTokenBudget);
-    stmt->BindInt64(29, now);
-    stmt->BindText(30, agent.id);
+    stmt->BindInt64(18, static_cast<int64_t>(agent.budget.episodicTokenBudget));
+    stmt->BindInt64(19, static_cast<int64_t>(agent.budget.semanticTokenBudget));
+    stmt->BindInt64(20, static_cast<int64_t>(agent.budget.perspectivesTokenBudget));
+    stmt->BindInt64(21, static_cast<int64_t>(agent.budget.consolidationToolBudget));
+    stmt->BindInt64(22, static_cast<int64_t>(agent.budget.memoryFileTokenBudget));
+    stmt->BindInt64(23, static_cast<int64_t>(agent.budget.ambientContextLimit));
+    stmt->BindText(24, VectorToJsonArray(agent.enabled_tools));
+    stmt->BindText(25, agent.tool_configs_json.empty() ? "{}" : agent.tool_configs_json);
+    stmt->BindText(26, VectorToJsonArray(agent.allowed_nodes));
+    stmt->BindInt(27, agent.budget.sessionReportTokenBudget);
+    stmt->BindInt64(28, now);
+    stmt->BindText(29, agent.id);
 
     // For non-SELECT statements, Step() returns false on SQLITE_DONE.
     // Verify success by checking that exactly one row was affected.

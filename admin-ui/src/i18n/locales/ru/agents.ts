@@ -57,6 +57,7 @@ export const agents = {
       maxToolCallsPerChain: 'Макс. вызовы инструментов/цепочка',
       timeoutSeconds: 'Тайм-аут (секунды)',
       tokenBudgetPerPrompt: 'Бюджет токена / подсказка',
+      contextWindow: 'Context Window',
       episodicTokenBudget: 'Бюджет эпизодической памяти (токены)',
       semanticTokenBudget: 'Бюджет семантической памяти (токены)',
       perspectivesTokenBudget: 'Перспективный бюджет (токены)',

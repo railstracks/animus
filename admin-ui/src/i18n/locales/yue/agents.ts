@@ -57,6 +57,7 @@ export const agents = {
       maxToolCallsPerChain: '最大工具呼叫/鏈',
       timeoutSeconds: '超時（秒）',
       tokenBudgetPerPrompt: '代幣預算/提示',
+      contextWindow: 'Context Window',
       episodicTokenBudget: '情境內存預算（令牌）',
       semanticTokenBudget: '語意記憶預算（標記）',
       perspectivesTokenBudget: '觀點預算（代幣）',

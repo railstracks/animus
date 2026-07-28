@@ -1405,9 +1405,9 @@ void AgentKernel::ExecuteChannelDispatch(
 std::size_t AgentKernel::ResolveContextWindow(const std::string& agentId,
                                              const std::string& providerId,
                                              const std::string& model) const {
-    std::size_t contextWindow = 128000;
+    std::size_t contextWindow = 128000;  // Fallback if provider resolution fails
 
-    // Start with provider's context window
+    // Resolve from provider state (per-model override → provider default → capability detection)
     if (m_adminServer) {
         auto ps = m_adminServer->GetProvider(providerId);
         if (ps) {
@@ -1416,7 +1416,7 @@ std::size_t AgentKernel::ResolveContextWindow(const std::string& agentId,
         }
     }
 
-    // Clamp to agent's context_window if set (acts as upper bound)
+    // Clamp to agent's context_window if set (>0 means user configured a cap)
     if (m_agentStore && !agentId.empty()) {
         auto agent = m_agentStore->GetById(agentId);
         if (agent && agent->context_window > 0) {

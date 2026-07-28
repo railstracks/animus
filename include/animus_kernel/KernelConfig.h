@@ -35,7 +35,6 @@ struct KernelConfig {
         std::uint32_t maxToolCallsPerChain{50};
         std::uint32_t consolidationToolBudget{100};  // Min tool calls for consolidation sessions
         std::uint32_t timeoutSeconds{1800};
-        std::uint32_t tokenBudgetPerPrompt{200000};
         std::uint32_t episodicTokenBudget{10000};
         std::uint32_t semanticTokenBudget{10000};
         std::uint32_t perspectivesTokenBudget{3000};

@@ -243,7 +243,6 @@ int main(int argc, char* argv[]) {
                     "default_provider", "default_model", "context_window", "temperature",
                     "reasoning_enabled", "reasoning_effort",
                     "max_chain_steps", "max_tool_calls_per_chain", "timeout_seconds",
-                    "token_budget_per_prompt", "episodic_token_budget",
                     "semantic_token_budget", "perspectives_token_budget",
                     "consolidation_tool_budget",
                     "enabled_tools", "tool_configs",

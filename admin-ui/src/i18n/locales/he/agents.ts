@@ -57,6 +57,7 @@ export const agents = {
       maxToolCallsPerChain: 'מקסימום שיחות כלי / שרשרת',
       timeoutSeconds: 'פסק זמן (שניות)',
       tokenBudgetPerPrompt: 'תקציב אסימון / הנחיה',
+      contextWindow: 'Context Window',
       episodicTokenBudget: 'תקציב זיכרון אפיזודי (אסימונים)',
       semanticTokenBudget: 'תקציב זיכרון סמנטי (אסימונים)',
       perspectivesTokenBudget: 'תקציב פרספקטיבות (אסימונים)',

@@ -67,9 +67,8 @@ interface SessionContextResponse {
   session_id?: number | string;
   memory_layers_loaded?: string[];
   tools_available?: string[];
-  note?: string;
   token_budget_state?: {
-    configured_token_budget_per_prompt?: number;
+    context_window?: number;
     consumed_tokens?: number;
     remaining_tokens?: number;
   };
@@ -742,7 +741,7 @@ async function loadSessionContext(sessionId: string): Promise<void> {
     layers: Array.isArray(payload.memory_layers_loaded) ? payload.memory_layers_loaded : [],
     tools: Array.isArray(payload.tools_available) ? payload.tools_available : [],
     note: payload.note ?? '',
-    tokenBudgetConfigured: payload.token_budget_state?.configured_token_budget_per_prompt ?? 0,
+    tokenBudgetConfigured: payload.token_budget_state?.context_window ?? 0,
     tokenBudgetConsumed: payload.token_budget_state?.consumed_tokens ?? 0,
     tokenBudgetRemaining: payload.token_budget_state?.remaining_tokens ?? 0
   };
@@ -1706,9 +1705,8 @@ watch(sessionSearch, () => {
                   </p>
                   <p class="context-line">
                     <strong>{{ t('chat.context.budget') }}:</strong>
-                    {{ activeContext.tokenBudgetRemaining }}/{{ activeContext.tokenBudgetConfigured }}
+                    {{ activeContext.tokenBudgetConsumed }}/{{ activeContext.tokenBudgetConfigured }}
                   </p>
-                  <p class="context-note">{{ activeContext.note || t('chat.context.fallbackNote') }}</p>
                 </v-card-text>
               </v-card>
 
