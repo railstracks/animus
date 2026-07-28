@@ -7,7 +7,8 @@
 Animus is a **C++ agent framework** — a modular, efficient runtime for AI agents with fine-grained control over cognition, memory, tools, and communication.
 
 **🌐 Website:** [animus.steadyfort.com](https://animus.steadyfort.com/)  
-**💬 Discord:** [Join the community](https://discord.gg/ruRk76M93n)
+**💬 Discord:** [Join the community](https://discord.gg/ruRk76M93n)  
+**🧩 VSCode Extension:** [Animus IDE](https://marketplace.visualstudio.com/items?itemName=artificers.animus-ide)
 
 ## Why Animus
 
