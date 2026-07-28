@@ -31,6 +31,6 @@ The access JWT and refresh JWT expire with no proactive renewal. Tokens are only
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Lua auth heartbeat action | ⏳ Pending |
-| 2 | Bluesky REST poll loop implementation | ⏳ Pending |
-| 3 | Bluesky SendReply routing | ⏳ Pending |
+| 1 | Lua auth heartbeat action | ✅ Done |
+| 2 | Bluesky notification poll loop | ✅ Done |
+| 3 | Bluesky SendReply routing | ✅ Done |
