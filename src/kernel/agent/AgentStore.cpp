@@ -468,12 +468,11 @@ std::optional<Agent> AgentStore::GetById(const std::string& id) {
            static_cast<std::uint32_t>(stmt->ColumnInt64(22)),
            static_cast<std::uint32_t>(stmt->ColumnInt64(23)),
            static_cast<std::uint32_t>(stmt->ColumnInt64(24)),
-           static_cast<std::uint32_t>(stmt->ColumnInt64(25)),
-           stmt->ColumnText(26), stmt->ColumnText(27),
-           stmt->ColumnText(28),
-           static_cast<std::uint32_t>(stmt->ColumnInt64(29)),
-           stmt->ColumnText(32),
-           stmt->ColumnInt64(30), stmt->ColumnInt64(31));
+           stmt->ColumnText(25), stmt->ColumnText(26),
+           stmt->ColumnText(27),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(28)),
+           stmt->ColumnText(31),
+           stmt->ColumnInt64(29), stmt->ColumnInt64(30));
     }
     return std::nullopt;
 }
@@ -512,12 +511,11 @@ std::optional<Agent> AgentStore::GetByName(const std::string& name) {
            static_cast<std::uint32_t>(stmt->ColumnInt64(22)),
            static_cast<std::uint32_t>(stmt->ColumnInt64(23)),
            static_cast<std::uint32_t>(stmt->ColumnInt64(24)),
-           static_cast<std::uint32_t>(stmt->ColumnInt64(25)),
-           stmt->ColumnText(26), stmt->ColumnText(27),
-           stmt->ColumnText(28),
-           static_cast<std::uint32_t>(stmt->ColumnInt64(29)),
-           stmt->ColumnText(32),
-           stmt->ColumnInt64(30), stmt->ColumnInt64(31));
+           stmt->ColumnText(25), stmt->ColumnText(26),
+           stmt->ColumnText(27),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(28)),
+           stmt->ColumnText(31),
+           stmt->ColumnInt64(29), stmt->ColumnInt64(30));
     }
     return std::nullopt;
 }
