@@ -744,8 +744,8 @@
                 if (providerId.empty()) {
                     providerId = server->GetDefaultProviderId();
                 }
-                std::string model = session->Model();
-                if (model.empty()) model = agent.default_model;
+                std::string model;
+                if (!agent.default_model.empty()) model = agent.default_model;
 
                 std::size_t contextWindow = 128000;
                 bool hasProviderState = false;
