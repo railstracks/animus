@@ -1600,9 +1600,6 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             std::string fullMsg = "[Bluesky DM from ";
             // We'll check after building the full message below
 
-            std::string text;
-            if (msg.isMember("text")) text = GetString(msg, "text");
-            if (text.empty()) continue;
 
             // Build display name
             std::string senderName = senderDid;
