@@ -624,7 +624,7 @@
                     const auto& turn = turns[reverseIndex];
                     std::vector<Attachment> atts;
                     if (server->m_attachmentStore) {
-                        atts = server->m_attachmentStore->GetForTurn(turn.turn_id);
+                        atts = server->m_attachmentStore->GetForTurn(turn.turn_id, sessionKeyStr);
                     }
                     items.append(BuildSessionTurnJson(turn, atts, &server->m_attachmentTokens));
                 }

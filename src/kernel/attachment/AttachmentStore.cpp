@@ -81,16 +81,25 @@ std::optional<Attachment> AttachmentStore::GetById(const std::string& id) {
     return att;
 }
 
-std::vector<Attachment> AttachmentStore::GetForTurn(std::uint64_t turnId) {
+std::vector<Attachment> AttachmentStore::GetForTurn(std::uint64_t turnId, const std::string& sessionKey) {
     std::vector<Attachment> results;
     if (!m_store) return results;
 
-    auto stmt = m_store->Prepare(
+    std::string sql =
         "SELECT id, turn_id, session_key, filename, mime_type, filepath, data_b64, size_bytes, created_at "
-        "FROM session_attachments WHERE turn_id=? ORDER BY created_at ASC");
+        "FROM session_attachments WHERE turn_id=?";
+    if (!sessionKey.empty()) {
+        sql += " AND session_key=?";
+    }
+    sql += " ORDER BY created_at ASC";
+
+    auto stmt = m_store->Prepare(sql);
     if (!stmt) return results;
 
     stmt->BindInt64(1, static_cast<int64_t>(turnId));
+    if (!sessionKey.empty()) {
+        stmt->BindText(2, sessionKey);
+    }
     while (stmt->Step()) {
         Attachment att;
         att.id = stmt->ColumnText(0);

@@ -40,8 +40,9 @@ public:
     /// Get a single attachment by ID
     std::optional<Attachment> GetById(const std::string& id);
 
-    /// List all attachments for a given turn
-    std::vector<Attachment> GetForTurn(std::uint64_t turnId);
+    /// List all attachments for a given turn (scoped by session_key to prevent
+    /// cross-session leakage — turn IDs are per-session, not globally unique)
+    std::vector<Attachment> GetForTurn(std::uint64_t turnId, const std::string& sessionKey = {});
 
     /// List all attachments for a session (by session key)
     std::vector<Attachment> GetForSession(const std::string& sessionKey);
