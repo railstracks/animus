@@ -63,7 +63,7 @@ export const channels = {
         appPassword: 'Uygulama Şifresi',
         pds: 'PDS URL\'si',
         enablePosts: 'Gönderileri etkinleştir',
-        enableDm: 'DM'yi etkinleştir',
+        enableDm: "DM'yi etkinleştir",
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'
