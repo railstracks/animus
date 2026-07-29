@@ -1360,6 +1360,9 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
         const auto& notifs = data["notifications"];
         std::string latestSeen = state->bsky_last_seen;
         int processed = 0;
+        int totalNotifs = notifs.size();
+        ALOG_INFO("bluesky", "listNotifications returned " << totalNotifs
+                  << " notifications, watermark=" << state->bsky_last_seen);
 
         for (const auto& n : notifs) {
             std::string reason = GetString(n, "reason");
@@ -1367,6 +1370,8 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
 
             if (!state->bsky_last_seen.empty() && indexedAt <= state->bsky_last_seen)
                 continue;
+
+            ALOG_DEBUG("bluesky", "notification reason=" << reason << " indexedAt=" << indexedAt);
 
             if (reason != "mention" && reason != "reply" && reason != "quote")
                 continue;
@@ -1473,18 +1478,28 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
     listReq.headers["atproto-proxy"] = chatProxy;
 
     auto listResp = m_httpClient.Execute(listReq);
+    ALOG_INFO("bluesky", "chat listConvos status=" << listResp.status_code
+              << " body_len=" << listResp.body.size());
     if (listResp.status_code != 200) {
-        ALOG_DEBUG("bluesky", "chat listConvos failed (" << listResp.status_code << ")");
+        ALOG_WARNING("bluesky", "chat listConvos failed (" << listResp.status_code
+                     << "): " << listResp.body.substr(0, 200));
         return;
     }
 
     auto listData = ParseJson(listResp.body);
-    if (listData.isNull() || !listData.isMember("convos")) return;
+    if (listData.isNull() || !listData.isMember("convos")) {
+        ALOG_DEBUG("bluesky", "chat listConvos: no convos field in response");
+        return;
+    }
+
+    int totalConvos = listData["convos"].size();
+    ALOG_INFO("bluesky", "chat listConvos returned " << totalConvos << " conversations");
 
     for (const auto& convo : listData["convos"]) {
         std::string convoId = GetString(convo, "id");
         int unreadCount = 0;
         if (convo.isMember("unreadCount")) unreadCount = convo["unreadCount"].asInt();
+        ALOG_DEBUG("bluesky", "convo " << convoId << " unread=" << unreadCount);
         if (unreadCount == 0) continue;
 
         // Fetch messages for this convo
