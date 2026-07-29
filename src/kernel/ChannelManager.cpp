@@ -869,6 +869,16 @@ void ChannelManager::StartChannel(const ChannelState& state) {
         poller->active = true;
 
         std::string name = state.name;
+        // Load persisted watermarks from channel config
+        if (poller->config.isMember("bsky_last_seen")) {
+            poller->bsky_last_seen = poller->config["bsky_last_seen"].asString();
+        }
+        if (poller->config.isMember("bsky_chat_watermarks") && poller->config["bsky_chat_watermarks"].isObject()) {
+            for (const auto& key : poller->config["bsky_chat_watermarks"].getMemberNames()) {
+                poller->bsky_chat_watermarks[key] = poller->config["bsky_chat_watermarks"][key].asString();
+            }
+        }
+
         poller->thread = std::thread(&ChannelManager::BlueskyPollLoop, this, poller.get());
 
         {
@@ -1435,8 +1445,14 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                     latestSeen = indexedAt;
             }
 
-            if (latestSeen != state->bsky_last_seen)
+            if (latestSeen != state->bsky_last_seen) {
                 state->bsky_last_seen = latestSeen;
+                // Persist to channel config for restart survival
+                Json::Value updatedConfig = state->config;
+                updatedConfig["bsky_last_seen"] = latestSeen;
+                state->config = updatedConfig;
+                UpdateChannelConfig(state->channel_name, updatedConfig, nullptr);
+            }
 
             // Mark as seen
             {
@@ -1613,9 +1629,21 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             }
         }
 
-        // Update watermark to max rev seen
+        // Update watermark to max rev seen and persist
         if (!maxRev.empty()) {
+            bool watermarkChanged = (state->bsky_chat_watermarks[convoId] != maxRev);
             state->bsky_chat_watermarks[convoId] = maxRev;
+            if (watermarkChanged) {
+                // Persist all chat watermarks to channel config
+                Json::Value wmJson(Json::objectValue);
+                for (const auto& [k, v] : state->bsky_chat_watermarks) {
+                    wmJson[k] = v;
+                }
+                Json::Value updatedConfig = state->config;
+                updatedConfig["bsky_chat_watermarks"] = wmJson;
+                state->config = updatedConfig;
+                UpdateChannelConfig(state->channel_name, updatedConfig, nullptr);
+            }
             ALOG_DEBUG("bluesky", "convo " << convoId << " watermark updated to=\""
                       << maxRev << "\" dispatched=" << dispatchCount);
 
