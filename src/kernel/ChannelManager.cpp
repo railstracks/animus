@@ -870,7 +870,7 @@ void ChannelManager::StartChannel(const ChannelState& state) {
         poller->active = true;
 
         std::string name = state.name;
-::        poller->thread = std::thread(&ChannelManager::BlueskyPollLoop, this, poller.get());
+        poller->thread = std::thread(&ChannelManager::BlueskyPollLoop, this, poller.get());
 
         {
             std::lock_guard<std::mutex> lock(m_pollersMutex);
