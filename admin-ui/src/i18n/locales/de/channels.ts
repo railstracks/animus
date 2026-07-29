@@ -62,6 +62,8 @@ export const channels = {
         handle: 'Griff',
         appPassword: 'App-Passwort',
         pds: 'PDS-URL',
+        enablePosts: 'Beiträge aktivieren',
+        enableDm: 'DMs aktivieren',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

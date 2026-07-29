@@ -62,6 +62,8 @@ export const channels = {
         handle: '손잡이',
         appPassword: '앱 비밀번호',
         pds: 'PDS URL',
+        enablePosts: '게시물 활성화',
+        enableDm: 'DM 활성화',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

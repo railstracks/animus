@@ -62,6 +62,8 @@ export const channels = {
         handle: 'Alça',
         appPassword: 'Senha do aplicativo',
         pds: 'URL do PDS',
+        enablePosts: 'Habilitar publicações',
+        enableDm: 'Habilitar DM',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

@@ -62,6 +62,8 @@ export const channels = {
         handle: 'হ্যান্ডেল',
         appPassword: 'অ্যাপ পাসওয়ার্ড',
         pds: 'PDS URL',
+        enablePosts: 'পোস্ট সক্রিয় করুন',
+        enableDm: 'ডিএম সক্রিয় করুন',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

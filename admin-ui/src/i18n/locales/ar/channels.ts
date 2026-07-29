@@ -62,6 +62,8 @@ export const channels = {
         handle: 'مقبض',
         appPassword: 'كلمة مرور التطبيق',
         pds: 'عنوان URL لنظام التوزيع العام',
+        enablePosts: 'تفعيل المنشورات',
+        enableDm: 'تفعيل الرسائل المباشرة',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

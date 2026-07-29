@@ -62,6 +62,8 @@ export const channels = {
         handle: 'Hannu',
         appPassword: 'Kalmar wucewa ta App',
         pds: 'PDS URL',
+        enablePosts: 'Kunna Posts',
+        enableDm: 'Kunna DM',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

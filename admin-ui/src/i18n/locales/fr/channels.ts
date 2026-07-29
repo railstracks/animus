@@ -62,6 +62,8 @@ export const channels = {
         handle: 'Poignée',
         appPassword: 'Mot de passe de l\'application',
         pds: 'URL du PDS',
+        enablePosts: 'Activer les publications',
+        enableDm: 'Activer les DM',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

@@ -1322,137 +1322,142 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
             }
         }
 
-        // Fetch notifications
         std::string pds = GetString(state->config, "pds");
         if (pds.empty()) pds = "https://bsky.social";
 
-        HttpClient::Request req;
-        req.method = "GET";
-        req.url = pds + "/xrpc/app.bsky.notification.listNotifications?limit=50";
-        req.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
+        // --- Notification (posts) polling ---
+        bool enablePosts = GetString(state->config, "enable_posts") != "false";
+        if (enablePosts) {
+            HttpClient::Request req;
+            req.method = "GET";
+            req.url = pds + "/xrpc/app.bsky.notification.listNotifications?limit=50";
+            req.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
 
-        auto resp = m_httpClient.Execute(req);
+            auto resp = m_httpClient.Execute(req);
 
-        if (resp.status_code == 401 || resp.status_code == 400) {
-            ALOG_WARNING("bluesky", "got " << resp.status_code << " — forcing re-auth");
-            state->bsky_next_refresh = std::chrono::steady_clock::time_point::min();
-            state->next_attempt = now + std::chrono::seconds(5);
-            continue;
-        }
-
-        if (resp.status_code != 200) {
-            ALOG_WARNING("bluesky", "listNotifications failed (" << resp.status_code << ")");
-            state->consecutive_errors++;
-            int backoff = std::min(300, 30 * state->consecutive_errors);
-            state->next_attempt = now + std::chrono::seconds(backoff);
-            continue;
-        }
-
-        state->consecutive_errors = 0;
-        auto data = ParseJson(resp.body);
-
-        if (data.isNull() || !data.isMember("notifications")) {
-            state->next_attempt = now + std::chrono::seconds(60);
-            continue;
-        }
-
-        const auto& notifs = data["notifications"];
-        std::string latestSeen = state->bsky_last_seen;
-        int processed = 0;
-        int totalNotifs = notifs.size();
-        ALOG_INFO("bluesky", "listNotifications returned " << totalNotifs
-                  << " notifications, watermark=" << state->bsky_last_seen);
-
-        for (const auto& n : notifs) {
-            std::string reason = GetString(n, "reason");
-            std::string indexedAt = GetString(n, "indexedAt");
-
-            if (!state->bsky_last_seen.empty() && indexedAt <= state->bsky_last_seen)
-                continue;
-
-            ALOG_DEBUG("bluesky", "notification reason=" << reason << " indexedAt=" << indexedAt);
-
-            if (reason != "mention" && reason != "reply" && reason != "quote")
-                continue;
-
-            std::string authorHandle, authorDisplayName;
-            if (n.isMember("author")) {
-                authorHandle = GetString(n["author"], "handle");
-                authorDisplayName = GetString(n["author"], "displayName");
-                if (authorDisplayName.empty()) authorDisplayName = authorHandle;
-            }
-
-            std::string postText;
-            std::string postUri;
-            if (n.isMember("record"))
-                postText = GetString(n["record"], "text");
-            postUri = GetString(n, "uri");
-
-            if (postText.empty()) continue;
-
-            // --- Auto-reply filtering ---
-            bool autoReply = GetString(state->config, "auto_reply") != "false";
-            bool replyToAll = GetString(state->config, "reply_to_all") != "false";
-
-            if (!autoReply) {
-                ALOG_DEBUG("bluesky", "auto_reply disabled, skipping " << reason
-                          << " from @" << authorHandle << " for " << state->channel_name);
-                if (latestSeen.empty() || indexedAt > latestSeen)
-                    latestSeen = indexedAt;
+            if (resp.status_code == 401 || resp.status_code == 400) {
+                ALOG_WARNING("bluesky", "got " << resp.status_code << " — forcing re-auth");
+                state->bsky_next_refresh = std::chrono::steady_clock::time_point::min();
+                state->next_attempt = now + std::chrono::seconds(5);
                 continue;
             }
 
-            if (!replyToAll) {
-                bool inAllowlist = false;
-                if (state->config.isMember("reply_to_users") && state->config["reply_to_users"].isArray()) {
-                    for (const auto& u : state->config["reply_to_users"]) {
-                        if (u.asString() == authorHandle) {
-                            inAllowlist = true;
-                            break;
-                        }
-                    }
+            if (resp.status_code != 200) {
+                ALOG_WARNING("bluesky", "listNotifications failed (" << resp.status_code << ")");
+                state->consecutive_errors++;
+                int backoff = std::min(300, 30 * state->consecutive_errors);
+                state->next_attempt = now + std::chrono::seconds(backoff);
+                continue;
+            }
+
+            state->consecutive_errors = 0;
+            auto data = ParseJson(resp.body);
+
+            if (data.isNull() || !data.isMember("notifications")) {
+                state->next_attempt = now + std::chrono::seconds(60);
+                continue;
+            }
+
+            const auto& notifs = data["notifications"];
+            std::string latestSeen = state->bsky_last_seen;
+            int processed = 0;
+            int totalNotifs = notifs.size();
+            ALOG_INFO("bluesky", "listNotifications returned " << totalNotifs
+                      << " notifications, watermark=" << state->bsky_last_seen);
+
+            for (const auto& n : notifs) {
+                std::string reason = GetString(n, "reason");
+                std::string indexedAt = GetString(n, "indexedAt");
+
+                if (!state->bsky_last_seen.empty() && indexedAt <= state->bsky_last_seen)
+                    continue;
+
+                ALOG_DEBUG("bluesky", "notification reason=" << reason << " indexedAt=" << indexedAt);
+
+                if (reason != "mention" && reason != "reply" && reason != "quote")
+                    continue;
+
+                std::string authorHandle, authorDisplayName;
+                if (n.isMember("author")) {
+                    authorHandle = GetString(n["author"], "handle");
+                    authorDisplayName = GetString(n["author"], "displayName");
+                    if (authorDisplayName.empty()) authorDisplayName = authorHandle;
                 }
-                if (!inAllowlist) {
-                    ALOG_DEBUG("bluesky", "@" << authorHandle << " not in reply_to_users allowlist, skipping");
+
+                std::string postText;
+                std::string postUri;
+                if (n.isMember("record"))
+                    postText = GetString(n["record"], "text");
+                postUri = GetString(n, "uri");
+
+                if (postText.empty()) continue;
+
+                // --- Auto-reply filtering ---
+                bool autoReply = GetString(state->config, "auto_reply") != "false";
+                bool replyToAll = GetString(state->config, "reply_to_all") != "false";
+
+                if (!autoReply) {
+                    ALOG_DEBUG("bluesky", "auto_reply disabled, skipping " << reason
+                              << " from @" << authorHandle << " for " << state->channel_name);
                     if (latestSeen.empty() || indexedAt > latestSeen)
                         latestSeen = indexedAt;
                     continue;
                 }
+
+                if (!replyToAll) {
+                    bool inAllowlist = false;
+                    if (state->config.isMember("reply_to_users") && state->config["reply_to_users"].isArray()) {
+                        for (const auto& u : state->config["reply_to_users"]) {
+                            if (u.asString() == authorHandle) {
+                                inAllowlist = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!inAllowlist) {
+                        ALOG_DEBUG("bluesky", "@" << authorHandle << " not in reply_to_users allowlist, skipping");
+                        if (latestSeen.empty() || indexedAt > latestSeen)
+                            latestSeen = indexedAt;
+                        continue;
+                    }
+                }
+
+                std::string message = "[Bluesky " + reason + " from " + authorDisplayName
+                    + " (@" + authorHandle + ")]\n" + postText;
+
+                ALOG_INFO("bluesky", "dispatching " << reason << " from @"
+                          << authorHandle << " for " << state->channel_name);
+
+                DispatchToSession(state, "post:" + postUri, message, "chat");
+
+                processed++;
+                if (latestSeen.empty() || indexedAt > latestSeen)
+                    latestSeen = indexedAt;
             }
 
-            std::string message = "[Bluesky " + reason + " from " + authorDisplayName
-                + " (@" + authorHandle + ")]\n" + postText;
+            if (latestSeen != state->bsky_last_seen)
+                state->bsky_last_seen = latestSeen;
 
-            ALOG_INFO("bluesky", "dispatching " << reason << " from @"
-                      << authorHandle << " for " << state->channel_name);
+            // Mark as seen
+            {
+                Json::Value seenBody;
+                seenBody["seenAt"] = iso_now_bsky_cm();
 
-            DispatchToSession(state, "post:" + postUri, message, "chat");
-
-            processed++;
-            if (latestSeen.empty() || indexedAt > latestSeen)
-                latestSeen = indexedAt;
-        }
-
-        if (latestSeen != state->bsky_last_seen)
-            state->bsky_last_seen = latestSeen;
-
-        // Mark as seen
-        {
-            Json::Value seenBody;
-            seenBody["seenAt"] = iso_now_bsky_cm();
-
-            HttpClient::Request seenReq;
-            seenReq.method = "POST";
-            seenReq.url = pds + "/xrpc/app.bsky.notification.updateSeen";
-            seenReq.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
-            seenReq.headers["Content-Type"] = "application/json";
-            seenReq.body = channel_detail::JsonCompact(seenBody);
-            m_httpClient.Execute(seenReq);
+                HttpClient::Request seenReq;
+                seenReq.method = "POST";
+                seenReq.url = pds + "/xrpc/app.bsky.notification.updateSeen";
+                seenReq.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
+                seenReq.headers["Content-Type"] = "application/json";
+                seenReq.body = channel_detail::JsonCompact(seenBody);
+                m_httpClient.Execute(seenReq);
+            }
+        } else {
+            ALOG_DEBUG("bluesky", "enable_posts disabled, skipping notification poll for " << state->channel_name);
         }
 
         // --- Chat (DM) polling ---
-        // Poll listConvos for unread conversations, then getMessages for each.
-        if (now >= state->bsky_chat_next_poll) {
+        bool enableDm = GetString(state->config, "enable_dm") != "false";
+        if (enableDm && now >= state->bsky_chat_next_poll) {
             BlueskyChatPollLoop(state);
             state->bsky_chat_next_poll = now + std::chrono::seconds(60);
         }

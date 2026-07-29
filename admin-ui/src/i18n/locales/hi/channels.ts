@@ -62,6 +62,8 @@ export const channels = {
         handle: 'संभाल',
         appPassword: 'ऐप पासवर्ड',
         pds: 'पीडीएस यूआरएल',
+        enablePosts: 'पोस्ट सक्षम करें',
+        enableDm: 'डीएम सक्षम करें',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

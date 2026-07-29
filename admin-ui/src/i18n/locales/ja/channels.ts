@@ -62,6 +62,8 @@ export const channels = {
         handle: 'ハンドル',
         appPassword: 'アプリのパスワード',
         pds: 'PDS URL',
+        enablePosts: '投稿を有効化',
+        enableDm: 'DMを有効化',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

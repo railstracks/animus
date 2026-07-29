@@ -62,6 +62,8 @@ export const channels = {
         handle: 'xử lý',
         appPassword: 'Mật khẩu ứng dụng',
         pds: 'URL PDS',
+        enablePosts: 'Bật bài đăng',
+        enableDm: 'Bật tin nhắn trực tiếp',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

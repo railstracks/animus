@@ -62,6 +62,8 @@ export const channels = {
         handle: 'Uchwyt',
         appPassword: 'Hasło aplikacji',
         pds: 'Adres URL PSS',
+        enablePosts: 'Włącz posty',
+        enableDm: 'Włącz DM',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

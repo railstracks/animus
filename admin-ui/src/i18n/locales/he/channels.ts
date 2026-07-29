@@ -62,6 +62,8 @@ export const channels = {
         handle: 'ידית',
         appPassword: 'סיסמת אפליקציה',
         pds: 'כתובת אתר PDS',
+        enablePosts: 'הפעל פוסטים',
+        enableDm: 'הפעל הודעות ישירות',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

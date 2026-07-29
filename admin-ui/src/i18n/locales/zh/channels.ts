@@ -62,6 +62,8 @@ export const channels = {
         handle: '手柄',
         appPassword: '应用程序密码',
         pds: '商品数据服务网址',
+        enablePosts: '启用帖子',
+        enableDm: '启用DM',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

@@ -62,6 +62,8 @@ export const channels = {
         handle: 'Ручка',
         appPassword: 'Пароль приложения',
         pds: 'URL-адрес PDS',
+        enablePosts: 'Включить посты',
+        enableDm: 'Включить DM',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

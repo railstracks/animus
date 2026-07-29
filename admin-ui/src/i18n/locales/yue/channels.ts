@@ -62,6 +62,8 @@ export const channels = {
         handle: '處理',
         appPassword: '應用程式密碼',
         pds: '商品資料服務網址',
+        enablePosts: '啟用帖子',
+        enableDm: '啟用DM',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

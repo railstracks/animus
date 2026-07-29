@@ -62,6 +62,8 @@ export const channels = {
       handle: 'Handle',
       appPassword: 'App-wachtwoord',
       pds: 'PDS-URL',
+        enablePosts: 'Berichten inschakelen',
+        enableDm: 'DM inschakelen',
       autoReply: 'Auto-Reply',
       replyToAll: 'Reply to All Users',
       replyToUsers: 'Reply to Users (allowlist)'

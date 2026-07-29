@@ -117,6 +117,8 @@ const formData = ref({
   bluesky_handle: '',
   bluesky_app_password: '',
   bluesky_pds: 'https://bsky.social',
+  bluesky_enable_posts: true,
+  bluesky_enable_dm: true,
   bluesky_auto_reply: true,
   bluesky_reply_to_all: true,
   bluesky_reply_to_users: '',
@@ -228,6 +230,8 @@ function resetForm(): void {
     bluesky_handle: '',
     bluesky_app_password: '',
     bluesky_pds: 'https://bsky.social',
+    bluesky_enable_posts: true,
+    bluesky_enable_dm: true,
     bluesky_auto_reply: true,
     bluesky_reply_to_all: true,
     bluesky_reply_to_users: '',
@@ -372,6 +376,8 @@ function buildConfig(): Record<string, unknown> {
       agent_id: formData.value.agent_id || '',
     };
     if (formData.value.bluesky_app_password) cfg.app_password = formData.value.bluesky_app_password;
+    cfg.enable_posts = formData.value.bluesky_enable_posts;
+    cfg.enable_dm = formData.value.bluesky_enable_dm;
     cfg.auto_reply = formData.value.bluesky_auto_reply;
     cfg.reply_to_all = formData.value.bluesky_reply_to_all;
     if (formData.value.bluesky_reply_to_users.trim()) {
@@ -540,6 +546,8 @@ function openEdit(item: ChannelInfo): void {
     formData.value.bluesky_handle = cfg.handle || '';
     formData.value.bluesky_app_password = '';
     formData.value.bluesky_pds = cfg.pds || 'https://bsky.social';
+    formData.value.bluesky_enable_posts = cfg.enable_posts !== false;
+    formData.value.bluesky_enable_dm = cfg.enable_dm !== false;
     formData.value.bluesky_auto_reply = cfg.auto_reply !== false;
     formData.value.bluesky_reply_to_all = cfg.reply_to_all !== false;
     formData.value.bluesky_reply_to_users = Array.isArray(cfg.reply_to_users)
@@ -968,12 +976,14 @@ onMounted(async () => {
               <v-text-field v-model="formData.bluesky_handle" :label="t('channels.form.bluesky.handle')" density="comfortable" class="mb-2" />
               <v-text-field v-model="formData.bluesky_app_password" :label="t('channels.form.bluesky.appPassword')" type="password" density="comfortable" class="mb-2" />
               <v-text-field v-model="formData.bluesky_pds" :label="t('channels.form.bluesky.pds')" density="comfortable" class="mb-2" />
-              <v-checkbox v-model="formData.bluesky_auto_reply" :label="t('channels.form.bluesky.autoReply')" density="comfortable" hide-details class="mb-1" />
-              <v-checkbox v-model="formData.bluesky_reply_to_all" :label="t('channels.form.bluesky.replyToAll')" :disabled="!formData.bluesky_auto_reply" density="comfortable" hide-details class="mb-1" />
+              <v-checkbox v-model="formData.bluesky_enable_posts" :label="t('channels.form.bluesky.enablePosts')" density="comfortable" hide-details class="mb-1" />
+              <v-checkbox v-model="formData.bluesky_enable_dm" :label="t('channels.form.bluesky.enableDm')" density="comfortable" hide-details class="mb-1" />
+              <v-checkbox v-model="formData.bluesky_auto_reply" :label="t('channels.form.bluesky.autoReply')" :disabled="!formData.bluesky_enable_posts" density="comfortable" hide-details class="mb-1" />
+              <v-checkbox v-model="formData.bluesky_reply_to_all" :label="t('channels.form.bluesky.replyToAll')" :disabled="!formData.bluesky_auto_reply || !formData.bluesky_enable_posts" density="comfortable" hide-details class="mb-1" />
               <v-text-field
                 v-model="formData.bluesky_reply_to_users"
                 :label="t('channels.form.bluesky.replyToUsers')"
-                :disabled="!formData.bluesky_auto_reply || formData.bluesky_reply_to_all"
+                :disabled="!formData.bluesky_auto_reply || formData.bluesky_reply_to_all || !formData.bluesky_enable_posts"
                 hint="Comma-separated Bluesky handles (without @)"
                 persistent-hint
                 density="comfortable"

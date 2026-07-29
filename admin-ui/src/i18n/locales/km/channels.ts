@@ -62,6 +62,8 @@ export const channels = {
         handle: 'ដៃ',
         appPassword: 'ពាក្យសម្ងាត់កម្មវិធី',
         pds: 'PDS URL',
+        enablePosts: 'បើក​ប្រកាស',
+        enableDm: 'បើក​សារផ្ទាល់',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'

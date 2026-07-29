@@ -62,6 +62,8 @@ export const channels = {
         handle: 'دسته',
         appPassword: 'رمز برنامه',
         pds: 'آدرس پی دی اس',
+        enablePosts: 'فعال‌سازی پست‌ها',
+        enableDm: 'فعال‌سازی پیام مستقیم',
         autoReply: 'Auto-Reply',
         replyToAll: 'Reply to All Users',
         replyToUsers: 'Reply to Users (allowlist)'
