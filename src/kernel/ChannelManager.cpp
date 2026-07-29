@@ -1500,6 +1500,17 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
         ALOG_DEBUG("bluesky", "convo " << convoId << " unread=" << unreadCount);
         if (unreadCount == 0) continue;
 
+        // Build DID→handle map from convo members for sender display
+        std::map<std::string, std::string> didToHandle;
+        if (convo.isMember("members") && convo["members"].isArray()) {
+            for (const auto& m : convo["members"]) {
+                std::string memberDid = GetString(m, "did");
+                std::string handle = GetString(m, "handle");
+                if (!memberDid.empty() && !handle.empty())
+                    didToHandle[memberDid] = handle;
+            }
+        }
+
         // Fetch messages for this convo
         HttpClient::Request msgReq;
         msgReq.method = "GET";
@@ -1543,12 +1554,16 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
                 continue;
             }
 
-            // Build display name from sender
+            // Build display name: try convo members map first, then sender fields
             std::string senderName = senderDid;
-            if (msg.isMember("sender")) {
+            auto it = didToHandle.find(senderDid);
+            if (it != didToHandle.end()) {
+                senderName = "@" + it->second;
+            } else if (msg.isMember("sender")) {
                 std::string handle = GetString(msg["sender"], "handle");
                 std::string displayName = GetString(msg["sender"], "displayName");
-                if (!displayName.empty()) senderName = displayName + " (@" + handle + ")";
+                if (!displayName.empty() && !handle.empty())
+                    senderName = displayName + " (@" + handle + ")";
                 else if (!handle.empty()) senderName = "@" + handle;
             }
 
