@@ -327,13 +327,12 @@ end
 
 --- Chat API helpers (Bluesky DMs via chat.bsky.convo.*)
 -- Chat endpoints require atproto-proxy header to route to the chat service.
-local CHAT_PROXY = "did:web:api.bsky.chat"
+local CHAT_HOST = "https://api.bsky.chat"
 
 local function auth_chat_get(platform_id, endpoint, params)
     local jwt = authenticate(platform_id)
     if not jwt then return { status = 0, body = "authentication failed" } end
-    local pds = get_pds(platform_id)
-    local url = pds .. endpoint
+    local url = CHAT_HOST .. endpoint
     if params then
         local parts = {}
         for k, v in pairs(params) do
@@ -342,19 +341,13 @@ local function auth_chat_get(platform_id, endpoint, params)
         if #parts > 0 then url = url .. "?" .. table.concat(parts, "&") end
     end
     local resp = animus.http_get(url, {
-        headers = {
-            ["Authorization"] = "Bearer " .. jwt,
-            ["atproto-proxy"] = CHAT_PROXY
-        }
+        headers = { ["Authorization"] = "Bearer " .. jwt }
     })
     if is_expired_token(resp) then
         jwt = reauth(platform_id)
         if not jwt then return { status = 401, body = "re-auth failed" } end
         resp = animus.http_get(url, {
-            headers = {
-                ["Authorization"] = "Bearer " .. jwt,
-                ["atproto-proxy"] = CHAT_PROXY
-            }
+            headers = { ["Authorization"] = "Bearer " .. jwt }
         })
     end
     return resp
@@ -363,13 +356,11 @@ end
 local function auth_chat_post(platform_id, endpoint, body_table)
     local jwt = authenticate(platform_id)
     if not jwt then return { status = 0, body = "authentication failed" } end
-    local pds = get_pds(platform_id)
-    local url = pds .. endpoint
+    local url = CHAT_HOST .. endpoint
     local resp = animus.http_post(url, {
         headers = {
             ["Authorization"] = "Bearer " .. jwt,
-            ["Content-Type"] = "application/json",
-            ["atproto-proxy"] = CHAT_PROXY
+            ["Content-Type"] = "application/json"
         },
         body = json.encode(body_table)
     })
@@ -379,8 +370,7 @@ local function auth_chat_post(platform_id, endpoint, body_table)
         resp = animus.http_post(url, {
             headers = {
                 ["Authorization"] = "Bearer " .. jwt,
-                ["Content-Type"] = "application/json",
-                ["atproto-proxy"] = CHAT_PROXY
+                ["Content-Type"] = "application/json"
             },
             body = json.encode(body_table)
         })

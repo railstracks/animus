@@ -616,10 +616,9 @@ void ChannelManager::SendReply(const ReplyTarget& target, const std::string& tex
 
             HttpClient::Request chatReq;
             chatReq.method = "POST";
-            chatReq.url = pds + "/xrpc/chat.bsky.convo.sendMessage";
+            chatReq.url = "https://api.bsky.chat/xrpc/chat.bsky.convo.sendMessage";
             chatReq.headers["Authorization"] = "Bearer " + accessJwt;
             chatReq.headers["Content-Type"] = "application/json";
-            chatReq.headers["atproto-proxy"] = "did:web:api.bsky.chat";
             chatReq.body = channel_detail::JsonCompact(sendBody);
 
             auto chatResp = m_httpClient.Execute(chatReq);
@@ -1465,17 +1464,16 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
 }
 
 void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
-    std::string pds = GetString(state->config, "pds");
-    if (pds.empty()) pds = "https://bsky.social";
-
-    const std::string chatProxy = "did:web:api.bsky.chat";
+    // Chat endpoints: hit the chat service directly (api.bsky.chat)
+    // PDS proxying via atproto-proxy header returns 501 MethodNotImplemented
+    // on bsky.social PDS. The chat service accepts the same JWT directly.
+    const std::string chatHost = "https://api.bsky.chat";
 
     // Fetch conversation list
     HttpClient::Request listReq;
     listReq.method = "GET";
-    listReq.url = pds + "/xrpc/chat.bsky.convo.listConvos?limit=50";
+    listReq.url = chatHost + "/xrpc/chat.bsky.convo.listConvos?limit=50";
     listReq.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
-    listReq.headers["atproto-proxy"] = chatProxy;
 
     auto listResp = m_httpClient.Execute(listReq);
     ALOG_INFO("bluesky", "chat listConvos status=" << listResp.status_code
@@ -1505,9 +1503,8 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
         // Fetch messages for this convo
         HttpClient::Request msgReq;
         msgReq.method = "GET";
-        msgReq.url = pds + "/xrpc/chat.bsky.convo.getMessages?convoId=" + convoId + "&limit=50";
+        msgReq.url = chatHost + "/xrpc/chat.bsky.convo.getMessages?convoId=" + convoId + "&limit=50";
         msgReq.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
-        msgReq.headers["atproto-proxy"] = chatProxy;
 
         auto msgResp = m_httpClient.Execute(msgReq);
         if (msgResp.status_code != 200) {
@@ -1598,9 +1595,8 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
 
                 HttpClient::Request readReq;
                 readReq.method = "POST";
-                readReq.url = pds + "/xrpc/chat.bsky.convo.updateRead";
+                readReq.url = chatHost + "/xrpc/chat.bsky.convo.updateRead";
                 readReq.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
-                readReq.headers["atproto-proxy"] = chatProxy;
                 readReq.headers["Content-Type"] = "application/json";
                 readReq.body = channel_detail::JsonCompact(readBody);
                 m_httpClient.Execute(readReq);
