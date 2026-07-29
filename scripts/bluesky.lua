@@ -327,7 +327,7 @@ end
 
 --- Chat API helpers (Bluesky DMs via chat.bsky.convo.*)
 -- Chat endpoints require atproto-proxy header to route to the chat service.
-local CHAT_PROXY = "did:web:api.bsky.chat#bsky_chat"
+local CHAT_PROXY = "did:web:api.bsky.chat"
 
 local function auth_chat_get(platform_id, endpoint, params)
     local jwt = authenticate(platform_id)

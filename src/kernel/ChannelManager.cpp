@@ -619,7 +619,7 @@ void ChannelManager::SendReply(const ReplyTarget& target, const std::string& tex
             chatReq.url = pds + "/xrpc/chat.bsky.convo.sendMessage";
             chatReq.headers["Authorization"] = "Bearer " + accessJwt;
             chatReq.headers["Content-Type"] = "application/json";
-            chatReq.headers["atproto-proxy"] = "did:web:api.bsky.chat#bsky_chat";
+            chatReq.headers["atproto-proxy"] = "did:web:api.bsky.chat";
             chatReq.body = channel_detail::JsonCompact(sendBody);
 
             auto chatResp = m_httpClient.Execute(chatReq);
@@ -1468,7 +1468,7 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
     std::string pds = GetString(state->config, "pds");
     if (pds.empty()) pds = "https://bsky.social";
 
-    const std::string chatProxy = "did:web:api.bsky.chat#bsky_chat";
+    const std::string chatProxy = "did:web:api.bsky.chat";
 
     // Fetch conversation list
     HttpClient::Request listReq;
