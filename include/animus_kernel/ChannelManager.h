@@ -215,6 +215,9 @@ private:
         std::string bsky_did;
         std::string bsky_last_seen;  // ISO timestamp watermark
         std::chrono::steady_clock::time_point bsky_next_refresh;
+        // Bluesky chat (DM) state
+        std::map<std::string, std::string> bsky_chat_watermarks;  // convoId → last seen rev
+        std::chrono::steady_clock::time_point bsky_chat_next_poll;
 
         std::thread thread;
         bool active{false};
@@ -234,6 +237,7 @@ private:
 
     // --- Bluesky poller ---
     void BlueskyPollLoop(PollerState* state);
+    void BlueskyChatPollLoop(PollerState* state);
     bool BlueskyReAuth(PollerState* state);
     std::string BlueskyResolveParentCid(PollerState* state, const std::string& uri);
 

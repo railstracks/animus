@@ -7,6 +7,7 @@
 #include <sstream>
 #include <algorithm>
 #include <set>
+#include <map>
 #include <thread>
 #include <vector>
 #include <iomanip>
@@ -550,7 +551,7 @@ void ChannelManager::SendReply(const ReplyTarget& target, const std::string& tex
     }
 
     if (target.channel_type == "bluesky") {
-        // Bluesky auto-reply: post a reply via AT Protocol
+        // Bluesky reply: DM (chat) or post reply (wall)
         std::string pds, accessJwt, did;
 
         // Try poller state first (has fresh JWTs from polling)
@@ -601,6 +602,37 @@ void ChannelManager::SendReply(const ReplyTarget& target, const std::string& tex
 
         if (pds.empty()) pds = "https://bsky.social";
 
+        // --- DM (chat) path ---
+        if (target.type == ReplyTarget::Chat && !target.peer_id.empty()) {
+            // peer_id is the convoId
+            std::string convoId = target.peer_id;
+
+            Json::Value msgRecord;
+            msgRecord["text"] = text;
+
+            Json::Value sendBody;
+            sendBody["convoId"] = convoId;
+            sendBody["message"] = msgRecord;
+
+            HttpClient::Request chatReq;
+            chatReq.method = "POST";
+            chatReq.url = pds + "/xrpc/chat.bsky.convo.sendMessage";
+            chatReq.headers["Authorization"] = "Bearer " + accessJwt;
+            chatReq.headers["Content-Type"] = "application/json";
+            chatReq.headers["atproto-proxy"] = "did:web:api.bsky.chat#bsky_chat";
+            chatReq.body = channel_detail::JsonCompact(sendBody);
+
+            auto chatResp = m_httpClient.Execute(chatReq);
+            if (chatResp.status_code != 200) {
+                ALOG_WARNING("bluesky", "SendReply: chat sendMessage failed ("
+                            << chatResp.status_code << "): " << chatResp.body);
+            } else {
+                ALOG_DEBUG("bluesky", "SendReply: DM sent to convo " << convoId);
+            }
+            return;
+        }
+
+        // --- Post reply (wall) path ---
         // Build the reply record
         std::string parentUri = target.post_id;
         if (parentUri.empty()) {
@@ -838,7 +870,7 @@ void ChannelManager::StartChannel(const ChannelState& state) {
         poller->active = true;
 
         std::string name = state.name;
-        poller->thread = std::thread(&ChannelManager::BlueskyPollLoop, this, poller.get());
+::        poller->thread = std::thread(&ChannelManager::BlueskyPollLoop, this, poller.get());
 
         {
             std::lock_guard<std::mutex> lock(m_pollersMutex);
@@ -1414,10 +1446,157 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
             m_httpClient.Execute(seenReq);
         }
 
+        // --- Chat (DM) polling ---
+        // Poll listConvos for unread conversations, then getMessages for each.
+        if (now >= state->bsky_chat_next_poll) {
+            BlueskyChatPollLoop(state);
+            state->bsky_chat_next_poll = now + std::chrono::seconds(60);
+        }
+
         state->next_attempt = now + std::chrono::seconds(60);
     }
 
     ALOG_INFO("bluesky", "poll loop ended for " << state->channel_name);
+}
+
+void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
+    std::string pds = GetString(state->config, "pds");
+    if (pds.empty()) pds = "https://bsky.social";
+
+    const std::string chatProxy = "did:web:api.bsky.chat#bsky_chat";
+
+    // Fetch conversation list
+    HttpClient::Request listReq;
+    listReq.method = "GET";
+    listReq.url = pds + "/xrpc/chat.bsky.convo.listConvos?limit=50";
+    listReq.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
+    listReq.headers["atproto-proxy"] = chatProxy;
+
+    auto listResp = m_httpClient.Execute(listReq);
+    if (listResp.status_code != 200) {
+        ALOG_DEBUG("bluesky", "chat listConvos failed (" << listResp.status_code << ")");
+        return;
+    }
+
+    auto listData = ParseJson(listResp.body);
+    if (listData.isNull() || !listData.isMember("convos")) return;
+
+    for (const auto& convo : listData["convos"]) {
+        std::string convoId = GetString(convo, "id");
+        int unreadCount = 0;
+        if (convo.isMember("unreadCount")) unreadCount = convo["unreadCount"].asInt();
+        if (unreadCount == 0) continue;
+
+        // Fetch messages for this convo
+        HttpClient::Request msgReq;
+        msgReq.method = "GET";
+        msgReq.url = pds + "/xrpc/chat.bsky.convo.getMessages?convoId=" + convoId + "&limit=50";
+        msgReq.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
+        msgReq.headers["atproto-proxy"] = chatProxy;
+
+        auto msgResp = m_httpClient.Execute(msgReq);
+        if (msgResp.status_code != 200) {
+            ALOG_WARNING("bluesky", "chat getMessages failed for " << convoId
+                        << " (" << msgResp.status_code << ")");
+            continue;
+        }
+
+        auto msgData = ParseJson(msgResp.body);
+        if (msgData.isNull() || !msgData.isMember("messages")) continue;
+
+        std::string lastRev;
+        std::string lastSender;
+        std::string lastMessageText;
+
+        for (const auto& msg : msgData["messages"]) {
+            std::string rev = GetString(msg, "rev");
+            std::string senderDid;
+
+            if (msg.isMember("sender")) senderDid = GetString(msg["sender"], "did");
+
+            // Skip our own messages
+            if (senderDid == state->bsky_did) {
+                if (lastRev.empty() || rev > lastRev) lastRev = rev;
+                continue;
+            }
+
+            // Check watermark
+            auto wf = state->bsky_chat_watermarks.find(convoId);
+            if (wf != state->bsky_chat_watermarks.end() && rev <= wf->second) continue;
+
+            std::string text;
+            if (msg.isMember("text")) text = GetString(msg, "text");
+            if (text.empty()) {
+                if (lastRev.empty() || rev > lastRev) lastRev = rev;
+                continue;
+            }
+
+            // Build display name from sender
+            std::string senderName = senderDid;
+            if (msg.isMember("sender")) {
+                std::string handle = GetString(msg["sender"], "handle");
+                std::string displayName = GetString(msg["sender"], "displayName");
+                if (!displayName.empty()) senderName = displayName + " (@" + handle + ")";
+                else if (!handle.empty()) senderName = "@" + handle;
+            }
+
+            lastSender = senderName;
+            lastMessageText = text;
+
+            if (lastRev.empty() || rev > lastRev) lastRev = rev;
+        }
+
+        // Dispatch the latest message if we found one
+        if (!lastMessageText.empty() && !lastSender.empty()) {
+            std::string message = "[Bluesky DM from " + lastSender + "]\n" + lastMessageText;
+
+            // Apply auto-reply filter (same as notifications)
+            bool autoReply = GetString(state->config, "auto_reply") != "false";
+            bool replyToAll = GetString(state->config, "reply_to_all") != "false";
+
+            bool shouldDispatch = false;
+            if (autoReply) {
+                if (replyToAll) {
+                    shouldDispatch = true;
+                } else if (state->config.isMember("reply_to_users") && state->config["reply_to_users"].isArray()) {
+                    // Extract handle from senderName or use sender DID
+                    for (const auto& u : state->config["reply_to_users"]) {
+                        std::string allowedHandle = u.asString();
+                        // Check if sender handle matches
+                        if (lastSender.find(allowedHandle) != std::string::npos) {
+                            shouldDispatch = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (shouldDispatch) {
+                ALOG_INFO("bluesky", "dispatching DM from " << lastSender
+                          << " for " << state->channel_name);
+                DispatchToSession(state, "peer:" + convoId, message, "chat");
+
+                // Mark as read
+                Json::Value readBody;
+                readBody["convoId"] = convoId;
+                readBody["rev"] = lastRev;
+
+                HttpClient::Request readReq;
+                readReq.method = "POST";
+                readReq.url = pds + "/xrpc/chat.bsky.convo.updateRead";
+                readReq.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
+                readReq.headers["atproto-proxy"] = chatProxy;
+                readReq.headers["Content-Type"] = "application/json";
+                readReq.body = channel_detail::JsonCompact(readBody);
+                m_httpClient.Execute(readReq);
+            }
+        }
+
+        // Update watermark
+        if (!lastRev.empty()) {
+            state->bsky_chat_watermarks[convoId] = lastRev;
+        }
+    }
 }
 
 void ChannelManager::DispatchToSession(PollerState* state,
