@@ -1539,7 +1539,7 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
         }
 
         ALOG_DEBUG("bluesky", "convo " << convoId << " messages="
-                  << msgData["messages"].size() << " watermark="" << watermark << """);
+                  << msgData["messages"].size() << " watermark=\"" << watermark << "\"");
 
         for (const auto& msg : msgData["messages"]) {
             std::string rev = GetString(msg, "rev");
@@ -1547,10 +1547,10 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
 
             if (msg.isMember("sender")) senderDid = GetString(msg["sender"], "did");
 
-            ALOG_DEBUG("bluesky", "  msg rev="" << rev << "" sender="
-                      << senderDid << " text=""
+            ALOG_DEBUG("bluesky", "  msg rev=\"" << rev << "\" sender="
+                      << senderDid << " text=\""
                       << (msg.isMember("text") ? GetString(msg, "text").substr(0, 40) : std::string("(none)"))
-                      << """);
+                      << "\"");
 
             // Track max rev across ALL messages (including own)
             if (maxRev.empty() || (!rev.empty() && rev > maxRev)) maxRev = rev;
@@ -1602,7 +1602,7 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             if (shouldDispatch) {
                 std::string message = "[Bluesky DM from " + senderName + "]\n" + text;
                 ALOG_INFO("bluesky", "dispatching DM from " << senderName
-                          << " rev="" << rev << "" for " << state->channel_name);
+                          << " rev=\"" << rev << "\" for " << state->channel_name);
                 DispatchToSession(state, "peer:" + convoId, message, "chat");
                 dispatchCount++;
             }
@@ -1611,8 +1611,8 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
         // Update watermark to max rev seen
         if (!maxRev.empty()) {
             state->bsky_chat_watermarks[convoId] = maxRev;
-            ALOG_DEBUG("bluesky", "convo " << convoId << " watermark updated to ""
-                      << maxRev << "" dispatched=" << dispatchCount);
+            ALOG_DEBUG("bluesky", "convo " << convoId << " watermark updated to=\""
+                      << maxRev << "\" dispatched=" << dispatchCount);
 
             // Mark as read up to maxRev
             Json::Value readBody;
