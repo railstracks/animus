@@ -104,11 +104,13 @@ public:
     using ReplyTarget = ChannelReplyTarget;
     using DispatchCallback = ChannelDispatchCallback;
     using LogCallback = ChannelLogCallback;
+    using SessionQueryCallback = ChannelSessionQueryCallback;
 
     ChannelManager(HttpClient& httpClient,
                    AgentConfigStore* configStore,
                    DispatchCallback dispatch,
-                   LogCallback logCallback);
+                   LogCallback logCallback,
+                   SessionQueryCallback sessionQuery = {});
     ~ChannelManager();
 
     ChannelManager(const ChannelManager&) = delete;
@@ -280,6 +282,7 @@ private:
     ChannelRouter m_router;
     DispatchCallback m_dispatch;
     LogCallback m_logCallback;
+    SessionQueryCallback m_sessionQuery;
 
     // All channel states (loaded from config store)
     std::unordered_map<std::string, ChannelState> m_channels;

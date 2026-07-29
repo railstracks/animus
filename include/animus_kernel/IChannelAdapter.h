@@ -48,6 +48,13 @@ using ChannelLogCallback = std::function<void(
     const std::string& message,
     const std::string& sessionType)>;
 
+/// Query callback: returns the last N turn contents for a session.
+/// Used by channel pollers to determine what's already been processed
+/// (replaces separate watermark storage).
+using ChannelSessionQueryCallback = std::function<std::vector<std::string>(
+    const std::string& sessionKey,
+    std::size_t maxTurns)>;
+
 /// Interface for platform-specific channel connectors.
 ///
 /// Each platform (IRC, Telegram, VK, Discord, Slack, Email, WhatsApp, etc.)

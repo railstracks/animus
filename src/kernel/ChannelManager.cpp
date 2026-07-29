@@ -153,11 +153,13 @@ void ChannelRouter::PruneExpired(std::chrono::seconds ttl) {
 ChannelManager::ChannelManager(HttpClient& httpClient,
                                AgentConfigStore* configStore,
                                DispatchCallback dispatch,
-                               LogCallback logCallback)
+                               LogCallback logCallback,
+                               SessionQueryCallback sessionQuery)
     : m_httpClient(httpClient)
     , m_configStore(configStore)
     , m_dispatch(std::move(dispatch))
-    , m_logCallback(std::move(logCallback)) {
+    , m_logCallback(std::move(logCallback))
+    , m_sessionQuery(std::move(sessionQuery)) {
 }
 
 ChannelManager::~ChannelManager() {
@@ -869,16 +871,6 @@ void ChannelManager::StartChannel(const ChannelState& state) {
         poller->active = true;
 
         std::string name = state.name;
-        // Load persisted watermarks from channel config
-        if (poller->config.isMember("bsky_last_seen")) {
-            poller->bsky_last_seen = poller->config["bsky_last_seen"].asString();
-        }
-        if (poller->config.isMember("bsky_chat_watermarks") && poller->config["bsky_chat_watermarks"].isObject()) {
-            for (const auto& key : poller->config["bsky_chat_watermarks"].getMemberNames()) {
-                poller->bsky_chat_watermarks[key] = poller->config["bsky_chat_watermarks"][key].asString();
-            }
-        }
-
         poller->thread = std::thread(&ChannelManager::BlueskyPollLoop, this, poller.get());
 
         {
@@ -1435,6 +1427,22 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                 std::string message = "[Bluesky " + reason + " from " + authorDisplayName
                     + " (@" + authorHandle + ")]\n" + postText;
 
+                // Cross-restart dedup: check if already in session history
+                std::string notifSessionKey = "chat:" + state->channel_name + ":post:" + postUri;
+                if (m_sessionQuery) {
+                    auto recent = m_sessionQuery(notifSessionKey, 50);
+                    bool alreadyProcessed = false;
+                    for (const auto& t : recent) {
+                        if (t == message) { alreadyProcessed = true; break; }
+                    }
+                    if (alreadyProcessed) {
+                        ALOG_DEBUG("bluesky", "notification already in session history, skipping");
+                        if (latestSeen.empty() || indexedAt > latestSeen)
+                            latestSeen = indexedAt;
+                        continue;
+                    }
+                }
+
                 ALOG_INFO("bluesky", "dispatching " << reason << " from @"
                           << authorHandle << " for " << state->channel_name);
 
@@ -1445,14 +1453,8 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                     latestSeen = indexedAt;
             }
 
-            if (latestSeen != state->bsky_last_seen) {
+            if (latestSeen != state->bsky_last_seen)
                 state->bsky_last_seen = latestSeen;
-                // Persist to channel config for restart survival
-                Json::Value updatedConfig = state->config;
-                updatedConfig["bsky_last_seen"] = latestSeen;
-                state->config = updatedConfig;
-                UpdateChannelConfig(state->channel_name, updatedConfig, nullptr);
-            }
 
             // Mark as seen
             {
@@ -1552,7 +1554,16 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
         std::string maxRev;
         int dispatchCount = 0;
 
-        // Get current watermark
+        // Query session turns to find already-processed messages
+        std::string sessionKey = "chat:" + state->channel_name + ":" + convoId;
+        std::set<std::string> processedTexts;
+        if (m_sessionQuery) {
+            auto recentTurns = m_sessionQuery(sessionKey, 50);
+            for (const auto& turn : recentTurns) {
+                processedTexts.insert(turn);
+            }
+        }
+        // Also check in-memory watermark for same-run dedup
         std::string watermark;
         {
             auto wf = state->bsky_chat_watermarks.find(convoId);
@@ -1560,7 +1571,8 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
         }
 
         ALOG_DEBUG("bluesky", "convo " << convoId << " messages="
-                  << msgData["messages"].size() << " watermark=\"" << watermark << "\"");
+                  << msgData["messages"].size() << " watermark=\"" << watermark << "\""
+                  << " session_turns=" << processedTexts.size());
 
         for (const auto& msg : msgData["messages"]) {
             std::string rev = GetString(msg, "rev");
@@ -1568,22 +1580,25 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
 
             if (msg.isMember("sender")) senderDid = GetString(msg["sender"], "did");
 
-            ALOG_DEBUG("bluesky", "  msg rev=\"" << rev << "\" sender="
-                      << senderDid << " text=\""
-                      << (msg.isMember("text") ? GetString(msg, "text").substr(0, 40) : std::string("(none)"))
-                      << "\"");
-
             // Track max rev across ALL messages (including own)
             if (maxRev.empty() || (!rev.empty() && rev > maxRev)) maxRev = rev;
 
             // Skip our own messages
             if (senderDid == state->bsky_did) continue;
 
-            // Check watermark (skip if already seen)
+            // Check in-memory watermark (same-run dedup)
             if (!watermark.empty() && !rev.empty() && rev <= watermark) {
-                ALOG_DEBUG("bluesky", "    skipped by watermark");
                 continue;
             }
+
+            std::string text;
+            if (msg.isMember("text")) text = GetString(msg, "text");
+            if (text.empty()) continue;
+
+            // Check session turns (cross-restart dedup): if the exact message
+            // text is already in the session history, it's been processed.
+            std::string fullMsg = "[Bluesky DM from ";
+            // We'll check after building the full message below
 
             std::string text;
             if (msg.isMember("text")) text = GetString(msg, "text");
@@ -1622,6 +1637,13 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
 
             if (shouldDispatch) {
                 std::string message = "[Bluesky DM from " + senderName + "]\n" + text;
+                
+                // Cross-restart dedup: skip if this exact message is already in session
+                if (processedTexts.count(message)) {
+                    ALOG_DEBUG("bluesky", "    skipped (already in session history)");
+                    continue;
+                }
+                
                 ALOG_INFO("bluesky", "dispatching DM from " << senderName
                           << " rev=\"" << rev << "\" for " << state->channel_name);
                 DispatchToSession(state, "peer:" + convoId, message, "chat");
@@ -1629,22 +1651,10 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             }
         }
 
-        // Update watermark to max rev seen and persist
+        // Update in-memory watermark (same-run dedup only, no persistence needed)
         if (!maxRev.empty()) {
-            bool watermarkChanged = (state->bsky_chat_watermarks[convoId] != maxRev);
             state->bsky_chat_watermarks[convoId] = maxRev;
-            if (watermarkChanged) {
-                // Persist all chat watermarks to channel config
-                Json::Value wmJson(Json::objectValue);
-                for (const auto& [k, v] : state->bsky_chat_watermarks) {
-                    wmJson[k] = v;
-                }
-                Json::Value updatedConfig = state->config;
-                updatedConfig["bsky_chat_watermarks"] = wmJson;
-                state->config = updatedConfig;
-                UpdateChannelConfig(state->channel_name, updatedConfig, nullptr);
-            }
-            ALOG_DEBUG("bluesky", "convo " << convoId << " watermark updated to=\""
+            ALOG_DEBUG("bluesky", "convo " << convoId << " watermark=\""
                       << maxRev << "\" dispatched=" << dispatchCount);
 
             // Mark as read up to maxRev

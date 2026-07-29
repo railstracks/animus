@@ -1242,7 +1242,23 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         };
 
         m_channelManager = new ChannelManager(
-            m_httpClient, m_configStore, dispatch, logCallback);
+            m_httpClient, m_configStore, dispatch, logCallback,
+            // Session query callback: return recent turn contents for dedup
+            [this](const std::string& sessionKey, std::size_t maxTurns) -> std::vector<std::string> {
+                if (!m_sessionManager) return {};
+                SessionKey key{"channel:" + sessionKey, ""};
+                auto session = m_sessionManager->GetOrCreate(key);
+                if (!session) return {};
+                std::vector<std::string> turns;
+                const auto& allTurns = session->Turns();
+                std::size_t start = (allTurns.size() > maxTurns) ? allTurns.size() - maxTurns : 0;
+                for (std::size_t i = start; i < allTurns.size(); ++i) {
+                    if (!allTurns[i].content.empty()) {
+                        turns.push_back(allTurns[i].content);
+                    }
+                }
+                return turns;
+            });
 
         // Wire ChannelManager into AdminServer for route handlers
         if (m_adminServer) {
