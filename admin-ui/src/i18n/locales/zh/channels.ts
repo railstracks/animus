@@ -61,7 +61,10 @@ export const channels = {
       bluesky: {
         handle: '手柄',
         appPassword: '应用程序密码',
-        pds: '商品数据服务网址'
+        pds: '商品数据服务网址',
+        autoReply: 'Auto-Reply',
+        replyToAll: 'Reply to All Users',
+        replyToUsers: 'Reply to Users (allowlist)'
       },
       mastodon: {
         handle: '手柄',

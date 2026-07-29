@@ -61,7 +61,10 @@ export const channels = {
       bluesky: {
         handle: 'ידית',
         appPassword: 'סיסמת אפליקציה',
-        pds: 'כתובת אתר PDS'
+        pds: 'כתובת אתר PDS',
+        autoReply: 'Auto-Reply',
+        replyToAll: 'Reply to All Users',
+        replyToUsers: 'Reply to Users (allowlist)'
       },
       mastodon: {
         handle: 'ידית',

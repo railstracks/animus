@@ -61,7 +61,10 @@ export const channels = {
       bluesky: {
         handle: 'مقبض',
         appPassword: 'كلمة مرور التطبيق',
-        pds: 'عنوان URL لنظام التوزيع العام'
+        pds: 'عنوان URL لنظام التوزيع العام',
+        autoReply: 'Auto-Reply',
+        replyToAll: 'Reply to All Users',
+        replyToUsers: 'Reply to Users (allowlist)'
       },
       mastodon: {
         handle: 'مقبض',

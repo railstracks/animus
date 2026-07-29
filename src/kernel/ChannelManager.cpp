@@ -1354,6 +1354,36 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
 
             if (postText.empty()) continue;
 
+            // --- Auto-reply filtering ---
+            bool autoReply = GetString(state->config, "auto_reply") != "false";
+            bool replyToAll = GetString(state->config, "reply_to_all") != "false";
+
+            if (!autoReply) {
+                ALOG_DEBUG("bluesky", "auto_reply disabled, skipping " << reason
+                          << " from @" << authorHandle << " for " << state->channel_name);
+                if (latestSeen.empty() || indexedAt > latestSeen)
+                    latestSeen = indexedAt;
+                continue;
+            }
+
+            if (!replyToAll) {
+                bool inAllowlist = false;
+                if (state->config.isMember("reply_to_users") && state->config["reply_to_users"].isArray()) {
+                    for (const auto& u : state->config["reply_to_users"]) {
+                        if (u.asString() == authorHandle) {
+                            inAllowlist = true;
+                            break;
+                        }
+                    }
+                }
+                if (!inAllowlist) {
+                    ALOG_DEBUG("bluesky", "@" << authorHandle << " not in reply_to_users allowlist, skipping");
+                    if (latestSeen.empty() || indexedAt > latestSeen)
+                        latestSeen = indexedAt;
+                    continue;
+                }
+            }
+
             std::string message = "[Bluesky " + reason + " from " + authorDisplayName
                 + " (@" + authorHandle + ")]\n" + postText;
 

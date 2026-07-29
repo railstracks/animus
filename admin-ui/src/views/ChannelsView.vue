@@ -117,6 +117,9 @@ const formData = ref({
   bluesky_handle: '',
   bluesky_app_password: '',
   bluesky_pds: 'https://bsky.social',
+  bluesky_auto_reply: true,
+  bluesky_reply_to_all: true,
+  bluesky_reply_to_users: '',
   // Mastodon fields
   mastodon_handle: '',
   mastodon_instance: '',
@@ -225,6 +228,9 @@ function resetForm(): void {
     bluesky_handle: '',
     bluesky_app_password: '',
     bluesky_pds: 'https://bsky.social',
+    bluesky_auto_reply: true,
+    bluesky_reply_to_all: true,
+    bluesky_reply_to_users: '',
     mastodon_handle: '',
     mastodon_instance: '',
     // Email (AgentMail) fields
@@ -366,6 +372,14 @@ function buildConfig(): Record<string, unknown> {
       agent_id: formData.value.agent_id || '',
     };
     if (formData.value.bluesky_app_password) cfg.app_password = formData.value.bluesky_app_password;
+    cfg.auto_reply = formData.value.bluesky_auto_reply;
+    cfg.reply_to_all = formData.value.bluesky_reply_to_all;
+    if (formData.value.bluesky_reply_to_users.trim()) {
+      cfg.reply_to_users = formData.value.bluesky_reply_to_users
+        .split(',').map((s: string) => s.trim().replace(/^@/, '')).filter(Boolean);
+    } else {
+      cfg.reply_to_users = [];
+    }
     return cfg;
   }
   if (type === 'mastodon') {
@@ -526,6 +540,11 @@ function openEdit(item: ChannelInfo): void {
     formData.value.bluesky_handle = cfg.handle || '';
     formData.value.bluesky_app_password = '';
     formData.value.bluesky_pds = cfg.pds || 'https://bsky.social';
+    formData.value.bluesky_auto_reply = cfg.auto_reply !== false;
+    formData.value.bluesky_reply_to_all = cfg.reply_to_all !== false;
+    formData.value.bluesky_reply_to_users = Array.isArray(cfg.reply_to_users)
+      ? cfg.reply_to_users.join(', ')
+      : '';
     formData.value.agent_id = String(cfg.agent_id ?? '');
   } else if (type === 'mastodon') {
     formData.value.mastodon_handle = cfg.handle || '';
@@ -949,6 +968,17 @@ onMounted(async () => {
               <v-text-field v-model="formData.bluesky_handle" :label="t('channels.form.bluesky.handle')" density="comfortable" class="mb-2" />
               <v-text-field v-model="formData.bluesky_app_password" :label="t('channels.form.bluesky.appPassword')" type="password" density="comfortable" class="mb-2" />
               <v-text-field v-model="formData.bluesky_pds" :label="t('channels.form.bluesky.pds')" density="comfortable" class="mb-2" />
+              <v-checkbox v-model="formData.bluesky_auto_reply" :label="t('channels.form.bluesky.autoReply')" density="comfortable" hide-details class="mb-1" />
+              <v-checkbox v-model="formData.bluesky_reply_to_all" :label="t('channels.form.bluesky.replyToAll')" :disabled="!formData.bluesky_auto_reply" density="comfortable" hide-details class="mb-1" />
+              <v-text-field
+                v-model="formData.bluesky_reply_to_users"
+                :label="t('channels.form.bluesky.replyToUsers')"
+                :disabled="!formData.bluesky_auto_reply || formData.bluesky_reply_to_all"
+                hint="Comma-separated Bluesky handles (without @)"
+                persistent-hint
+                density="comfortable"
+                class="mb-2"
+              />
             </template>
 
             <!-- Mastodon fields -->

@@ -61,7 +61,10 @@ export const channels = {
       bluesky: {
         handle: 'संभाल',
         appPassword: 'ऐप पासवर्ड',
-        pds: 'पीडीएस यूआरएल'
+        pds: 'पीडीएस यूआरएल',
+        autoReply: 'Auto-Reply',
+        replyToAll: 'Reply to All Users',
+        replyToUsers: 'Reply to Users (allowlist)'
       },
       mastodon: {
         handle: 'संभाल',
