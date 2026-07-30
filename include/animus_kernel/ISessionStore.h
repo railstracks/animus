@@ -62,6 +62,25 @@ public:
 
     // Mark specific turns as processed by turn_id
     virtual void MarkTurnsProcessed(const std::vector<SessionTurnId>& turnIds) = 0;
+
+    // Query metadata values for a session matching a JSON key path.
+    // Returns all non-null values found for the given key in the metadata JSON column.
+    // Used by channel pollers to check which external message IDs are already stored.
+    // Set metadata on the last user turn of a session
+    virtual void SetLastUserTurnMetadata(
+        SessionId sessionId,
+        const std::string& metadata) {
+        // Default: no-op (only SQLite store supports this)
+    }
+
+    // Query metadata values for a session matching a JSON key path.
+    // Returns all non-null values found for the given key in the metadata JSON column.
+    // Used by channel pollers to check which external message IDs are already stored.
+    virtual std::vector<std::string> GetMetadataValues(
+        SessionId sessionId,
+        const std::string& jsonKey) {
+        return {};  // Default: no metadata support
+    }
 };
 
 } // namespace animus::kernel

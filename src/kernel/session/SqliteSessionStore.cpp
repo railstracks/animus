@@ -27,8 +27,8 @@ static void WriteTurns(IDataStore& store, SessionId sessionId, const std::vector
             "INSERT INTO session_turns "
             "(session_id, turn_id, role, content, unix_ms, is_summary, compacted_from, "
             " thinking_content, tool_calls, tool_call_id, tool_name, "
-            " intake_processed, intake_processed_at_unix_ms, token_count, is_compacted) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+            " intake_processed, intake_processed_at_unix_ms, token_count, is_compacted, metadata) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
         if (!stmt) continue;
         stmt->BindInt64(1, sessionId);
         stmt->BindInt64(2, t.turn_id);
@@ -67,6 +67,7 @@ static void WriteTurns(IDataStore& store, SessionId sessionId, const std::vector
         stmt->BindInt64(13, static_cast<int64_t>(t.intake_processed_at_unix_ms));
         stmt->BindInt64(14, static_cast<int64_t>(t.token_count));
         stmt->BindInt(15, t.is_compacted ? 1 : 0);
+        stmt->BindText(16, t.metadata);
 
         stmt->ExecDML();
     }
@@ -76,7 +77,7 @@ static void LoadTurns(IDataStore& store, Session& session) {
     auto stmt = store.Prepare(
         "SELECT turn_id, role, content, unix_ms, is_summary, compacted_from, "
         "       thinking_content, tool_calls, tool_call_id, tool_name, "
-        "       intake_processed, intake_processed_at_unix_ms, token_count, is_compacted "
+        "       intake_processed, intake_processed_at_unix_ms, token_count, is_compacted, metadata "
         "FROM session_turns WHERE session_id=? ORDER BY turn_id ASC");
     if (!stmt) return;
     stmt->BindInt64(1, session.Id());
@@ -133,6 +134,7 @@ static void LoadTurns(IDataStore& store, Session& session) {
             ? 0
             : static_cast<std::size_t>(stmt->ColumnInt64(12));
         turn.is_compacted = !stmt->IsColumnNull(13) && stmt->ColumnInt64(13) != 0;
+        turn.metadata = stmt->IsColumnNull(14) ? "{}" : stmt->ColumnText(14);
 
         session.AddTurn(std::move(turn));
     }
@@ -322,6 +324,11 @@ void SqliteSessionStore::EnsureSchema() {
     // Compacted turns are kept in DB (for consolidation + audit) but excluded from prompts.
     if (!HasColumn("session_turns", "is_compacted"))
         m_store->Exec("ALTER TABLE session_turns ADD COLUMN is_compacted INTEGER NOT NULL DEFAULT 0");
+    // Migration v6: add metadata column to session_turns.
+    // Stores JSON for adapter-specific data (Bluesky rev IDs, WhatsApp message IDs, etc.).
+    // Used for message dedup — query existing metadata to skip already-processed messages.
+    if (!HasColumn("session_turns", "metadata"))
+        m_store->Exec("ALTER TABLE session_turns ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'"
     // Migration v5: fix timestamp columns on PostgreSQL (INTEGER → BIGINT).
     // SQLite stores INTEGER as 64-bit natively, so no migration needed there.
     if (m_store->Dialect() == DataStoreDialect::PostgreSQL) {
@@ -483,8 +490,8 @@ void SqliteSessionStore::PersistSession(const Session& s) {
             "INSERT INTO session_turns "
             "(session_id, turn_id, role, content, unix_ms, is_summary, compacted_from, "
             " thinking_content, tool_calls, tool_call_id, tool_name, "
-            " intake_processed, intake_processed_at_unix_ms, token_count, is_compacted) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+            " intake_processed, intake_processed_at_unix_ms, token_count, is_compacted, metadata) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
         if (!turnStmt) continue;
 
         turnStmt->BindInt64(1, s.Id());
@@ -522,6 +529,7 @@ void SqliteSessionStore::PersistSession(const Session& s) {
         turnStmt->BindInt64(13, static_cast<int64_t>(t.intake_processed_at_unix_ms));
         turnStmt->BindInt64(14, static_cast<int64_t>(t.token_count));
         turnStmt->BindInt(15, t.is_compacted ? 1 : 0);
+        turnStmt->BindText(16, t.metadata);
 
         turnStmt->ExecDML();
     }
@@ -852,6 +860,67 @@ void SqliteSessionStore::MarkTurnsProcessed(const std::vector<SessionTurnId>& tu
             "UPDATE session_turns SET intake_processed = 1, intake_processed_at_unix_ms = "
             + std::to_string(now) + " WHERE turn_id = " + std::to_string(tid));
     }
+}
+
+std::vector<std::string> SqliteSessionStore::GetMetadataValues(
+    SessionId sessionId,
+    const std::string& jsonKey) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto stmt = m_store->Prepare(
+        "SELECT metadata FROM session_turns WHERE session_id=? AND metadata IS NOT NULL AND metadata != '{}'");
+    if (!stmt) return {};
+    stmt->BindInt64(1, static_cast<int64_t>(sessionId));
+
+    std::vector<std::string> results;
+    while (stmt->Step()) {
+        std::string metaJson = stmt->ColumnText(0);
+        if (metaJson.empty() || metaJson == "{}") continue;
+
+        Json::Value root;
+        Json::CharReaderBuilder builder;
+        std::string err;
+        std::istringstream iss(metaJson);
+        if (Json::parseFromStream(builder, iss, &root, &err) && root.isObject()) {
+            if (root.isMember(jsonKey)) {
+                const auto& val = root[jsonKey];
+                if (val.isString()) {
+                    std::string s = val.asString();
+                    if (!s.empty()) results.push_back(s);
+                } else if (val.isArray()) {
+                    // Array of values (e.g., batch of rev IDs)
+                    for (const auto& item : val) {
+                        std::string s = item.asString();
+                        if (!s.empty()) results.push_back(s);
+                    }
+                }
+            }
+        }
+    }
+    return results;
+}
+
+void SqliteSessionStore::SetLastUserTurnMetadata(
+    SessionId sessionId,
+    const std::string& metadata) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    // Find the last user turn for this session
+    auto stmt = m_store->Prepare(
+        "SELECT MAX(turn_id) FROM session_turns WHERE session_id=? AND role='user'");
+    if (!stmt) return;
+    stmt->BindInt64(1, static_cast<int64_t>(sessionId));
+    if (!stmt->Step() || stmt->IsColumnNull(0)) return;
+
+    int64_t turnId = stmt->ColumnInt64(0);
+
+    auto update = m_store->Prepare(
+        "UPDATE session_turns SET metadata=? WHERE session_id=? AND turn_id=?");
+    if (!update) return;
+    update->BindText(1, metadata);
+    update->BindInt64(2, static_cast<int64_t>(sessionId));
+    update->BindInt64(3, turnId);
+    update->ExecDML();
 }
 
 } // namespace animus::kernel

@@ -43,6 +43,14 @@ public:
         const std::string& agentId, int limit) override;
     void MarkTurnsProcessed(const std::vector<SessionTurnId>& turnIds) override;
 
+    std::vector<std::string> GetMetadataValues(
+        SessionId sessionId,
+        const std::string& jsonKey) override;
+
+    void SetLastUserTurnMetadata(
+        SessionId sessionId,
+        const std::string& metadata) override;
+
 private:
     void EnsureSchema();
     void LoadFromDb();

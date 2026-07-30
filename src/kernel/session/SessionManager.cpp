@@ -72,4 +72,53 @@ void SessionManager::MarkTurnsProcessed(const std::vector<SessionTurnId>& turnId
     m_store->MarkTurnsProcessed(turnIds);
 }
 
+std::vector<std::string> SessionManager::GetMetadataValues(
+    const std::string& sessionKeyStr,
+    const std::string& jsonKey) {
+    // Parse session key string: format is "connector|conversation_id|thread_id"
+    // Channel sessions use "channel:<key>||"
+    std::string connector, convoId, threadId;
+    auto first = sessionKeyStr.find('|');
+    if (first != std::string::npos) {
+        connector = sessionKeyStr.substr(0, first);
+        auto second = sessionKeyStr.find('|', first + 1);
+        if (second != std::string::npos) {
+            convoId = sessionKeyStr.substr(first + 1, second - first - 1);
+            threadId = sessionKeyStr.substr(second + 1);
+        }
+    } else {
+        connector = sessionKeyStr;
+    }
+
+    SessionKey key{connector, convoId, threadId};
+    auto session = m_store->GetOrCreate(key);
+    if (!session) return {};
+
+    return m_store->GetMetadataValues(session->Id(), jsonKey);
+}
+
+void SessionManager::SetLastUserTurnMetadata(
+    const std::string& sessionKeyStr,
+    const std::string& metadata) {
+    // Parse session key string: format is "connector|conversation_id|thread_id"
+    std::string connector, convoId, threadId;
+    auto first = sessionKeyStr.find('|');
+    if (first != std::string::npos) {
+        connector = sessionKeyStr.substr(0, first);
+        auto second = sessionKeyStr.find('|', first + 1);
+        if (second != std::string::npos) {
+            convoId = sessionKeyStr.substr(first + 1, second - first - 1);
+            threadId = sessionKeyStr.substr(second + 1);
+        }
+    } else {
+        connector = sessionKeyStr;
+    }
+
+    SessionKey key{connector, convoId, threadId};
+    auto session = m_store->GetOrCreate(key);
+    if (!session) return;
+
+    m_store->SetLastUserTurnMetadata(session->Id(), metadata);
+}
+
 } // namespace animus::kernel

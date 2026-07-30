@@ -1110,12 +1110,14 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 // Retrieve the stored ReplyTarget and agentId for this session
                 ChannelManager::ReplyTarget replyTarget;
                 std::string agentId;
+                std::string metadata;
                 {
                     std::lock_guard<std::mutex> lock(m_pendingReplyTargetsMutex);
                     auto it = m_pendingReplyTargets.find(queueKey);
                     if (it != m_pendingReplyTargets.end()) {
                         replyTarget = it->second.replyTarget;
                         agentId = it->second.agentId;
+                        metadata = it->second.metadata;
                     }
                 }
                 // Strip the "channel:" prefix to get the session key
@@ -1123,7 +1125,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 if (sessionKey.size() > 8 && sessionKey.substr(0, 8) == "channel:") {
                     sessionKey = sessionKey.substr(8);
                 }
-                ExecuteChannelDispatch(sessionKey, concatenatedMessage, replyTarget, agentId);
+                ExecuteChannelDispatch(sessionKey, concatenatedMessage, replyTarget, agentId, metadata);
             });
 
         // Wire MessageQueue into ChainRunner for interjection support
@@ -1133,7 +1135,8 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                                const std::string& sessionKey,
                                const std::string& message,
                                const std::string& sessionType,
-                               const ChannelManager::ReplyTarget& replyTarget) {
+                               const ChannelManager::ReplyTarget& replyTarget,
+                               const std::string& metadata = "{}") {
             ALOG_DEBUG("channels:dispatch", "agentId=" << agentId
                       << " sessionKey=" << sessionKey
                       << " type=" << sessionType);
@@ -1174,7 +1177,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 // Store it in a per-session map.
                 {
                     std::lock_guard<std::mutex> lock(m_pendingReplyTargetsMutex);
-                    m_pendingReplyTargets[queueKey] = {replyTarget, agentId};
+                    m_pendingReplyTargets[queueKey] = {replyTarget, agentId, metadata};
                 }
 
                 auto now = std::chrono::system_clock::now();
@@ -1210,7 +1213,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                           << session->AgentId() << ", skipping dispatch");
             }
 
-            ExecuteChannelDispatch(sessionKey, message, replyTarget, agentId);
+            ExecuteChannelDispatch(sessionKey, message, replyTarget, agentId, metadata);
         };
 
         // Log callback — appends message to session history without firing a chain
@@ -1243,21 +1246,11 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
 
         m_channelManager = new ChannelManager(
             m_httpClient, m_configStore, dispatch, logCallback,
-            // Session query callback: return recent turn contents for dedup
-            [this](const std::string& sessionKey, std::size_t maxTurns) -> std::vector<std::string> {
+            // Session query callback: return metadata values for dedup
+            [this](const std::string& sessionKey, const std::string& metadataKey) -> std::vector<std::string> {
                 if (!m_sessionManager) return {};
-                SessionKey key{"channel:" + sessionKey, ""};
-                auto session = m_sessionManager->GetOrCreate(key);
-                if (!session) return {};
-                std::vector<std::string> turns;
-                const auto& allTurns = session->Turns();
-                std::size_t start = (allTurns.size() > maxTurns) ? allTurns.size() - maxTurns : 0;
-                for (std::size_t i = start; i < allTurns.size(); ++i) {
-                    if (!allTurns[i].content.empty()) {
-                        turns.push_back(allTurns[i].content);
-                    }
-                }
-                return turns;
+                std::string fullKey = "channel:" + sessionKey + "||";
+                return m_sessionManager->GetMetadataValues(fullKey, metadataKey);
             });
 
         // Wire ChannelManager into AdminServer for route handlers
@@ -1302,7 +1295,8 @@ void AgentKernel::ExecuteChannelDispatch(
         const std::string& sessionKey,
         const std::string& message,
         const ChannelManager::ReplyTarget& replyTarget,
-        const std::string& agentId) {
+        const std::string& agentId,
+        const std::string& metadata) {
     SessionKey key{"channel:" + sessionKey, ""};
     auto session = m_sessionManager->GetOrCreate(key);
     if (!session) return;
@@ -1392,6 +1386,12 @@ void AgentKernel::ExecuteChannelDispatch(
 
             if (result.success && m_sessionManager) {
                 m_sessionManager->FlushSession(session->Id());
+
+                // Store adapter metadata on the last user turn (for message dedup)
+                if (metadata != "{}" && metadata != "") {
+                    m_sessionManager->SetLastUserTurnMetadata(
+                        "channel:" + sessionKey + "||", metadata);
+                }
 
                 if (result.triggered_compaction && m_compactionService) {
                     m_compactionService->CompactIfNeeded(

@@ -247,7 +247,8 @@ private:
     void DispatchToSession(PollerState* state,
                            const std::string& routingKey,
                            const std::string& message,
-                           const std::string& sessionType);
+                           const std::string& sessionType,
+                           const std::string& metadata = "{}");
 
     // Log message to session history without triggering an agent chain.
     // Used for channel tracking — messages are stored as context for later mentions.

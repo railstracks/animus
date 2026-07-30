@@ -44,6 +44,10 @@ struct SessionTurn {
 
     // Token count cache (estimated, populated on read/write)
     std::size_t token_count{0};
+
+    // Adapter metadata (JSON string) — stores external message IDs for dedup
+    // e.g. {"bluesky_rev":"2222224ycqc5m"} or {"whatsapp_id":"wamid.XYZ"}
+    std::string metadata{"{}"};
 };
 
 enum class SessionAccessMode {

@@ -97,7 +97,8 @@ private:
         const std::string& sessionKey,
         const std::string& message,
         const ChannelManager::ReplyTarget& replyTarget,
-        const std::string& agentId = "");
+        const std::string& agentId = "",
+        const std::string& metadata = "{}");
 
     /// Read min_response_interval from a channel's config. Returns 0 if not set.
     int GetChannelInterval(const std::string& channelName) const;
@@ -156,6 +157,7 @@ private:
     struct PendingDispatch {
         ChannelManager::ReplyTarget replyTarget;
         std::string agentId;
+        std::string metadata;
     };
     std::unordered_map<std::string, PendingDispatch> m_pendingReplyTargets;
     std::chrono::steady_clock::time_point m_startedAt{};

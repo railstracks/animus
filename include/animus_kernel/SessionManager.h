@@ -46,6 +46,16 @@ public:
     // Access underlying store for compaction and other services
     ISessionStore& GetStore() { return *m_store; }
 
+    // Query metadata for dedup: returns all values for a JSON key in session turn metadata
+    std::vector<std::string> GetMetadataValues(
+        const std::string& sessionKeyStr,
+        const std::string& jsonKey);
+
+    // Set metadata on the last user turn of a session (for adapter message IDs)
+    void SetLastUserTurnMetadata(
+        const std::string& sessionKeyStr,
+        const std::string& metadata);
+
 private:
     std::unique_ptr<ISessionStore> m_store;
     std::unique_ptr<ISessionRouter> m_router;

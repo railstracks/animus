@@ -39,7 +39,8 @@ using ChannelDispatchCallback = std::function<void(
     const std::string& sessionKey,
     const std::string& message,
     const std::string& sessionType,
-    const ChannelReplyTarget& replyTarget)>;
+    const ChannelReplyTarget& replyTarget,
+    const std::string& metadata = "{}")>;
 
 /// Log callback for storing messages without triggering a chain.
 using ChannelLogCallback = std::function<void(
@@ -48,12 +49,12 @@ using ChannelLogCallback = std::function<void(
     const std::string& message,
     const std::string& sessionType)>;
 
-/// Query callback: returns the last N turn contents for a session.
-/// Used by channel pollers to determine what's already been processed
-/// (replaces separate watermark storage).
+/// Query callback: returns metadata values for a session matching a JSON key.
+/// Used by channel pollers to determine which external message IDs have already
+/// been stored (replaces separate watermark storage).
 using ChannelSessionQueryCallback = std::function<std::vector<std::string>(
     const std::string& sessionKey,
-    std::size_t maxTurns)>;
+    const std::string& metadataKey)>;
 
 /// Interface for platform-specific channel connectors.
 ///

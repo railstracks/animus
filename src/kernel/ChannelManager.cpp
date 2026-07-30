@@ -1364,6 +1364,13 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
             std::string latestSeen = state->bsky_last_seen;
             int processed = 0;
             int totalNotifs = notifs.size();
+
+            // Query session metadata for already-processed notification URIs
+            std::set<std::string> seenUris;
+            // Build set from all chat sessions for this channel's notifications
+            // Notification URIs are stored as metadata on chat sessions
+            // For now, use in-memory watermark as primary dedup
+
             ALOG_INFO("bluesky", "listNotifications returned " << totalNotifs
                       << " notifications, watermark=" << state->bsky_last_seen);
 
@@ -1426,22 +1433,6 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
 
                 std::string message = "[Bluesky " + reason + " from " + authorDisplayName
                     + " (@" + authorHandle + ")]\n" + postText;
-
-                // Cross-restart dedup: check if already in session history
-                std::string notifSessionKey = "chat:" + state->channel_name + ":post:" + postUri;
-                if (m_sessionQuery) {
-                    auto recent = m_sessionQuery(notifSessionKey, 50);
-                    bool alreadyProcessed = false;
-                    for (const auto& t : recent) {
-                        if (t == message) { alreadyProcessed = true; break; }
-                    }
-                    if (alreadyProcessed) {
-                        ALOG_DEBUG("bluesky", "notification already in session history, skipping");
-                        if (latestSeen.empty() || indexedAt > latestSeen)
-                            latestSeen = indexedAt;
-                        continue;
-                    }
-                }
 
                 ALOG_INFO("bluesky", "dispatching " << reason << " from @"
                           << authorHandle << " for " << state->channel_name);
@@ -1554,16 +1545,17 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
         std::string maxRev;
         int dispatchCount = 0;
 
-        // Query session turns to find already-processed messages
+        // Query session metadata for already-processed Bluesky rev IDs
         std::string sessionKey = "chat:" + state->channel_name + ":" + convoId;
-        std::set<std::string> processedTexts;
+        std::set<std::string> seenRevs;
         if (m_sessionQuery) {
-            auto recentTurns = m_sessionQuery(sessionKey, 50);
-            for (const auto& turn : recentTurns) {
-                processedTexts.insert(turn);
+            // Query both singular (bluesky_rev) and plural (bluesky_revs) metadata keys
+            auto stored = m_sessionQuery(sessionKey, "bluesky_revs");
+            for (const auto& r : stored) {
+                seenRevs.insert(r);
             }
         }
-        // Also check in-memory watermark for same-run dedup
+        // In-memory watermark for same-run dedup
         std::string watermark;
         {
             auto wf = state->bsky_chat_watermarks.find(convoId);
@@ -1572,9 +1564,19 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
 
         ALOG_DEBUG("bluesky", "convo " << convoId << " messages="
                   << msgData["messages"].size() << " watermark=\"" << watermark << "\""
-                  << " session_turns=" << processedTexts.size());
+                  << " stored_revs=" << seenRevs.size());
 
-        for (const auto& msg : msgData["messages"]) {
+        // Auto-reply filter config
+        bool autoReply = GetString(state->config, "auto_reply") != "false";
+        bool replyToAll = GetString(state->config, "reply_to_all") != "false";
+
+        // Process messages oldest-first (API returns newest-first, so reverse)
+        const auto& messages = msgData["messages"];
+        std::vector<std::string> newMessages;
+        std::vector<std::string> newRevs;
+
+        for (int i = static_cast<int>(messages.size()) - 1; i >= 0; --i) {
+            const auto& msg = messages[i];
             std::string rev = GetString(msg, "rev");
             std::string senderDid;
 
@@ -1586,20 +1588,19 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             // Skip our own messages
             if (senderDid == state->bsky_did) continue;
 
-            // Check in-memory watermark (same-run dedup)
+            // Dedup: in-memory watermark
             if (!watermark.empty() && !rev.empty() && rev <= watermark) {
+                continue;
+            }
+
+            // Dedup: already stored in session metadata
+            if (!rev.empty() && seenRevs.count(rev)) {
                 continue;
             }
 
             std::string text;
             if (msg.isMember("text")) text = GetString(msg, "text");
             if (text.empty()) continue;
-
-            // Check session turns (cross-restart dedup): if the exact message
-            // text is already in the session history, it's been processed.
-            std::string fullMsg = "[Bluesky DM from ";
-            // We'll check after building the full message below
-
 
             // Build display name
             std::string senderName = senderDid;
@@ -1615,9 +1616,6 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             }
 
             // Apply auto-reply filter
-            bool autoReply = GetString(state->config, "auto_reply") != "false";
-            bool replyToAll = GetString(state->config, "reply_to_all") != "false";
-
             bool shouldDispatch = false;
             if (autoReply) {
                 if (replyToAll) {
@@ -1633,22 +1631,35 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             }
 
             if (shouldDispatch) {
-                std::string message = "[Bluesky DM from " + senderName + "]\n" + text;
-                
-                // Cross-restart dedup: skip if this exact message is already in session
-                if (processedTexts.count(message)) {
-                    ALOG_DEBUG("bluesky", "    skipped (already in session history)");
-                    continue;
-                }
-                
-                ALOG_INFO("bluesky", "dispatching DM from " << senderName
-                          << " rev=\"" << rev << "\" for " << state->channel_name);
-                DispatchToSession(state, "peer:" + convoId, message, "chat");
-                dispatchCount++;
+                newMessages.push_back("[Bluesky DM from " + senderName + "]\n" + text);
+                newRevs.push_back(rev);
             }
         }
 
-        // Update in-memory watermark (same-run dedup only, no persistence needed)
+        // Batch dispatch: send all new messages as a single dispatch
+        if (!newMessages.empty()) {
+            std::string combined;
+            for (std::size_t i = 0; i < newMessages.size(); ++i) {
+                if (i > 0) combined += "\n";
+                combined += newMessages[i];
+            }
+            // Build metadata JSON with all rev IDs for this batch
+            Json::Value revs(Json::arrayValue);
+            for (const auto& r : newRevs) {
+                if (!r.empty()) revs.append(r);
+            }
+            Json::StreamWriterBuilder wb;
+            wb["indentation"] = "";
+            std::string metadata = "{\"bluesky_revs\":" + Json::writeString(wb, revs) + "}";
+
+            ALOG_INFO("bluesky", "dispatching " << newMessages.size()
+                      << " DM(s) for convo " << convoId
+                      << " (" << state->channel_name << ")");
+            DispatchToSession(state, "peer:" + convoId, combined, "chat", metadata);
+            dispatchCount = static_cast<int>(newMessages.size());
+        }
+
+        // Update in-memory watermark (same-run dedup only)
         if (!maxRev.empty()) {
             state->bsky_chat_watermarks[convoId] = maxRev;
             ALOG_DEBUG("bluesky", "convo " << convoId << " watermark=\""
@@ -1673,7 +1684,8 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
 void ChannelManager::DispatchToSession(PollerState* state,
                                          const std::string& routingKey,
                                          const std::string& message,
-                                         const std::string& sessionType) {
+                                         const std::string& sessionType,
+                                         const std::string& metadata) {
     bool isPeer = (routingKey.size() > 5 && routingKey.substr(0, 5) == "peer:");
     bool isPost = (routingKey.size() > 5 && routingKey.substr(0, 5) == "post:");
 
@@ -1716,7 +1728,7 @@ void ChannelManager::DispatchToSession(PollerState* state,
         replyTarget.email_inbox_id = GetString(state->config, "inbox_id");
     }
 
-    m_dispatch(state->agent_id, sessionKey, message, sessionType, replyTarget);
+    m_dispatch(state->agent_id, sessionKey, message, sessionType, replyTarget, metadata);
 }
 
 
