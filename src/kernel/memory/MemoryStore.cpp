@@ -672,13 +672,18 @@ Observation MemoryStore::CreateObservation(const Observation& obs) {
     stmt->BindInt64(12, MemoryStateToInt(obs.memory_state));
     stmt->BindInt64(13, obs.superseded_by);
 
-    stmt->ExecDML();
-    if (!DidWriteRows(m_store)) {
-        ALOG_WARNING("memory", "insert observation failed: changes=" << m_store->Changes()
+    bool execOk = stmt->ExecDML();
+    if (!execOk || !DidWriteRows(m_store)) {
+        ALOG_WARNING("memory", "insert observation failed: execOk=" << execOk
+                  << " changes=" << m_store->Changes()
                   << " err=" << m_store->ErrMsg()
                   << " layer_id=" << obs.layer_id
                   << " agent=" << obs.agent_id
-                  << " text_len=" << obs.text.size());
+                  << " text_len=" << obs.text.size()
+                  << " decay_rate=" << obs.decay_rate
+                  << " weight=" << obs.weight
+                  << " memory_state=" << MemoryStateToInt(obs.memory_state)
+                  << " next_review=" << nextReviewAt);
         return {};
     }
 

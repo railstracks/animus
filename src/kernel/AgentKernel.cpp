@@ -366,16 +366,17 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // --- Project Tool (persistent multi-step objectives) ---
         m_tools.Register(std::make_unique<ProjectTool>(m_projectStore));
 
-        // --- Consolidation Tool (session-gated: only available during consolidation sessions) ---
-        m_tools.Register(std::make_unique<ConsolidationTool>(m_memoryStore, m_ontologyStore, m_sessionManager, m_memoryFileStore, m_agentStore, m_sessionReportStore, m_embeddingService));
+        // --- Session Report Store (temporal summaries for active memory) ---
+        // MUST be created before ConsolidationTool which captures the raw pointer
+        m_sessionReportStore = new SessionReportStore(m_dataStore);
+        m_adminServer->SetSessionReportStore(m_sessionReportStore);
 
         // --- Session Notes Store (SQLite-backed, per-session persistent bullet points) ---
         m_sessionNotesStore = new SessionNotesStore(m_dataStore);
         m_adminServer->SetSessionNotesStore(m_sessionNotesStore);
 
-        // --- Session Report Store (temporal summaries for active memory) ---
-        m_sessionReportStore = new SessionReportStore(m_dataStore);
-        m_adminServer->SetSessionReportStore(m_sessionReportStore);
+        // --- Consolidation Tool (session-gated: only available during consolidation sessions) ---
+        m_tools.Register(std::make_unique<ConsolidationTool>(m_memoryStore, m_ontologyStore, m_sessionManager, m_memoryFileStore, m_agentStore, m_sessionReportStore, m_embeddingService));
 
         // --- Session Tags Store (keywords for ontology retrieval) ---
         m_sessionTagsStore = new SessionTagsStore(m_dataStore);
