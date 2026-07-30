@@ -351,6 +351,7 @@ ToolResult ConsolidationTool::HandleFetchPending(const std::string& arguments, c
     Json::Value turns(Json::arrayValue);
     for (const auto& t : pending) {
         Json::Value turn(Json::objectValue);
+        turn["session_id"] = static_cast<Json::Int64>(t.session_id);
         turn["role"] = t.role;
         turn["content"] = t.content;
         turns.append(turn);
