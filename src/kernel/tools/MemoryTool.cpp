@@ -118,7 +118,7 @@ ToolDefinition MemoryTool::GetDefinition() const {
     // search parameters
     def.parameters.push_back({
         "query", "string",
-        "Search terms or natural language query (required for search and recall)",
+        "Search terms or natural language query. Words are OR-matched with stop-word removal for broad recall, ranked by relevance (required for search and recall)",
         false
     });
     def.parameters.push_back({
