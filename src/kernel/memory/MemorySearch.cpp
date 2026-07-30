@@ -504,6 +504,55 @@ static std::string FtsQueryFromNaturalLanguage(const std::string& query) {
     return result;
 }
 
+// Convert a natural language query into a PostgreSQL tsquery with OR semantics.
+// plainto_tsquery produces implicit AND — we want OR for broad recall.
+// Uses the same tokenization as FtsQueryFromNaturalLanguage for consistency.
+static std::string PgTsQueryFromNaturalLanguage(const std::string& query) {
+    static const std::set<std::string> stopWords = {
+        "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
+        "has", "have", "he", "in", "is", "it", "its", "of", "on", "or",
+        "that", "the", "to", "was", "were", "will", "with", "about",
+        "into", "than", "then", "them", "these", "they", "this", "what",
+        "when", "where", "which", "who", "how", "all", "any", "can",
+        "do", "not", "but", "if", "so", "up", "out", "no", "just",
+        "recent", "new", "latest"
+    };
+
+    std::vector<std::string> tokens;
+    std::string current;
+    for (char c : query) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
+            current += std::tolower(static_cast<unsigned char>(c));
+        } else {
+            if (!current.empty()) {
+                tokens.push_back(current);
+                current.clear();
+            }
+        }
+    }
+    if (!current.empty()) tokens.push_back(current);
+
+    std::vector<std::string> tsTerms;
+    std::set<std::string> seen;
+    for (const auto& tok : tokens) {
+        if (tok.size() < 2) continue;
+        if (stopWords.count(tok)) continue;
+        if (seen.insert(tok).second) {
+            tsTerms.push_back(tok);
+        }
+    }
+
+    if (tsTerms.empty()) return query;
+
+    // Build tsquery with OR: word1 | word2 | word3
+    std::string result;
+    for (size_t i = 0; i < tsTerms.size(); ++i) {
+        if (i > 0) result += " | ";
+        result += tsTerms[i];
+    }
+    return result;
+}
+
 std::vector<MemorySearchResult> MemorySearch::Search(
         const std::string& query,
         const std::string& agent_id,
@@ -531,16 +580,16 @@ std::vector<MemorySearchResult> MemorySearch::Search(
         if (isPostgres) {
             // PostgreSQL: tsvector + ts_rank search.
             auto stmt = store->Prepare(
-                "SELECT o.id, o.layer_id, o.text, ts_rank(o.search_vector, plainto_tsquery(?)), "
+                "SELECT o.id, o.layer_id, o.text, ts_rank(o.search_vector, to_tsquery('english', ?)), "
                 "o.memory_state, o.superseded_by, o.created_at_unix_ms, o.updated_at_unix_ms "
                 "FROM observations o "
                 "JOIN memory_layers ml ON ml.id = o.layer_id "
-                "WHERE o.search_vector @@ plainto_tsquery(?) AND ml.agent_id=? "
-                "ORDER BY ts_rank(o.search_vector, plainto_tsquery(?)) DESC LIMIT ?");
+                "WHERE o.search_vector @@ to_tsquery('english', ?) AND ml.agent_id=? "
+                "ORDER BY ts_rank(o.search_vector, to_tsquery('english', ?)) DESC LIMIT ?");
             if (stmt) {
-                stmt->BindText(1, query);
+                stmt->BindText(1, PgTsQueryFromNaturalLanguage(query));
                 stmt->BindText(2, agentKey);
-                stmt->BindText(3, query);
+                stmt->BindText(3, PgTsQueryFromNaturalLanguage(query));
                 stmt->BindInt64(4, perDomainLimit);
                 while (stmt->Step()) {
                     MemorySearchResult r;
@@ -599,13 +648,13 @@ std::vector<MemorySearchResult> MemorySearch::Search(
         if (isPostgres) {
             // PostgreSQL: tsvector search on ontology_search_docs.
             auto stmt = store->Prepare(
-                "SELECT d.entity_id, d.text, ts_rank(d.search_vector, plainto_tsquery(?)) "
+                "SELECT d.entity_id, d.text, ts_rank(d.search_vector, to_tsquery('english', ?)) "
                 "FROM ontology_search_docs d "
-                "WHERE d.search_vector @@ plainto_tsquery(?) "
-                "ORDER BY ts_rank(d.search_vector, plainto_tsquery(?)) DESC LIMIT ?");
+                "WHERE d.search_vector @@ to_tsquery('english', ?) "
+                "ORDER BY ts_rank(d.search_vector, to_tsquery('english', ?)) DESC LIMIT ?");
             if (stmt) {
-                stmt->BindText(1, query);
-                stmt->BindText(2, query);
+                stmt->BindText(1, PgTsQueryFromNaturalLanguage(query));
+                stmt->BindText(2, PgTsQueryFromNaturalLanguage(query));
                 stmt->BindInt64(3, perDomainLimit * 3);
 
                 std::unordered_map<int64_t, MemorySearchResult> bestByEntity;
@@ -675,17 +724,17 @@ std::vector<MemorySearchResult> MemorySearch::Search(
         if (isPostgres) {
             // PostgreSQL: tsvector search on memory_files.
             auto stmt = store->Prepare(
-                "SELECT f.id, f.source_path, f.content, ts_rank(f.search_vector, plainto_tsquery(?)) "
+                "SELECT f.id, f.source_path, f.content, ts_rank(f.search_vector, to_tsquery('english', ?)) "
                 "FROM memory_files f "
-                "WHERE f.search_vector @@ plainto_tsquery(?) "
+                "WHERE f.search_vector @@ to_tsquery('english', ?) "
                 "AND (f.agent_id = 0 OR f.agent_id = ?) "
                 "AND f.superseded = 0 "
-                "ORDER BY ts_rank(f.search_vector, plainto_tsquery(?)) DESC LIMIT ?");
+                "ORDER BY ts_rank(f.search_vector, to_tsquery('english', ?)) DESC LIMIT ?");
             if (stmt) {
-                stmt->BindText(1, query);
-                stmt->BindText(2, query);
+                stmt->BindText(1, PgTsQueryFromNaturalLanguage(query));
+                stmt->BindText(2, PgTsQueryFromNaturalLanguage(query));
                 stmt->BindInt64(3, numericAgentId);
-                stmt->BindText(4, query);
+                stmt->BindText(4, PgTsQueryFromNaturalLanguage(query));
                 stmt->BindInt64(5, perDomainLimit);
                 while (stmt->Step()) {
                     MemorySearchResult r;
@@ -728,14 +777,14 @@ std::vector<MemorySearchResult> MemorySearch::Search(
         if (isPostgres) {
             // PostgreSQL: tsvector search on diary_entries.
             auto stmt = store->Prepare(
-                "SELECT d.id, d.layer, d.content, ts_rank(d.search_vector, plainto_tsquery(?)) "
+                "SELECT d.id, d.layer, d.content, ts_rank(d.search_vector, to_tsquery('english', ?)) "
                 "FROM diary_entries d "
-                "WHERE d.search_vector @@ plainto_tsquery(?) AND d.agent_id=? "
-                "ORDER BY ts_rank(d.search_vector, plainto_tsquery(?)) DESC LIMIT ?");
+                "WHERE d.search_vector @@ to_tsquery('english', ?) AND d.agent_id=? "
+                "ORDER BY ts_rank(d.search_vector, to_tsquery('english', ?)) DESC LIMIT ?");
             if (stmt) {
-                stmt->BindText(1, query);
+                stmt->BindText(1, PgTsQueryFromNaturalLanguage(query));
                 stmt->BindText(2, agentKey);
-                stmt->BindText(3, query);
+                stmt->BindText(3, PgTsQueryFromNaturalLanguage(query));
                 stmt->BindInt64(4, perDomainLimit);
                 while (stmt->Step()) {
                     MemorySearchResult r;
