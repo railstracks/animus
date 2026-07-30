@@ -1247,7 +1247,7 @@ void SocialEventPoller::DispatchToSession(InstanceState* state,
     }
 
     // Dispatch to the chain runner via callback
-    m_dispatch(entry ? entry->agent_id : "", sessionKey, message, sessionType, replyTarget, "{}");
+    m_dispatch(entry ? entry->agent_id : "", sessionKey, message, sessionType, replyTarget);
 }
 
 // ============================================================================
