@@ -328,7 +328,7 @@ void SqliteSessionStore::EnsureSchema() {
     // Stores JSON for adapter-specific data (Bluesky rev IDs, WhatsApp message IDs, etc.).
     // Used for message dedup — query existing metadata to skip already-processed messages.
     if (!HasColumn("session_turns", "metadata"))
-        m_store->Exec("ALTER TABLE session_turns ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'"
+        m_store->Exec("ALTER TABLE session_turns ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'");
     // Migration v5: fix timestamp columns on PostgreSQL (INTEGER → BIGINT).
     // SQLite stores INTEGER as 64-bit natively, so no migration needed there.
     if (m_store->Dialect() == DataStoreDialect::PostgreSQL) {

@@ -40,7 +40,7 @@ using ChannelDispatchCallback = std::function<void(
     const std::string& message,
     const std::string& sessionType,
     const ChannelReplyTarget& replyTarget,
-    const std::string& metadata = "{}")>;
+    const std::string& metadata)>;
 
 /// Log callback for storing messages without triggering a chain.
 using ChannelLogCallback = std::function<void(

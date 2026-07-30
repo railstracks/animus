@@ -1136,7 +1136,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                                const std::string& message,
                                const std::string& sessionType,
                                const ChannelManager::ReplyTarget& replyTarget,
-                               const std::string& metadata = "{}") {
+                               const std::string& metadata) {
             ALOG_DEBUG("channels:dispatch", "agentId=" << agentId
                       << " sessionKey=" << sessionKey
                       << " type=" << sessionType);
@@ -1363,7 +1363,7 @@ void AgentKernel::ExecuteChannelDispatch(
 
     m_jobs.EnqueueInLane(
         ::animus::jobs::JobLane::Cognition,
-        [this, session, sessionKey, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval]() {
+        [this, session, sessionKey, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval, metadata]() {
             // Per-message callback: send each assistant message to the channel
             // immediately rather than only the final response.
             ChainAssistantMessageCallback assistantCb =
