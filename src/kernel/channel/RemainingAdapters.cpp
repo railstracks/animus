@@ -541,7 +541,7 @@ void SlackAdapter::SocketModeLoop() {
                         replyTarget.reply_to_comment = ts;
                     }
 
-                    m_ctx.dispatch(rt->agent_id, routingKey, prompt, "slack", replyTarget);
+                    m_ctx.dispatch(rt->agent_id, routingKey, prompt, "slack", replyTarget, "{}");
 
                     ALOG_DEBUG("slack-socket", "Dispatched from " << userId
                               << " in " << channel << " ts=" << ts);
@@ -740,7 +740,7 @@ void SlackAdapter::PollingLoop() {
                         replyTarget.reply_to_comment = ts;
                     }
 
-                    m_ctx.dispatch(rt->agent_id, routingKey, prompt, "slack", replyTarget);
+                    m_ctx.dispatch(rt->agent_id, routingKey, prompt, "slack", replyTarget, "{}");
                     latestTs = ts;
                 }
             } catch (const std::exception& e) {
@@ -992,7 +992,7 @@ void NextcloudAdapter::RunLoop() {
                     replyTarget.type = ChannelReplyTarget::Chat;
                     replyTarget.peer_id = token;
 
-                    m_ctx.dispatch(rt->agent_id, "conv:" + token, prompt, "nextcloud", replyTarget);
+                    m_ctx.dispatch(rt->agent_id, "conv:" + token, prompt, "nextcloud", replyTarget, "{}");
 
                     ALOG_DEBUG("nextcloud", "Dispatched from " << actorName
                               << " in " << conv.displayName << " (id=" << msgId << ")");

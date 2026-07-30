@@ -52,7 +52,7 @@ void ChannelDispatch::Dispatch(ChannelContext& ctx,
             replyTarget.email_inbox_id = cfg["inbox_id"].asString();
     }
 
-    ctx.dispatch(state->agent_id, sessionKey, message, sessionType, replyTarget);
+    ctx.dispatch(state->agent_id, sessionKey, message, sessionType, replyTarget, "{}");
 }
 
 void ChannelDispatch::Log(ChannelContext& ctx,

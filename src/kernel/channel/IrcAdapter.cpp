@@ -132,7 +132,7 @@ void IrcAdapter::OnMessage(const std::string& sourceNick,
     replyTarget.irc_target = channelMessage ? target : sourceNick;
     replyTarget.interface_name = m_channelName;
 
-    m_ctx.dispatch(agentId, sessionKey, prompt, sessionType, replyTarget);
+    m_ctx.dispatch(agentId, sessionKey, prompt, sessionType, replyTarget, "{}");
 }
 
 void IrcAdapter::OnStatus(bool connected, std::uint64_t eventUnixMs) {
