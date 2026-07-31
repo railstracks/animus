@@ -845,13 +845,18 @@ ToolResult ConsolidationTool::HandlePerspectiveGenerate(const std::string& argum
 
     const auto params = args.get("params", Json::objectValue);
     const std::string layerName = params.get("layer", "").asString();
-    const std::string pov = params.get("pov", "").asString(); // retrospective, current, future
+    const std::string pov = params.get("pov", "current").asString(); // retrospective, current, future
     const std::string text = params.get("text", "").asString();
     const std::string valence = params.get("valence", "neutral").asString();
 
-    if (layerName.empty() || pov.empty() || text.empty()) {
+    if (layerName.empty()) {
         result.success = false;
-        result.error = "Missing required params: layer, pov, text";
+        result.error = "Missing required param: layer";
+        return result;
+    }
+    if (text.empty()) {
+        result.success = false;
+        result.error = "Missing required param: text (the perspective content)";
         return result;
     }
 

@@ -579,6 +579,7 @@ std::vector<MemorySearchResult> MemorySearch::Search(
     if (domains.observations) {
         if (isPostgres) {
             // PostgreSQL: tsvector + ts_rank search.
+            const std::string tsQuery = PgTsQueryFromNaturalLanguage(query);
             auto stmt = store->Prepare(
                 "SELECT o.id, o.layer_id, o.text, ts_rank(o.search_vector, to_tsquery('english', ?)), "
                 "o.memory_state, o.superseded_by, o.created_at_unix_ms, o.updated_at_unix_ms "
@@ -587,10 +588,11 @@ std::vector<MemorySearchResult> MemorySearch::Search(
                 "WHERE o.search_vector @@ to_tsquery('english', ?) AND ml.agent_id=? "
                 "ORDER BY ts_rank(o.search_vector, to_tsquery('english', ?)) DESC LIMIT ?");
             if (stmt) {
-                stmt->BindText(1, PgTsQueryFromNaturalLanguage(query));
-                stmt->BindText(2, agentKey);
-                stmt->BindText(3, PgTsQueryFromNaturalLanguage(query));
-                stmt->BindInt64(4, perDomainLimit);
+                stmt->BindText(1, tsQuery);
+                stmt->BindText(2, tsQuery);
+                stmt->BindText(3, agentKey);
+                stmt->BindText(4, tsQuery);
+                stmt->BindInt64(5, perDomainLimit);
                 while (stmt->Step()) {
                     MemorySearchResult r;
                     r.domain = "observation";
@@ -647,15 +649,17 @@ std::vector<MemorySearchResult> MemorySearch::Search(
 
         if (isPostgres) {
             // PostgreSQL: tsvector search on ontology_search_docs.
+            const std::string tsQueryOnt = PgTsQueryFromNaturalLanguage(query);
             auto stmt = store->Prepare(
                 "SELECT d.entity_id, d.text, ts_rank(d.search_vector, to_tsquery('english', ?)) "
                 "FROM ontology_search_docs d "
                 "WHERE d.search_vector @@ to_tsquery('english', ?) "
                 "ORDER BY ts_rank(d.search_vector, to_tsquery('english', ?)) DESC LIMIT ?");
             if (stmt) {
-                stmt->BindText(1, PgTsQueryFromNaturalLanguage(query));
-                stmt->BindText(2, PgTsQueryFromNaturalLanguage(query));
-                stmt->BindInt64(3, perDomainLimit * 3);
+                stmt->BindText(1, tsQueryOnt);
+                stmt->BindText(2, tsQueryOnt);
+                stmt->BindText(3, tsQueryOnt);
+                stmt->BindInt64(4, perDomainLimit * 3);
 
                 std::unordered_map<int64_t, MemorySearchResult> bestByEntity;
                 while (stmt->Step()) {
@@ -723,6 +727,7 @@ std::vector<MemorySearchResult> MemorySearch::Search(
     if (domains.raw_files) {
         if (isPostgres) {
             // PostgreSQL: tsvector search on memory_files.
+            const std::string tsQueryFiles = PgTsQueryFromNaturalLanguage(query);
             auto stmt = store->Prepare(
                 "SELECT f.id, f.source_path, f.content, ts_rank(f.search_vector, to_tsquery('english', ?)) "
                 "FROM memory_files f "
@@ -731,10 +736,10 @@ std::vector<MemorySearchResult> MemorySearch::Search(
                 "AND f.superseded = 0 "
                 "ORDER BY ts_rank(f.search_vector, to_tsquery('english', ?)) DESC LIMIT ?");
             if (stmt) {
-                stmt->BindText(1, PgTsQueryFromNaturalLanguage(query));
-                stmt->BindText(2, PgTsQueryFromNaturalLanguage(query));
+                stmt->BindText(1, tsQueryFiles);
+                stmt->BindText(2, tsQueryFiles);
                 stmt->BindInt64(3, numericAgentId);
-                stmt->BindText(4, PgTsQueryFromNaturalLanguage(query));
+                stmt->BindText(4, tsQueryFiles);
                 stmt->BindInt64(5, perDomainLimit);
                 while (stmt->Step()) {
                     MemorySearchResult r;
@@ -776,16 +781,18 @@ std::vector<MemorySearchResult> MemorySearch::Search(
     if (domains.diary) {
         if (isPostgres) {
             // PostgreSQL: tsvector search on diary_entries.
+            const std::string tsQueryDiary = PgTsQueryFromNaturalLanguage(query);
             auto stmt = store->Prepare(
                 "SELECT d.id, d.layer, d.content, ts_rank(d.search_vector, to_tsquery('english', ?)) "
                 "FROM diary_entries d "
                 "WHERE d.search_vector @@ to_tsquery('english', ?) AND d.agent_id=? "
                 "ORDER BY ts_rank(d.search_vector, to_tsquery('english', ?)) DESC LIMIT ?");
             if (stmt) {
-                stmt->BindText(1, PgTsQueryFromNaturalLanguage(query));
-                stmt->BindText(2, agentKey);
-                stmt->BindText(3, PgTsQueryFromNaturalLanguage(query));
-                stmt->BindInt64(4, perDomainLimit);
+                stmt->BindText(1, tsQueryDiary);
+                stmt->BindText(2, tsQueryDiary);
+                stmt->BindText(3, agentKey);
+                stmt->BindText(4, tsQueryDiary);
+                stmt->BindInt64(5, perDomainLimit);
                 while (stmt->Step()) {
                     MemorySearchResult r;
                     r.domain = "diary";

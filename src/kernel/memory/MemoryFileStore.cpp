@@ -41,6 +41,10 @@ bool DidWriteRows(IDataStore* store) {
     if (!store) return false;
     return store->Changes() > 0;
 }
+bool DidWriteRows(IStatement* stmt) {
+    if (!stmt) return false;
+    return stmt->RowsAffected() > 0;
+}
 
 MemoryFile RowToMemoryFile(IStatement* stmt) {
     MemoryFile file;
@@ -213,7 +217,7 @@ MemoryFile MemoryFileStore::CreateFile(const MemoryFile& file) {
         stmt->BindInt64(8, importedAt);
         stmt->BindInt(9, static_cast<int64_t>(file.status));
         stmt->ExecDML();
-        if (!DidWriteRows(m_store)) {
+        if (!DidWriteRows(stmt.get())) {
             ALOG_WARNING("memory_files", "create failed: " << m_store->ErrMsg());
             return {};
         }
@@ -309,7 +313,7 @@ bool MemoryFileStore::UpdateFile(const MemoryFile& file) {
     stmt->BindInt(9, static_cast<int32_t>(file.status));
     stmt->BindInt64(10, file.id);
     stmt->ExecDML();
-    return DidWriteRows(m_store);
+    return DidWriteRows(stmt.get());
 }
 
 bool MemoryFileStore::DeleteFile(int64_t id) {
@@ -317,7 +321,7 @@ bool MemoryFileStore::DeleteFile(int64_t id) {
     if (!stmt) return false;
     stmt->BindInt64(1, id);
     stmt->ExecDML();
-    return DidWriteRows(m_store);
+    return DidWriteRows(stmt.get());
 }
 
 int64_t MemoryFileStore::CountByType(MemoryFileType type) {
@@ -353,7 +357,7 @@ bool MemoryFileStore::MarkProcessed(int64_t id) {
     if (!stmt) return false;
     stmt->BindInt64(1, id);
     stmt->ExecDML();
-    return DidWriteRows(m_store);
+    return DidWriteRows(stmt.get());
 }
 
 int64_t MemoryFileStore::CountUnprocessed(int64_t agentId) {

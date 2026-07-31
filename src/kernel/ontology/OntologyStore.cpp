@@ -27,6 +27,10 @@ bool DidWriteRows(IDataStore* store) {
     if (!store) return false;
     return store->Changes() > 0;
 }
+bool DidWriteRows(IStatement* stmt) {
+    if (!stmt) return false;
+    return stmt->RowsAffected() > 0;
+}
 
 std::string JsonToString(const Json::Value& value) {
     Json::StreamWriterBuilder wb;
@@ -413,7 +417,7 @@ OntologyEntity OntologyStore::CreateEntity(
     stmt->BindInt64(7, now);
     stmt->BindInt64(8, now);
     stmt->ExecDML();
-    if (!DidWriteRows(m_store)) {
+    if (!DidWriteRows(stmt.get())) {
         auto existing = FindByPath(entity.root_category, entity.full_path);
         return existing.value_or(OntologyEntity{});
     }
@@ -453,7 +457,7 @@ bool OntologyStore::UpdateEntity(const OntologyEntity& entity, const std::string
     stmt->BindInt64(6, now);
     stmt->BindInt64(7, entity.id);
     stmt->ExecDML();
-    if (!DidWriteRows(m_store)) return false;
+    if (!DidWriteRows(stmt.get())) return false;
 
     auto updated = GetEntity(entity.id).value_or(entity);
     OntologyMutation m;
@@ -507,7 +511,7 @@ bool OntologyStore::DeleteEntity(int64_t id, const std::string& motivation) {
     if (!stmt) return false;
     stmt->BindInt64(1, id);
     stmt->ExecDML();
-    if (!DidWriteRows(m_store)) return false;
+    if (!DidWriteRows(stmt.get())) return false;
 
     OntologyMutation m;
     m.mutation_type = "delete_entity";
@@ -582,7 +586,7 @@ OntologyProperty OntologyStore::SetProperty(const OntologyProperty& prop, const 
         stmt->BindInt64(5, now);
         stmt->BindInt64(6, existing->id);
         stmt->ExecDML();
-        success = DidWriteRows(m_store);
+        success = DidWriteRows(stmt.get());
     } else {
         auto stmt = m_store->Prepare(
             "INSERT INTO ontology_properties "
@@ -600,7 +604,7 @@ OntologyProperty OntologyStore::SetProperty(const OntologyProperty& prop, const 
         stmt->BindInt64(7, now);
         stmt->BindInt64(8, now);
         stmt->ExecDML();
-        success = DidWriteRows(m_store);
+        success = DidWriteRows(stmt.get());
     }
 
     if (!success) return {};
@@ -635,7 +639,7 @@ bool OntologyStore::DeleteProperty(int64_t id, const std::string& motivation) {
     if (!stmt) return false;
     stmt->BindInt64(1, id);
     stmt->ExecDML();
-    if (!DidWriteRows(m_store)) return false;
+    if (!DidWriteRows(stmt.get())) return false;
 
     OntologyMutation m;
     m.mutation_type = "delete_property";

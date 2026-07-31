@@ -22,7 +22,8 @@ public:
     PgStatement(PgDataStore* owner, PgDataStore::PooledConnection* pc,
                 const std::string& sql)
         : m_owner(owner), m_pc(pc), m_sql(sql),
-          m_currentRow(0), m_result(nullptr), m_hasResult(false), m_done(false) {}
+          m_currentRow(0), m_result(nullptr), m_hasResult(false), m_done(false),
+          m_rowsAffected(0) {}
 
     ~PgStatement() override {
         Clear();
@@ -177,6 +178,8 @@ public:
     }
     void Finalize() override { Clear(); }
 
+    int64_t RowsAffected() const override { return m_rowsAffected; }
+
 private:
     bool Execute() {
         if (!m_pc || !m_pc->conn) return false;
@@ -212,12 +215,15 @@ private:
 
         ExecStatusType status = PQresultStatus(m_result);
         if (status == PGRES_TUPLES_OK || status == PGRES_SINGLE_TUPLE) {
-            m_owner->SetLastChanges(0);
+            // SELECTs don't modify rows — don't clobber m_lastChanges.
+            // Previously this called SetLastChanges(0), which raced with
+            // concurrent DML callers that checked Changes() after their ExecDML().
             return true;
         }
         if (status == PGRES_COMMAND_OK) {
             char* tuples = PQcmdTuples(m_result);
             int64_t changes = tuples ? std::atoll(tuples) : 0;
+            m_rowsAffected = changes;
             m_owner->SetLastChanges(changes);
 
             // Track last insert ID for this connection via SELECT lastval()
@@ -246,6 +252,7 @@ private:
         m_lastError = PQresultErrorMessage(m_result);
         m_owner->SetLastError(m_lastError);
         m_owner->SetLastChanges(0);
+        m_rowsAffected = 0;
         return false;
     }
 
@@ -254,6 +261,7 @@ private:
         m_hasResult = false;
         m_done = false;
         m_currentRow = 0;
+        m_rowsAffected = 0;
     }
 
     PgDataStore* m_owner;
@@ -266,6 +274,7 @@ private:
     PGresult* m_result{nullptr};
     bool m_hasResult{false};
     bool m_done{false};
+    int64_t m_rowsAffected{0};
     std::string m_lastError;
 };
 

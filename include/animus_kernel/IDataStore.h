@@ -68,6 +68,12 @@ public:
     // Lifecycle
     virtual void Reset() = 0;
     virtual void Finalize() = 0;
+
+    // Number of rows affected by the last ExecDML() on this statement.
+    // Unlike IDataStore::Changes() (which is a shared global across all
+    // connections), this is per-statement and race-free.
+    // Default returns 0 for backends that don't override.
+    virtual int64_t RowsAffected() const { return 0; }
 };
 
 // ============================================================================

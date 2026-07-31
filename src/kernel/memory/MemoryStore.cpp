@@ -50,6 +50,11 @@ bool DidWriteRows(IDataStore* store) {
     if (!store) return false;
     return store->Changes() > 0;
 }
+// Per-statement overload — race-free, prefer this when a stmt handle is available.
+bool DidWriteRows(IStatement* stmt) {
+    if (!stmt) return false;
+    return stmt->RowsAffected() > 0;
+}
 } // namespace
 
 void MemoryStore::EnsureSchema() {
@@ -381,7 +386,7 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer) {
     stmt->BindInt64(13, now);
 
     stmt->ExecDML();
-    if (!DidWriteRows(m_store)) {
+    if (!DidWriteRows(stmt.get())) {
         ALOG_WARNING("memory", "insert layer failed: " << m_store->ErrMsg());
         return {};
     }
@@ -552,7 +557,7 @@ bool MemoryStore::UpdateLayer(const MemoryLayer& layer) {
     stmt->BindInt64(12, layer.id);
 
     stmt->ExecDML();
-    return DidWriteRows(m_store);
+    return DidWriteRows(stmt.get());
 }
 
 bool MemoryStore::DeleteLayer(int64_t id) {
@@ -560,7 +565,7 @@ bool MemoryStore::DeleteLayer(int64_t id) {
     if (!stmt) return false;
     stmt->BindInt64(1, id);
     stmt->ExecDML();
-    return DidWriteRows(m_store);
+    return DidWriteRows(stmt.get());
 }
 
 int MemoryStore::CopyLayersForAgent(
@@ -673,7 +678,7 @@ Observation MemoryStore::CreateObservation(const Observation& obs) {
     stmt->BindInt64(13, obs.superseded_by);
 
     bool execOk = stmt->ExecDML();
-    if (!execOk || !DidWriteRows(m_store)) {
+    if (!execOk || !DidWriteRows(stmt.get())) {
         ALOG_WARNING("memory", "insert observation failed: execOk=" << execOk
                   << " changes=" << m_store->Changes()
                   << " err=" << m_store->ErrMsg()
@@ -724,7 +729,7 @@ bool MemoryStore::UpdateObservation(const Observation& obs) {
     stmt->BindInt64(12, obs.id);
 
     stmt->ExecDML();
-    return DidWriteRows(m_store);
+    return DidWriteRows(stmt.get());
 }
 
 bool MemoryStore::SetObservationMemoryState(
@@ -744,7 +749,7 @@ bool MemoryStore::SetObservationMemoryState(
     stmt->BindInt64(2, now);
     stmt->BindInt64(3, obs_id);
     stmt->ExecDML();
-    if (!DidWriteRows(m_store)) return false;
+    if (!DidWriteRows(stmt.get())) return false;
 
     MemoryMutation m;
     m.mutation_type = "observation_state_changed";
@@ -762,7 +767,7 @@ bool MemoryStore::DeleteObservation(int64_t id) {
     if (!stmt) return false;
     stmt->BindInt64(1, id);
     stmt->ExecDML();
-    return DidWriteRows(m_store);
+    return DidWriteRows(stmt.get());
 }
 
 bool MemoryStore::MoveObservation(int64_t obs_id, int64_t to_layer_id,
@@ -793,7 +798,7 @@ bool MemoryStore::MoveObservation(int64_t obs_id, int64_t to_layer_id,
     stmt->BindInt64(5, obs_id);
 
     stmt->ExecDML();
-    if (!DidWriteRows(m_store)) return false;
+    if (!DidWriteRows(stmt.get())) return false;
 
     MemoryMutation m;
     m.mutation_type = to_layer_id > from_layer ? "observation_promoted" : "observation_demoted";
@@ -829,7 +834,7 @@ bool MemoryStore::TouchEvaluation(int64_t obs_id) {
     stmt->BindInt64(2, nextReviewAt);
     stmt->BindInt64(3, obs_id);
     stmt->ExecDML();
-    return DidWriteRows(m_store);
+    return DidWriteRows(stmt.get());
 }
 
 Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& new_text,
@@ -876,7 +881,7 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
     stmt->BindInt64(13, 0);  // current version
 
     stmt->ExecDML();
-    if (!DidWriteRows(m_store)) {
+    if (!DidWriteRows(stmt.get())) {
         ALOG_WARNING("memory", "ReviseObservation: insert new version failed: " << m_store->ErrMsg());
         return {};
     }
@@ -1028,7 +1033,7 @@ LayerPerspective MemoryStore::SetPerspective(const LayerPerspective& p) {
     stmt->BindInt64(15, now);
 
     stmt->ExecDML();
-    if (!DidWriteRows(m_store)) {
+    if (!DidWriteRows(stmt.get())) {
         ALOG_WARNING("memory", "upsert perspective failed: " << m_store->ErrMsg());
         return {};
     }
@@ -1068,7 +1073,7 @@ void MemoryStore::LogMutation(const MemoryMutation& m) {
     stmt->BindInt64(8, m.unix_ms);
 
     stmt->ExecDML();
-    if (!DidWriteRows(m_store)) {
+    if (!DidWriteRows(stmt.get())) {
         ALOG_WARNING("memory", "insert mutation failed: " << m_store->ErrMsg());
     }
 }

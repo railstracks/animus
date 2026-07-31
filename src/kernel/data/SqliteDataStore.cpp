@@ -97,6 +97,12 @@ public:
         }
     }
 
+    int64_t RowsAffected() const override {
+        if (!m_stmt) return 0;
+        sqlite3* db = sqlite3_db_handle(m_stmt);
+        return db ? sqlite3_changes(db) : 0;
+    }
+
 private:
     sqlite3_stmt* m_stmt;
 };
