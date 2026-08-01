@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { apiGet, apiRequest } from '../lib/api';
 
@@ -32,6 +32,21 @@ interface AgentSummary {
   name: string;
 }
 
+interface ScheduledTask {
+  id: string;
+  agent_id: string;
+  tag: string;
+  type: string;
+  cron_expr: string;
+  timezone: string;
+  message: string;
+  enabled: boolean;
+  next_fire: string;
+  last_fire: string;
+  fire_count: number;
+  created_at: string;
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 
 const reports = ref<SessionReport[]>([]);
@@ -43,6 +58,34 @@ const selectedReport = ref<FullReport | null>(null);
 const detailLoading = ref(false);
 const selectedAgent = ref('');
 const agents = ref<AgentSummary[]>([]);
+
+// Scheduler state
+const scheduledTask = ref<ScheduledTask | null>(null);
+const taskLoading = ref(false);
+const taskError = ref('');
+const showTaskPanel = ref(true);
+const intervalPreset = ref('1h');
+const customCron = ref('0 * * * *');
+const showCustomCron = ref(false);
+const creatingTask = ref(false);
+const removingTask = ref(false);
+const confirmRemove = ref(false);
+
+const intervalPresets = [
+  { value: '30m', title: 'Every 30 minutes', cron: '*/30 * * * *' },
+  { value: '1h', title: 'Every hour', cron: '0 * * * *' },
+  { value: '3h', title: 'Every 3 hours', cron: '0 */3 * * *' },
+  { value: '6h', title: 'Every 6 hours', cron: '0 */6 * * *' },
+  { value: '12h', title: 'Every 12 hours', cron: '0 */12 * * *' },
+  { value: '24h', title: 'Every 24 hours', cron: '0 0 * * *' },
+  { value: 'custom', title: 'Custom cron expression', cron: '' },
+];
+
+const selectedCron = computed(() => {
+  if (intervalPreset.value === 'custom') return customCron.value;
+  const preset = intervalPresets.find(p => p.value === intervalPreset.value);
+  return preset ? preset.cron : '0 * * * *';
+});
 
 const agentItems = computed(() => {
   return agents.value.map((a) => ({
@@ -90,6 +133,78 @@ async function fetchReports() {
   } finally {
     loading.value = false;
   }
+}
+
+// ── Scheduler actions ─────────────────────────────────────────────────────
+
+async function fetchScheduledTask() {
+  if (!selectedAgent.value) {
+    scheduledTask.value = null;
+    return;
+  }
+  taskLoading.value = true;
+  taskError.value = '';
+  try {
+    const res = await apiGet<{ tasks: ScheduledTask[]; count: number }>(
+      `/api/v1/agents/${selectedAgent.value}/scheduled-tasks`,
+    );
+    const recurring = (res.tasks ?? []).find(t => t.type === 'recurring' && t.enabled);
+    scheduledTask.value = recurring ?? null;
+  } catch (e: unknown) {
+    taskError.value = e instanceof Error ? e.message : 'Failed to load scheduled task';
+  } finally {
+    taskLoading.value = false;
+  }
+}
+
+async function createScheduledTask() {
+  if (!selectedAgent.value) return;
+  creatingTask.value = true;
+  taskError.value = '';
+  try {
+    await apiRequest('POST', `/api/v1/agents/${selectedAgent.value}/scheduled-tasks`, {
+      cron_expr: selectedCron.value,
+      message: 'intake:day',
+    });
+    await fetchScheduledTask();
+  } catch (e: unknown) {
+    taskError.value = e instanceof Error ? e.message : 'Failed to create task';
+  } finally {
+    creatingTask.value = false;
+  }
+}
+
+async function removeScheduledTask() {
+  if (!scheduledTask.value) return;
+  removingTask.value = true;
+  taskError.value = '';
+  try {
+    await apiRequest('DELETE', `/api/v1/scheduled-tasks/${scheduledTask.value.id}`);
+    scheduledTask.value = null;
+    confirmRemove.value = false;
+  } catch (e: unknown) {
+    taskError.value = e instanceof Error ? e.message : 'Failed to remove task';
+  } finally {
+    removingTask.value = false;
+  }
+}
+
+function formatIsoDate(iso: string): string {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function cronToHuman(cron: string): string {
+  const match = intervalPresets.find(p => p.cron === cron);
+  if (match) return match.title;
+  return cron;
 }
 
 async function openReport(report: SessionReport) {
@@ -208,6 +323,12 @@ function relativeTime(unixMs: number): string {
 onMounted(async () => {
   await loadAgents();
   await fetchReports();
+  await fetchScheduledTask();
+});
+
+// Reload task when agent changes
+watch(selectedAgent, () => {
+  fetchScheduledTask();
 });
 </script>
 
@@ -230,6 +351,123 @@ onMounted(async () => {
     </div>
 
     <v-alert v-if="error" type="error" variant="tonal" closable class="mb-4" @click:close="error = ''" />
+
+    <!-- Scheduling panel -->
+    <v-expansion-panels v-model="showTaskPanel" class="mb-4">
+      <v-expansion-panel>
+        <v-expansion-panel-title>
+          <div class="d-flex align-center gap-2">
+            <v-icon size="18" :color="scheduledTask ? 'success' : 'grey-lighten-1'">
+              {{ scheduledTask ? 'mdi-clock-check-outline' : 'mdi-clock-outline' }}
+            </v-icon>
+            <span class="text-subtitle-2">Consolidation Schedule</span>
+            <v-chip v-if="scheduledTask" size="x-small" color="success" variant="tonal">
+              Active
+            </v-chip>
+            <v-chip v-else size="x-small" color="grey" variant="tonal">
+              Not scheduled
+            </v-chip>
+          </div>
+        </v-expansion-panel-title>
+        <v-expansion-panel-text>
+          <!-- Loading state -->
+          <div v-if="taskLoading" class="pa-4 text-center">
+            <v-progress-circular indeterminate size="24" />
+          </div>
+
+          <!-- No task: creation form -->
+          <div v-else-if="!scheduledTask">
+            <v-alert v-if="taskError" type="error" variant="tonal" density="compact" class="mb-3">
+              {{ taskError }}
+            </v-alert>
+            <div class="d-flex align-center gap-3 flex-wrap">
+              <v-select
+                v-model="intervalPreset"
+                :items="intervalPresets.map(p => ({ value: p.value, title: p.title }))"
+                density="compact"
+                variant="outlined"
+                label="Interval"
+                hide-details
+                style="max-width: 220px;"
+                @update:model-value="(v: string) => showCustomCron = v === 'custom'"
+              />
+              <v-text-field
+                v-if="showCustomCron"
+                v-model="customCron"
+                density="compact"
+                variant="outlined"
+                label="Cron expression"
+                placeholder="0 * * * *"
+                hint="minute hour day month weekday"
+                persistent-hint
+                hide-details
+                style="max-width: 200px;"
+              />
+              <v-btn
+                color="primary"
+                variant="tonal"
+                :loading="creatingTask"
+                @click="createScheduledTask"
+              >
+                <v-icon start>mdi-plus</v-icon>
+                Create Scheduled Task
+              </v-btn>
+            </div>
+          </div>
+
+          <!-- Task exists: info + remove -->
+          <div v-else>
+            <v-alert v-if="taskError" type="error" variant="tonal" density="compact" class="mb-3">
+              {{ taskError }}
+            </v-alert>
+            <div class="d-flex align-start gap-3 flex-wrap mb-3">
+              <div class="flex-grow-1">
+                <div class="text-body-2 mb-1">
+                  <span class="text-medium-emphasis">Schedule ID:</span>
+                  <code class="ml-2 text-caption">{{ scheduledTask.id.substring(0, 12) }}…</code>
+                </div>
+                <div class="text-body-2 mb-1">
+                  <span class="text-medium-emphasis">Interval:</span>
+                  <span class="ml-2">{{ cronToHuman(scheduledTask.cron_expr) }}</span>
+                </div>
+                <div class="text-body-2 mb-1">
+                  <span class="text-medium-emphasis">Next fire:</span>
+                  <span class="ml-2">{{ formatIsoDate(scheduledTask.next_fire) }}</span>
+                </div>
+                <div class="text-body-2 mb-1">
+                  <span class="text-medium-emphasis">Last fire:</span>
+                  <span class="ml-2">{{ formatIsoDate(scheduledTask.last_fire) }}</span>
+                </div>
+                <div class="text-body-2">
+                  <span class="text-medium-emphasis">Fire count:</span>
+                  <span class="ml-2">{{ scheduledTask.fire_count }}</span>
+                </div>
+              </div>
+              <div v-if="!confirmRemove">
+                <v-btn
+                  color="error"
+                  variant="text"
+                  size="small"
+                  :loading="removingTask"
+                  @click="confirmRemove = true"
+                >
+                  <v-icon start>mdi-delete-outline</v-icon>
+                  Remove
+                </v-btn>
+              </div>
+              <div v-else class="d-flex gap-2">
+                <v-btn color="error" variant="tonal" size="small" :loading="removingTask" @click="removeScheduledTask">
+                  Confirm
+                </v-btn>
+                <v-btn variant="text" size="small" @click="confirmRemove = false">
+                  Cancel
+                </v-btn>
+              </div>
+            </div>
+          </div>
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+    </v-expansion-panels>
 
     <!-- Search bar -->
     <div class="d-flex align-center gap-2 mb-4">

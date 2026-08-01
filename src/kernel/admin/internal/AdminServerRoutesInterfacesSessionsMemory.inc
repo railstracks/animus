@@ -2536,6 +2536,179 @@
             },
             {drogon::Get});
 
+        // ====================================================================
+        // Scheduled task management for consolidation
+        // ====================================================================
+
+        // GET /api/v1/agents/{id}/scheduled-tasks
+        // Lists consolidation scheduled tasks for an agent.
+        drogon::app().registerHandler(
+            "/api/v1/agents/{1}/scheduled-tasks",
+            [](const drogon::HttpRequestPtr&,
+               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+               const std::string& agentId) {
+                AdminServer* server = g_activeAdminServer.load();
+                if (!server) { SendServerNotActive(callback); return; }
+
+                Json::Value out(Json::objectValue);
+                if (!server->m_scheduler) {
+                    out["error"] = "scheduler not available";
+                    out["tasks"] = Json::arrayValue;
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                    resp->setStatusCode(drogon::k503ServiceUnavailable);
+                    callback(resp);
+                    return;
+                }
+
+                auto tasks = server->m_scheduler->List(agentId, "consolidation");
+                Json::Value arr(Json::arrayValue);
+                for (const auto& sd : tasks) {
+                    Json::Value item(Json::objectValue);
+                    item["id"] = sd.id;
+                    item["agent_id"] = sd.agent_id;
+                    item["tag"] = sd.tag;
+                    item["type"] = (sd.type == ScheduleType::Recurring) ? "recurring" : "oneshot";
+                    item["cron_expr"] = sd.cron_expr;
+                    item["timezone"] = sd.timezone;
+                    item["message"] = sd.message;
+                    item["enabled"] = sd.enabled;
+                    item["next_fire"] = sd.next_fire;
+                    item["last_fire"] = sd.last_fire;
+                    item["fire_count"] = sd.fire_count;
+                    item["created_at"] = sd.created_at;
+                    arr.append(item);
+                }
+                out["tasks"] = arr;
+                out["count"] = static_cast<int>(arr.size());
+                callback(drogon::HttpResponse::newHttpJsonResponse(out));
+            },
+            {drogon::Get});
+
+        // POST /api/v1/agents/{id}/scheduled-tasks
+        // Creates a recurring consolidation scheduled task.
+        drogon::app().registerHandler(
+            "/api/v1/agents/{1}/scheduled-tasks",
+            [](const drogon::HttpRequestPtr& req,
+               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+               const std::string& agentId) {
+                AdminServer* server = g_activeAdminServer.load();
+                if (!server) { SendServerNotActive(callback); return; }
+
+                Json::Value out(Json::objectValue);
+                if (!server->m_scheduler) {
+                    out["error"] = "scheduler not available";
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                    resp->setStatusCode(drogon::k503ServiceUnavailable);
+                    callback(resp);
+                    return;
+                }
+
+                // Check for existing consolidation task
+                auto existing = server->m_scheduler->List(agentId, "consolidation");
+                bool hasRecurring = false;
+                for (const auto& sd : existing) {
+                    if (sd.type == ScheduleType::Recurring && sd.enabled) {
+                        hasRecurring = true;
+                        break;
+                    }
+                }
+                if (hasRecurring) {
+                    out["error"] = "A recurring consolidation task already exists for this agent. Remove it first.";
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                    resp->setStatusCode(drogon::k409Conflict);
+                    callback(resp);
+                    return;
+                }
+
+                auto body = req->getJsonObject();
+                if (!body || !body->isMember("cron_expr") || !(*body)["cron_expr"].isString()) {
+                    out["error"] = "Missing required field: cron_expr";
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                    resp->setStatusCode(drogon::k400BadRequest);
+                    callback(resp);
+                    return;
+                }
+
+                ScheduleDescriptor sd;
+                sd.agent_id = agentId;
+                sd.tag = "consolidation";
+                sd.type = ScheduleType::Recurring;
+                sd.cron_expr = (*body)["cron_expr"].asString();
+                sd.timezone = body->isMember("timezone") && (*body)["timezone"].isString()
+                    ? (*body)["timezone"].asString() : "UTC";
+                sd.message = body->isMember("message") && (*body)["message"].isString()
+                    ? (*body)["message"].asString() : "intake:day";
+                sd.enabled = true;
+
+                // Scheduler::Create detects cron expressions in next_fire
+                // and computes the actual next fire time internally.
+                sd.next_fire = sd.cron_expr;
+
+                std::string createErr;
+                std::string id = server->m_scheduler->Create(sd, &createErr);
+                if (!createErr.empty()) {
+                    out["error"] = createErr;
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                    resp->setStatusCode(drogon::k500InternalServerError);
+                    callback(resp);
+                    return;
+                }
+
+                out["id"] = id;
+                out["agent_id"] = sd.agent_id;
+                out["cron_expr"] = sd.cron_expr;
+                out["message"] = sd.message;
+                // Fetch the created schedule to get the computed next_fire
+                auto created = server->m_scheduler->Get(id);
+                if (created.has_value()) {
+                    out["next_fire"] = created->next_fire;
+                    out["created_at"] = created->created_at;
+                } else {
+                    out["next_fire"] = "";
+                    out["created_at"] = "";
+                }
+                out["created"] = true;
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                resp->setStatusCode(drogon::k201Created);
+                callback(resp);
+            },
+            {drogon::Post});
+
+        // DELETE /api/v1/scheduled-tasks/{taskId}
+        // Cancels and removes a scheduled task.
+        drogon::app().registerHandler(
+            "/api/v1/scheduled-tasks/{1}",
+            [](const drogon::HttpRequestPtr&,
+               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+               const std::string& taskId) {
+                AdminServer* server = g_activeAdminServer.load();
+                if (!server) { SendServerNotActive(callback); return; }
+
+                Json::Value out(Json::objectValue);
+                if (!server->m_scheduler) {
+                    out["error"] = "scheduler not available";
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                    resp->setStatusCode(drogon::k503ServiceUnavailable);
+                    callback(resp);
+                    return;
+                }
+
+                std::string cancelErr;
+                bool ok = server->m_scheduler->Cancel(taskId, &cancelErr);
+                if (!ok) {
+                    out["error"] = cancelErr.empty() ? "failed to cancel task" : cancelErr;
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                    resp->setStatusCode(drogon::k404NotFound);
+                    callback(resp);
+                    return;
+                }
+
+                out["cancelled"] = true;
+                out["id"] = taskId;
+                callback(drogon::HttpResponse::newHttpJsonResponse(out));
+            },
+            {drogon::Delete});
+
         // === Memory Layer API (SQLite-backed) ===
 
         // ============================================================================
