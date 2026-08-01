@@ -70,6 +70,8 @@ const showCustomCron = ref(false);
 const creatingTask = ref(false);
 const removingTask = ref(false);
 const confirmRemove = ref(false);
+const triggeringReport = ref(false);
+const triggerReportError = ref('');
 
 const intervalPresets = [
   { value: '30m', title: 'Every 30 minutes', cron: '*/30 * * * *' },
@@ -205,6 +207,19 @@ function cronToHuman(cron: string): string {
   const match = intervalPresets.find(p => p.cron === cron);
   if (match) return match.title;
   return cron;
+}
+
+async function triggerSessionReport() {
+  if (!selectedAgent.value) return;
+  triggeringReport.value = true;
+  triggerReportError.value = '';
+  try {
+    await apiRequest('POST', `/api/v1/memory/agents/${selectedAgent.value}/session-report`);
+  } catch (e: unknown) {
+    triggerReportError.value = e instanceof Error ? e.message : 'Failed to trigger session report';
+  } finally {
+    triggeringReport.value = false;
+  }
 }
 
 async function openReport(report: SessionReport) {
@@ -353,22 +368,23 @@ watch(selectedAgent, () => {
     <v-alert v-if="error" type="error" variant="tonal" closable class="mb-4" @click:close="error = ''" />
 
     <!-- Scheduling panel -->
-    <v-expansion-panels v-model="showTaskPanel" class="mb-4">
-      <v-expansion-panel>
-        <v-expansion-panel-title>
-          <div class="d-flex align-center gap-2">
-            <v-icon size="18" :color="scheduledTask ? 'success' : 'grey-lighten-1'">
-              {{ scheduledTask ? 'mdi-clock-check-outline' : 'mdi-clock-outline' }}
-            </v-icon>
-            <span class="text-subtitle-2">Consolidation Schedule</span>
-            <v-chip v-if="scheduledTask" size="x-small" color="success" variant="tonal">
-              Active
-            </v-chip>
-            <v-chip v-else size="x-small" color="grey" variant="tonal">
-              Not scheduled
-            </v-chip>
-          </div>
-        </v-expansion-panel-title>
+    <div class="d-flex align-center gap-2 mb-4">
+      <v-expansion-panels v-model="showTaskPanel" class="flex-grow-1">
+        <v-expansion-panel>
+          <v-expansion-panel-title>
+            <div class="d-flex align-center gap-2">
+              <v-icon size="18" :color="scheduledTask ? 'success' : 'grey-lighten-1'">
+                {{ scheduledTask ? 'mdi-clock-check-outline' : 'mdi-clock-outline' }}
+              </v-icon>
+              <span class="text-subtitle-2">Consolidation Schedule</span>
+              <v-chip v-if="scheduledTask" size="x-small" color="success" variant="tonal">
+                Active
+              </v-chip>
+              <v-chip v-else size="x-small" color="grey" variant="tonal">
+                Not scheduled
+              </v-chip>
+            </div>
+          </v-expansion-panel-title>
         <v-expansion-panel-text>
           <!-- Loading state -->
           <div v-if="taskLoading" class="pa-4 text-center">
@@ -468,6 +484,19 @@ watch(selectedAgent, () => {
         </v-expansion-panel-text>
       </v-expansion-panel>
     </v-expansion-panels>
+      <v-btn
+        color="primary"
+        variant="tonal"
+        size="small"
+        :loading="triggeringReport"
+        prepend-icon="mdi-flash-outline"
+        @click="triggerSessionReport"
+      >
+        Run Session Report
+      </v-btn>
+    </div>
+
+    <v-alert v-if="triggerReportError" type="error" variant="tonal" density="compact" class="mb-2" closable @click:close="triggerReportError = ''" />
 
     <!-- Search bar -->
     <div class="d-flex align-center gap-2 mb-4">

@@ -106,25 +106,30 @@ ToolResult ConsolidationTool::Execute(const ToolCall& call) {
 
     // Determine session mode from session key
     // Format: "consolidation:intake:<agent_id>" or "consolidation:review:<agent_id>"
+    // or "consolidation:session_report:<agent_id>"
     bool isIntake = sessionKey.find("consolidation:intake:") != std::string::npos;
     bool isReview = sessionKey.find("consolidation:review:") != std::string::npos;
+    bool isSessionReport = sessionKey.find("consolidation:session_report:") != std::string::npos;
 
     // Action whitelist per session type
     static const std::set<std::string> intakeActions = {
         "fetch_pending", "create", "ontology:upsert",
-        "perspective:generate", "summary", "sessions:report",
+        "perspective:generate", "summary",
         "memory_file:fetch_pending", "memory_file:mark_processed"
     };
     static const std::set<std::string> reviewActions = {
         "review", "promote", "merge", "revise", "retire", "tag",
         "history", "perspective:review", "perspective:generate", "summary"
     };
+    static const std::set<std::string> sessionReportActions = {
+        "fetch_pending", "sessions:report", "summary"
+    };
 
     if (isIntake && intakeActions.find(action) == intakeActions.end()) {
         result.success = false;
         result.error = "Action '" + action + "' is not available in intake sessions. "
                       "Intake actions: fetch_pending, create, ontology:upsert, "
-                      "perspective:generate, sessions:report, memory_file:fetch_pending, "
+                      "perspective:generate, memory_file:fetch_pending, "
                       "memory_file:mark_processed, summary.";
         return result;
     }
@@ -133,6 +138,12 @@ ToolResult ConsolidationTool::Execute(const ToolCall& call) {
         result.error = "Action '" + action + "' is not available in review sessions. "
                       "Review actions: review, promote, merge, revise, retire, "
                       "tag, history, perspective:review, perspective:generate, summary.";
+        return result;
+    }
+    if (isSessionReport && sessionReportActions.find(action) == sessionReportActions.end()) {
+        result.success = false;
+        result.error = "Action '" + action + "' is not available in session reporting sessions. "
+                      "Session report actions: fetch_pending, sessions:report, summary.";
         return result;
     }
 

@@ -685,13 +685,6 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                         "action \"perspective:generate\" for the relevant layer to update its temporal perspectives.\n"
                         "5. When finished, call action \"summary\".\n"
                         "6. If unprocessed MemoryFiles are returned by \"memory_file:fetch_pending\", read their content and extract observations and ontology entities from them. After processing each file, call \"memory_file:mark_processed\" with its id.\n"
-
-                        "7. For each session that had pending turns, update its session report by calling action \"sessions:report\" with params: {session_id, summary, past_events, current_activity, forward_look}. Use these guidelines:\n"
-                        "   - summary: A stable one-sentence description of what this session is about (update only if it has changed).\n"
-                        "   - past_events: Key developments that have transpired since the last report (compress if the session has a long history).\n"
-                        "   - current_activity: What is happening right now in this session.\n"
-                        "   - forward_look: What you expect to happen next in this session.\n"
-                        "   Each field should be ~200 chars max. The report is upserted — it replaces any previous report for that session.\n"
                         "\n"
                         "Guidelines:\n"
                         "- Create observations for specific facts, decisions, and events.\n"
@@ -726,6 +719,26 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 } else {
                     consolidationPrompt += "Layers: day (1 day), week (1 week), month (1 month), year (1 year)";
                 }
+                } else if (message == "session_report" || message.find("session_report:") == 0) {
+                    // Dedicated session reporting process (Ticket 134)
+                    // Only fires when sessions with new turns exist
+                    if (m_consolidation && !m_consolidation->HasAnyPendingIntakeData()) {
+                        ALOG_DEBUG("scheduler", "skipping session_report: no pending data");
+                        return;
+                    }
+                    sessionSubtype = "session_report";
+
+                    consolidationPrompt =
+                        "Update session reports for sessions that have new activity.\n\n"
+                        "1. Call consolidation tool with action \"fetch_pending\" to retrieve pending turns.\n"
+                        "2. For each session that had pending turns, update its session report by calling action \"sessions:report\" with params: {session_id, summary, past_events, current_activity, forward_look}. Use these guidelines:\n"
+                        "   - summary: A stable one-sentence description of what this session is about (update only if it has changed).\n"
+                        "   - past_events: Key developments that have transpired since the last report (compress if the session has a long history).\n"
+                        "   - current_activity: What is happening right now in this session.\n"
+                        "   - forward_look: What you expect to happen next in this session.\n"
+                        "   Each field should be ~200 chars max. The report is upserted — it replaces any previous report for that session.\n"
+                        "3. When finished, call action \"summary\".\n\n"
+                        "Do NOT create observations, update ontology, or generate perspectives. This session is strictly for session reports.\n";
                 } else {
                     // Unknown consolidation message — skip
                     ALOG_DEBUG("scheduler", "unknown consolidation message: " << message);

@@ -2992,6 +2992,45 @@
             {drogon::Post});
 
         // ====================================================================
+        // POST /api/v1/memory/agents/{id}/session-report
+        // Triggers an immediate session reporting session for a specific agent.
+        // ====================================================================
+        drogon::app().registerHandler(
+            "/api/v1/memory/agents/{1}/session-report",
+            [](const drogon::HttpRequestPtr&,
+               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+               const std::string& agentId) {
+                AdminServer* server = g_activeAdminServer.load();
+                if (!server) { SendServerNotActive(callback); return; }
+
+                if (!server->m_scheduler) {
+                    Json::Value out(Json::objectValue);
+                    out["error"] = "scheduler not available";
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                    resp->setStatusCode(drogon::k503ServiceUnavailable);
+                    callback(resp);
+                    return;
+                }
+
+                ScheduleDescriptor sd;
+                sd.agent_id = agentId;
+                sd.tag = "consolidation";
+                sd.type = ScheduleType::OneShot;
+                sd.next_fire = Scheduler::IsoNow();
+                sd.message = "session_report";
+                std::string createErr;
+                server->m_scheduler->Create(sd, &createErr);
+
+                Json::Value out(Json::objectValue);
+                out["triggered"] = createErr.empty();
+                out["agent_id"] = agentId;
+                out["action"] = "session_report";
+                if (!createErr.empty()) out["error"] = createErr;
+                callback(drogon::HttpResponse::newHttpJsonResponse(out));
+            },
+            {drogon::Post});
+
+        // ====================================================================
         // Session Notes API
         // ====================================================================
 
