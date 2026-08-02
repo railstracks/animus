@@ -170,7 +170,7 @@ ToolResult ConsolidationTool::Execute(const ToolCall& call) {
     } else if (action == "perspective:review") {
         return HandlePerspectiveReview(call.arguments, agentId);
     } else if (action == "summary") {
-        return HandleSummary(call.arguments, agentId);
+        return HandleSummary(call.arguments, agentId, isIntake);
     } else if (action == "ontology:upsert") {
         return HandleOntologyUpsert(call.arguments, agentId);
     } else if (action == "memory_file:fetch_pending") {
@@ -1073,12 +1073,13 @@ ToolResult ConsolidationTool::HandleOntologyUpsert(const std::string& arguments,
     return result;
 }
 
-ToolResult ConsolidationTool::HandleSummary(const std::string& arguments, const std::string& agentId) {
-    // Summary marks the consolidation cycle as complete. We mark all remaining
-    // unprocessed turns for this agent as processed, since the agent has finished.
-    // If observation creation failed for some turns, those turns are still marked
-    // — but the next cycle will pick up any NEW turns created after this point.
-    if (m_sessionManager) {
+ToolResult ConsolidationTool::HandleSummary(const std::string& arguments, const std::string& agentId, bool isIntake) {
+    // Summary marks the consolidation cycle as complete.
+    // Only intake sessions mark turns as processed — session reporting reads
+    // turns but must not consume them, since intake still needs to process them.
+    // Session reporting uses the session_reports table (updated_at_unix_ms) as
+    // its own watermark to determine which sessions have new activity.
+    if (isIntake && m_sessionManager) {
         // Mark all remaining unprocessed turns as processed
         auto remaining = m_sessionManager->GetUnprocessedTurns(agentId, 10000);
         if (!remaining.empty()) {

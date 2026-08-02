@@ -45,7 +45,7 @@ private:
     ToolResult HandleTag(const std::string& arguments, const std::string& agentId);
     ToolResult HandlePerspectiveGenerate(const std::string& arguments, const std::string& agentId);
     ToolResult HandlePerspectiveReview(const std::string& arguments, const std::string& agentId);
-    ToolResult HandleSummary(const std::string& arguments, const std::string& agentId);
+    ToolResult HandleSummary(const std::string& arguments, const std::string& agentId, bool isIntake);
     ToolResult HandleCreate(const std::string& arguments, const std::string& agentId);
     ToolResult HandleFetchPending(const std::string& arguments, const std::string& agentId);
     ToolResult HandleOntologyUpsert(const std::string& arguments, const std::string& agentId);
