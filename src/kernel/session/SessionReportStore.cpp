@@ -265,6 +265,27 @@ std::vector<SessionReportWithEmbedding> SessionReportStore::ListRecentWithEmbedd
     return reports;
 }
 
+std::unordered_map<int64_t, int64_t>
+SessionReportStore::GetLastReportTimePerSession(const std::string& agentId) const {
+    std::unordered_map<int64_t, int64_t> result;
+
+    // Get the latest updated_at_unix_ms per session_id for this agent.
+    // Since Upsert uses ON CONFLICT ... DO UPDATE, there's at most one row
+    // per (session_id, agent_id), so a simple SELECT gives us what we need.
+    auto stmt = m_store->Prepare(
+        "SELECT session_id, updated_at_unix_ms "
+        "FROM session_reports WHERE agent_id = ?");
+    if (!stmt) return result;
+
+    stmt->BindText(1, agentId);
+    while (stmt->Step()) {
+        int64_t sessionId = stmt->ColumnInt64(0);
+        int64_t updatedAt  = stmt->ColumnInt64(1);
+        result[sessionId] = updatedAt;
+    }
+    return result;
+}
+
 int64_t SessionReportStore::NowUnixMs() {
     return static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(

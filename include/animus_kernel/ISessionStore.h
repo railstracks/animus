@@ -56,6 +56,7 @@ public:
         std::string role;
         std::string content;
         std::size_t token_count{0};
+        int64_t unix_ms{0};
     };
     virtual std::vector<UnprocessedTurn> GetUnprocessedTurns(
         const std::string& agentId, int limit) = 0;

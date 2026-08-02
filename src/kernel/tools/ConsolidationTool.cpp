@@ -150,7 +150,7 @@ ToolResult ConsolidationTool::Execute(const ToolCall& call) {
     if (action == "create") {
         return HandleCreate(call.arguments, agentId);
     } else if (action == "fetch_pending") {
-        return HandleFetchPending(call.arguments, agentId);
+        return HandleFetchPending(call.arguments, agentId, isSessionReport);
     } else if (action == "review") {
         return HandleReview(call.arguments, agentId);
     } else if (action == "promote") {
@@ -312,7 +312,7 @@ ToolResult ConsolidationTool::HandleCreate(const std::string& arguments, const s
     return result;
 }
 
-ToolResult ConsolidationTool::HandleFetchPending(const std::string& arguments, const std::string& agentId) {
+ToolResult ConsolidationTool::HandleFetchPending(const std::string& arguments, const std::string& agentId, bool isSessionReport) {
     ToolResult result;
 
     if (!m_sessionManager) {
@@ -337,6 +337,26 @@ ToolResult ConsolidationTool::HandleFetchPending(const std::string& arguments, c
     if (limit <= 0) limit = 50;
 
     auto pending = m_sessionManager->GetUnprocessedTurns(agentId, limit);
+
+    // Session reporting watermark: filter out turns from sessions that
+    // already have a report newer than the turn. The session_reports table
+    // (updated_at_unix_ms) serves as the watermark — only sessions with
+    // turns newer than their last report need updating.
+    if (isSessionReport && m_sessionReportStore) {
+        auto reportTimestamps = m_sessionReportStore->GetLastReportTimePerSession(agentId);
+        std::vector<ISessionStore::UnprocessedTurn> filtered;
+        filtered.reserve(pending.size());
+        for (auto& t : pending) {
+            auto it = reportTimestamps.find(t.session_id);
+            if (it == reportTimestamps.end() || t.unix_ms > it->second) {
+                filtered.push_back(std::move(t));
+            }
+        }
+        std::cerr << "[consolidation] fetch_pending (session_report): filtered "
+                  << pending.size() << " -> " << filtered.size()
+                  << " (watermark)" << std::endl;
+        pending = std::move(filtered);
+    }
 
     std::cerr << "[consolidation] fetch_pending: agent=" << agentId
               << " limit=" << limit << " result_count=" << pending.size() << std::endl;

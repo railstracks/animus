@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "animus_kernel/IDataStore.h"
@@ -76,6 +77,13 @@ public:
     // Reports without embeddings have has_embedding = false.
     std::vector<SessionReportWithEmbedding> ListRecentWithEmbeddings(
         const std::string& agentId, int limit = 20) const;
+
+    // Get the last update timestamp per session for an agent.
+    // Returns map of session_id -> updated_at_unix_ms.
+    // Used by session reporting as a watermark: only sessions with turns
+    // newer than their last report need updating.
+    std::unordered_map<int64_t, int64_t> GetLastReportTimePerSession(
+        const std::string& agentId) const;
 
 private:
     static int64_t NowUnixMs();

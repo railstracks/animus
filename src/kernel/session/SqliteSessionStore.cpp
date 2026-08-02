@@ -803,14 +803,14 @@ std::vector<ISessionStore::UnprocessedTurn> SqliteSessionStore::GetUnprocessedTu
 
     std::string sql;
     if (agentId.empty()) {
-        sql = "SELECT st.session_id, st.turn_id, st.role, st.content, st.token_count "
+        sql = "SELECT st.session_id, st.turn_id, st.role, st.content, st.token_count, st.unix_ms "
               "FROM session_turns st "
               "JOIN sessions s ON s.id = st.session_id "
               "WHERE st.intake_processed = 0 AND st.content != '' "
               "AND (s.session_type IS NULL OR s.session_type != 'consolidation') "
               "ORDER BY st.unix_ms ASC LIMIT ?";
     } else {
-        sql = "SELECT st.session_id, st.turn_id, st.role, st.content, st.token_count "
+        sql = "SELECT st.session_id, st.turn_id, st.role, st.content, st.token_count, st.unix_ms "
               "FROM session_turns st "
               "JOIN sessions s ON s.id = st.session_id "
               "WHERE st.intake_processed = 0 AND st.content != '' "
@@ -838,6 +838,7 @@ std::vector<ISessionStore::UnprocessedTurn> SqliteSessionStore::GetUnprocessedTu
         t.token_count = !stmt->IsColumnNull(4)
             ? static_cast<std::size_t>(stmt->ColumnInt64(4))
             : 0;
+        t.unix_ms = stmt->ColumnInt64(5);
         result.push_back(std::move(t));
     }
 
