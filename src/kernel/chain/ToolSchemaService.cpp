@@ -167,6 +167,24 @@ std::vector<llm::LLMToolDef> ToolSchemaService::GetForSession(
             }
         }
     }
+
+    // Gallivanting sessions: always include the gallivanting tool,
+    // even if the agent's enabled_tools whitelist doesn't list it.
+    // The tool is for managing exploration threads and should only
+    // appear in gallivanting sessions, not in everyday chat.
+    if (sessionType == "gallivanting") {
+        bool hasGallivanting = false;
+        for (const auto& d : defs) {
+            if (d.name == "gallivanting") { hasGallivanting = true; break; }
+        }
+        if (!hasGallivanting) {
+            auto* handler = m_tools.Find("gallivanting");
+            if (handler) {
+                defs.push_back(Convert(handler->GetDefinition()));
+            }
+        }
+    }
+
     return defs;
 }
 

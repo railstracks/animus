@@ -212,7 +212,7 @@ ToolDefinition GallivantingTool::GetDefinition() const {
         false
     });
 
-    def.session_types = {"gallivanting", "default"};
+    def.session_types = {"gallivanting"};
 
     return def;
 }
