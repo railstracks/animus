@@ -27,6 +27,7 @@ struct ScheduleDescriptor {
     std::string cron_expr;       // NULL for one-shot; cron expression for recurring
     std::string timezone{"UTC"}; // IANA timezone for cron evaluation
     std::string message;         // context delivered on fire
+    std::string metadata;        // optional JSON metadata (e.g. gallivanting config)
     bool enabled{true};
     std::string created_at;      // ISO-8601
     std::string last_fire;       // ISO-8601 or empty
@@ -71,6 +72,7 @@ private:
         const std::string& tag, const std::string& typeStr,
         const std::string& nextFire, const std::string& cronExpr,
         const std::string& tz, const std::string& message,
+        const std::string& metadata,
         bool enabled, const std::string& createdAt,
         const std::string& lastFire, std::int32_t fireCount,
         std::int32_t maxFires) const;

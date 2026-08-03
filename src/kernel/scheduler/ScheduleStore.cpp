@@ -103,6 +103,13 @@ void ScheduleStore::EnsureSchema() {
         if (!schema::ColumnExists(m_store, "schedules", "max_fires")) {
             m_store->Exec("ALTER TABLE schedules ADD COLUMN max_fires INTEGER");
         }
+        if (!schema::ColumnExists(m_store, "schedules", "metadata")) {
+            m_store->Exec("ALTER TABLE schedules ADD COLUMN metadata TEXT NOT NULL DEFAULT ''");
+        }
+    } else if (m_store->Dialect() == DataStoreDialect::PostgreSQL) {
+        if (!schema::ColumnExists(m_store, "schedules", "metadata")) {
+            m_store->Exec("ALTER TABLE schedules ADD COLUMN metadata TEXT NOT NULL DEFAULT ''");
+        }
     }
 }
 
@@ -115,6 +122,7 @@ ScheduleDescriptor ScheduleStore::RowToDescriptor(
         const std::string& tag, const std::string& typeStr,
         const std::string& nextFire, const std::string& cronExpr,
         const std::string& tz, const std::string& message,
+        const std::string& metadata,
         bool enabled, const std::string& createdAt,
         const std::string& lastFire, std::int32_t fireCount,
         std::int32_t maxFires) const {
@@ -127,6 +135,7 @@ ScheduleDescriptor ScheduleStore::RowToDescriptor(
     s.cron_expr = cronExpr;
     s.timezone = tz;
     s.message = message;
+    s.metadata = metadata;
     s.enabled = enabled;
     s.created_at = createdAt;
     s.last_fire = lastFire;
@@ -144,8 +153,8 @@ bool ScheduleStore::Create(const ScheduleDescriptor& sched, std::string* error) 
 
     auto stmt = m_store->Prepare(
         "INSERT INTO schedules (id, agent_id, tag, type, next_fire, cron_expr, timezone, "
-        "message, enabled, created_at, max_fires) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+        "message, metadata, enabled, created_at, max_fires) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
     if (!stmt) {
         if (error) *error = "failed to prepare schedule insert: " + m_store->ErrMsg();
         return false;
@@ -164,12 +173,13 @@ bool ScheduleStore::Create(const ScheduleDescriptor& sched, std::string* error) 
     stmt->BindText(6, sched.cron_expr);
     stmt->BindText(7, sched.timezone);
     stmt->BindText(8, sched.message);
-    stmt->BindInt(9, sched.enabled ? 1 : 0);
-    stmt->BindText(10, now);
+    stmt->BindText(9, sched.metadata);
+    stmt->BindInt(10, sched.enabled ? 1 : 0);
+    stmt->BindText(11, now);
     if (sched.max_fires <= 0) {
-        stmt->BindNull(11);
+        stmt->BindNull(12);
     } else {
-        stmt->BindInt(11, sched.max_fires);
+        stmt->BindInt(12, sched.max_fires);
     }
 
     stmt->ExecDML();
@@ -185,7 +195,7 @@ std::string ScheduleStore::CreateAndReturnId(ScheduleDescriptor& sched, std::str
 std::optional<ScheduleDescriptor> ScheduleStore::Get(const std::string& id) const {
     auto stmt = m_store->Prepare(
         "SELECT id, agent_id, tag, type, next_fire, cron_expr, timezone, "
-        "message, enabled, created_at, last_fire, fire_count, max_fires "
+        "message, metadata, enabled, created_at, last_fire, fire_count, max_fires "
         "FROM schedules WHERE id=?");
     if (!stmt) return std::nullopt;
     stmt->BindText(1, id);
@@ -196,10 +206,11 @@ std::optional<ScheduleDescriptor> ScheduleStore::Get(const std::string& id) cons
             stmt->ColumnText(2), stmt->ColumnText(3),
             stmt->ColumnText(4), stmt->IsColumnNull(5) ? "" : stmt->ColumnText(5),
             stmt->ColumnText(6), stmt->ColumnText(7),
-            stmt->ColumnInt64(8) != 0, stmt->ColumnText(9),
-            stmt->IsColumnNull(10) ? "" : stmt->ColumnText(10),
-            stmt->IsColumnNull(11) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(11)),
-            stmt->IsColumnNull(12) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(12)));
+            stmt->IsColumnNull(8) ? "" : stmt->ColumnText(8),
+            stmt->ColumnInt64(9) != 0, stmt->ColumnText(10),
+            stmt->IsColumnNull(11) ? "" : stmt->ColumnText(11),
+            stmt->IsColumnNull(12) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(12)),
+            stmt->IsColumnNull(13) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(13)));
     }
     return std::nullopt;
 }
@@ -210,7 +221,7 @@ std::vector<ScheduleDescriptor> ScheduleStore::List(
 
     std::string sql =
         "SELECT id, agent_id, tag, type, next_fire, cron_expr, timezone, "
-        "message, enabled, created_at, last_fire, fire_count, max_fires "
+        "message, metadata, enabled, created_at, last_fire, fire_count, max_fires "
         "FROM schedules WHERE agent_id=?";
     if (!tag.empty()) sql += " AND tag=?";
     sql += " ORDER BY next_fire ASC";
@@ -227,10 +238,11 @@ std::vector<ScheduleDescriptor> ScheduleStore::List(
             stmt->ColumnText(2), stmt->ColumnText(3),
             stmt->ColumnText(4), stmt->IsColumnNull(5) ? "" : stmt->ColumnText(5),
             stmt->ColumnText(6), stmt->ColumnText(7),
-            stmt->ColumnInt64(8) != 0, stmt->ColumnText(9),
-            stmt->IsColumnNull(10) ? "" : stmt->ColumnText(10),
-            stmt->IsColumnNull(11) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(11)),
-            stmt->IsColumnNull(12) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(12))));
+            stmt->IsColumnNull(8) ? "" : stmt->ColumnText(8),
+            stmt->ColumnInt64(9) != 0, stmt->ColumnText(10),
+            stmt->IsColumnNull(11) ? "" : stmt->ColumnText(11),
+            stmt->IsColumnNull(12) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(12)),
+            stmt->IsColumnNull(13) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(13))));
     }
     return result;
 }
@@ -238,7 +250,7 @@ std::vector<ScheduleDescriptor> ScheduleStore::List(
 bool ScheduleStore::Update(const ScheduleDescriptor& sched, std::string* error) {
     auto stmt = m_store->Prepare(
         "UPDATE schedules SET agent_id=?, tag=?, type=?, next_fire=?, "
-        "cron_expr=?, timezone=?, message=?, enabled=?, last_fire=?, "
+        "cron_expr=?, timezone=?, message=?, metadata=?, enabled=?, last_fire=?, "
         "fire_count=?, max_fires=? WHERE id=?");
     if (!stmt) {
         if (error) *error = "failed to prepare schedule update: " + m_store->ErrMsg();
@@ -252,19 +264,20 @@ bool ScheduleStore::Update(const ScheduleDescriptor& sched, std::string* error) 
     stmt->BindText(5, sched.cron_expr);
     stmt->BindText(6, sched.timezone);
     stmt->BindText(7, sched.message);
-    stmt->BindInt(8, sched.enabled ? 1 : 0);
+    stmt->BindText(8, sched.metadata);
+    stmt->BindInt(9, sched.enabled ? 1 : 0);
     if (sched.last_fire.empty()) {
-        stmt->BindNull(9);
+        stmt->BindNull(10);
     } else {
-        stmt->BindText(9, sched.last_fire);
+        stmt->BindText(10, sched.last_fire);
     }
-    stmt->BindInt(10, sched.fire_count);
+    stmt->BindInt(11, sched.fire_count);
     if (sched.max_fires <= 0) {
-        stmt->BindNull(11);
+        stmt->BindNull(12);
     } else {
-        stmt->BindInt(11, sched.max_fires);
+        stmt->BindInt(12, sched.max_fires);
     }
-    stmt->BindText(12, sched.id);
+    stmt->BindText(13, sched.id);
 
     // Trust Step() result, not Changes(). m_lastChanges is a shared atomic
     // across all connections/threads — concurrent queries overwrite it
@@ -290,7 +303,7 @@ std::vector<ScheduleDescriptor> ScheduleStore::GetDueSchedules(
 
     auto stmt = m_store->Prepare(
         "SELECT id, agent_id, tag, type, next_fire, cron_expr, timezone, "
-        "message, enabled, created_at, last_fire, fire_count, max_fires "
+        "message, metadata, enabled, created_at, last_fire, fire_count, max_fires "
         "FROM schedules "
         "WHERE enabled = 1 AND next_fire <= ? "
         "ORDER BY next_fire ASC LIMIT ?");
@@ -305,10 +318,11 @@ std::vector<ScheduleDescriptor> ScheduleStore::GetDueSchedules(
             stmt->ColumnText(2), stmt->ColumnText(3),
             stmt->ColumnText(4), stmt->IsColumnNull(5) ? "" : stmt->ColumnText(5),
             stmt->ColumnText(6), stmt->ColumnText(7),
-            stmt->ColumnInt64(8) != 0, stmt->ColumnText(9),
-            stmt->IsColumnNull(10) ? "" : stmt->ColumnText(10),
-            stmt->IsColumnNull(11) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(11)),
-            stmt->IsColumnNull(12) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(12))));
+            stmt->IsColumnNull(8) ? "" : stmt->ColumnText(8),
+            stmt->ColumnInt64(9) != 0, stmt->ColumnText(10),
+            stmt->IsColumnNull(11) ? "" : stmt->ColumnText(11),
+            stmt->IsColumnNull(12) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(12)),
+            stmt->IsColumnNull(13) ? 0 : static_cast<std::int32_t>(stmt->ColumnInt64(13))));
     }
     return result;
 }

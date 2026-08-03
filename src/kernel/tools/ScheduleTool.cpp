@@ -201,6 +201,7 @@ ToolResult ScheduleTool::HandleSet(const std::string& callId,
     sched.next_fire = when;
     sched.timezone = "UTC"; // can be refined later
     sched.message = GetString(args, "message", "");
+    sched.metadata = GetString(args, "metadata", "");
     sched.type = GetBool(args, "repeat", false) ? ScheduleType::Recurring : ScheduleType::OneShot;
 
     // Check if updating existing
@@ -262,6 +263,7 @@ ToolResult ScheduleTool::HandleList(const std::string& callId,
         item["next_fire"] = s.next_fire;
         item["cron_expr"] = s.cron_expr.empty() ? Json::Value(Json::nullValue) : Json::Value(s.cron_expr);
         item["message"] = s.message;
+        item["metadata"] = s.metadata;
         item["enabled"] = s.enabled;
         item["fire_count"] = s.fire_count;
         item["last_fire"] = s.last_fire.empty() ? Json::Value(Json::nullValue) : Json::Value(s.last_fire);

@@ -856,28 +856,48 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             // the schedule message. The thread's prompt takes precedence.
             // If no thread prompt exists, append tool-usage guidance to the
             // schedule message so the agent knows to use the gallivanting tool.
+            //
+            // Defensive fallback: if the message still contains a JSON blob
+            // with a "prompt_template" field (legacy schedule format before
+            // metadata column was added), extract the prompt text.
             std::string effectiveMessage = message;
-            if (isGallivanting && m_gallivantingStore) {
-                auto threads = m_gallivantingStore->ListThreads(agentId);
-                bool foundThreadPrompt = false;
-                for (const auto& t : threads) {
-                    if (t.enabled && !t.prompt_template.empty()) {
-                        effectiveMessage = t.prompt_template;
-                        foundThreadPrompt = true;
-                        break;
+            if (isGallivanting) {
+                // Defensive: extract prompt_template from legacy JSON-in-message
+                if (!effectiveMessage.empty() && effectiveMessage[0] == '{') {
+                    Json::Value parsed;
+                    Json::CharReaderBuilder builder;
+                    std::istringstream stream(effectiveMessage);
+                    std::string errs;
+                    if (Json::parseFromStream(builder, stream, &parsed, &errs) &&
+                        parsed.isMember("prompt_template") &&
+                        parsed["prompt_template"].isString() &&
+                        !parsed["prompt_template"].asString().empty()) {
+                        effectiveMessage = parsed["prompt_template"].asString();
                     }
                 }
-                // If no thread prompt and the schedule message doesn't mention
-                // the gallivanting tool, append guidance.
-                if (!foundThreadPrompt &&
-                    effectiveMessage.find("gallivanting") == std::string::npos) {
-                    effectiveMessage +=
-                        "\n\n## Gallivanting Tool\n"
-                        "Use the `gallivanting` tool to manage your exploration threads.\n"
-                        "- Call `gallivanting` with action \"list\" to see your active threads.\n"
-                        "- If you have threads, pick one that interests you and call action \"read\" to see its state.\n"
-                        "- If you have no threads, call action \"create\" to start a new one.\n"
-                        "- At the end of the session, call action \"record\" with your thread_id, summary, and outcome to save what you did.\n";
+
+                if (m_gallivantingStore) {
+                    auto threads = m_gallivantingStore->ListThreads(agentId);
+                    bool foundThreadPrompt = false;
+                    for (const auto& t : threads) {
+                        if (t.enabled && !t.prompt_template.empty()) {
+                            effectiveMessage = t.prompt_template;
+                            foundThreadPrompt = true;
+                            break;
+                        }
+                    }
+                    // If no thread prompt and the schedule message doesn't mention
+                    // the gallivanting tool, append guidance.
+                    if (!foundThreadPrompt &&
+                        effectiveMessage.find("gallivanting") == std::string::npos) {
+                        effectiveMessage +=
+                            "\n\n## Gallivanting Tool\n"
+                            "Use the `gallivanting` tool to manage your exploration threads.\n"
+                            "- Call `gallivanting` with action \"list\" to see your active threads.\n"
+                            "- If you have threads, pick one that interests you and call action \"read\" to see its state.\n"
+                            "- If you have no threads, call action \"create\" to start a new one.\n"
+                            "- At the end of the session, call action \"record\" with your thread_id, summary, and outcome to save what you did.\n";
+                    }
                 }
             }
 

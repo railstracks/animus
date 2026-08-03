@@ -308,6 +308,7 @@
                     item["cron_expr"] = schedule.cron_expr;
                     item["timezone"] = schedule.timezone;
                     item["message"] = schedule.message;
+                    item["metadata"] = schedule.metadata;
                     item["enabled"] = schedule.enabled;
                     item["created_at"] = schedule.created_at;
                     item["last_fire"] = schedule.last_fire;
@@ -356,6 +357,7 @@
                 out["cron_expr"] = schedule->cron_expr;
                 out["timezone"] = schedule->timezone;
                 out["message"] = schedule->message;
+                out["metadata"] = schedule->metadata;
                 out["enabled"] = schedule->enabled;
                 out["created_at"] = schedule->created_at;
                 out["last_fire"] = schedule->last_fire;
@@ -440,6 +442,7 @@
                 sched.next_fire = body["when"].asString();
                 sched.timezone = body.get("timezone", "UTC").asString();
                 sched.message = body.get("message", "").asString();
+                sched.metadata = body.get("metadata", "").asString();
                 sched.enabled = body.get("enabled", true).asBool();
 
                 const bool repeat = body.get("repeat", false).asBool();
@@ -481,6 +484,7 @@
                 out["cron_expr"] = created->cron_expr;
                 out["timezone"] = created->timezone;
                 out["message"] = created->message;
+                out["metadata"] = created->metadata;
                 out["enabled"] = created->enabled;
                 out["created_at"] = created->created_at;
 

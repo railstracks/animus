@@ -365,12 +365,29 @@ async function loadSchedule() {
         }
       }
 
-      // Parse duration from message JSON
+      // Load config from metadata, prompt from message
+      const rawMeta = sched.metadata || '';
+      if (rawMeta) {
+        try {
+          const meta = JSON.parse(rawMeta);
+          if (meta.duration_minutes) scheduleForm.value.duration_minutes = meta.duration_minutes;
+          if (meta.random_offset_minutes) scheduleForm.value.random_offset_minutes = meta.random_offset_minutes;
+        } catch {}
+      }
+      // prompt_template is now stored directly as message
+      if (sched.message) {
+        scheduleForm.value.prompt_template = sched.message;
+      } else {
+        scheduleForm.value.prompt_template = defaultPromptContent.value;
+      }
+      // Backward compat: if message looks like JSON (old format), extract prompt
       try {
-        const msg = JSON.parse(sched.message || '{}');
-        if (msg.duration_minutes) scheduleForm.value.duration_minutes = msg.duration_minutes;
-        if (msg.random_offset_minutes) scheduleForm.value.random_offset_minutes = msg.random_offset_minutes;
-        if (msg.prompt_template !== undefined) scheduleForm.value.prompt_template = msg.prompt_template;
+        const oldMsg = JSON.parse(sched.message || '{}');
+        if (oldMsg.prompt_template !== undefined) {
+          scheduleForm.value.prompt_template = oldMsg.prompt_template || defaultPromptContent.value;
+          if (oldMsg.duration_minutes) scheduleForm.value.duration_minutes = oldMsg.duration_minutes;
+          if (oldMsg.random_offset_minutes) scheduleForm.value.random_offset_minutes = oldMsg.random_offset_minutes;
+        }
       } catch {}
     }
   } catch {
@@ -386,11 +403,11 @@ async function saveSchedule() {
   error.value = '';
   try {
     const cronExpr = frequencyToCron(scheduleForm.value.frequency, scheduleForm.value);
-    const message = JSON.stringify({
+    const message = scheduleForm.value.prompt_template || defaultPromptContent.value;
+    const metadata = JSON.stringify({
       type: 'gallivanting',
       duration_minutes: scheduleForm.value.duration_minutes,
-      random_offset_minutes: scheduleForm.value.random_offset_minutes,
-      prompt_template: scheduleForm.value.prompt_template || defaultPromptContent.value
+      random_offset_minutes: scheduleForm.value.random_offset_minutes
     });
 
     const payload: Record<string, unknown> = {
@@ -400,6 +417,7 @@ async function saveSchedule() {
       repeat: true,
       timezone: scheduleForm.value.timezone,
       message,
+      metadata,
       enabled: scheduleForm.value.enabled
     };
 

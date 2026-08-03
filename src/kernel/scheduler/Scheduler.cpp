@@ -463,6 +463,7 @@ void Scheduler::ProcessDueSchedules() {
             event.metadata["schedule_id"] = schedule.id;
             event.metadata["tag"] = schedule.tag;
             event.metadata["message"] = schedule.message;
+            event.metadata["metadata"] = schedule.metadata;
             event.metadata["agent_id"] = schedule.agent_id;
             m_fireCallback(event);
         }
