@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'Har yanzu ana loda zaɓin wakili. Da fatan za a jira ɗan lokaci kuma a sake gwadawa.',
       unknownWebsocket: 'Ba a sani ba kuskuren websocket',
       sessionLoadFailed: 'An kasa loda zaman {sessionId}: {message}'
+    },
+    actions: {
+      copyMarkdown: 'Kwafa a matsayin markdown',
+      downloadMarkdown: 'Sauke a matsayin markdown',
+      copied: 'An kwafa!'
     }
   } as const;

@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'エージェントの選択はまだロード中です。しばらく待ってから、もう一度試してください。',
       unknownWebsocket: '不明なWebソケットエラー',
       sessionLoadFailed: 'セッション {sessionId} のロードに失敗しました: {message}'
+    },
+    actions: {
+      copyMarkdown: 'Markdownとしてコピー',
+      downloadMarkdown: 'Markdownとしてダウンロード',
+      copied: 'コピーしました!'
     }
   } as const;

@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'A seleção do agente ainda está sendo carregada. Aguarde um momento e tente novamente.',
       unknownWebsocket: 'Erro de websocket desconhecido',
       sessionLoadFailed: 'Falha ao carregar a sessão {sessionId}: {message}'
+    },
+    actions: {
+      copyMarkdown: 'Copiar como markdown',
+      downloadMarkdown: 'Baixar como markdown',
+      copied: 'Copiado!'
     }
   } as const;

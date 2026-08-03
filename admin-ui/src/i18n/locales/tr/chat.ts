@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'Temsilci seçimi hâlâ yükleniyor. Lütfen biraz bekleyip tekrar deneyin.',
       unknownWebsocket: 'Bilinmeyen websoket hatası',
       sessionLoadFailed: '{sessionId} oturumu yüklenemedi: {message}'
+    },
+    actions: {
+      copyMarkdown: 'Markdown olarak kopyala',
+      downloadMarkdown: 'Markdown olarak indir',
+      copied: 'Kopyalandı!'
     }
   } as const;

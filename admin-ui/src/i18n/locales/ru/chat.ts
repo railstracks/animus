@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'Выбор агента все еще загружается. Пожалуйста, подождите немного и повторите попытку.',
       unknownWebsocket: 'Неизвестная ошибка веб-сокета',
       sessionLoadFailed: 'Не удалось загрузить сеанс {sessionId}: {message}.'
+    },
+    actions: {
+      copyMarkdown: 'Копировать как markdown',
+      downloadMarkdown: 'Скачать как markdown',
+      copied: 'Скопировано!'
     }
   } as const;

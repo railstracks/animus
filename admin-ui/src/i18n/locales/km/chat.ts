@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'ការជ្រើសរើសភ្នាក់ងារនៅតែដំណើរការ។ សូមរង់ចាំមួយភ្លែត ហើយព្យាយាមម្តងទៀត។',
       unknownWebsocket: 'កំហុសរន្ធបណ្តាញមិនស្គាល់',
       sessionLoadFailed: 'បរាជ័យក្នុងការផ្ទុកវគ្គ {sessionId}៖ {message}'
+    },
+    actions: {
+      copyMarkdown: 'ចម្លងជា markdown',
+      downloadMarkdown: 'ទាញយកជា markdown',
+      copied: 'បានចម្លង!'
     }
   } as const;

@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'בחירת הסוכן עדיין בטעינה. אנא המתן רגע ונסה שוב.',
       unknownWebsocket: 'שגיאה לא ידועה ב-websocket',
       sessionLoadFailed: 'טעינת ההפעלה {sessionId} נכשלה: {message}'
+    },
+    actions: {
+      copyMarkdown: 'העתק כ-markdown',
+      downloadMarkdown: 'הורד כ-markdown',
+      copied: 'הועתק!'
     }
   } as const;

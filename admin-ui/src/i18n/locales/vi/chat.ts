@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'Lựa chọn đại lý vẫn đang tải. Vui lòng đợi một lát và thử lại.',
       unknownWebsocket: 'Lỗi websocket không xác định',
       sessionLoadFailed: 'Không tải được phiên {sessionId}: {message}'
+    },
+    actions: {
+      copyMarkdown: 'Sao chép dưới dạng markdown',
+      downloadMarkdown: 'Tải xuống dưới dạng markdown',
+      copied: 'Đã sao chép!'
     }
   } as const;

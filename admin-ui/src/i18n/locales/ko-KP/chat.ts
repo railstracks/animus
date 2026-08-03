@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: '에이전트 선택이 아직 로드 중입니다. 잠시 후에 다시 시도해 주세요.',
       unknownWebsocket: '알 수 없는 웹소켓 오류',
       sessionLoadFailed: '세션 {sessionId}을(를) 로드하지 못했습니다: {message}'
+    },
+    actions: {
+      copyMarkdown: 'markdown로 복사',
+      downloadMarkdown: 'markdown로 다운로드',
+      copied: '복사됨!'
     }
   } as const;

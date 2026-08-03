@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'انتخاب نماینده هنوز در حال بارگیری است. لطفاً یک لحظه صبر کنید و دوباره امتحان کنید.',
       unknownWebsocket: 'خطای وب سوکت ناشناخته',
       sessionLoadFailed: 'جلسه بارگیری نشد {sessionId}: {message}'
+    },
+    actions: {
+      copyMarkdown: 'کپی به عنوان markdown',
+      downloadMarkdown: 'دانلود به عنوان markdown',
+      copied: 'کپی شد!'
     }
   } as const;

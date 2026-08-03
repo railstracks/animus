@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'এজেন্ট নির্বাচন এখনও লোড হচ্ছে. অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করুন এবং আবার চেষ্টা করুন।',
       unknownWebsocket: 'অজানা ওয়েবসকেট ত্রুটি৷',
       sessionLoadFailed: 'অধিবেশন লোড করতে ব্যর্থ হয়েছে {sessionId}: {message}'
+    },
+    actions: {
+      copyMarkdown: 'markdown হিসেবে কপি করুন',
+      downloadMarkdown: 'markdown হিসেবে ডাউনলোড করুন',
+      copied: 'কপি হয়েছে!'
     }
   } as const;

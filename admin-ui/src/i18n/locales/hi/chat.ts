@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'एजेंट चयन अभी भी लोड हो रहा है. कृपया एक क्षण प्रतीक्षा करें और पुनः प्रयास करें।',
       unknownWebsocket: 'अज्ञात वेबसोकेट त्रुटि',
       sessionLoadFailed: 'सत्र {sessionId} लोड करने में विफल: {message}'
+    },
+    actions: {
+      copyMarkdown: 'markdown के रूप में कॉपी करें',
+      downloadMarkdown: 'markdown के रूप में डाउनलोड करें',
+      copied: 'कॉपी हो गया!'
     }
   } as const;

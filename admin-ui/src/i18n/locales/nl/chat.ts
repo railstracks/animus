@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'Agentselectie wordt nog geladen. Wacht even en probeer het opnieuw.',
       unknownWebsocket: 'Onbekende WebSocket-fout',
       sessionLoadFailed: 'Laden van sessie {sessionId} mislukt: {message}'
+    },
+    actions: {
+      copyMarkdown: 'Kopiëren als markdown',
+      downloadMarkdown: 'Downloaden als markdown',
+      copied: 'Gekopieerd!'
     }
   } as const;

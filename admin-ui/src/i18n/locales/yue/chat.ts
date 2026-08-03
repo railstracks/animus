@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: '代理選擇仍在加載中。請稍等片刻，然後重試。',
       unknownWebsocket: '未知的 websocket 錯誤',
       sessionLoadFailed: '無法載入會話 {sessionId}：{message}'
+    },
+    actions: {
+      copyMarkdown: '複製為 markdown',
+      downloadMarkdown: '下載為 markdown',
+      copied: '已複製!'
     }
   } as const;

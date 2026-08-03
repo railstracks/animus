@@ -461,6 +461,56 @@ function renderMessageMarkdown(message: UiMessage): string {
   return markdown.render(message.content);
 }
 
+function messageToMarkdown(message: UiMessage): string {
+  const role = message.role === 'user' ? 'User' : message.role === 'assistant' ? 'Assistant' : message.role;
+  const ts = new Date(message.createdUnixMs).toLocaleString();
+  let md = `**${role}** \u2014 ${ts}\n\n`;
+  if (message.thinkingContent) {
+    md += `>thinking>\n${message.thinkingContent}\n>/thinking>\n\n`;
+  }
+  md += message.content;
+  if (message.attachments && message.attachments.length > 0) {
+    md += '\n\n---\n\n**Attachments:**\n';
+    for (const a of message.attachments) {
+      md += `- ${a.filename || a.name || 'attachment'} (${a.content_type || a.contentType || 'unknown'})\n`;
+    }
+  }
+  return md;
+}
+
+async function copyMessage(message: UiMessage): Promise<void> {
+  const md = messageToMarkdown(message);
+  try {
+    await navigator.clipboard.writeText(md);
+  } catch {
+    // Fallback for environments without clipboard API
+    const ta = document.createElement('textarea');
+    ta.value = md;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+
+function downloadMessage(message: UiMessage): void {
+  const md = messageToMarkdown(message);
+  const ts = new Date(message.createdUnixMs).toISOString().replace(/[:.]/g, '-');
+  const role = message.role === 'user' ? 'user' : 'assistant';
+  const filename = `message-${role}-${ts}.md`;
+  const blob = new Blob([md], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function formatToolContent(content: string): string {
   const input = (content || '').trim();
   if (!input) return '';
@@ -1620,6 +1670,22 @@ watch(sessionSearch, () => {
                 <div v-if="message._compactionExpanded" class="compaction-detail markdown-body" v-html="markdown.render(message.content)" />
               </div>
               <div v-else-if="message.content" class="bubble">
+                <div class="message-actions" v-if="!message.streaming">
+                  <v-tooltip :text="t('chat.actions.copyMarkdown')" location="top">
+                    <template #activator="{ props }">
+                      <v-btn v-bind="props" icon size="x-small" variant="text" @click="copyMessage(message)">
+                        <v-icon size="small">mdi-content-copy</v-icon>
+                      </v-btn>
+                    </template>
+                  </v-tooltip>
+                  <v-tooltip :text="t('chat.actions.downloadMarkdown')" location="top">
+                    <template #activator="{ props }">
+                      <v-btn v-bind="props" icon size="x-small" variant="text" @click="downloadMessage(message)">
+                        <v-icon size="small">mdi-download</v-icon>
+                      </v-btn>
+                    </template>
+                  </v-tooltip>
+                </div>
                 <div v-if="message.role === 'assistant'" class="markdown-body" v-html="renderMessageMarkdown(message)" />
                 <div v-else class="plain-text">{{ message.content }}</div>
                 <div class="meta">
@@ -2043,6 +2109,25 @@ watch(sessionSearch, () => {
   border-radius: 14px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   background: rgba(var(--v-theme-on-surface), 0.03);
+  position: relative;
+}
+
+.message-actions {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  display: flex;
+  gap: 0.15rem;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.bubble:hover > .message-actions {
+  opacity: 0.6;
+}
+
+.message-actions .v-btn:hover {
+  opacity: 1;
 }
 
 .role-user .bubble {

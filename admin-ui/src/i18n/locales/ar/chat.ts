@@ -66,5 +66,10 @@ export const chat = {
       agentNotReady: 'لا يزال اختيار الوكيل قيد التحميل. الرجاء الانتظار لحظة وحاول مرة أخرى.',
       unknownWebsocket: 'خطأ غير معروف في مقبس الويب',
       sessionLoadFailed: 'فشل تحميل الجلسة {sessionId}: {message}'
+    },
+    actions: {
+      copyMarkdown: 'نسخ كـ markdown',
+      downloadMarkdown: 'تنزيل كـ markdown',
+      copied: 'تم النسخ!'
     }
   } as const;
