@@ -150,23 +150,52 @@ GallivantingThread GallivantingStore::CreateThread(const GallivantingThread& thr
     if (!m_store) return {};
 
     const int64_t now = NowMs();
-    auto stmt = m_store->Prepare(
-        "INSERT INTO gallivanting_threads "
-        "(agent_id, name, description, sdt_tags, prompt_template, enabled, created_at_unix_ms, updated_at_unix_ms) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-    if (!stmt) return {};
+    int64_t newId = 0;
 
-    stmt->BindText(1, thread.agent_id);
-    stmt->BindText(2, thread.name);
-    stmt->BindText(3, thread.description);
-    stmt->BindText(4, thread.sdt_tags_json.empty() ? std::string("[]") : thread.sdt_tags_json);
-    stmt->BindText(5, thread.prompt_template);
-    stmt->BindInt64(6, thread.enabled ? 1 : 0);
-    stmt->BindInt64(7, now);
-    stmt->BindInt64(8, now);
-    stmt->ExecDML();
+    if (m_store->Dialect() == DataStoreDialect::PostgreSQL) {
+        // Postgres: use RETURNING id to get the new row ID directly,
+        // avoiding the LastInsertRowId() cross-connection timing issue.
+        auto stmt = m_store->Prepare(
+            "INSERT INTO gallivanting_threads "
+            "(agent_id, name, description, sdt_tags, prompt_template, enabled, created_at_unix_ms, updated_at_unix_ms) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id");
+        if (!stmt) return {};
 
-    auto created = GetThread(m_store->LastInsertRowId());
+        stmt->BindText(1, thread.agent_id);
+        stmt->BindText(2, thread.name);
+        stmt->BindText(3, thread.description);
+        stmt->BindText(4, thread.sdt_tags_json.empty() ? std::string("[]") : thread.sdt_tags_json);
+        stmt->BindText(5, thread.prompt_template);
+        stmt->BindInt64(6, thread.enabled ? 1 : 0);
+        stmt->BindInt64(7, now);
+        stmt->BindInt64(8, now);
+        if (stmt->Step()) {
+            newId = stmt->ColumnInt64(0);
+        }
+        stmt->Finalize();
+    } else {
+        // SQLite: LastInsertRowId() works reliably.
+        auto stmt = m_store->Prepare(
+            "INSERT INTO gallivanting_threads "
+            "(agent_id, name, description, sdt_tags, prompt_template, enabled, created_at_unix_ms, updated_at_unix_ms) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        if (!stmt) return {};
+
+        stmt->BindText(1, thread.agent_id);
+        stmt->BindText(2, thread.name);
+        stmt->BindText(3, thread.description);
+        stmt->BindText(4, thread.sdt_tags_json.empty() ? std::string("[]") : thread.sdt_tags_json);
+        stmt->BindText(5, thread.prompt_template);
+        stmt->BindInt64(6, thread.enabled ? 1 : 0);
+        stmt->BindInt64(7, now);
+        stmt->BindInt64(8, now);
+        stmt->ExecDML();
+        stmt->Finalize();
+
+        newId = m_store->LastInsertRowId();
+    }
+
+    auto created = GetThread(newId);
     return created.value_or(GallivantingThread{});
 }
 

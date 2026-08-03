@@ -35,8 +35,14 @@ std::string GetString(const Json::Value& args, const std::string& key,
 }
 
 int64_t GetInt(const Json::Value& args, const std::string& key, int64_t def = 0) {
-    if (args.isMember(key) && (args[key].isInt() || args[key].isInt64()))
+    if (!args.isMember(key)) return def;
+    if (args[key].isInt() || args[key].isInt64())
         return args[key].asInt64();
+    // Accept string-encoded integers (agents often pass IDs as strings)
+    if (args[key].isString()) {
+        try { return std::stoll(args[key].asString()); }
+        catch (...) { return def; }
+    }
     return def;
 }
 
