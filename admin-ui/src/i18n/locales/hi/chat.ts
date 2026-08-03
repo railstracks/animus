@@ -70,6 +70,7 @@ export const chat = {
     actions: {
       copyMarkdown: 'markdown के रूप में कॉपी करें',
       downloadMarkdown: 'markdown के रूप में डाउनलोड करें',
-      copied: 'कॉपी हो गया!'
+      copied: 'कॉपी हो गया!',
+      exportSession: 'सत्र निर्यात करें',
     }
   } as const;

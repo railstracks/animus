@@ -70,6 +70,7 @@ export const chat = {
     actions: {
       copyMarkdown: 'Kwafa a matsayin markdown',
       downloadMarkdown: 'Sauke a matsayin markdown',
-      copied: 'An kwafa!'
+      copied: 'An kwafa!',
+      exportSession: 'Fitaddar zama',
     }
   } as const;

@@ -70,6 +70,7 @@ export const chat = {
     actions: {
       copyMarkdown: '複製為 markdown',
       downloadMarkdown: '下載為 markdown',
-      copied: '已複製!'
+      copied: '已複製!',
+      exportSession: '匯出對話',
     }
   } as const;

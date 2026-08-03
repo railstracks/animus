@@ -511,6 +511,51 @@ function downloadMessage(message: UiMessage): void {
   URL.revokeObjectURL(url);
 }
 
+function exportSession(): void {
+  const messages = activeMessages.value;
+  if (messages.length === 0) return;
+
+  const sessionLabel = selectedSession.value === 'new' ? 'new-session' : selectedSession.value;
+  const date = new Date().toISOString().split('T')[0];
+  const filename = `session-${sessionLabel}-${date}.md`;
+
+  let md = `# Session Export: ${sessionLabel}\n\n`;
+  md += `Exported: ${new Date().toLocaleString()}\n\n`;
+  md += `---\n\n`;
+
+  for (const msg of messages) {
+    // Skip tool calls and tool results — they're noise in an export
+    if (msg.role === 'tool_call' || msg.role === 'tool') {
+      // Include as collapsed details for completeness
+      if (msg.content) {
+        md += `<details><summary>${msg.role === 'tool_call' ? 'Tool Call' : 'Tool Result'}${msg.toolName ? ': ' + msg.toolName : ''}</summary>\n\n`;
+        md += '```\n' + msg.content + '\n```\n\n';
+        md += '</details>\n\n';
+      }
+      continue;
+    }
+    if (msg.role === 'compaction') {
+      if (msg.content) {
+        md += `<details><summary>Compaction Summary</summary>\n\n`;
+        md += msg.content + '\n\n</details>\n\n---\n\n';
+      }
+      continue;
+    }
+    md += messageToMarkdown(msg);
+    md += '\n\n---\n\n';
+  }
+
+  const blob = new Blob([md], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function formatToolContent(content: string): string {
   const input = (content || '').trim();
   if (!input) return '';
@@ -1608,6 +1653,13 @@ watch(sessionSearch, () => {
               <span class="token-gauge-label">{{ formatTokenK(tokenEstimate.estimated_tokens) }} / {{ formatTokenK(tokenEstimate.context_window) }} ({{ tokenPercent }}%)</span>
             </div>
             <span class="status-chip" :data-state="wsState">{{ wsStateLabel }}</span>
+            <v-tooltip :text="t('chat.actions.exportSession')" location="bottom">
+              <template #activator="{ props }">
+                <v-btn v-bind="props" size="small" variant="text" :disabled="activeMessages.length === 0" @click="exportSession">
+                  <v-icon size="small">mdi-download</v-icon>
+                </v-btn>
+              </template>
+            </v-tooltip>
             <v-btn
               size="small"
               color="warning"

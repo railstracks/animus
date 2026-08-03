@@ -70,6 +70,7 @@ export const chat = {
     actions: {
       copyMarkdown: 'markdown হিসেবে কপি করুন',
       downloadMarkdown: 'markdown হিসেবে ডাউনলোড করুন',
-      copied: 'কপি হয়েছে!'
+      copied: 'কপি হয়েছে!',
+      exportSession: 'সেশন রপ্তানি করুন',
     }
   } as const;

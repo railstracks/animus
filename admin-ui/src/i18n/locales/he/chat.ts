@@ -70,6 +70,7 @@ export const chat = {
     actions: {
       copyMarkdown: 'העתק כ-markdown',
       downloadMarkdown: 'הורד כ-markdown',
-      copied: 'הועתק!'
+      copied: 'הועתק!',
+      exportSession: 'ייצוא שיחה',
     }
   } as const;
