@@ -157,7 +157,10 @@ std::vector<llm::LLMToolDef> ToolSchemaService::GetForSession(
             defs.push_back(def);
         } else {
             for (const auto& st : td.session_types) {
-                if (st == sessionType || (st == "default" && sessionType.empty())) {
+                // "default" matches any non-consolidation session type
+                // (gallivanting, chat, scheduled, etc.) — not just empty sessionType.
+                if (st == sessionType ||
+                    (st == "default" && sessionType != "consolidation")) {
                     defs.push_back(def);
                     break;
                 }
