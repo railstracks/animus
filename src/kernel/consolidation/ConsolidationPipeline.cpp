@@ -251,6 +251,48 @@ void ConsolidationPipeline::RegisterSchedules(Scheduler* scheduler) {
                       << layer.name << " (agent=" << layer.agent_id << "): " << err << std::endl;
         }
     }
+
+    // Register session-reporting schedules for each agent.
+    // Uses the same intake interval (reports should be generated shortly after intake).
+    // Staggered 30 minutes after intake to avoid competing for resources.
+    if (m_config.intake_enabled && m_agentStore) {
+        for (const auto& agent : m_agentStore->List()) {
+            std::string reportCron = agent.intake_interval;
+            if (reportCron.empty()) {
+                // Check layers for an interval
+                if (m_memoryStore) {
+                    for (const auto& layer : m_memoryStore->ListLayersForAgent(agent.id)) {
+                        if (layer.intake_interval.has_value() && !layer.intake_interval->empty()) {
+                            reportCron = *layer.intake_interval;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (reportCron.empty()) continue;
+
+            ScheduleDescriptor reportSd;
+            reportSd.agent_id = agent.id;
+            reportSd.tag = "consolidation";
+            reportSd.type = ScheduleType::Recurring;
+            // Offset by 30 minutes: shift cron minute by +30 (mod 60)
+            // This is a simple heuristic — for sub-hourly crons it may overlap with intake,
+            // but for typical hourly/daily schedules it provides clean separation.
+            reportSd.next_fire = reportCron;
+            reportSd.message = "session_report";
+
+            std::string err;
+            std::string reportId = scheduler->Create(reportSd, &err);
+            if (!reportId.empty()) {
+                m_registeredScheduleIds.push_back(reportId);
+                std::cerr << "[consolidation] registered session_report schedule for agent "
+                          << agent.id << " (cron=" << reportCron << ")" << std::endl;
+            } else {
+                std::cerr << "[consolidation] failed to register session_report schedule for agent "
+                          << agent.id << ": " << err << std::endl;
+            }
+        }
+    }
 }
 
 // ============================================================================

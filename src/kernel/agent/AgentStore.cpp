@@ -545,7 +545,7 @@ Agent AgentStore::Create(const Agent& agent) {
         "max_chain_steps, max_tool_calls_per_chain, timeout_seconds, episodic_token_budget, semantic_token_budget, perspectives_token_budget, consolidation_tool_budget, memory_file_token_budget, ambient_context_limit, "
         "enabled_tools, tool_configs, allowed_nodes, session_report_token_budget, "
         "created_at_unix_ms, updated_at_unix_ms, diary_secret) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
     if (!stmt) {
         std::cerr << "[agent-store] insert failed: " << m_store->ErrMsg() << std::endl;
         return {};
