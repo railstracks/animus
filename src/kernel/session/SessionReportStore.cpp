@@ -292,4 +292,32 @@ int64_t SessionReportStore::NowUnixMs() {
             std::chrono::system_clock::now().time_since_epoch()).count());
 }
 
+bool SessionReportStore::HasSessionsNeedingReport(const std::string& agentId) const {
+    // Find sessions that have at least one turn newer than the session's
+    // last report (or no report at all). Excludes consolidation sessions.
+    //
+    // Query logic:
+    //   1. For each session matching agentId, get max(turn.unix_ms)
+    //   2. LEFT JOIN session_reports to get the report watermark
+    //   3. Keep sessions where max_turn > COALESCE(report.updated_at, 0)
+
+    auto stmt = m_store->Prepare(
+        "SELECT s.id, MAX(st.unix_ms), "
+        "       COALESCE(sr.updated_at_unix_ms, 0) "
+        "FROM sessions s "
+        "JOIN session_turns st ON st.session_id = s.id "
+        "LEFT JOIN session_reports sr ON sr.session_id = s.id AND sr.agent_id = ? "
+        "WHERE s.agent_id = ? "
+        "  AND s.session_type NOT LIKE 'consolidation%' "
+        "GROUP BY s.id, sr.updated_at_unix_ms "
+        "HAVING MAX(st.unix_ms) > COALESCE(sr.updated_at_unix_ms, 0) "
+        "LIMIT 1");
+    if (!stmt) return false;
+
+    stmt->BindText(1, agentId);
+    stmt->BindText(2, agentId);
+
+    return stmt->Step(); // true if at least one row matches
+}
+
 } // namespace animus::kernel

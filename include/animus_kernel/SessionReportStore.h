@@ -85,6 +85,12 @@ public:
     std::unordered_map<int64_t, int64_t> GetLastReportTimePerSession(
         const std::string& agentId) const;
 
+    // Check whether any non-consolidation sessions have turns newer than
+    // their last session report. This is the session-reporting activation
+    // guard — independent of intake_processed flags, because intake and
+    // session reporting are separate processes with separate watermarks.
+    bool HasSessionsNeedingReport(const std::string& agentId) const;
+
 private:
     static int64_t NowUnixMs();
     IDataStore* m_store;

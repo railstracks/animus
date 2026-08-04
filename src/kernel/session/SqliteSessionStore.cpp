@@ -849,6 +849,40 @@ std::vector<ISessionStore::UnprocessedTurn> SqliteSessionStore::GetUnprocessedTu
     return result;
 }
 
+std::vector<ISessionStore::UnprocessedTurn> SqliteSessionStore::GetTurnsForSessionReport(
+        SessionId sessionId,
+        int64_t sinceUnixMs,
+        int limit) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<UnprocessedTurn> result;
+
+    auto stmt = m_store->Prepare(
+        "SELECT st.session_id, st.turn_id, st.role, st.content, st.token_count, st.unix_ms "
+        "FROM session_turns st "
+        "WHERE st.session_id = ? AND st.unix_ms > ? AND st.content != '' "
+        "ORDER BY st.unix_ms ASC LIMIT ?");
+    if (!stmt) return result;
+
+    stmt->BindInt64(1, sessionId);
+    stmt->BindInt64(2, sinceUnixMs);
+    stmt->BindInt(3, limit);
+
+    while (stmt->Step()) {
+        UnprocessedTurn t;
+        t.session_id = stmt->ColumnInt64(0);
+        t.turn_id = stmt->ColumnInt64(1);
+        t.role = stmt->ColumnText(2);
+        t.content = stmt->ColumnText(3);
+        t.token_count = !stmt->IsColumnNull(4)
+            ? static_cast<std::size_t>(stmt->ColumnInt64(4))
+            : 0;
+        t.unix_ms = stmt->ColumnInt64(5);
+        result.push_back(std::move(t));
+    }
+
+    return result;
+}
+
 void SqliteSessionStore::MarkTurnsProcessed(const std::vector<SessionTurnId>& turnIds) {
     if (turnIds.empty()) return;
     std::lock_guard<std::mutex> lock(m_mutex);

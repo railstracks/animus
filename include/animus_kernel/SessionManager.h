@@ -41,6 +41,12 @@ public:
     // DB-level queries for consolidation (delegates to store)
     std::vector<ISessionStore::UnprocessedTurn> GetUnprocessedTurns(
         const std::string& agentId, int limit);
+    std::vector<ISessionStore::UnprocessedTurn> GetTurnsForSessionReport(
+        SessionId sessionId,
+        int64_t sinceUnixMs,
+        int limit) {
+        return m_store->GetTurnsForSessionReport(sessionId, sinceUnixMs, limit);
+    }
     void MarkTurnsProcessed(const std::vector<SessionTurnId>& turnIds);
 
     // Access underlying store for compaction and other services

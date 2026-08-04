@@ -721,9 +721,12 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 }
                 } else if (message == "session_report" || message.find("session_report:") == 0) {
                     // Dedicated session reporting process (Ticket 134)
-                    // Only fires when sessions with new turns exist
-                    if (m_consolidation && !m_consolidation->HasAnyPendingIntakeData()) {
-                        ALOG_DEBUG("scheduler", "skipping session_report: no pending data");
+                    // Fires when sessions have turns newer than their last report.
+                    // Uses session_reports.updated_at_unix_ms as watermark, NOT
+                    // intake_processed — these are independent processes.
+                    if (m_sessionReportStore &&
+                        !m_sessionReportStore->HasSessionsNeedingReport(agentId)) {
+                        ALOG_DEBUG("scheduler", "skipping session_report: no sessions need updating");
                         return;
                     }
                     sessionSubtype = "session_report";

@@ -61,6 +61,18 @@ public:
     virtual std::vector<UnprocessedTurn> GetUnprocessedTurns(
         const std::string& agentId, int limit) = 0;
 
+    // Retrieve turns for session reporting. Unlike GetUnprocessedTurns, this
+    // ignores the intake_processed flag and instead filters by timestamp:
+    // only turns newer than `sinceUnixMs` for the given session are returned.
+    // Used by session reporting to get turns that arrived since the last report.
+    virtual std::vector<UnprocessedTurn> GetTurnsForSessionReport(
+        SessionId sessionId,
+        int64_t sinceUnixMs,
+        int limit) {
+        // Default: no-op (stores that don't implement this return empty)
+        return {};
+    }
+
     // Mark specific turns as processed by turn_id
     virtual void MarkTurnsProcessed(const std::vector<SessionTurnId>& turnIds) = 0;
 

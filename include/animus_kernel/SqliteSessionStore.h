@@ -41,6 +41,10 @@ public:
 
     std::vector<UnprocessedTurn> GetUnprocessedTurns(
         const std::string& agentId, int limit) override;
+    std::vector<UnprocessedTurn> GetTurnsForSessionReport(
+        SessionId sessionId,
+        int64_t sinceUnixMs,
+        int limit) override;
     void MarkTurnsProcessed(const std::vector<SessionTurnId>& turnIds) override;
 
     std::vector<std::string> GetMetadataValues(
