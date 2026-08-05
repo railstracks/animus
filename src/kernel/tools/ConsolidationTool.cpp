@@ -336,58 +336,19 @@ ToolResult ConsolidationTool::HandleFetchPending(const std::string& arguments, c
     int limit = params.get("limit", 50).asInt();
     if (limit <= 0) limit = 50;
 
-    auto pending = m_sessionManager->GetUnprocessedTurns(agentId, limit);
-
-    // Session reporting uses a different retrieval strategy: it ignores the
-    // intake_processed flag (intake may have already consumed these turns)
-    // and instead fetches turns per-session that are newer than the last
-    // session report for that session.
+    // For session reporting, bypass intake-processed logic entirely.
+    // Use a cross-table query that finds turns from non-consolidation sessions
+    // newer than their last report (or all turns if no report exists).
+    std::vector<ISessionStore::UnprocessedTurn> pending;
     if (isSessionReport && m_sessionReportStore) {
-        auto reportTimestamps = m_sessionReportStore->GetLastReportTimePerSession(agentId);
-        std::vector<ISessionStore::UnprocessedTurn> reportTurns;
-
-        // For each known session, fetch turns newer than its last report
-        for (const auto& [sessionId, lastReportMs] : reportTimestamps) {
-            auto turns = m_sessionManager->GetStore().GetTurnsForSessionReport(
-                sessionId, lastReportMs, limit);
-            for (auto& t : turns) {
-                reportTurns.push_back(std::move(t));
-            }
-            if (static_cast<int>(reportTurns.size()) >= limit) break;
-        }
-
-        // Also check sessions with NO report yet (not in reportTimestamps map)
-        // Query all non-consolidation sessions for this agent and check which
-        // ones have turns but no entry in reportTimestamps
-        // Use ListSessionsPaginated to discover sessions
-        // Simpler: just query all turns for this agent where session not in reportTimestamps
-        // For now, use the existing GetUnprocessedTurns as a fallback for
-        // sessions that have no report — those turns will appear if intake
-        // hasn't processed them yet. If intake HAS processed them, we need
-        // a different path. For simplicity, also fetch recent turns from
-        // sessions not in the report map.
-        //
-        // TODO: This could be a single SQL query joining sessions + turns,
-        // but for now we iterate known sessions.
-
-        std::cerr << "[consolidation] fetch_pending (session_report): found "
-                  << reportTurns.size() << " turns across "
-                  << reportTimestamps.size() << " known sessions"
-                  << std::endl;
-
-        // Merge: known sessions with newer turns + fallback to unprocessed
-        // for sessions without reports
-        for (auto& t : pending) {
-            if (reportTimestamps.find(t.session_id) == reportTimestamps.end()) {
-                reportTurns.push_back(std::move(t));
-            }
-        }
-
-        pending = std::move(reportTurns);
+        pending = m_sessionReportStore->GetTurnsNeedingReport(agentId, limit);
+        std::cerr << "[consolidation] fetch_pending (session_report): agent=" << agentId
+                  << " limit=" << limit << " result_count=" << pending.size() << std::endl;
+    } else {
+        pending = m_sessionManager->GetUnprocessedTurns(agentId, limit);
+        std::cerr << "[consolidation] fetch_pending: agent=" << agentId
+                  << " limit=" << limit << " result_count=" << pending.size() << std::endl;
     }
-
-    std::cerr << "[consolidation] fetch_pending: agent=" << agentId
-              << " limit=" << limit << " result_count=" << pending.size() << std::endl;
     for (size_t i = 0; i < pending.size() && i < 3; ++i) {
         std::cerr << "[consolidation] fetch_pending: turn[" << i
                   << "] session=" << pending[i].session_id

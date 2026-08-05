@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "animus_kernel/IDataStore.h"
+#include "animus_kernel/ISessionStore.h"
 
 namespace animus::kernel {
 
@@ -90,6 +91,13 @@ public:
     // guard — independent of intake_processed flags, because intake and
     // session reporting are separate processes with separate watermarks.
     bool HasSessionsNeedingReport(const std::string& agentId) const;
+
+    // Retrieve turns from non-consolidation sessions that are newer than
+    // their last session report (or all turns if no report exists).
+    // This is the data retrieval counterpart to HasSessionsNeedingReport.
+    // Returns turns ordered by unix_ms ascending, grouped by session.
+    std::vector<struct ISessionStore::UnprocessedTurn> GetTurnsNeedingReport(
+        const std::string& agentId, int limit) const;
 
 private:
     static int64_t NowUnixMs();
