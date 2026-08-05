@@ -386,6 +386,7 @@ add_library(animus_kernel
   src/kernel/context/SessionReportProvider.cpp
   src/kernel/context/ActiveMemoryProvider.cpp
             src/kernel/context/ChannelContextProvider.cpp
+  src/kernel/context/RuntimeEnvironmentProvider.cpp
   src/kernel/lua/LuaState.cpp
   src/kernel/lua/LuaToolHandler.cpp
   src/kernel/lua/ScriptStore.cpp

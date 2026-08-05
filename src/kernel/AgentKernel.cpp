@@ -82,6 +82,7 @@
 #include "animus_kernel/context/SessionReportProvider.h"
 #include "animus_kernel/context/ActiveMemoryProvider.h"
 #include "animus_kernel/context/ChannelContextProvider.h"
+#include "animus_kernel/context/RuntimeEnvironmentProvider.h"
 
 #include "animus_kernel/tools/DiceTool.h"
 #include "animus_kernel/tools/CalculatorTool.h"
@@ -394,6 +395,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // --- Context Provider Registry ---
         m_contextRegistry = new ContextProviderRegistry();
         m_contextRegistry->Register(std::make_unique<IdentityProvider>());
+        m_contextRegistry->Register(std::make_unique<RuntimeEnvironmentProvider>());
         m_contextRegistry->Register(
             std::make_unique<SessionNotesProvider>(m_sessionNotesStore));
         m_contextRegistry->Register(

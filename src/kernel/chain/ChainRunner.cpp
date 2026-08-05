@@ -139,6 +139,32 @@ bool ParseJsonObject(const std::string& text, Json::Value* out) {
 
 } // namespace
 
+// Build the per-step runtime context message injected into each chain
+// iteration so the agent has temporal awareness during long sessions.
+static std::string BuildStepRuntimeContext(
+        std::uint32_t step,
+        std::uint32_t maxSteps,
+        const std::chrono::steady_clock::time_point& chainStart,
+        std::uint32_t timeoutSeconds) {
+    std::ostringstream out;
+    out << "## STEP CONTEXT\n";
+    out << "Step " << (step + 1) << "/" << maxSteps;
+
+    const auto now = std::chrono::steady_clock::now();
+    const auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(now - chainStart).count();
+
+    if (timeoutSeconds > 0) {
+        out << " • " << elapsedSec << "s/" << timeoutSeconds << "s";
+        // Warn when entering last 20% of time budget
+        if (static_cast<std::uint32_t>(elapsedSec) >= timeoutSeconds * 4 / 5) {
+            out << " ⚠ approaching timeout";
+        }
+    }
+
+    out << "\n";
+    return out.str();
+}
+
 // ============================================================================
 // Agent override resolution (shared by legacy and pre-resolved paths)
 // ============================================================================
@@ -257,6 +283,12 @@ ChainResult ChainRunner::ExecuteOnSession(
             req.model, req.contextWindow);
         // Non-streaming execution must request a non-stream response body.
         assembly.request.stream = false;
+
+        // Inject per-step runtime context for temporal awareness
+        assembly.request.messages.push_back({
+            "system",
+            BuildStepRuntimeContext(step, req.maxChainSteps, start, req.timeoutSeconds)
+        });
 
         ALOG_DEBUG("chain", "ExecuteOnSession id=" << session.Id()
                   << " conv_id=" << session.Key().conversation_id
@@ -458,6 +490,12 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
             session, "", resolvedSystemPrompt,
             req.model, req.contextWindow);
         assembly.request.stream = true;
+
+        // Inject per-step runtime context for temporal awareness
+        assembly.request.messages.push_back({
+            "system",
+            BuildStepRuntimeContext(step, req.maxChainSteps, start, req.timeoutSeconds)
+        });
 
         ALOG_DEBUG("chain", "StreamingOnSession id=" << session.Id()
                   << " conv_id=" << session.Key().conversation_id
