@@ -285,10 +285,12 @@ ChainResult ChainRunner::ExecuteOnSession(
         assembly.request.stream = false;
 
         // Inject per-step runtime context for temporal awareness
-        assembly.request.messages.push_back({
-            "system",
-            BuildStepRuntimeContext(step, req.maxChainSteps, start, req.timeoutSeconds)
-        });
+        {
+            llm::LLMMessage stepMsg;
+            stepMsg.role = "system";
+            stepMsg.content = BuildStepRuntimeContext(step, req.maxChainSteps, start, req.timeoutSeconds);
+            assembly.request.messages.push_back(std::move(stepMsg));
+        }
 
         ALOG_DEBUG("chain", "ExecuteOnSession id=" << session.Id()
                   << " conv_id=" << session.Key().conversation_id
@@ -492,10 +494,12 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         assembly.request.stream = true;
 
         // Inject per-step runtime context for temporal awareness
-        assembly.request.messages.push_back({
-            "system",
-            BuildStepRuntimeContext(step, req.maxChainSteps, start, req.timeoutSeconds)
-        });
+        {
+            llm::LLMMessage stepMsg;
+            stepMsg.role = "system";
+            stepMsg.content = BuildStepRuntimeContext(step, req.maxChainSteps, start, req.timeoutSeconds);
+            assembly.request.messages.push_back(std::move(stepMsg));
+        }
 
         ALOG_DEBUG("chain", "StreamingOnSession id=" << session.Id()
                   << " conv_id=" << session.Key().conversation_id
