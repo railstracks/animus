@@ -1136,81 +1136,58 @@
                     return;
                 }
 
-                std::vector<std::string> localeCandidates;
-                localeCandidates.push_back(locale);
-                const std::size_t delimPos = locale.find_first_of("-_");
-                if (delimPos != std::string::npos && delimPos > 0) {
-                    const std::string base = locale.substr(0, delimPos);
-                    if (base != locale) localeCandidates.push_back(base);
-                }
-                if (locale != "en") localeCandidates.push_back("en");
+                // Templates are English-only for now. Localization of agent-facing
+                // prompts caused confusion and maintenance burden — see en.md only.
+                const std::string localeUsed = "en";
+                const std::string relPath = directory + "/en.md";
 
                 std::string templateContent;
-                std::string localeUsed;
                 bool found = false;
 
                 // Try embedded templates first, then filesystem.
-                for (const auto& candidate : localeCandidates) {
-                    const std::string relPath = directory + "/" + candidate + ".md";
+                {
                     EmbeddedTemplate embedded;
                     if (HasEmbeddedTemplates() && GetEmbeddedTemplate(relPath, &embedded)) {
                         templateContent = std::string(
                             reinterpret_cast<const char*>(embedded.data),
                             embedded.size);
-                        localeUsed = candidate;
                         found = true;
-                        break;
                     }
                 }
 
                 if (!found) {
-                    std::filesystem::path foundPath;
                     const auto cwd = std::filesystem::current_path();
                     const std::vector<std::filesystem::path> templateRoots{
                         cwd / "templates",
                         cwd / ".." / "templates",
                     };
-                    for (const auto& candidate : localeCandidates) {
-                        for (const auto& root : templateRoots) {
-                            const auto path = root / directory / (candidate + ".md");
-                            if (std::filesystem::exists(path) && std::filesystem::is_regular_file(path)) {
-                                foundPath = path;
-                                localeUsed = candidate;
-                                break;
+                    for (const auto& root : templateRoots) {
+                        const auto path = root / directory / "en.md";
+                        if (std::filesystem::exists(path) && std::filesystem::is_regular_file(path)) {
+                            std::ifstream in(path);
+                            if (in.is_open()) {
+                                std::ostringstream ss;
+                                ss << in.rdbuf();
+                                templateContent = ss.str();
+                                found = true;
                             }
-                        }
-                        if (!foundPath.empty()) {
                             break;
                         }
                     }
+                }
 
-                    if (foundPath.empty()) {
-                        Json::Value out(Json::objectValue);
-                        out["error"] = "template not found";
-                        auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
-                        resp->setStatusCode(drogon::k404NotFound);
-                        callback(resp);
-                        return;
-                    }
-
-                    std::ifstream in(foundPath);
-                    if (!in.is_open()) {
-                        Json::Value out(Json::objectValue);
-                        out["error"] = "failed to read template";
-                        auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
-                        resp->setStatusCode(drogon::k500InternalServerError);
-                        callback(resp);
-                        return;
-                    }
-                    std::ostringstream ss;
-                    ss << in.rdbuf();
-                    templateContent = ss.str();
-                    found = true;
+                if (!found) {
+                    Json::Value out(Json::objectValue);
+                    out["error"] = "template not found";
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                    resp->setStatusCode(drogon::k404NotFound);
+                    callback(resp);
+                    return;
                 }
 
                 Json::Value out(Json::objectValue);
                 out["content"] = templateContent;
-                out["locale"] = localeUsed;
+                out["locale"] = "en";
                 callback(drogon::HttpResponse::newHttpJsonResponse(out));
             },
             {drogon::Get});
