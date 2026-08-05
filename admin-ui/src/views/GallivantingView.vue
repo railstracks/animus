@@ -24,7 +24,7 @@ interface GallivantingThread {
   id: number;
   name: string;
   description: string;
-  sdt_tags: string[];
+  sdt_tags: SdtTags;
   enabled: boolean;
   created_at_unix_ms: number;
   updated_at_unix_ms: number;
@@ -111,7 +111,7 @@ const editingThread = ref<GallivantingThread | null>(null);
 const threadForm = ref({
   name: '',
   description: '',
-  sdt_tags: [] as string[],
+  sdt_tags: {} as Record<string, number>,
   enabled: true
 });
 
@@ -462,7 +462,7 @@ function openCreateThread() {
   threadForm.value = {
     name: '',
     description: '',
-    sdt_tags: [],
+    sdt_tags: {} as Record<string, number>,
     enabled: true
   };
   showThreadDialog.value = true;
@@ -473,19 +473,22 @@ function openEditThread(thread: GallivantingThread) {
   threadForm.value = {
     name: thread.name,
     description: thread.description,
-    sdt_tags: [...thread.sdt_tags],
+    sdt_tags: { ...(thread.sdt_tags || {}) },
     enabled: thread.enabled
   };
   showThreadDialog.value = true;
 }
 
-function toggleSdtTag(key: string) {
-  const idx = threadForm.value.sdt_tags.indexOf(key);
-  if (idx >= 0) {
-    threadForm.value.sdt_tags.splice(idx, 1);
+function setSdtValue(key: string, value: number) {
+  if (value <= 0) {
+    delete threadForm.value.sdt_tags[key];
   } else {
-    threadForm.value.sdt_tags.push(key);
+    threadForm.value.sdt_tags[key] = value;
   }
+}
+
+function getSdtValue(key: string): number {
+  return threadForm.value.sdt_tags[key] ?? 0;
 }
 
 async function saveThread() {
@@ -562,8 +565,12 @@ function formatRelative(unixMs: number): string {
   return `${Math.floor(days / 30)}mo ago`;
 }
 
-function sdtTagChips(tags: string[]): string[] {
-  return tags || [];
+function sdtTagChips(tags: SdtTags | string[]): {key: string, value: number}[] {
+  if (Array.isArray(tags)) return [];
+  if (!tags || typeof tags !== 'object') return [];
+  return Object.entries(tags)
+    .filter(([, v]) => typeof v === 'number' && v > 0)
+    .map(([k, v]) => ({ key: k, value: v as number }));
 }
 
 const agentItems = computed(() =>
@@ -711,11 +718,11 @@ onMounted(async () => {
               <div class="thread-tags">
                 <span
                   v-for="tag in sdtTagChips(thread.sdt_tags)"
-                  :key="tag"
+                  :key="tag.key"
                   class="sdt-chip"
-                  :style="{ background: SDT_COLORS[tag] + '22', color: SDT_COLORS[tag] }"
+                  :style="{ background: SDT_COLORS[tag.key] + '22', color: SDT_COLORS[tag.key] }"
                 >
-                  {{ SDT_LABELS[tag] }}
+                  {{ SDT_LABELS[tag.key] }} {{ tag.value.toFixed(1) }}
                 </span>
               </div>
             </div>
@@ -955,22 +962,28 @@ onMounted(async () => {
             class="mb-3"
           />
 
-          <div class="form-section-label">SDT Need Tags</div>
-          <div class="sdt-toggles">
+          <div class="form-section-label">SDT Need Values (0.0–1.0)</div>
+          <div class="sdt-sliders">
             <div
               v-for="key in SDT_KEYS"
               :key="key"
-              class="sdt-toggle"
-              :class="{ active: threadForm.sdt_tags.includes(key) }"
-              :style="{
-                borderColor: threadForm.sdt_tags.includes(key) ? SDT_COLORS[key] : 'rgba(var(--v-theme-on-surface), 0.1)',
-                background: threadForm.sdt_tags.includes(key) ? SDT_COLORS[key] + '15' : 'transparent'
-              }"
-              @click="toggleSdtTag(key)"
+              class="sdt-slider-row"
             >
-              <span class="sdt-toggle-label" :style="{ color: threadForm.sdt_tags.includes(key) ? SDT_COLORS[key] : 'rgba(var(--v-theme-on-surface), 0.5)' }">
+              <span class="sdt-slider-label" :style="{ color: getSdtValue(key) > 0 ? SDT_COLORS[key] : 'rgba(var(--v-theme-on-surface), 0.5)' }">
                 {{ SDT_LABELS[key] }}
               </span>
+              <v-slider
+                :model-value="getSdtValue(key)"
+                @update:model-value="(v: number) => setSdtValue(key, v)"
+                :min="0"
+                :max="1"
+                :step="0.1"
+                :color="SDT_COLORS[key]"
+                density="compact"
+                hide-details
+                class="sdt-slider"
+              />
+              <span class="sdt-slider-value">{{ getSdtValue(key) > 0 ? getSdtValue(key).toFixed(1) : '—' }}</span>
             </div>
           </div>
 
@@ -1268,28 +1281,34 @@ onMounted(async () => {
   margin-bottom: 0.5rem;
 }
 
-.sdt-toggles {
+.sdt-sliders {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
-.sdt-toggle {
-  padding: 0.35rem 0.7rem;
-  border-radius: 8px;
-  border: 1px solid;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
+.sdt-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
-.sdt-toggle:hover {
-  filter: brightness(1.2);
-}
-
-.sdt-toggle-label {
+.sdt-slider-label {
   font-size: 0.78rem;
   font-weight: 500;
+  min-width: 130px;
+}
+
+.sdt-slider {
+  flex: 1;
+}
+
+.sdt-slider-value {
+  font-size: 0.78rem;
+  font-weight: 600;
+  min-width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Schedule */
