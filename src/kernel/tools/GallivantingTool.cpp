@@ -170,8 +170,10 @@ ToolDefinition GallivantingTool::GetDefinition() const {
     });
     def.parameters.push_back({
         "sdt_tags", "object",
-        "SDT need tags: {autonomy, competence, relatedness, personal_development, relaxation, meaning} with 0.0-1.0 values",
-        false
+        "SDT need tags (REQUIRED for create): {autonomy, competence, relatedness, "
+        "personal_development, relaxation, meaning} with 0.0-1.0 values. "
+        "Declares which psychological needs this thread serves.",
+        true
     });
     def.parameters.push_back({
         "prompt_template", "string",
@@ -202,8 +204,9 @@ ToolDefinition GallivantingTool::GetDefinition() const {
     });
     def.parameters.push_back({
         "sdt_scores", "object",
-        "Actual SDT scores for this session {autonomy: 0.7, ...}",
-        false
+        "SDT scores for this session (REQUIRED for record): reflect on which needs "
+        "were actually satisfied {autonomy: 0.7, competence: 0.5, ...}",
+        true
     });
     def.parameters.push_back({
         "tools_used", "array",
@@ -351,6 +354,17 @@ ToolResult GallivantingTool::HandleCreate(const std::string& agentId, const std:
     if (name.empty()) {
         result.success = false;
         result.error = "name is required";
+        return result;
+    }
+
+    // SDT tags are required — they declare which psychological needs
+    // this thread serves and enable longitudinal tracking.
+    if (!args.isMember("sdt_tags") || !args["sdt_tags"].isObject()) {
+        result.success = false;
+        result.error = "sdt_tags is required for create. Provide an object with "
+                      "one or more of: autonomy, competence, relatedness, "
+                      "personal_development, relaxation, meaning (values 0.0-1.0). "
+                      "Example: {\"autonomy\": 0.8, \"competence\": 0.6}";
         return result;
     }
 
@@ -505,6 +519,18 @@ ToolResult GallivantingTool::HandleRecord(const std::string& agentId, const std:
     if (summary.empty()) {
         result.success = false;
         result.error = "summary is required for record";
+        return result;
+    }
+
+    // SDT scores are required — they record which needs were actually
+    // satisfied during this session, enabling reflection over time.
+    if (!args.isMember("sdt_scores") || !args["sdt_scores"].isObject()) {
+        result.success = false;
+        result.error = "sdt_scores is required for record. Reflect on which needs "
+                      "this session actually satisfied. Provide an object with "
+                      "one or more of: autonomy, competence, relatedness, "
+                      "personal_development, relaxation, meaning (values 0.0-1.0). "
+                      "Example: {\"autonomy\": 0.9, \"competence\": 0.4}";
         return result;
     }
 
