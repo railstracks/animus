@@ -53,6 +53,7 @@
 #include "animus_kernel/lua/ScriptStore.h"
 #include "animus_kernel/AgentConfigStore.h"
 #include "animus_kernel/tools/MemoryTool.h"
+#include "kernel/admin/TemplateResources.h"
 #include <filesystem>
 #include <fstream>
 #include "animus_kernel/tools/NodeTool.h"
@@ -891,44 +892,53 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                             break;
                         }
                     }
-                    // No thread prompt — load the default gallivanting template
-                    // from disk so the agent gets the full prompt with tool
-                    // guidance, record instructions, etc.
+                    // No thread prompt — load the default gallivanting template.
+                    // Priority: embedded (compiled into binary) → filesystem → minimal fallback.
                     if (!foundThreadPrompt) {
-                        // Try to load templates/gallivanting/en.md from cwd
-                        const auto cwd = std::filesystem::current_path();
-                        const std::vector<std::filesystem::path> roots = {
-                            cwd / "templates",
-                            cwd / ".." / "templates",
-                        };
                         bool loaded = false;
-                        for (const auto& root : roots) {
-                            auto path = root / "gallivanting" / "en.md";
-                            if (std::filesystem::exists(path)) {
-                                std::ifstream in(path);
-                                if (in.is_open()) {
-                                    std::ostringstream ss;
-                                    ss << in.rdbuf();
-                                    effectiveMessage = ss.str();
-                                    loaded = true;
-                                    break;
+
+                        // 1. Embedded templates (compiled with ANIMUS_TEMPLATES_EMBED=ON)
+                        if (!loaded && HasEmbeddedTemplates()) {
+                            EmbeddedTemplate embedded;
+                            if (GetEmbeddedTemplate("gallivanting/en.md", &embedded)) {
+                                effectiveMessage = std::string(
+                                    reinterpret_cast<const char*>(embedded.data),
+                                    embedded.size);
+                                loaded = true;
+                            }
+                        }
+
+                        // 2. Filesystem (templates/gallivanting/en.md relative to cwd)
+                        if (!loaded) {
+                            const auto cwd = std::filesystem::current_path();
+                            const std::vector<std::filesystem::path> roots = {
+                                cwd / "templates",
+                                cwd / ".." / "templates",
+                            };
+                            for (const auto& root : roots) {
+                                auto path = root / "gallivanting" / "en.md";
+                                if (std::filesystem::exists(path)) {
+                                    std::ifstream in(path);
+                                    if (in.is_open()) {
+                                        std::ostringstream ss;
+                                        ss << in.rdbuf();
+                                        effectiveMessage = ss.str();
+                                        loaded = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
-                        // If template file not found, fall back to inline default
+
+                        // 3. Minimal fallback — should never happen if built with embedding
                         if (!loaded) {
+                            ALOG_WARNING("scheduler", "gallivanting template not found "
+                                      "(neither embedded nor on disk)");
                             effectiveMessage =
                                 "# Gallivanting Block\n\n"
-                                "This is unstructured time to pursue what interests you. "
-                                "Not routine tasks — exploration, creation, curiosity.\n\n"
-                                "## Gallivanting Tool\n"
-                                "Use the `gallivanting` tool to manage exploration threads.\n"
-                                "- Call `gallivanting` with action \"list\" to see active threads.\n"
-                                "- Pick a thread and call action \"read\" to see its state.\n"
-                                "- If no threads exist, call action \"create\" to start one.\n"
-                                "- **At the end of the session, call action \"record\"** with your "
-                                "thread_id, summary, and outcome. This is critical — without it, "
-                                "your work this session is lost to future sessions.\n";
+                                "Unstructured time to explore and create. "
+                                "Use the `gallivanting` tool to manage threads. "
+                                "**Call action \"record\" at session end** to persist your work.\n";
                         }
                     }
                 }
