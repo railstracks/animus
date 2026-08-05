@@ -217,6 +217,7 @@ void ChainRunner::ResolveAgentOverrides(
                 out.reasoningEffort = agent->reasoning_effort;
             if (agent->budget.maxChainSteps > 0) out.maxChainSteps = agent->budget.maxChainSteps;
             if (agent->budget.maxToolCallsPerChain > 0) out.maxToolCallsPerChain = agent->budget.maxToolCallsPerChain;
+            if (agent->budget.timeoutSeconds > 0) out.timeoutSeconds = agent->budget.timeoutSeconds;
 
             // Consolidation sessions need more tool calls (review, promote, merge, perspectives, summary)
             if (session.SessionType() == "consolidation" &&

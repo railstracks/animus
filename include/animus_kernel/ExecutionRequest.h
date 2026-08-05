@@ -34,6 +34,7 @@ struct ExecutionRequest {
     // --- Chain budgets ---
     std::uint32_t maxChainSteps = 200;
     std::uint32_t maxToolCallsPerChain = 100;
+    std::uint32_t timeoutSeconds = 1800;  // Agent timeout for display + enforcement
 };
 
 } // namespace animus::kernel
