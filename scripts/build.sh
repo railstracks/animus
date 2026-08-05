@@ -10,6 +10,7 @@ echo "=== Building admin UI ==="
 
 echo "=== Cleaning stale embedded resources ==="
 rm -f "${BUILD_DIR}/generated/AdminUiEmbeddedResources.cpp"
+rm -f "${BUILD_DIR}/generated/TemplateEmbeddedResources.cpp"
 
 echo "=== Configuring CMake ==="
 cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" \
