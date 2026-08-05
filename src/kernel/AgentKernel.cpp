@@ -53,6 +53,8 @@
 #include "animus_kernel/lua/ScriptStore.h"
 #include "animus_kernel/AgentConfigStore.h"
 #include "animus_kernel/tools/MemoryTool.h"
+#include <filesystem>
+#include <fstream>
 #include "animus_kernel/tools/NodeTool.h"
 #include "animus_kernel/tools/ShellExecTool.h"
 #include "animus_kernel/tools/WebFetchTool.h"
@@ -889,17 +891,45 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                             break;
                         }
                     }
-                    // If no thread prompt and the schedule message doesn't mention
-                    // the gallivanting tool, append guidance.
-                    if (!foundThreadPrompt &&
-                        effectiveMessage.find("gallivanting") == std::string::npos) {
-                        effectiveMessage +=
-                            "\n\n## Gallivanting Tool\n"
-                            "Use the `gallivanting` tool to manage your exploration threads.\n"
-                            "- Call `gallivanting` with action \"list\" to see your active threads.\n"
-                            "- If you have threads, pick one that interests you and call action \"read\" to see its state.\n"
-                            "- If you have no threads, call action \"create\" to start a new one.\n"
-                            "- At the end of the session, call action \"record\" with your thread_id, summary, and outcome to save what you did.\n";
+                    // No thread prompt — load the default gallivanting template
+                    // from disk so the agent gets the full prompt with tool
+                    // guidance, record instructions, etc.
+                    if (!foundThreadPrompt) {
+                        // Try to load templates/gallivanting/en.md from cwd
+                        const auto cwd = std::filesystem::current_path();
+                        const std::vector<std::filesystem::path> roots = {
+                            cwd / "templates",
+                            cwd / ".." / "templates",
+                        };
+                        bool loaded = false;
+                        for (const auto& root : roots) {
+                            auto path = root / "gallivanting" / "en.md";
+                            if (std::filesystem::exists(path)) {
+                                std::ifstream in(path);
+                                if (in.is_open()) {
+                                    std::ostringstream ss;
+                                    ss << in.rdbuf();
+                                    effectiveMessage = ss.str();
+                                    loaded = true;
+                                    break;
+                                }
+                            }
+                        }
+                        // If template file not found, fall back to inline default
+                        if (!loaded) {
+                            effectiveMessage =
+                                "# Gallivanting Block\n\n"
+                                "This is unstructured time to pursue what interests you. "
+                                "Not routine tasks — exploration, creation, curiosity.\n\n"
+                                "## Gallivanting Tool\n"
+                                "Use the `gallivanting` tool to manage exploration threads.\n"
+                                "- Call `gallivanting` with action \"list\" to see active threads.\n"
+                                "- Pick a thread and call action \"read\" to see its state.\n"
+                                "- If no threads exist, call action \"create\" to start one.\n"
+                                "- **At the end of the session, call action \"record\"** with your "
+                                "thread_id, summary, and outcome. This is critical — without it, "
+                                "your work this session is lost to future sessions.\n";
+                        }
                     }
                 }
             }
