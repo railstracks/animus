@@ -2,6 +2,8 @@
 
 #include "animus_kernel/IDataStore.h"
 
+#include <json/json.h>
+
 #include <cstdint>
 #include <set>
 #include <sstream>
