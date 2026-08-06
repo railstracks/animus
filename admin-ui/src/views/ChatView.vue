@@ -1814,14 +1814,6 @@ watch(sessionSearch, () => {
                     {{ currentSessionId || t('common.newSession') }}
                   </p>
                   <p class="context-line">
-                    <strong>{{ t('chat.context.layers') }}:</strong>
-                    {{ activeContext.layers.join(', ') || t('common.none') }}
-                  </p>
-                  <p class="context-line">
-                    <strong>{{ t('chat.context.tools') }}:</strong>
-                    {{ activeContext.tools.join(', ') || t('common.none') }}
-                  </p>
-                  <p class="context-line">
                     <strong>{{ t('chat.context.budget') }}:</strong>
                     {{ activeContext.tokenBudgetConsumed }}/{{ activeContext.tokenBudgetConfigured }}
                   </p>
