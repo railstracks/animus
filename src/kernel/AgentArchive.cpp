@@ -1,6 +1,8 @@
 #include "animus_kernel/AgentArchive.h"
 #include "animus_kernel/IDataStore.h"
 
+#include <json/json.h>
+
 #include <algorithm>
 #include <cstring>
 #include <ctime>
