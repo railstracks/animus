@@ -591,8 +591,10 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                             if (l.name == layerName) { targetLayerId = l.id; break; }
                         }
                         if (targetLayerId < 0) {
-                            // Fallback: try all layers (for 'system' or 'default' schedule agentId)
-                            for (const auto& l : m_memoryStore->ListLayers()) {
+                            // Agent has no layer with this name. Seed defaults
+                            // in case the agent was created without them.
+                            m_memoryStore->CreateDefaultLayersForAgent(agentId);
+                            for (const auto& l : m_memoryStore->ListLayersForAgent(agentId)) {
                                 if (l.name == layerName) { targetLayerId = l.id; break; }
                             }
                         }
@@ -649,10 +651,16 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                         layerHint = " for layer \"" + layerName + "\"";
                         // Resolve layer name to ID for automated intake
                         if (m_memoryStore) {
-                            for (const auto& l : m_memoryStore->ListLayers()) {
+                            for (const auto& l : m_memoryStore->ListLayersForAgent(agentId)) {
                                 if (l.name == layerName) {
                                     targetLayerId = l.id;
                                     break;
+                                }
+                            }
+                            if (!targetLayerId.has_value()) {
+                                m_memoryStore->CreateDefaultLayersForAgent(agentId);
+                                for (const auto& l : m_memoryStore->ListLayersForAgent(agentId)) {
+                                    if (l.name == layerName) { targetLayerId = l.id; break; }
                                 }
                             }
                         }

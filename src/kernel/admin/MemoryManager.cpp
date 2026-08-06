@@ -1035,9 +1035,9 @@ MemoryManager::OperationResult MemoryManager::SqlUpdateLayer(
         return out;
     }
 
-    // Single-intake-layer invariant: clear intake on all other layers.
+    // Single-intake-layer invariant: clear intake on other layers for same agent.
     if (existing->intake_interval.has_value()) {
-        auto layers = store->ListLayers();
+        auto layers = store->ListLayersForAgent(existing->agent_id);
         for (auto& layer : layers) {
             if (layer.id == existing->id) continue;
             if (!layer.intake_interval.has_value()) continue;

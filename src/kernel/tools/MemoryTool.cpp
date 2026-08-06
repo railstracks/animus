@@ -564,7 +564,11 @@ ToolResult MemoryTool::HandleInspect(const std::string& agentId,
 
     std::string layerName = GetStringField(args, "layer", "");
 
-    auto layers = m_store->ListLayers();
+    // Use agent-scoped query to avoid showing other agents' layers.
+    // Fall back to unscoped only if agentId is empty (legacy/daemon-level calls).
+    auto layers = agentId.empty()
+        ? m_store->ListLayers()
+        : m_store->ListLayersForAgent(agentId);
     Json::Value items(Json::arrayValue);
 
     for (const auto& layer : layers) {

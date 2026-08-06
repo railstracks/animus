@@ -568,6 +568,33 @@ bool MemoryStore::DeleteLayer(int64_t id) {
     return DidWriteRows(stmt.get());
 }
 
+int MemoryStore::DeleteLayersForAgent(const std::string& agent_id) {
+    // Delete observations and perspectives for this agent's layers first
+    // (FK ON DELETE CASCADE should handle this, but explicit is safer for
+    // databases where FK enforcement may be off).
+    auto layers = ListLayersForAgent(agent_id);
+    int deleted = 0;
+    for (const auto& layer : layers) {
+        // Clean up observations
+        auto obs = m_store->Prepare(
+            "DELETE FROM observations WHERE layer_id=?");
+        if (obs) { obs->BindInt64(1, layer.id); obs->ExecDML(); }
+        // Clean up perspectives
+        auto persp = m_store->Prepare(
+            "DELETE FROM layer_perspectives WHERE layer_id=?");
+        if (persp) { persp->BindInt64(1, layer.id); persp->ExecDML(); }
+        // Delete the layer itself
+        auto stmt = m_store->Prepare(
+            "DELETE FROM memory_layers WHERE id=?");
+        if (stmt) {
+            stmt->BindInt64(1, layer.id);
+            stmt->ExecDML();
+            if (DidWriteRows(stmt.get())) deleted++;
+        }
+    }
+    return deleted;
+}
+
 int MemoryStore::CopyLayersForAgent(
         const std::string& source_agent_id,
         const std::string& dest_agent_id) {

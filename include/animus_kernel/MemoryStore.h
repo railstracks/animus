@@ -101,6 +101,9 @@ public:
     MemoryLayer CreateLayer(const MemoryLayer& layer);
     bool UpdateLayer(const MemoryLayer& layer);
     bool DeleteLayer(int64_t id);
+    // Delete all layers, observations, and perspectives for an agent.
+    // Returns the number of layers deleted.
+    int DeleteLayersForAgent(const std::string& agent_id);
 
     // Copy all layers from one agent to another (for agent creation).
     // Returns the number of layers copied.

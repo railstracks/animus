@@ -164,6 +164,16 @@ AgentManager::OperationResult AgentManager::DeleteAgent(const std::string& id) {
         return result;
     }
 
+    // Clean up memory layers, observations, and perspectives for the deleted agent.
+    // Without this, orphaned layers pollute ListLayers() output and waste space.
+    if (m_memoryStore) {
+        int layersDeleted = m_memoryStore->DeleteLayersForAgent(id);
+        if (layersDeleted > 0) {
+            std::cerr << "[agent-manager] deleted " << layersDeleted
+                      << " memory layers for deleted agent " << id << std::endl;
+        }
+    }
+
     result.deletedId = id;
     return result;
 }

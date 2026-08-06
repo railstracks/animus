@@ -229,7 +229,13 @@ void ActiveMemoryProvider::AppendEpisodic(std::string& out,
 
     auto* store = const_cast<memory::MemoryStore*>(m_memoryStore);
     auto layers = store->ListLayersForAgent(agent.id);
-    if (layers.empty()) layers = store->ListLayers();
+    if (layers.empty()) {
+        // Agent has no seeded layers. Rather than falling back to ALL layers
+        // (which would cross-contaminate with other agents' data), seed defaults
+        // now so subsequent calls find them.
+        store->CreateDefaultLayersForAgent(agent.id);
+        layers = store->ListLayersForAgent(agent.id);
+    }
     if (layers.empty()) return;
 
     // Collect all candidate observations across all enabled layers
@@ -326,7 +332,8 @@ void ActiveMemoryProvider::AppendPerspectives(std::string& out,
     auto* store = const_cast<memory::MemoryStore*>(m_memoryStore);
     auto layers = store->ListLayersForAgent(agent.id);
     if (layers.empty()) {
-        layers = store->ListLayers();
+        store->CreateDefaultLayersForAgent(agent.id);
+        layers = store->ListLayersForAgent(agent.id);
     }
 
     const uint32_t tokenBudget = agent.budget.perspectivesTokenBudget;
