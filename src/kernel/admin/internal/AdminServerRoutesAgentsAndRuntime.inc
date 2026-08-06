@@ -924,3 +924,96 @@
                 callback(resp);
             },
             {drogon::Get});
+
+// ============================================================================
+// Agent Export/Import (Ticket 139)
+// ============================================================================
+
+{
+    auto* server = g_activeAdminServer.load();
+    (void)server;  // referenced below
+
+    // POST /api/v1/agents/{agentId}/export — export agent as .agent tarball
+    drogon::app().registerHandler(
+        "/api/v1/agents/{}/export",
+        [](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+           const std::string& agentId) {
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            if (!srv->m_dataStore) {
+                SendJsonError(callback, "data store not available", drogon::k503ServiceUnavailable);
+                return;
+            }
+
+            // Parse component flags from query or body
+            AgentArchiveComponentFlags flags;
+
+            auto body = req->getJsonObject();
+            if (body && body->isMember("components")) {
+                const auto& comps = (*body)["components"];
+                if (comps.isArray()) {
+                    // Reset all to false, then enable listed
+                    flags.ontology = false;
+                    flags.schedules = false;
+                    flags.gallivanting = false;
+                    flags.diary = false;
+                    flags.luaScripts = false;
+                    flags.embeddings = true;  // default on
+
+                    for (const auto& c : comps) {
+                        std::string name = c.asString();
+                        if (name == "ontology") flags.ontology = true;
+                        else if (name == "schedules") flags.schedules = true;
+                        else if (name == "gallivanting") flags.gallivanting = true;
+                        else if (name == "gallivanting_history") flags.gallivantingHistory = true;
+                        else if (name == "diary") flags.diary = true;
+                        else if (name == "sessions") flags.sessions = true;
+                        else if (name == "reports") flags.reports = true;
+                        else if (name == "attachments") flags.attachments = true;
+                        else if (name == "lua_scripts") flags.luaScripts = true;
+                        else if (name == "prompt_logs") flags.promptLogs = true;
+                        else if (name == "embeddings") flags.embeddings = true;
+                        else if (name == "no_embeddings") flags.embeddings = false;
+                    }
+                }
+            }
+
+            // Also accept "all" shortcut
+            if (body && body->isMember("components") && (*body)["components"].asString() == "all") {
+                flags = {};
+                flags.agent = true;
+                flags.memory = true;
+                flags.memoryFiles = true;
+                flags.ontology = true;
+                flags.schedules = true;
+                flags.gallivanting = true;
+                flags.gallivantingHistory = true;
+                flags.diary = true;
+                flags.sessions = true;
+                flags.reports = true;
+                flags.luaScripts = true;
+                flags.embeddings = true;
+            }
+
+            // Write to temp file
+            std::string tmpPath = "/tmp/animus_export_" + agentId + "_" +
+                std::to_string(std::time(nullptr)) + ".agent";
+
+            AgentArchiveWriter writer(srv->m_dataStore);
+            std::string err = writer.Write(agentId, flags, tmpPath);
+            if (!err.empty()) {
+                SendJsonError(callback, "export failed: " + err, drogon::k500InternalServerError);
+                return;
+            }
+
+            // Stream file as download
+            auto resp = drogon::HttpResponse::newFileResponse(tmpPath, agentId + ".agent");
+            resp->setContentTypeCode(drogon::CT_APPLICATION_OCTET_STREAM);
+            resp->addHeader("Content-Disposition", "attachment; filename=\"" + agentId + ".agent\"");
+            callback(resp);
+
+            // Note: temp file cleanup is deferred — could use a cleanup timer
+        },
+        {drogon::Post});
+}

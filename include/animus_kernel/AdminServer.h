@@ -198,6 +198,7 @@ public:
     void SetLuaStates(std::unordered_map<std::string, std::unique_ptr<LuaState>>* states) { m_luaStates = states; }
     void SetConfigStore(AgentConfigStore* store) { m_configStore = store; }
     void SetDataDir(const std::filesystem::path& dir) { m_dataDir = dir; }
+    void SetDataStore(IDataStore* store) { m_dataStore = store; }
 
     // Web search config (ticket 069)
     void SetSearchConfig(KernelConfig::SearchConfig* cfg) { m_searchConfig = cfg; }
@@ -242,6 +243,7 @@ public:
     ChannelsTool* m_channelsTool{nullptr};
     AgentConfigStore* m_configStore{nullptr};
     std::filesystem::path m_dataDir{"state"};
+    IDataStore* m_dataStore{nullptr};
     std::unordered_map<std::string, std::unique_ptr<LuaState>>* m_luaStates{nullptr};
     ChatSessionService m_chatSessionService{};
     ObservationStreamHub m_observationStreamHub{};

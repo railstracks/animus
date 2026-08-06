@@ -5,11 +5,17 @@
 // Auth: Authorization: Bearer <token> header during upgrade
 //
 // Protocol:
-//   Node → Server: {"type": "register", "name": "...", "tools": [...], "hostname": "...", "os": "..."}
-//   Server → Node: {"type": "tool_call", "call_id": "...", "tool": "...", "arguments": {...}}
+//   Node → Server: {"type": "register", "name": "...", "tools": [...], "hostname": "...", "os": "...",
+//                    "capabilities": ["hmac-v1"]}
+//   Server → Node: {"type": "tool_call", "call_id": "...", "tool": "...", "arguments": {...},
+//                    "timestamp": N, "nonce": "...", "hmac": "sha256=<hex>"}
 //   Node → Server: {"type": "tool_result", "call_id": "...", "success": true, "output": "...", "error": "..."}
 //   Node → Server: {"type": "heartbeat"}
 // ============================================================================
+
+#include "animus_kernel/CryptoUtils.h"
+#include <chrono>
+#include <atomic>
 
 class NodeWebSocketController
     : public drogon::WebSocketController<NodeWebSocketController, false> {
@@ -21,6 +27,8 @@ public:
     struct NodeContext {
         std::string nodeName;
         std::string token;
+        std::string signingKey;     // plaintext signing key (for HMAC command signing)
+        bool hmacCapable{false};    // node advertised hmac-v1 capability
         bool authenticated{false};
         std::unordered_map<std::string, std::promise<ToolResult>> pendingCalls;
         std::mutex pendingMutex;

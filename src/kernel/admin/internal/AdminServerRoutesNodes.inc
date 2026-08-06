@@ -30,16 +30,17 @@
                 description = (*body)["description"].asString();
             }
 
-            std::string token = srv->m_nodeManager->GenerateToken(description);
-            if (token.empty()) {
+            auto creds = srv->m_nodeManager->GenerateCredentials(description);
+            if (creds.token.empty()) {
                 SendJsonError(callback, "failed to generate token", drogon::k500InternalServerError);
                 return;
             }
 
             Json::Value out(Json::objectValue);
-            out["token"] = token;
+            out["token"] = creds.token;
+            out["signing_key"] = creds.signingKey;
             out["description"] = description;
-            out["note"] = "Store this token securely. It will not be shown again.";
+            out["note"] = "Store the token and signing key securely. They will not be shown again.";
 
             callback(drogon::HttpResponse::newHttpJsonResponse(out));
         },

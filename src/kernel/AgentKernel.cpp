@@ -355,6 +355,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         m_nodeManager->SetAgentStore(m_agentStore);
         m_adminServer->SetToolRegistry(&m_tools);
         m_adminServer->SetDataDir(m_config.dataDir);
+        m_adminServer->SetDataStore(m_dataStore);
         m_adminServer->SetNodeManager(m_nodeManager);
         m_adminServer->SetSearchConfig(&m_config.search);
         m_adminServer->SetHttpClient(&m_httpClient);

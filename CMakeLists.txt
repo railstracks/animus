@@ -282,6 +282,7 @@ add_library(animus_kernel
   src/kernel/admin/AiDiaryFormat.cpp
   src/kernel/interfaces/IrcInterface.cpp
   src/kernel/AgentKernel.cpp
+  src/kernel/AgentArchive.cpp
   src/kernel/data/SqliteDataStore.cpp
   src/kernel/data/PgDataStore.cpp
   src/kernel/data/SchemaHelpers.cpp
