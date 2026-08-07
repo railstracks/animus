@@ -93,11 +93,12 @@ NodeManager::GeneratedCredentials NodeManager::GenerateCredentials(const std::st
 
     auto stmt = m_store->Prepare(
         "INSERT INTO node_tokens (token_hash, signing_key_hash, description, created_at_unix_ms, revoked) "
-        "VALUES (?,?,?,0)");
+        "VALUES (?,?,?,?,0)");
     if (!stmt) return result;
     stmt->BindText(1, hash);
     stmt->BindText(2, signingKeyHash);
     stmt->BindText(3, description);
+    stmt->BindInt64(4, NowMs());
     stmt->BindInt64(4, NowMs());
     stmt->ExecDML();
 
