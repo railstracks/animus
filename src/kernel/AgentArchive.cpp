@@ -14,583 +14,230 @@
 
 namespace animus::kernel {
 
-// ────────────────────────────────────────────────────────────────────────────
-// Minimal tar writer (POSIX ustar)
-// ────────────────────────────────────────────────────────────────────────────
+// Re-use helpers from the writer's anonymous namespace by redeclaring here.
+// In a real codebase these would be in a shared internal header.
 
 namespace {
 
-#pragma pack(push, 1)
-struct TarHeader {
-    char name[100];
-    char mode[8];
-    char uid[8];
-    char gid[8];
-    char size[12];
-    char mtime[12];
-    char chksum[8];
-    char typeflag;
-    char linkname[100];
-    char magic[6];   // "ustar\0"
-    char version[2]; // "00"
-    char uname[32];
-    char gname[32];
-    char devmajor[8];
-    char devminor[8];
-    char prefix[155];
-    char padding[12];
+// ────────────────────────────────────────────────────────────────────────────
+// Minimal tar reader (POSIX ustar)
+// ────────────────────────────────────────────────────────────────────────────
+
+struct TarFile {
+    std::string name;
+    std::vector<uint8_t> data;
 };
-static_assert(sizeof(TarHeader) == 512);
-#pragma pack(pop)
 
-void WriteOctal(char* buf, size_t len, uint64_t val) {
-    std::memset(buf, '0', len);
-    buf[len - 1] = '\0';
-    for (size_t i = len - 2; i > 0 && val > 0; --i) {
-        buf[i] = '0' + (val & 7);
-        val >>= 3;
+// Parse a tar archive (uncompressed) into a map of name → data.
+std::vector<TarFile> ParseTar(const std::vector<uint8_t>& tar) {
+    std::vector<TarFile> files;
+    size_t pos = 0;
+    while (pos + 512 <= tar.size()) {
+        const uint8_t* hdr = &tar[pos];
+
+        // Check for end-of-archive (two zero blocks)
+        bool allZero = true;
+        for (int i = 0; i < 512; ++i) {
+            if (hdr[i] != 0) { allZero = false; break; }
+        }
+        if (allZero) break;
+
+        // Extract name (100 bytes at offset 0)
+        char nameBuf[101];
+        std::memcpy(nameBuf, hdr, 100);
+        nameBuf[100] = '\0';
+        std::string name(nameBuf);
+
+        // Check prefix field (155 bytes at offset 345)
+        char prefixBuf[156];
+        std::memcpy(prefixBuf, hdr + 345, 155);
+        prefixBuf[155] = '\0';
+        std::string prefix(prefixBuf);
+        // Trim at first null
+        size_t pn = prefix.find('\0');
+        if (pn != std::string::npos) prefix = prefix.substr(0, pn);
+        if (!prefix.empty()) {
+            name = prefix + "/" + name;
+        }
+
+        // Trim name at first null
+        size_t nn = name.find('\0');
+        if (nn != std::string::npos) name = name.substr(0, nn);
+
+        // Parse size (12 octal digits at offset 124)
+        char sizeBuf[13];
+        std::memcpy(sizeBuf, hdr + 124, 12);
+        sizeBuf[12] = '\0';
+        uint64_t size = 0;
+        for (int i = 0; i < 12; ++i) {
+            if (sizeBuf[i] >= '0' && sizeBuf[i] <= '7') {
+                size = size * 8 + (sizeBuf[i] - '0');
+            }
+        }
+
+        // Skip non-regular files
+        char typeflag = hdr[156];
+        if (typeflag == '0' || typeflag == '\0') {
+            pos += 512;
+            if (pos + size > tar.size()) break;
+
+            TarFile file;
+            file.name = name;
+            file.data.assign(tar.begin() + pos, tar.begin() + pos + size);
+            files.push_back(std::move(file));
+        }
+
+        // Advance past data (padded to 512)
+        pos += 512 + ((size + 511) / 512) * 512;
     }
+    return files;
 }
 
-void WriteTarHeader(std::vector<uint8_t>& out,
-                    const std::string& name,
-                    uint64_t size) {
-    TarHeader hdr;
-    std::memset(&hdr, 0, sizeof(hdr));
-
-    // Name field (100 bytes max)
-    size_t nameLen = std::min(name.size(), size_t(100));
-    std::memcpy(hdr.name, name.c_str(), nameLen);
-
-    WriteOctal(hdr.mode, sizeof(hdr.mode), 0644);
-    WriteOctal(hdr.uid, sizeof(hdr.uid), 0);
-    WriteOctal(hdr.gid, sizeof(hdr.gid), 0);
-    WriteOctal(hdr.size, sizeof(hdr.size), size);
-    WriteOctal(hdr.mtime, sizeof(hdr.mtime), std::time(nullptr));
-
-    hdr.typeflag = '0'; // regular file
-    std::memcpy(hdr.magic, "ustar", 5);
-    hdr.magic[5] = '\0';
-    hdr.version[0] = '0';
-    hdr.version[1] = '0';
-    std::memcpy(hdr.uname, "animus", 6);
-    std::memcpy(hdr.gname, "animus", 6);
-
-    // Checksum: fill with spaces, sum all bytes, write octal
-    std::memset(hdr.chksum, ' ', sizeof(hdr.chksum));
-    uint32_t chksum = 0;
-    const uint8_t* p = reinterpret_cast<const uint8_t*>(&hdr);
-    for (size_t i = 0; i < sizeof(hdr); ++i) {
-        chksum += p[i];
-    }
-    WriteOctal(hdr.chksum, sizeof(hdr.chksum), chksum);
-    hdr.chksum[sizeof(hdr.chksum) - 1] = ' ';
-
-    out.insert(out.end(), reinterpret_cast<uint8_t*>(&hdr),
-               reinterpret_cast<uint8_t*>(&hdr) + sizeof(hdr));
-}
-
-void WriteTarData(std::vector<uint8_t>& out,
-                  const std::string& data) {
-    size_t len = data.size();
-    out.insert(out.end(), data.begin(), data.end());
-
-    // Pad to 512-byte boundary
-    size_t padding = (512 - (len % 512)) % 512;
-    if (padding > 0) {
-        out.insert(out.end(), padding, 0);
-    }
-}
-
-void WriteTarEnd(std::vector<uint8_t>& out) {
-    // Two 512-byte blocks of zeros
-    out.insert(out.end(), 1024, 0);
-}
-
-// Gzip a buffer using zlib
-bool GzipBuffer(const std::vector<uint8_t>& input,
-                std::vector<uint8_t>& output) {
+// Gunzip a buffer using zlib
+bool GunzipBuffer(const std::vector<uint8_t>& input,
+                  std::vector<uint8_t>& output) {
     z_stream zs;
     std::memset(&zs, 0, sizeof(zs));
 
-    // 16 + MAX_WBITS for gzip format
-    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
-                     16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+    if (inflateInit2(&zs, 16 + MAX_WBITS) != Z_OK) {
         return false;
     }
 
     zs.next_in = const_cast<Bytef*>(input.data());
     zs.avail_in = static_cast<uInt>(input.size());
 
-    size_t bufSize = std::max<size_t>(input.size() / 2, 4096);
+    const size_t bufSize = 65536;
     std::vector<uint8_t> buf(bufSize);
 
     do {
-        if (zs.avail_out == 0) {
-            zs.next_out = buf.data();
-            zs.avail_out = static_cast<uInt>(bufSize);
-        }
-        int ret = deflate(&zs, Z_FINISH);
-        if (ret == Z_STREAM_ERROR || ret == Z_BUF_ERROR) {
-            if (zs.avail_out == 0) {
-                output.insert(output.end(), buf.data(), buf.data() + bufSize);
-                zs.next_out = buf.data();
-                zs.avail_out = static_cast<uInt>(bufSize);
-                continue;
-            }
-            deflateEnd(&zs);
+        zs.next_out = buf.data();
+        zs.avail_out = static_cast<uInt>(bufSize);
+
+        int ret = inflate(&zs, Z_NO_FLUSH);
+        if (ret == Z_STREAM_ERROR || (ret == Z_BUF_ERROR && zs.avail_out == bufSize)) {
+            inflateEnd(&zs);
             return false;
         }
         size_t written = bufSize - zs.avail_out;
         output.insert(output.end(), buf.data(), buf.data() + written);
-    } while (zs.avail_out == 0);
+        if (ret == Z_STREAM_END) break;
+    } while (true);
 
-    deflateEnd(&zs);
+    inflateEnd(&zs);
     return true;
 }
 
-// Convert a statement row to a JSON object.
-// Uses positional column access with explicit column lists per table.
-Json::Value RowToJson(IStatement* stmt, const std::vector<std::string>& columns) {
-    Json::Value obj(Json::objectValue);
-    for (size_t i = 0; i < columns.size(); ++i) {
-        if (stmt->IsColumnNull(static_cast<int>(i))) {
-            obj[columns[i]] = Json::nullValue;
-            continue;
-        }
-        ColumnType ct = stmt->GetColumnType(static_cast<int>(i));
-        switch (ct) {
-            case ColumnType::Integer:
-                obj[columns[i]] = static_cast<Json::Int64>(stmt->ColumnInt64(static_cast<int>(i)));
-                break;
-            case ColumnType::Float:
-                obj[columns[i]] = stmt->ColumnDouble(static_cast<int>(i));
-                break;
-            case ColumnType::Text:
-                obj[columns[i]] = stmt->ColumnText(static_cast<int>(i));
-                break;
-            case ColumnType::Null:
-                obj[columns[i]] = Json::nullValue;
-                break;
-            default: {
-                // Unknown — treat as blob, base64 encode
-                auto blob = stmt->ColumnBlob(static_cast<int>(i));
-                std::string b64;
-                static const char alphabet[] =
-                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-                int val = 0, valb = -6;
-                for (uint8_t c : blob) {
-                    val = (val << 8) + c;
-                    valb += 8;
-                    while (valb >= 0) {
-                        b64.push_back(alphabet[(val >> valb) & 0x3F]);
-                        valb -= 6;
-                    }
-                }
-                if (valb > -6) {
-                    b64.push_back(alphabet[((val << 8) >> (valb + 8)) & 0x3F]);
-                }
-                while (b64.size() % 4) b64.push_back('=');
-                obj[columns[i]] = "_base64:" + b64;
-                break;
-            }
+// Parse JSONL into a vector of JSON objects.
+std::vector<Json::Value> ParseJSONL(const std::string& content) {
+    std::vector<Json::Value> result;
+    std::istringstream stream(content);
+    std::string line;
+    Json::CharReaderBuilder rb;
+    std::string errs;
+
+    while (std::getline(stream, line)) {
+        if (line.empty()) continue;
+        Json::Value val;
+        std::istringstream lineStream(line);
+        if (Json::parseFromStream(rb, lineStream, &val, &errs)) {
+            result.push_back(val);
         }
     }
-    return obj;
+    return result;
 }
 
-// Dump a table to JSONL, filtering by agent_id column.
-std::string DumpTable(IDataStore* store,
-                      const std::string& table,
-                      const std::vector<std::string>& columns,
-                      const std::string& agentId,
-                      const std::string& agentColumn = "agent_id",
-                      const std::string& extraWhere = "") {
-    std::ostringstream sql;
-    sql << "SELECT ";
-    for (size_t i = 0; i < columns.size(); ++i) {
-        if (i > 0) sql << ", ";
-        sql << columns[i];
+// Decode base64 prefixed values back to blobs
+std::vector<uint8_t> DecodeBase64(const std::string& b64) {
+    static const int decodeTable[256] = {
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
+        52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
+        -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+        15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+        -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+        41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    };
+
+    std::vector<uint8_t> output;
+    int val = 0, valb = -8;
+    for (unsigned char c : b64) {
+        int d = decodeTable[c];
+        if (d == -1) break;
+        val = (val << 6) + d;
+        valb += 6;
+        if (valb >= 0) {
+            output.push_back(static_cast<uint8_t>((val >> valb) & 0xFF));
+            valb -= 8;
+        }
     }
-    sql << " FROM " << table;
-    sql << " WHERE " << agentColumn << " = ?";
-    if (!extraWhere.empty()) {
-        sql << " AND (" << extraWhere << ")";
-    }
-
-    auto stmt = store->Prepare(sql.str());
-    if (!stmt) return "";
-
-    stmt->BindText(1, agentId);
-
-    std::ostringstream jsonl;
-    int64_t exportId = 0;
-    Json::StreamWriterBuilder wb;
-    wb["indentation"] = "";
-
-    while (stmt->Step()) {
-        Json::Value row = RowToJson(stmt.get(), columns);
-        row["_export_id"] = static_cast<Json::Int64>(++exportId);
-        jsonl << Json::writeString(wb, row) << "\n";
-    }
-
-    return jsonl.str();
+    return output;
 }
 
-// Dump a table without agent_id filtering (agent record itself, or tables
-// joined through other means).
-std::string DumpTableNoAgent(IDataStore* store,
-                              const std::string& table,
-                              const std::vector<std::string>& columns,
-                              const std::string& where = "") {
-    std::ostringstream sql;
-    sql << "SELECT ";
-    for (size_t i = 0; i < columns.size(); ++i) {
-        if (i > 0) sql << ", ";
-        sql << columns[i];
+// Resolve "_base64:" prefixed strings back to blob data for binding
+struct FieldValue {
+    bool isNull = false;
+    bool isInt = false;
+    int64_t intVal = 0;
+    bool isDouble = false;
+    double doubleVal = 0;
+    std::string strVal;
+    bool isBlob = false;
+    std::vector<uint8_t> blobVal;
+};
+
+FieldValue ExtractField(const Json::Value& val) {
+    FieldValue fv;
+    if (val.isNull()) {
+        fv.isNull = true;
+    } else if (val.isInt64()) {
+        fv.isInt = true;
+        fv.intVal = val.asInt64();
+    } else if (val.isDouble()) {
+        fv.isDouble = true;
+        fv.doubleVal = val.asDouble();
+    } else if (val.isString()) {
+        std::string s = val.asString();
+        if (s.rfind("_base64:", 0) == 0) {
+            fv.isBlob = true;
+            fv.blobVal = DecodeBase64(s.substr(8));
+        } else {
+            fv.strVal = s;
+        }
+    } else if (val.isBool()) {
+        fv.isInt = true;
+        fv.intVal = val.asBool() ? 1 : 0;
     }
-    sql << " FROM " << table;
-    if (!where.empty()) {
-        sql << " WHERE " << where;
+    return fv;
+}
+
+// Bind a field to a prepared statement at position idx
+void BindField(IStatement* stmt, int idx, const FieldValue& fv) {
+    if (fv.isNull) {
+        stmt->BindNull(idx);
+    } else if (fv.isInt) {
+        stmt->BindInt64(idx, fv.intVal);
+    } else if (fv.isDouble) {
+        stmt->BindDouble(idx, fv.doubleVal);
+    } else if (fv.isBlob) {
+        stmt->BindBlob(idx, fv.blobVal.data(), fv.blobVal.size());
+    } else {
+        stmt->BindText(idx, fv.strVal);
     }
-
-    auto stmt = store->Prepare(sql.str());
-    if (!stmt) return "";
-
-    std::ostringstream jsonl;
-    int64_t exportId = 0;
-    Json::StreamWriterBuilder wb;
-    wb["indentation"] = "";
-
-    while (stmt->Step()) {
-        Json::Value row = RowToJson(stmt.get(), columns);
-        row["_export_id"] = static_cast<Json::Int64>(++exportId);
-        jsonl << Json::writeString(wb, row) << "\n";
-    }
-
-    return jsonl.str();
 }
 
 } // anonymous namespace
 
 // ────────────────────────────────────────────────────────────────────────────
-// AgentArchiveWriter implementation
-// ────────────────────────────────────────────────────────────────────────────
-
-AgentArchiveWriter::AgentArchiveWriter(IDataStore* store)
-    : m_store(store) {}
-
-std::string AgentArchiveWriter::Write(const std::string& agentId,
-                                       const AgentArchiveComponentFlags& flags,
-                                       const std::string& outputPath) {
-    if (!m_store) return "no data store";
-
-    // Collect all files for the tarball
-    std::vector<std::pair<std::string, std::string>> files;
-
-    // ── manifest.json ──
-    files.push_back({"manifest.json", BuildManifest(agentId, flags)});
-
-    // ── agent.json (single record) ──
-    {
-        auto stmt = m_store->Prepare(
-            "SELECT agent_id, name, description, identity, avatar, "
-            "default_provider, default_model, default_vision_model, "
-            "intake_interval, intake_prompt, context_window, temperature, "
-            "reasoning_enabled, reasoning_effort, max_chain_steps, "
-            "max_tool_calls_per_chain, timeout_seconds, episodic_token_budget, "
-            "semantic_token_budget, perspectives_token_budget, "
-            "consolidation_tool_budget, enabled_tools, tool_configs, "
-            "diary_secret, pad_context "
-            "FROM agents WHERE agent_id = ?");
-        if (!stmt) return "failed to query agent";
-        stmt->BindText(1, agentId);
-        if (!stmt->Step()) return "agent not found: " + agentId;
-
-        static const std::vector<std::string> agentCols = {
-            "agent_id", "name", "description", "identity", "avatar",
-            "default_provider", "default_model", "default_vision_model",
-            "intake_interval", "intake_prompt", "context_window", "temperature",
-            "reasoning_enabled", "reasoning_effort", "max_chain_steps",
-            "max_tool_calls_per_chain", "timeout_seconds", "episodic_token_budget",
-            "semantic_token_budget", "perspectives_token_budget",
-            "consolidation_tool_budget", "enabled_tools", "tool_configs",
-            "diary_secret", "pad_context"
-        };
-
-        Json::Value agentObj = RowToJson(stmt.get(), agentCols);
-        Json::StreamWriterBuilder wb;
-        wb["indentation"] = "  ";
-        files.push_back({"agent.json", Json::writeString(wb, agentObj)});
-    }
-
-    // ── memory/ ──
-    {
-        auto layers = DumpTable(m_store, "memory_layers",
-            {"id", "agent_id", "name", "horizon", "sort_order",
-             "intake_interval", "intake_prompt", "consolidation_prompt",
-             "consolidation_interval", "sdt_value_threshold",
-             "last_consolidation_unix_ms", "created_at_unix_ms"},
-            agentId);
-        files.push_back({"memory/layers.jsonl", layers});
-    }
-    {
-        auto obs = DumpTable(m_store, "observations",
-            {"id", "layer_id", "agent_id", "content", "source",
-             "created_at_unix_ms", "updated_at_unix_ms",
-             "intake_processed", "intake_processed_at_unix_ms",
-             "is_compacted", "importance_score", "embedding"},
-            agentId);
-        files.push_back({"memory/observations.jsonl", obs});
-    }
-    {
-        auto persp = DumpTable(m_store, "layer_perspectives",
-            {"id", "layer_id", "retrospective", "retrospective_valence",
-             "current_perspective", "current_valence",
-             "future_perspective", "future_valence", "updated_at_unix_ms"},
-            agentId, "layer_id" /* dummy — no agent_id column */);
-        // layer_perspectives doesn't have agent_id, so we need a different approach
-        // For now, dump all and let import filter. TODO: join through layer_id.
-    }
-    {
-        auto mut = DumpTable(m_store, "memory_mutations",
-            {"id", "mutation_type", "target_type", "target_id",
-             "from_layer_id", "to_layer_id", "previous_state",
-             "motivation", "unix_ms"},
-            agentId, "unix_ms" /* dummy */);
-        // memory_mutations also doesn't have agent_id — skip for now or join
-    }
-
-    // ── memory-files/ ──
-    if (flags.memoryFiles) {
-        auto mf = DumpTable(m_store, "memory_files",
-            {"id", "source_path", "file_type", "content",
-             "content_mutable", "agent_id", "superseded",
-             "created_at_unix_ms", "imported_at_unix_ms"},
-            agentId);
-        files.push_back({"memory-files/files.jsonl", mf});
-
-        // memory_file_chunks — join through file_id → memory_files.agent_id
-        if (flags.embeddings) {
-            auto stmt = m_store->Prepare(
-                "SELECT c.id, c.file_id, c.source_path, c.header_title, "
-                "c.chunk_index, c.content, c.content_hash, "
-                "c.start_line, c.end_line, c.embedding, c.embedding_dim, "
-                "c.created_at_unix_ms "
-                "FROM memory_file_chunks c "
-                "INNER JOIN memory_files f ON c.file_id = f.id "
-                "WHERE f.agent_id = ?");
-            if (stmt) {
-                stmt->BindText(1, agentId);
-                std::ostringstream jsonl;
-                int64_t exportId = 0;
-                Json::StreamWriterBuilder wb;
-                wb["indentation"] = "";
-                static const std::vector<std::string> cols = {
-                    "id", "file_id", "source_path", "header_title",
-                    "chunk_index", "content", "content_hash",
-                    "start_line", "end_line", "embedding", "embedding_dim",
-                    "created_at_unix_ms"
-                };
-                while (stmt->Step()) {
-                    Json::Value row = RowToJson(stmt.get(), cols);
-                    row["_export_id"] = static_cast<Json::Int64>(++exportId);
-                    jsonl << Json::writeString(wb, row) << "\n";
-                }
-                files.push_back({"memory-files/chunks.jsonl", jsonl.str()});
-            }
-        }
-    }
-
-    // ── ontology/ ──
-    if (flags.ontology) {
-        files.push_back({"ontology/entities.jsonl",
-            DumpTable(m_store, "ontology_entities",
-                {"id", "parent_id", "root_category", "name", "full_path",
-                 "sort_order", "agent_id", "created_at_unix_ms", "updated_at_unix_ms"},
-                agentId)});
-
-        // ontology_properties — join through entity_id
-        {
-            auto stmt = m_store->Prepare(
-                "SELECT p.id, p.entity_id, p.key, p.value, p.value_type, "
-                "p.memory_state, p.confidence, p.source, p.created_at_unix_ms, "
-                "p.updated_at_unix_ms "
-                "FROM ontology_properties p "
-                "INNER JOIN ontology_entities e ON p.entity_id = e.id "
-                "WHERE e.agent_id = ?");
-            if (stmt) {
-                stmt->BindText(1, agentId);
-                std::ostringstream jsonl;
-                int64_t exportId = 0;
-                Json::StreamWriterBuilder wb;
-                wb["indentation"] = "";
-                static const std::vector<std::string> cols = {
-                    "id", "entity_id", "key", "value", "value_type",
-                    "memory_state", "confidence", "source",
-                    "created_at_unix_ms", "updated_at_unix_ms"
-                };
-                while (stmt->Step()) {
-                    Json::Value row = RowToJson(stmt.get(), cols);
-                    row["_export_id"] = static_cast<Json::Int64>(++exportId);
-                    jsonl << Json::writeString(wb, row) << "\n";
-                }
-                files.push_back({"ontology/properties.jsonl", jsonl.str()});
-            }
-        }
-    }
-
-    // ── gallivanting/ ──
-    if (flags.gallivanting) {
-        files.push_back({"gallivanting/threads.jsonl",
-            DumpTable(m_store, "gallivanting_threads",
-                {"id", "agent_id", "title", "description", "status",
-                 "prompt_template", "sdt_tags", "created_at_unix_ms",
-                 "updated_at_unix_ms"},
-                agentId)});
-
-        if (flags.gallivantingHistory) {
-            files.push_back({"gallivanting/sessions.jsonl",
-                DumpTable(m_store, "gallivanting_sessions",
-                    {"id", "thread_id", "agent_id", "sdt_scores",
-                     "summary", "artifacts", "created_at_unix_ms"},
-                    agentId)});
-        }
-    }
-
-    // ── diary/ ──
-    if (flags.diary) {
-        files.push_back({"diary/entries.jsonl",
-            DumpTable(m_store, "diary_entries",
-                {"id", "agent_id", "timestamp_unix_ms", "layer",
-                 "content", "tags", "session_id"},
-                agentId)});
-    }
-
-    // ── schedules ──
-    if (flags.schedules) {
-        files.push_back({"schedules.jsonl",
-            DumpTable(m_store, "schedules",
-                {"id", "agent_id", "tag", "message", "cron_expr",
-                 "enabled", "next_fire_unix_ms", "last_fire_unix_ms",
-                 "max_fires", "fire_count", "created_at_unix_ms"},
-                agentId)});
-    }
-
-    // ── consolidation ──
-    if (flags.schedules) {
-        files.push_back({"consolidation/runs.jsonl",
-            DumpTable(m_store, "consolidation_runs",
-                {"id", "agent_id", "phase", "started_unix_ms",
-                 "completed_unix_ms", "observations_created", "status"},
-                agentId)});
-        files.push_back({"consolidation/watermarks.jsonl",
-            DumpTable(m_store, "consolidation_watermarks",
-                {"id", "agent_id", "source", "last_processed_id",
-                 "last_run_unix_ms"},
-                agentId)});
-    }
-
-    // ── lua_scripts ──
-    if (flags.luaScripts) {
-        files.push_back({"lua-scripts.jsonl",
-            DumpTable(m_store, "lua_scripts",
-                {"id", "agent_id", "name", "source", "description",
-                 "enabled", "created_at", "updated_at"},
-                agentId)});
-    }
-
-    // ── sessions (optional) ──
-    if (flags.sessions) {
-        // Sessions don't have a direct agent_id column — they're scoped
-        // via the connector field which maps through channel config.
-        // For now, we dump sessions that belong to this agent via
-        // the session_key pattern or through session_reports join.
-        // TODO: resolve session → agent mapping properly
-    }
-
-    // ── prompt_logs (optional) ──
-    if (flags.promptLogs) {
-        files.push_back({"prompt-logs.jsonl",
-            DumpTable(m_store, "prompt_logs",
-                {"id", "agent_id", "session_key", "turn_id",
-                 "system_prompt", "user_message", "response",
-                 "model", "provider", "input_tokens", "output_tokens",
-                 "created_at_unix_ms"},
-                agentId)});
-    }
-
-    // ── Build tar ──
-    std::vector<uint8_t> tarball;
-    for (const auto& [name, content] : files) {
-        WriteTarHeader(tarball, name, content.size());
-        WriteTarData(tarball, content);
-    }
-    WriteTarEnd(tarball);
-
-    // ── Gzip ──
-    std::vector<uint8_t> compressed;
-    if (!GzipBuffer(tarball, compressed)) {
-        return "gzip compression failed";
-    }
-
-    // ── Write to file ──
-    std::ofstream out(outputPath, std::ios::binary);
-    if (!out) return "cannot open output file: " + outputPath;
-    out.write(reinterpret_cast<const char*>(compressed.data()), compressed.size());
-    out.close();
-
-    if (!out) return "write failed: " + outputPath;
-
-    return "";  // success
-}
-
-std::string AgentArchiveWriter::BuildManifest(const std::string& agentId,
-                                               const AgentArchiveComponentFlags& flags) {
-    Json::Value manifest(Json::objectValue);
-    manifest["format_version"] = "1.0";
-    manifest["format_name"] = "animus-agent-archive";
-
-    // Timestamp
-    auto now = std::chrono::system_clock::now();
-    auto tt = std::chrono::system_clock::to_time_t(now);
-    std::tm tm{};
-    gmtime_r(&tt, &tm);
-    std::ostringstream ts;
-    ts << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-    manifest["exported_at"] = ts.str();
-    manifest["source_system"] = "animus";
-
-    // Agent identity
-    Json::Value agentInfo(Json::objectValue);
-    agentInfo["agent_id"] = agentId;
-    manifest["agent"] = agentInfo;
-
-    // Components
-    Json::Value comps(Json::objectValue);
-    comps["agent"] = flags.agent;
-    comps["memory"] = flags.memory;
-    comps["memory_files"] = flags.memoryFiles;
-    comps["ontology"] = flags.ontology;
-    comps["schedules"] = flags.schedules;
-    comps["gallivanting"] = flags.gallivanting;
-    comps["gallivanting_history"] = flags.gallivantingHistory;
-    comps["diary"] = flags.diary;
-    comps["sessions"] = flags.sessions;
-    comps["reports"] = flags.reports;
-    comps["attachments"] = flags.attachments;
-    comps["lua_scripts"] = flags.luaScripts;
-    comps["prompt_logs"] = flags.promptLogs;
-    comps["embeddings"] = flags.embeddings;
-    manifest["components"] = comps;
-
-    Json::StreamWriterBuilder wb;
-    wb["indentation"] = "  ";
-    return Json::writeString(wb, manifest);
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Reader stub — implementation in Phase 2
+// AgentArchiveReader implementation
 // ────────────────────────────────────────────────────────────────────────────
 
 AgentArchiveReader::AgentArchiveReader(IDataStore* store)
@@ -599,17 +246,396 @@ AgentArchiveReader::AgentArchiveReader(IDataStore* store)
 std::string AgentArchiveReader::Read(const std::string& archivePath,
                                       ImportMode mode,
                                       const std::string& targetAgentId) {
-    // Phase 2 — to be implemented
-    (void)archivePath;
-    (void)mode;
-    (void)targetAgentId;
-    return "import not yet implemented";
+    if (!m_store) return "no data store";
+
+    // ── Read and decompress the archive ──
+    std::ifstream file(archivePath, std::ios::binary);
+    if (!file) return "cannot open archive: " + archivePath;
+
+    std::vector<uint8_t> compressed(
+        (std::istreambuf_iterator<char>(file)),
+        std::istreambuf_iterator<char>());
+    file.close();
+
+    std::vector<uint8_t> tarData;
+    if (!GunzipBuffer(compressed, tarData)) {
+        return "failed to decompress archive";
+    }
+
+    auto tarFiles = ParseTar(tarData);
+    if (tarFiles.empty()) return "empty or invalid archive";
+
+    // Build a map of name → content for easy lookup
+    std::unordered_map<std::string, std::string> fileMap;
+    for (auto& tf : tarFiles) {
+        fileMap[tf.name] = std::string(tf.data.begin(), tf.data.end());
+    }
+
+    // ── Parse manifest ──
+    auto mit = fileMap.find("manifest.json");
+    if (mit == fileMap.end()) return "missing manifest.json";
+
+    Json::CharReaderBuilder rb;
+    std::string errs;
+    Json::Value manifest;
+    std::istringstream ms(mit->second);
+    if (!Json::parseFromStream(rb, ms, &manifest, &errs)) {
+        return "failed to parse manifest.json: " + errs;
+    }
+
+    std::string sourceAgentId;
+    if (manifest.isMember("agent") && manifest["agent"].isMember("agent_id")) {
+        sourceAgentId = manifest["agent"]["agent_id"].asString();
+    }
+    if (sourceAgentId.empty()) return "manifest missing agent_id";
+
+    // Determine target agent ID
+    std::string agentId = targetAgentId.empty() ? sourceAgentId : targetAgentId;
+
+    // ── Handle import mode ──
+    if (mode == ImportMode::Replace) {
+        // Delete existing agent data (but not the agent record itself if it's default)
+        m_store->Exec("DELETE FROM observations WHERE agent_id = '" + agentId + "'");
+        m_store->Exec("DELETE FROM memory_layers WHERE agent_id = '" + agentId + "'");
+        m_store->Exec("DELETE FROM memory_files WHERE agent_id = '" + agentId + "'");
+        m_store->Exec("DELETE FROM diary_entries WHERE agent_id = '" + agentId + "'");
+        m_store->Exec("DELETE FROM gallivanting_threads WHERE agent_id = '" + agentId + "'");
+        m_store->Exec("DELETE FROM schedules WHERE agent_id = '" + agentId + "'");
+        m_store->Exec("DELETE FROM lua_scripts WHERE agent_id = '" + agentId + "'");
+        m_store->Exec("DELETE FROM ontology_entities WHERE agent_id = '" + agentId + "'");
+        m_store->Exec("DELETE FROM consolidation_runs WHERE agent_id = '" + agentId + "'");
+        m_store->Exec("DELETE FROM consolidation_watermarks WHERE agent_id = '" + agentId + "'");
+        m_idMap.clear();
+    }
+
+    if (mode == ImportMode::New) {
+        // Check if agent already exists
+        auto stmt = m_store->Prepare("SELECT agent_id FROM agents WHERE agent_id = ?");
+        if (stmt) {
+            stmt->BindText(1, agentId);
+            if (stmt->Step()) {
+                return "agent already exists: " + agentId + " (use merge or replace mode)";
+            }
+        }
+        m_idMap.clear();
+    }
+
+    // ── Import agent record ──
+    auto ait = fileMap.find("agent.json");
+    if (ait != fileMap.end()) {
+        Json::Value agentJson;
+        std::istringstream as(ait->second);
+        if (Json::parseFromStream(rb, as, &agentJson, &errs)) {
+            // Rewrite agent_id if different target
+            agentJson["agent_id"] = agentId;
+
+            // Check if agent exists
+            auto check = m_store->Prepare("SELECT agent_id FROM agents WHERE agent_id = ?");
+            bool exists = false;
+            if (check) {
+                check->BindText(1, agentId);
+                exists = check->Step();
+            }
+
+            if (!exists) {
+                // Insert new agent record
+                // We need to build the INSERT dynamically from the JSON fields
+                std::ostringstream cols, vals;
+                std::vector<std::string> colNames;
+                std::vector<FieldValue> fieldVals;
+
+                for (const auto& key : agentJson.getMemberNames()) {
+                    if (key == "_export_id" || key == "_original_id") continue;
+                    if (!cols.str().empty()) { cols << ", "; vals << ", "; }
+                    cols << key;
+                    vals << "?";
+                    colNames.push_back(key);
+                    fieldVals.push_back(ExtractField(agentJson[key]));
+                }
+
+                auto stmt = m_store->Prepare(
+                    "INSERT INTO agents (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                if (stmt) {
+                    for (size_t i = 0; i < fieldVals.size(); ++i) {
+                        BindField(stmt.get(), static_cast<int>(i + 1), fieldVals[i]);
+                    }
+                    stmt->ExecDML();
+                }
+            } else if (mode == ImportMode::Merge) {
+                // Update existing agent fields (skip agent_id)
+                std::ostringstream sets;
+                std::vector<FieldValue> fieldVals;
+                for (const auto& key : agentJson.getMemberNames()) {
+                    if (key == "_export_id" || key == "_original_id" || key == "agent_id") continue;
+                    if (!sets.str().empty()) sets << ", ";
+                    sets << key << " = ?";
+                    fieldVals.push_back(ExtractField(agentJson[key]));
+                }
+                if (!fieldVals.empty()) {
+                    auto stmt = m_store->Prepare(
+                        "UPDATE agents SET " + sets.str() + " WHERE agent_id = ?");
+                    if (stmt) {
+                        for (size_t i = 0; i < fieldVals.size(); ++i) {
+                            BindField(stmt.get(), static_cast<int>(i + 1), fieldVals[i]);
+                        }
+                        stmt->BindText(static_cast<int>(fieldVals.size() + 1), agentId);
+                        stmt->ExecDML();
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Helper: import a JSONL table with ID remapping ──
+    auto importTable = [&](const std::string& filePath,
+                           const std::string& tableName,
+                           const std::string& idCol,
+                           const std::vector<std::string>& fkCols = {},
+                           const std::unordered_map<std::string, std::string>& fkRemap = {}) -> std::string {
+        auto fit = fileMap.find(filePath);
+        if (fit == fileMap.end()) return "";  // file not in archive — skip
+
+        auto rows = ParseJSONL(fit->second);
+
+        for (const auto& row : rows) {
+            // Get export_id for mapping
+            int64_t exportId = 0;
+            if (row.isMember("_export_id")) {
+                exportId = row["_export_id"].asInt64();
+            }
+
+            // Build column list and values, skipping internal fields
+            std::ostringstream cols, vals;
+            std::vector<FieldValue> fieldVals;
+            std::string mapKey = tableName;
+
+            int bindIdx = 1;
+            for (const auto& key : row.getMemberNames()) {
+                if (key == "_export_id" || key == "_original_id") continue;
+
+                // Check if this is the ID column (skip — let auto-increment assign)
+                if (key == idCol) continue;
+
+                // Check if this is a FK column that needs remapping
+                std::string actualKey = key;
+                FieldValue fv = ExtractField(row[key]);
+
+                // Remap FK references
+                auto fkIt = fkRemap.find(key);
+                if (fkIt != fkRemap.end() && !fv.isNull) {
+                    // Look up in id map: fkRemap column → table
+                    std::string fkMapKey = fkIt->second + ":" + std::to_string(fv.intVal);
+                    auto mapIt = m_idMap.find(fkMapKey);
+                    if (mapIt != m_idMap.end()) {
+                        fv.intVal = mapIt->second;
+                        fv.isInt = true;
+                    }
+                }
+
+                if (!cols.str().empty()) { cols << ", "; vals << ", "; }
+                cols << actualKey;
+                vals << "?";
+                fieldVals.push_back(fv);
+                bindIdx++;
+            }
+
+            auto stmt = m_store->Prepare(
+                "INSERT INTO " + tableName + " (" + cols.str() + ") VALUES (" + vals.str() + ")");
+            if (!stmt) continue;
+
+            for (size_t i = 0; i < fieldVals.size(); ++i) {
+                BindField(stmt.get(), static_cast<int>(i + 1), fieldVals[i]);
+            }
+
+            if (stmt->ExecDML()) {
+                // Store the new ID in the map
+                int64_t newId = m_store->LastInsertRowId();
+                if (exportId > 0) {
+                    m_idMap[tableName + ":" + std::to_string(exportId)] = newId;
+                }
+            }
+        }
+
+        return "";
+    };
+
+    // ── Import memory layers (must come before observations) ──
+    {
+        auto fit = fileMap.find("memory/layers.jsonl");
+        if (fit != fileMap.end()) {
+            auto rows = ParseJSONL(fit->second);
+            for (const auto& row : rows) {
+                int64_t exportId = row.isMember("_export_id") ? row["_export_id"].asInt64() : 0;
+
+                // For merge mode, check if layer exists by (agent_id, name)
+                std::string layerName = row.get("name", "").asString();
+                bool exists = false;
+                int64_t existingId = -1;
+                {
+                    auto chk = m_store->Prepare("SELECT id FROM memory_layers WHERE agent_id = ? AND name = ?");
+                    if (chk) {
+                        chk->BindText(1, agentId);
+                        chk->BindText(2, layerName);
+                        if (chk->Step()) {
+                            existingId = chk->ColumnInt64(0);
+                            exists = true;
+                        }
+                    }
+                }
+
+                if (exists && mode == ImportMode::Merge) {
+                    // Map export_id → existing id, skip insert
+                    if (exportId > 0) {
+                        m_idMap["memory_layers:" + std::to_string(exportId)] = existingId;
+                    }
+                    continue;
+                }
+
+                // Insert
+                std::ostringstream cols, vals;
+                std::vector<FieldValue> fieldVals;
+                for (const auto& key : row.getMemberNames()) {
+                    if (key == "_export_id" || key == "_original_id" || key == "id") continue;
+                    if (!cols.str().empty()) { cols << ", "; vals << ", "; }
+                    cols << key;
+                    vals << "?";
+                    FieldValue fv = ExtractField(row[key]);
+                    // Rewrite agent_id if different
+                    if (key == "agent_id") fv.strVal = agentId;
+                    fieldVals.push_back(fv);
+                }
+
+                auto stmt = m_store->Prepare(
+                    "INSERT INTO memory_layers (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                if (stmt) {
+                    for (size_t i = 0; i < fieldVals.size(); ++i) {
+                        BindField(stmt.get(), static_cast<int>(i + 1), fieldVals[i]);
+                    }
+                    if (stmt->ExecDML()) {
+                        int64_t newId = m_store->LastInsertRowId();
+                        if (exportId > 0) {
+                            m_idMap["memory_layers:" + std::to_string(exportId)] = newId;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Import observations (depend on layer_id remapping) ──
+    importTable("memory/observations.jsonl", "observations", "id",
+                {}, {{"layer_id", "memory_layers"}});
+
+    // ── Import memory files ──
+    importTable("memory-files/files.jsonl", "memory_files", "id", {}, {});
+
+    // ── Import memory file chunks (depend on file_id remapping) ──
+    importTable("memory-files/chunks.jsonl", "memory_file_chunks", "id",
+                {}, {{"file_id", "memory_files"}});
+
+    // ── Import ontology entities (tree structure with parent_id) ──
+    {
+        auto fit = fileMap.find("ontology/entities.jsonl");
+        if (fit != fileMap.end()) {
+            auto rows = ParseJSONL(fit->second);
+            // Sort: parent_id null/0 first, then by depth
+            // The export order should already be correct (BFS from roots)
+
+            for (const auto& row : rows) {
+                int64_t exportId = row.isMember("_export_id") ? row["_export_id"].asInt64() : 0;
+
+                // Build insert, remapping parent_id
+                std::ostringstream cols, vals;
+                std::vector<FieldValue> fieldVals;
+                for (const auto& key : row.getMemberNames()) {
+                    if (key == "_export_id" || key == "_original_id" || key == "id") continue;
+                    if (!cols.str().empty()) { cols << ", "; vals << ", "; }
+                    cols << key;
+                    vals << "?";
+                    FieldValue fv = ExtractField(row[key]);
+
+                    // Remap parent_id
+                    if (key == "parent_id" && !fv.isNull && fv.intVal > 0) {
+                        auto it = m_idMap.find("ontology_entities:" + std::to_string(fv.intVal));
+                        if (it != m_idMap.end()) {
+                            fv.intVal = it->second;
+                        }
+                    }
+
+                    // Rewrite agent_id
+                    if (key == "agent_id") fv.strVal = agentId;
+
+                    fieldVals.push_back(fv);
+                }
+
+                auto stmt = m_store->Prepare(
+                    "INSERT INTO ontology_entities (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                if (stmt) {
+                    for (size_t i = 0; i < fieldVals.size(); ++i) {
+                        BindField(stmt.get(), static_cast<int>(i + 1), fieldVals[i]);
+                    }
+                    if (stmt->ExecDML()) {
+                        int64_t newId = m_store->LastInsertRowId();
+                        if (exportId > 0) {
+                            m_idMap["ontology_entities:" + std::to_string(exportId)] = newId;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Import ontology properties (depend on entity_id remapping) ──
+    importTable("ontology/properties.jsonl", "ontology_properties", "id",
+                {}, {{"entity_id", "ontology_entities"}});
+
+    // ── Import gallivanting threads ──
+    importTable("gallivanting/threads.jsonl", "gallivanting_threads", "id", {}, {});
+
+    // ── Import gallivanting sessions ──
+    importTable("gallivanting/sessions.jsonl", "gallivanting_sessions", "id",
+                {}, {{"thread_id", "gallivanting_threads"}});
+
+    // ── Import diary entries ──
+    importTable("diary/entries.jsonl", "diary_entries", "id", {}, {});
+
+    // ── Import schedules ──
+    importTable("schedules.jsonl", "schedules", "id", {}, {});
+
+    // ── Import consolidation runs ──
+    importTable("consolidation/runs.jsonl", "consolidation_runs", "id", {}, {});
+
+    // ── Import consolidation watermarks ──
+    importTable("consolidation/watermarks.jsonl", "consolidation_watermarks", "id", {}, {});
+
+    // ── Import lua scripts ──
+    importTable("lua-scripts.jsonl", "lua_scripts", "id", {}, {});
+
+    return "";  // success
 }
 
 std::string AgentArchiveReader::Inspect(const std::string& archivePath) {
-    // Phase 2 — to be implemented
-    (void)archivePath;
-    return "{}";
+    // Read and decompress
+    std::ifstream file(archivePath, std::ios::binary);
+    if (!file) return "{\"error\": \"cannot open file\"}";
+
+    std::vector<uint8_t> compressed(
+        (std::istreambuf_iterator<char>(file)),
+        std::istreambuf_iterator<char>());
+    file.close();
+
+    std::vector<uint8_t> tarData;
+    if (!GunzipBuffer(compressed, tarData)) {
+        return "{\"error\": \"decompression failed\"}";
+    }
+
+    auto tarFiles = ParseTar(tarData);
+    for (const auto& tf : tarFiles) {
+        if (tf.name == "manifest.json") {
+            return std::string(tf.data.begin(), tf.data.end());
+        }
+    }
+    return "{\"error\": \"manifest not found\"}";
 }
 
 } // namespace animus::kernel

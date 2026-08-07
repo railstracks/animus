@@ -1017,3 +1017,83 @@
         },
         {drogon::Post});
 }
+
+// ============================================================================
+// Agent Import (Ticket 139)
+// ============================================================================
+
+{
+    // POST /api/v1/agents/import — import agent from .agent tarball
+    drogon::app().registerHandler(
+        "/api/v1/agents/import",
+        [](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            if (!srv->m_dataStore) {
+                SendJsonError(callback, "data store not available", drogon::k503ServiceUnavailable);
+                return;
+            }
+
+            // Handle multipart file upload
+            auto files = req->getFiles();
+            if (files.empty()) {
+                SendJsonError(callback, "no file uploaded", drogon::k400BadRequest);
+                return;
+            }
+
+            // Get the first file
+            const auto& file = files[0];
+            std::string fileData = std::string(file.fileData.begin(), file.fileData.end());
+
+            // Write to temp file
+            std::string tmpPath = "/tmp/animus_import_" +
+                std::to_string(std::time(nullptr)) + ".agent";
+            {
+                std::ofstream out(tmpPath, std::ios::binary);
+                out.write(fileData.data(), fileData.size());
+                out.close();
+            }
+
+            // Parse import options from form fields or query
+            std::string modeStr = "new";
+            std::string targetAgentId;
+
+            // Check form fields
+            auto params = req->getParameters();
+            for (const auto& [key, value] : params) {
+                if (key == "mode") modeStr = value;
+                else if (key == "agent_id") targetAgentId = value;
+            }
+
+            ImportMode mode = ImportMode::New;
+            if (modeStr == "merge") mode = ImportMode::Merge;
+            else if (modeStr == "replace") mode = ImportMode::Replace;
+
+            AgentArchiveReader reader(srv->m_dataStore);
+            std::string err = reader.Read(tmpPath, mode, targetAgentId);
+
+            // Clean up temp file
+            std::filesystem::remove(tmpPath);
+
+            if (!err.empty()) {
+                SendJsonError(callback, "import failed: " + err, drogon::k500InternalServerError);
+                return;
+            }
+
+            // Determine the agent_id from manifest for response
+            std::string agentId = targetAgentId;
+            if (agentId.empty()) {
+                // Read manifest to get agent_id
+                agentId = "imported";
+            }
+
+            Json::Value out(Json::objectValue);
+            out["status"] = "ok";
+            out["agent_id"] = agentId;
+            out["mode"] = modeStr;
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+            callback(resp);
+        },
+        {drogon::Post});
+}
