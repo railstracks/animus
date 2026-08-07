@@ -505,12 +505,10 @@ async function handleImport(event: Event) {
 
   importLoading.value = true;
   try {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const resp = await fetch('/api/v1/agents/import', {
+    const resp = await fetch('/api/v1/agents/import?mode=new', {
       method: 'POST',
-      body: formData,
+      headers: { 'Content-Type': 'application/gzip' },
+      body: file,
     });
 
     if (!resp.ok) {

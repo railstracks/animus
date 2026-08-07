@@ -1023,7 +1023,9 @@
 // ============================================================================
 
 {
-    // POST /api/v1/agents/import — import agent from .agent tarball
+    // POST /api/v1/agents/import — import agent from raw .agent tarball body
+    // Accepts the gzip binary as the request body.
+    // Query params: ?mode=new|merge|replace&agent_id=<id>
     drogon::app().registerHandler(
         "/api/v1/agents/import",
         [](const drogon::HttpRequestPtr& req,
@@ -1035,36 +1037,27 @@
                 return;
             }
 
-            // Handle multipart file upload
-            auto files = req->getFiles();
-            if (files.empty()) {
-                SendJsonError(callback, "no file uploaded", drogon::k400BadRequest);
+            // Get raw body as the archive content
+            const char* body = req->bodyData();
+            size_t bodyLen = req->bodyLength();
+            if (!body || bodyLen == 0) {
+                SendJsonError(callback, "empty request body — expected .agent archive", drogon::k400BadRequest);
                 return;
             }
-
-            // Get the first file
-            const auto& file = files[0];
-            std::string fileData = std::string(file.fileData.begin(), file.fileData.end());
 
             // Write to temp file
             std::string tmpPath = "/tmp/animus_import_" +
                 std::to_string(std::time(nullptr)) + ".agent";
             {
                 std::ofstream out(tmpPath, std::ios::binary);
-                out.write(fileData.data(), fileData.size());
+                out.write(body, bodyLen);
                 out.close();
             }
 
-            // Parse import options from form fields or query
-            std::string modeStr = "new";
-            std::string targetAgentId;
-
-            // Check form fields
-            auto params = req->getParameters();
-            for (const auto& [key, value] : params) {
-                if (key == "mode") modeStr = value;
-                else if (key == "agent_id") targetAgentId = value;
-            }
+            // Parse options from query params
+            std::string modeStr = req->getParameter("mode");
+            if (modeStr.empty()) modeStr = "new";
+            std::string targetAgentId = req->getParameter("agent_id");
 
             ImportMode mode = ImportMode::New;
             if (modeStr == "merge") mode = ImportMode::Merge;
@@ -1081,10 +1074,10 @@
                 return;
             }
 
-            // Determine the agent_id from manifest for response
+            // Try to get the agent_id from the archive manifest for the response
             std::string agentId = targetAgentId;
             if (agentId.empty()) {
-                // Read manifest to get agent_id
+                // Re-read the manifest would require re-opening — just report generic
                 agentId = "imported";
             }
 
