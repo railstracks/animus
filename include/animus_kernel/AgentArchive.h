@@ -109,18 +109,6 @@ private:
     // ID remapping: export_id → new internal id
     std::unordered_map<std::string, int64_t> m_idMap;
 
-    // Remap a foreign key reference using the id map.
-    // Returns the new id, or -1 if not found.
-    int64_t RemapId(const std::string& table, int64_t exportId) const;
-
-    // Parse JSONL lines into a vector of JSON objects.
-    std::vector<Json::Value> ParseJSONL(const std::string& content);
-
-    // Import a JSONL into a table, remapping IDs.
-    std::string ImportJSONL(const std::string& tableName,
-                             const std::vector<Json::Value>& rows,
-                             const std::string& idColumn = "id",
-                             bool remapId = true);
 };
 
 } // namespace animus::kernel
