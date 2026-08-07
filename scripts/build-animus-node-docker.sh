@@ -61,7 +61,11 @@ for lib in \
     "${ROOT_DIR}/dist/libanimus_kernel.so" \
     "${DROGON_DIR}/libdrogon.so.1" \
     "${TRANTOR_DIR}/libtrantor.so.1" \
-    "${JSONCPP_DIR}/libjsoncpp.so.26"; do
+    "${JSONCPP_DIR}/libjsoncpp.so.26" \
+    "${BUILD_DIR}/bin/libllama.so.0" \
+    "${BUILD_DIR}/bin/libggml.so.0" \
+    "${BUILD_DIR}/bin/libggml-base.so.0" \
+    "${BUILD_DIR}/bin/libggml-cpu.so.0"; do
     if [[ -f "${lib}" ]]; then
         cp "${lib}" "${CONTEXT_DIR}/dist/lib/"
     else
