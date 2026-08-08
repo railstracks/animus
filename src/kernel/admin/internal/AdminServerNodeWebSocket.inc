@@ -219,7 +219,7 @@ private:
 
                 // Sign: call_id + timestamp + nonce + tool + arguments
                 std::string signedPayload = callId + "\n" + timestamp + "\n" + nonce + "\n" + call.name + "\n" + argsStr;
-                std::string hmac = crypto::HmacSha256Hex(ctxPtr->signingKey, signedPayload);
+                std::string hmac = animus::kernel::crypto::HmacSha256Hex(ctxPtr->signingKey, signedPayload);
 
                 msg["timestamp"] = timestamp;
                 msg["nonce"] = nonce;
