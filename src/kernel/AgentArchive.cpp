@@ -426,7 +426,7 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
             "max_tool_calls_per_chain, timeout_seconds, episodic_token_budget, "
             "semantic_token_budget, perspectives_token_budget, "
             "consolidation_tool_budget, enabled_tools, tool_configs, "
-            "diary_secret, pad_context "
+            "diary_secret, pad_context, created_at_unix_ms, updated_at_unix_ms "
             "FROM agents WHERE agent_id = ?");
         if (!stmt) return "failed to query agent";
         stmt->BindText(1, agentId);
@@ -440,7 +440,7 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
             "max_tool_calls_per_chain", "timeout_seconds", "episodic_token_budget",
             "semantic_token_budget", "perspectives_token_budget",
             "consolidation_tool_budget", "enabled_tools", "tool_configs",
-            "diary_secret", "pad_context"
+            "diary_secret", "pad_context", "created_at_unix_ms", "updated_at_unix_ms"
         };
         Json::Value agentObj = RowToJson(stmt.get(), agentCols);
         Json::StreamWriterBuilder wb;
