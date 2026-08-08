@@ -16,6 +16,7 @@ namespace animus::kernel {
 struct NodeDaemonConfig {
     std::string serverUrl;   // e.g. "ws://host:port/ws/node"
     std::string token;
+    std::string signingKey;  // HMAC signing key for command verification
     std::string name;
     std::vector<std::string> allowedTools;  // e.g. ["exec", "file"]
 };

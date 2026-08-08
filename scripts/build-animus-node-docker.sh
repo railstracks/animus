@@ -101,9 +101,10 @@ RUN ldconfig
 
 # Environment variables for node configuration
 # Required: SERVER_URL, NODE_TOKEN, NODE_NAME
-# Optional: NODE_TOOLS (default: exec,file)
+# Optional: NODE_TOOLS (default: exec,file), NODE_SIGNING_KEY (HMAC command signing)
 ENV SERVER_URL=""
 ENV NODE_TOKEN=""
+ENV NODE_SIGNING_KEY=""
 ENV NODE_NAME=""
 ENV NODE_TOOLS="exec,file"
 
@@ -130,11 +131,16 @@ echo "=== Starting Animus Node Client ==="
 echo "  Server: ${SERVER_URL}"
 echo "  Name:   ${NODE_NAME}"
 echo "  Tools:  ${NODE_TOOLS}"
+[ -n "${NODE_SIGNING_KEY}" ] && echo "  HMAC:   enabled"
 echo "==================================="
+
+SIGNING_ARGS=""
+[ -n "${NODE_SIGNING_KEY}" ] && SIGNING_ARGS="--signing-key ${NODE_SIGNING_KEY}"
 
 exec animusd --node \
     --server-url "${SERVER_URL}" \
     --token "${NODE_TOKEN}" \
+    ${SIGNING_ARGS} \
     --node-name "${NODE_NAME}" \
     --node-tools "${NODE_TOOLS}"
 ENTRYPOINT
@@ -164,6 +170,7 @@ echo "Run (connect to Animus server):"
 echo "  docker run --rm \\"
 echo "    -e SERVER_URL=ws://animus-host:8080/ws/node \\"
 echo "    -e NODE_TOKEN=your-secret-token \\"
+echo "    -e NODE_SIGNING_KEY=your-signing-key \\"
 echo "    -e NODE_NAME=workstation \\"
 echo "    ${IMAGE}"
 echo ""

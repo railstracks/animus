@@ -64,11 +64,16 @@ public:
             return;
         }
 
+        // Look up signing key for this token (for HMAC-signing outgoing commands)
+        std::string signingKey = server->m_nodeManager->GetSigningKeyForToken(token);
+
         auto ctx = std::make_shared<NodeContext>();
         ctx->token = token;
+        ctx->signingKey = signingKey;
         wsConnPtr->setContext(ctx);
 
-        std::cerr << "[node-ws] Connection accepted (token id=" << tokenId << ")\n";
+        std::cerr << "[node-ws] Connection accepted (token id=" << tokenId
+                  << ", hmac=" << (signingKey.empty() ? "disabled" : "enabled") << ")\n";
     }
 
     void handleNewMessage(
@@ -150,6 +155,15 @@ private:
             return;
         }
 
+        // Check for HMAC capability
+        Json::Value caps = payload.get("capabilities", Json::arrayValue);
+        for (const auto& c : caps) {
+            if (c.asString() == "hmac-v1") {
+                ctx->hmacCapable = true;
+                break;
+            }
+        }
+
         NodeInfo info;
         info.name = ctx->nodeName;
         info.hostname = payload.get("hostname", "").asString();
@@ -188,6 +202,28 @@ private:
                 msg["arguments"] = argsJson;
             } else {
                 msg["arguments"] = call.arguments; // fallback: raw string
+            }
+
+            // Sign the command with HMAC if signing key is available
+            if (!ctxPtr->signingKey.empty()) {
+                auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                std::string timestamp = std::to_string(now);
+                // Generate a nonce from callId (already unique)
+                std::string nonce = callId;
+
+                // Serialize arguments for signing
+                Json::StreamWriterBuilder wb2;
+                wb2["indentation"] = "";
+                std::string argsStr = Json::writeString(wb2, msg["arguments"]);
+
+                // Sign: call_id + timestamp + nonce + tool + arguments
+                std::string signedPayload = callId + "\n" + timestamp + "\n" + nonce + "\n" + call.name + "\n" + argsStr;
+                std::string hmac = crypto::HmacSha256Hex(ctxPtr->signingKey, signedPayload);
+
+                msg["timestamp"] = timestamp;
+                msg["nonce"] = nonce;
+                msg["hmac"] = "sha256=" + hmac;
             }
 
             Json::StreamWriterBuilder wb;

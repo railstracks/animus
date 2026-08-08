@@ -112,6 +112,9 @@ NodeManager::GeneratedCredentials NodeManager::GenerateCredentials(const std::st
     t.created_at_unix_ms = NowMs();
     m_tokensByHash[hash] = t;
 
+    // Keep plaintext signing key in memory for HMAC signing (not persisted)
+    m_signingKeysByHash[hash] = signingKey;
+
     result.token = token;
     result.signingKey = signingKey;
     return result;
@@ -124,6 +127,14 @@ int64_t NodeManager::ValidateToken(const std::string& token) const {
     if (it == m_tokensByHash.end()) return -1;
     if (it->second.revoked) return -1;
     return it->second.id;
+}
+
+std::string NodeManager::GetSigningKeyForToken(const std::string& token) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::string hash = HashToken(token);
+    auto it = m_signingKeysByHash.find(hash);
+    if (it == m_signingKeysByHash.end()) return "";
+    return it->second;
 }
 
 std::vector<NodeToken> NodeManager::ListTokens() const {

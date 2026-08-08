@@ -97,6 +97,9 @@ private:
     AgentStore* m_agentStore{nullptr};  // Optional, for per-agent access control
     mutable std::mutex m_mutex;
 
+    // Plaintext signing keys (in-memory only, not persisted). Keyed by token hash.
+    std::unordered_map<std::string, std::string> m_signingKeysByHash;
+
     // Connected nodes: name → (info, execute function)
     struct ConnectedNode {
         NodeInfo info;
