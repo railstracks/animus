@@ -309,6 +309,55 @@ volumes:
 
 If a `db.json` file exists in the config directory, it takes precedence over environment variables.
 
+### External Node Deployment
+
+Animus supports external nodes — lightweight daemon processes that connect to the central server via WebSocket and execute tool calls (shell commands, file operations) on remote machines. This enables distributed agent execution across multiple hosts.
+
+**Node authentication uses two separate secrets:**
+
+1. **Auth token** (`Authorization: Bearer <token>`) — authenticates the WebSocket connection
+2. **Signing key** (HMAC-SHA256) — signs individual tool calls; the node verifies each command before executing
+
+Both are generated together when you create a node token via the admin UI or API. The signing key is optional but recommended — without it, tool calls are sent unsigned.
+
+```bash
+# On the central server: generate credentials
+# Via API:
+curl -X POST http://localhost:8080/api/v1/nodes/tokens \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"description": "workstation node"}'
+# Returns: {"token": "an_...", "signingKey": "..."}
+
+# On the node host:
+animusd --node \
+  --server-url ws://animus-host:8080/ws/node \
+  --token an_... \
+  --signing-key ... \
+  --node-name workstation \
+  --node-tools exec,file
+```
+
+**Docker:**
+
+```bash
+docker run --rm \
+  -e SERVER_URL=ws://animus-host:8080/ws/node \
+  -e NODE_TOKEN=an_... \
+  -e NODE_SIGNING_KEY=... \
+  -e NODE_NAME=workstation \
+  -e NODE_TOOLS=exec,file \
+  mrsommer/animus-node:latest
+```
+
+| Env var | Purpose | Required |
+|---------|---------|----------|
+| `SERVER_URL` | WebSocket URL of the Animus server | Yes |
+| `NODE_TOKEN` | Auth token for server connection | Yes |
+| `NODE_NAME` | Name to register as | Yes |
+| `NODE_TOOLS` | Comma-separated tool allowlist | No (default: `exec,file`) |
+| `NODE_SIGNING_KEY` | HMAC signing key for command verification | No (recommended) |
+
 ### Migrating from SQLite to PostgreSQL
 
 If you have an existing SQLite database and want to switch to PostgreSQL:
