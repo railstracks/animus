@@ -316,6 +316,7 @@ std::string DumpTable(IDataStore* store,
     stmt->BindText(1, agentId);
 
     std::ostringstream jsonl;
+    int64_t exportId = 0;
     Json::StreamWriterBuilder wb;
     wb["indentation"] = "";
     while (stmt->Step()) {
@@ -339,6 +340,7 @@ std::string DumpTableJoin(IDataStore* store,
     stmt->BindText(1, agentId);
 
     std::ostringstream jsonl;
+    int64_t exportId = 0;
     Json::StreamWriterBuilder wb;
     wb["indentation"] = "";
     while (stmt->Step()) {
