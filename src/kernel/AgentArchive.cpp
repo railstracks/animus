@@ -452,15 +452,17 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
     files.push_back({"memory/layers.jsonl",
         DumpTable(m_store, "memory_layers",
             {"id", "agent_id", "name", "horizon", "sort_order",
-             "intake_interval", "intake_prompt", "consolidation_prompt",
-             "consolidation_interval", "sdt_value_threshold",
-             "last_consolidation_unix_ms", "created_at_unix_ms"}, agentId)});
+             "evaluation_interval_seconds", "cron_expr",
+             "consolidation_prompt", "consolidation_intake_prompt",
+             "intake_interval", "token_budget", "enabled",
+             "created_at_unix_ms", "updated_at_unix_ms"}, agentId)});
     files.push_back({"memory/observations.jsonl",
         DumpTable(m_store, "observations",
-            {"id", "layer_id", "agent_id", "content", "source",
+            {"id", "layer_id", "agent_id", "text", "weight",
+             "decay_rate", "tags", "source",
              "created_at_unix_ms", "updated_at_unix_ms",
-             "intake_processed", "intake_processed_at_unix_ms",
-             "is_compacted", "importance_score", "embedding"}, agentId)});
+             "last_evaluated_at_ms", "next_review_at_ms",
+             "memory_state", "superseded_by"}, agentId)});
 
     // memory-files/
     if (flags.memoryFiles) {
@@ -496,13 +498,13 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
         files.push_back({"ontology/properties.jsonl",
             DumpTableJoin(m_store,
                 "SELECT p.id, p.entity_id, p.key, p.value, p.value_type, "
-                "p.memory_state, p.confidence, p.source, p.created_at_unix_ms, "
-                "p.updated_at_unix_ms "
+                "p.memory_state, p.agent_id, p.linked_observation_id, "
+                "p.created_at_unix_ms, p.updated_at_unix_ms "
                 "FROM ontology_properties p "
                 "INNER JOIN ontology_entities e ON p.entity_id = e.id "
                 "WHERE e.agent_id = ?", agentId,
                 {"id", "entity_id", "key", "value", "value_type",
-                 "memory_state", "confidence", "source",
+                 "memory_state", "agent_id", "linked_observation_id",
                  "created_at_unix_ms", "updated_at_unix_ms"})});
     }
 
@@ -510,14 +512,15 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
     if (flags.gallivanting) {
         files.push_back({"gallivanting/threads.jsonl",
             DumpTable(m_store, "gallivanting_threads",
-                {"id", "agent_id", "title", "description", "status",
-                 "prompt_template", "sdt_tags", "created_at_unix_ms",
-                 "updated_at_unix_ms"}, agentId)});
+                {"id", "agent_id", "name", "description", "sdt_tags",
+                 "prompt_template", "enabled",
+                 "created_at_unix_ms", "updated_at_unix_ms"}, agentId)});
         if (flags.gallivantingHistory) {
             files.push_back({"gallivanting/sessions.jsonl",
                 DumpTable(m_store, "gallivanting_sessions",
-                    {"id", "thread_id", "agent_id", "sdt_scores",
-                     "summary", "artifacts", "created_at_unix_ms"}, agentId)});
+                    {"id", "thread_id", "agent_id", "started_at_unix_ms",
+                     "duration_ms", "summary", "outcome",
+                     "sdt_scores", "tools_used", "created_at_unix_ms"}, agentId)});
         }
     }
 
@@ -525,24 +528,24 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
     if (flags.diary) {
         files.push_back({"diary/entries.jsonl",
             DumpTable(m_store, "diary_entries",
-                {"id", "agent_id", "timestamp_unix_ms", "layer",
-                 "content", "tags", "session_id"}, agentId)});
+                {"id", "entry_id", "agent_id", "timestamp_unix_ms",
+                 "layer", "content", "tags", "session_id"}, agentId)});
     }
 
     // schedules
     if (flags.schedules) {
         files.push_back({"schedules.jsonl",
             DumpTable(m_store, "schedules",
-                {"id", "agent_id", "tag", "message", "cron_expr",
-                 "enabled", "next_fire_unix_ms", "last_fire_unix_ms",
-                 "max_fires", "fire_count", "created_at_unix_ms"}, agentId)});
+                {"id", "agent_id", "tag", "type", "next_fire",
+                 "cron_expr", "timezone", "message", "enabled",
+                 "created_at", "last_fire", "fire_count", "max_fires"}, agentId)});
         files.push_back({"consolidation/runs.jsonl",
             DumpTable(m_store, "consolidation_runs",
                 {"id", "agent_id", "phase", "started_unix_ms",
-                 "completed_unix_ms", "observations_created", "status"}, agentId)});
+                 "finished_unix_ms", "status", "summary_json", "error"}, agentId)});
         files.push_back({"consolidation/watermarks.jsonl",
             DumpTable(m_store, "consolidation_watermarks",
-                {"id", "agent_id", "source", "last_processed_id",
+                {"agent_id", "source", "last_processed_id",
                  "last_run_unix_ms"}, agentId)});
     }
 
