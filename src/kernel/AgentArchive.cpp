@@ -316,12 +316,15 @@ std::string DumpTable(IDataStore* store,
     stmt->BindText(1, agentId);
 
     std::ostringstream jsonl;
-    int64_t exportId = 0;
     Json::StreamWriterBuilder wb;
     wb["indentation"] = "";
     while (stmt->Step()) {
         Json::Value row = RowToJson(stmt.get(), cols);
-        row["_export_id"] = static_cast<Json::Int64>(++exportId);
+        // Use the actual id column (first column) as _export_id for FK remapping
+        if (!cols.empty() && cols[0] == "id")
+            row["_export_id"] = row[cols[0]];
+        else
+            row["_export_id"] = static_cast<Json::Int64>(++exportId);
         jsonl << Json::writeString(wb, row) << "\n";
     }
     return jsonl.str();
@@ -336,12 +339,14 @@ std::string DumpTableJoin(IDataStore* store,
     stmt->BindText(1, agentId);
 
     std::ostringstream jsonl;
-    int64_t exportId = 0;
     Json::StreamWriterBuilder wb;
     wb["indentation"] = "";
     while (stmt->Step()) {
         Json::Value row = RowToJson(stmt.get(), cols);
-        row["_export_id"] = static_cast<Json::Int64>(++exportId);
+        if (!cols.empty() && cols[0] == "id")
+            row["_export_id"] = row[cols[0]];
+        else
+            row["_export_id"] = static_cast<Json::Int64>(++exportId);
         jsonl << Json::writeString(wb, row) << "\n";
     }
     return jsonl.str();
