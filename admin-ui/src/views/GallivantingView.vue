@@ -81,7 +81,7 @@ const SDT_COLORS: Record<string, string> = {
 const { t } = useI18n();
 
 const agents = ref<AgentEntity[]>([]);
-const selectedAgentId = ref('default');
+const selectedAgentId = ref('');
 const loadingAgents = ref(false);
 const error = ref('');
 
@@ -246,7 +246,7 @@ async function loadAgents() {
   try {
     const data = await apiGet<{ agents: AgentEntity[] }>('/api/v1/agents');
     agents.value = data.agents || [];
-    if (agents.value.length > 0 && selectedAgentId.value === 'default') {
+    if (agents.value.length > 0 && !selectedAgentId.value) {
       selectedAgentId.value = agents.value[0].id;
     }
   } catch (e) {
@@ -302,6 +302,7 @@ async function loadSessions(threadId: number) {
 }
 
 async function loadAll() {
+  if (!selectedAgentId.value) return;
   await Promise.all([loadThreads(), loadBalance(), loadSchedule()]);
 }
 
