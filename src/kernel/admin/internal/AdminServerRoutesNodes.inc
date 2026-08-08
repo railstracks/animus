@@ -132,6 +132,8 @@
                 nObj["status"] = n.connected ? "connected" : "disconnected";
                 nObj["hostname"] = n.hostname;
                 nObj["os"] = n.os_info;
+                nObj["connected_at_unix_ms"] = static_cast<Json::Int64>(n.connected_at_unix_ms);
+                nObj["last_heartbeat_unix_ms"] = static_cast<Json::Int64>(n.last_seen_unix_ms);
                 nObj["uptime_seconds"] = static_cast<Json::UInt64>(
                     n.connected ? (nowMs - n.connected_at_unix_ms) / 1000 : 0);
 
@@ -174,10 +176,11 @@
             out["status"] = info->connected ? "connected" : "disconnected";
             out["hostname"] = info->hostname;
             out["os"] = info->os_info;
-            out["connected_at"] = static_cast<Json::UInt64>(info->connected_at_unix_ms);
-            out["uptime_seconds"] = static_cast<Json::UInt64>(
-                info->connected ? (nowMs - info->connected_at_unix_ms) / 1000 : 0);
-            out["last_seen"] = static_cast<Json::UInt64>(info->last_seen_unix_ms);
+           out["connected_at"] = static_cast<Json::UInt64>(info->connected_at_unix_ms);
+            out["connected_at_unix_ms"] = static_cast<Json::Int64>(info->connected_at_unix_ms);
+            out["last_heartbeat_unix_ms"] = static_cast<Json::Int64>(info->last_seen_unix_ms);
+           out["uptime_seconds"] = static_cast<Json::UInt64>(
+               info->connected ? (nowMs - info->connected_at_unix_ms) / 1000 : 0);
 
             Json::Value toolsArr(Json::arrayValue);
             for (const auto& t : info->tools) toolsArr.append(t);

@@ -179,6 +179,7 @@ private:
                 } else {
                     ALOG_INFO("node", "WebSocket connection failed");
                     m_wsConn.reset();
+                    m_wsClient.reset();
 
                     if (!g_nodeStopRequested.load()) {
                         m_connectAttempts++;
@@ -196,8 +197,11 @@ private:
         double delay = m_currentBackoff;
         ALOG_DEBUG("node", "Will reconnect in " << (int)delay << "s");
 
+        // Clear any stale client before reconnecting
+        m_wsClient.reset();
+
         loop->runAfter(delay, [this, loop]() {
-            if (!g_nodeStopRequested.load()) {
+            if (!g_nodeStopRequested.load() && !m_wsConn) {
                 InitiateConnection(loop);
             }
         });

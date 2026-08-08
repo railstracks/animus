@@ -107,7 +107,14 @@ public:
         } else if (msgType == "tool_result") {
             HandleToolResult(wsConnPtr, payload);
         } else if (msgType == "heartbeat") {
-            // Just keep the connection alive
+            // Update last seen timestamp on the server side
+            auto ctx = wsConnPtr->getContext<NodeContext>();
+            if (ctx) {
+                AdminServer* srv = g_activeAdminServer.load();
+                if (srv && srv->m_nodeManager) {
+                    srv->m_nodeManager->UpdateNodeLastSeen(ctx->nodeName);
+                }
+            }
         } else {
             std::cerr << "[node-ws] Unknown message type: " << msgType << "\n";
         }

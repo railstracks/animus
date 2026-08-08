@@ -203,6 +203,14 @@ std::optional<NodeInfo> NodeManager::GetNode(const std::string& name) const {
     return it->second.info;
 }
 
+void NodeManager::UpdateNodeLastSeen(const std::string& name) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_nodes.find(name);
+    if (it != m_nodes.end()) {
+        it->second.info.last_seen_unix_ms = NowMs();
+    }
+}
+
 ToolResult NodeManager::ExecuteOnNode(const std::string& nodeName, const ToolCall& call) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_nodes.find(nodeName);

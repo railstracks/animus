@@ -80,6 +80,8 @@ public:
     std::vector<NodeInfo> ListNodes() const;
     // Get info for a specific node
     std::optional<NodeInfo> GetNode(const std::string& name) const;
+    // Update last-seen timestamp for a connected node (called on heartbeat)
+    void UpdateNodeLastSeen(const std::string& name);
     // Execute a tool call on a specific node. Returns result or error.
     ToolResult ExecuteOnNode(const std::string& nodeName, const ToolCall& call);
 
