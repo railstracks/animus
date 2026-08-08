@@ -174,6 +174,26 @@ AgentManager::OperationResult AgentManager::DeleteAgent(const std::string& id) {
         }
     }
 
+    // Clean up all other agent-scoped tables. Agent deletion doesn't cascade
+    // automatically for tables without FK references to agents.
+    const struct { const char* table; const char* agent_col; } cleanup[] = {
+        {"diary_entries", "agent_id"},
+        {"ontology_properties", "agent_id"},
+        {"ontology_entities", "agent_id"},
+        {"gallivanting_sessions", "agent_id"},
+        {"gallivanting_threads", "agent_id"},
+        {"schedules", "agent_id"},
+        {"consolidation_runs", "agent_id"},
+        {"consolidation_watermarks", "agent_id"},
+        {"lua_scripts", "agent_id"},
+        {"memory_files", "agent_id"},
+    };
+    for (const auto& c : cleanup) {
+        auto del = m_memoryStore->DataStore()->Prepare(
+            std::string("DELETE FROM ") + c.table + " WHERE " + c.agent_col + "=?");
+        if (del) { del->BindText(1, id); del->ExecDML(); }
+    }
+
     result.deletedId = id;
     return result;
 }
