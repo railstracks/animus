@@ -138,13 +138,13 @@ std::vector<TarFile> ParseTar(const std::vector<uint8_t>& tar) {
 
         char typeflag = hdr[156];
         if (typeflag == '0' || typeflag == '\0') {
-            pos += 512;
-            if (pos + size > tar.size()) break;
+            if (pos + 512 + size > tar.size()) break;
             TarFile file;
             file.name = name;
-            file.data.assign(tar.begin() + pos, tar.begin() + pos + size);
+            file.data.assign(tar.begin() + pos + 512, tar.begin() + pos + 512 + size);
             files.push_back(std::move(file));
         }
+        // Advance past header (512) + data (padded to 512)
         pos += 512 + ((size + 511) / 512) * 512;
     }
     return files;
