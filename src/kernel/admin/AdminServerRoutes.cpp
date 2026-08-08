@@ -13,6 +13,7 @@
 #include "kernel/admin/TemplateResources.h"
 #include "animus_kernel/admin/AiDiaryFormat.h"
 #include "animus_kernel/GallivantingStore.h"
+#include "animus_kernel/AgentArchive.h"
 #include "animus_kernel/lua/ScriptStore.h"
 #include "animus_kernel/lua/FilesystemScriptLoader.h"
 #include "animus_kernel/lua/LuaState.h"

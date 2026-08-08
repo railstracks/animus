@@ -79,8 +79,8 @@ async function createToken() {
   successMsg.value = '';
   try {
     const res = await apiRequest<{ id: number; token: string; label: string }>(
-      '/api/v1/nodes/tokens',
       'POST',
+      '/api/v1/nodes/tokens',
       { label: newTokenLabel.value || undefined },
     );
     createdToken.value = res.token;

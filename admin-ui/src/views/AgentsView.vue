@@ -458,6 +458,76 @@ async function deleteAgent(id: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Export / Import
+// ---------------------------------------------------------------------------
+
+const exportLoading = ref<string>('');
+const importInput = ref<HTMLInputElement | null>(null);
+const importLoading = ref(false);
+
+async function exportAgent(id: string) {
+  exportLoading.value = id;
+  try {
+    const resp = await fetch(`/api/v1/agents/${id}/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ components: 'all' }),
+    });
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      throw new Error(errBody || `Export failed (${resp.status})`);
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${id}.agent`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    successMsg.value = `Exported agent "${id}" successfully.`;
+  } catch (e: any) {
+    error.value = e.message || 'Export failed';
+  } finally {
+    exportLoading.value = '';
+  }
+}
+
+function triggerImport() {
+  importInput.value?.click();
+}
+
+async function handleImport(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  importLoading.value = true;
+  try {
+    const resp = await fetch('/api/v1/agents/import?mode=new', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/gzip' },
+      body: file,
+    });
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      throw new Error(errBody || `Import failed (${resp.status})`);
+    }
+
+    const result = await resp.json();
+    successMsg.value = `Imported agent "${result.agent_id || file.name}" successfully.`;
+    await loadAgents();
+  } catch (e: any) {
+    error.value = e.message || 'Import failed';
+  } finally {
+    importLoading.value = false;
+    input.value = '';  // reset so same file can be selected again
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tool toggling
 // ---------------------------------------------------------------------------
 
@@ -546,10 +616,28 @@ watch(
         <v-btn variant="text" size="small" prepend-icon="mdi-auto-fix" @click="goToWizard">
           {{ t('agents.setupWizard') }}
         </v-btn>
+        <v-btn
+          variant="text"
+          size="small"
+          prepend-icon="mdi-download"
+          :loading="importLoading"
+          @click="triggerImport"
+        >
+          Import
+        </v-btn>
         <v-btn color="primary" size="small" @click="openCreate">
           {{ t('agents.actions.add') }}
         </v-btn>
       </div>
+
+      <!-- Hidden file input for agent import -->
+      <input
+        ref="importInput"
+        type="file"
+        accept=".agent,.tar.gz,application/gzip"
+        style="display: none"
+        @change="handleImport"
+      />
     </v-card-title>
 
     <v-card-text>
@@ -598,6 +686,13 @@ watch(
             <td>
               <v-btn variant="text" size="x-small" @click="openEdit(a)">
                 {{ t('agents.actions.edit') }}
+              </v-btn>
+              <v-btn
+                variant="text" size="x-small"
+                :loading="exportLoading === a.id"
+                @click="exportAgent(a.id)"
+              >
+                Export
               </v-btn>
               <v-btn
                 v-if="a.id !== 'default'"

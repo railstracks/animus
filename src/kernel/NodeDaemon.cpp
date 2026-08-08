@@ -1,4 +1,5 @@
 #include "animus_kernel/NodeDaemon.h"
+#include "animus_kernel/CryptoUtils.h"
 #include "animus_kernel/Log.h"
 #include "animus_kernel/tools/ToolRegistry.h"
 #include "animus_kernel/tools/ToolTypes.h"
@@ -178,6 +179,7 @@ private:
                 } else {
                     ALOG_INFO("node", "WebSocket connection failed");
                     m_wsConn.reset();
+                    m_wsClient.reset();
 
                     if (!g_nodeStopRequested.load()) {
                         m_connectAttempts++;
@@ -195,8 +197,11 @@ private:
         double delay = m_currentBackoff;
         ALOG_DEBUG("node", "Will reconnect in " << (int)delay << "s");
 
+        // Clear any stale client before reconnecting
+        m_wsClient.reset();
+
         loop->runAfter(delay, [this, loop]() {
-            if (!g_nodeStopRequested.load()) {
+            if (!g_nodeStopRequested.load() && !m_wsConn) {
                 InitiateConnection(loop);
             }
         });
@@ -274,13 +279,21 @@ private:
         reg["hostname"] = hostname;
         reg["os"] = osInfo;
 
+        // Advertise HMAC capability if signing key is configured
+        if (!m_config.signingKey.empty()) {
+            Json::Value caps(Json::arrayValue);
+            caps.append("hmac-v1");
+            reg["capabilities"] = caps;
+        }
+
         Json::Value toolsArr(Json::arrayValue);
         for (const auto& t : m_config.allowedTools) toolsArr.append(t);
         reg["tools"] = toolsArr;
 
         SendJson(reg);
         ALOG_INFO("node", "Registration sent for '" << m_config.name
-                  << "' (" << hostname << ", " << osInfo << ")");
+                  << "' (" << hostname << ", " << osInfo << ")"
+                  << (!m_config.signingKey.empty() ? " [hmac-v1]" : ""));
     }
 
     void SendHeartbeat() {
@@ -295,6 +308,15 @@ private:
         Json::StreamWriterBuilder wb;
         wb["indentation"] = "";
         m_wsConn->send(Json::writeString(wb, val));
+    }
+
+    void SendToolError(const std::string& callId, const std::string& error) {
+        Json::Value resultMsg(Json::objectValue);
+        resultMsg["type"] = "tool_result";
+        resultMsg["call_id"] = callId;
+        resultMsg["success"] = false;
+        resultMsg["error"] = error;
+        SendJson(resultMsg);
     }
 
     // -----------------------------------------------------------------------
@@ -327,6 +349,38 @@ private:
     void HandleToolCall(const Json::Value& payload) {
         std::string callId = payload.get("call_id", "").asString();
         std::string toolName = payload.get("tool", "").asString();
+
+        // Verify HMAC signature if signing key is configured
+        if (!m_config.signingKey.empty()) {
+            std::string hmacField = payload.get("hmac", "").asString();
+            std::string nonce = payload.get("nonce", "").asString();
+            std::string timestamp = payload.get("timestamp", "").asString();
+
+            if (hmacField.empty() || nonce.empty() || timestamp.empty()) {
+                ALOG_WARNING("node", "tool_call missing HMAC fields — rejecting");
+                SendToolError(callId, "missing HMAC signature fields");
+                return;
+            }
+
+            // Reconstruct the message that was signed: call_id + timestamp + nonce + tool + arguments
+            Json::StreamWriterBuilder wb;
+            wb["indentation"] = "";
+            std::string argsStr = Json::writeString(wb, payload.get("arguments", Json::objectValue));
+            std::string signedPayload = callId + "\n" + timestamp + "\n" + nonce + "\n" + toolName + "\n" + argsStr;
+
+            std::string expectedHmac = crypto::HmacSha256Hex(m_config.signingKey, signedPayload);
+            // hmacField format: "sha256=<hex>"
+            std::string receivedHmac = hmacField;
+            if (receivedHmac.rfind("sha256=", 0) == 0)
+                receivedHmac = receivedHmac.substr(7);
+
+            if (!crypto::ConstantTimeCompare(expectedHmac, receivedHmac)) {
+                ALOG_WARNING("node", "HMAC verification failed for tool_call " << callId);
+                SendToolError(callId, "HMAC verification failed");
+                return;
+            }
+            ALOG_DEBUG("node", "HMAC verified for tool_call " << callId);
+        }
 
         ToolCall tc;
         tc.name = toolName;

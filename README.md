@@ -259,6 +259,56 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 
 See the `scripts/start-daemon.sh` helper for daemon lifecycle management with PID tracking and logging.
 
+### Docker Deployment
+
+The production Docker image supports database configuration via environment variables. When `DB_HOST` is set, the entrypoint generates a `db.json` pointing at PostgreSQL. Without it, SQLite is used.
+
+```yaml
+# docker-compose.yml
+services:
+  animus:
+    image: mrsommer/animus:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - ANIMUS_AUTH_TOKEN=your-secret-token
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=animus
+      - DB_USER=animus
+      - DB_PASS=secret
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_DB=animus
+      - POSTGRES_USER=animus
+      - POSTGRES_PASSWORD=secret
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+```
+
+| Env var | Purpose | Default |
+|---------|---------|---------|
+| `DB_HOST` | PostgreSQL host. When set, enables PostgreSQL backend. Empty = SQLite. | empty (SQLite) |
+| `DB_PORT` | PostgreSQL port. | `5432` |
+| `DB_NAME` | PostgreSQL database name. | `animus` |
+| `DB_USER` | PostgreSQL username. | `animus` |
+| `DB_PASS` | PostgreSQL password. | (none) |
+| `ADMIN_HOST` | Admin server bind address. | `0.0.0.0` |
+| `ADMIN_PORT` | Admin server port. | `8080` |
+| `ANIMUS_AUTH_TOKEN` | Static auth token for admin API. | unset |
+| `ANIMUS_SKIP_MODEL_DOWNLOAD` | Set to `1` to skip auto-downloading the embedding model. | unset |
+
+If a `db.json` file exists in the config directory, it takes precedence over environment variables.
+
 ### Migrating from SQLite to PostgreSQL
 
 If you have an existing SQLite database and want to switch to PostgreSQL:

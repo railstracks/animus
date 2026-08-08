@@ -5,11 +5,17 @@
 // Auth: Authorization: Bearer <token> header during upgrade
 //
 // Protocol:
-//   Node → Server: {"type": "register", "name": "...", "tools": [...], "hostname": "...", "os": "..."}
-//   Server → Node: {"type": "tool_call", "call_id": "...", "tool": "...", "arguments": {...}}
+//   Node → Server: {"type": "register", "name": "...", "tools": [...], "hostname": "...", "os": "...",
+//                    "capabilities": ["hmac-v1"]}
+//   Server → Node: {"type": "tool_call", "call_id": "...", "tool": "...", "arguments": {...},
+//                    "timestamp": N, "nonce": "...", "hmac": "sha256=<hex>"}
 //   Node → Server: {"type": "tool_result", "call_id": "...", "success": true, "output": "...", "error": "..."}
 //   Node → Server: {"type": "heartbeat"}
 // ============================================================================
+
+#include "animus_kernel/CryptoUtils.h"
+#include <chrono>
+#include <atomic>
 
 class NodeWebSocketController
     : public drogon::WebSocketController<NodeWebSocketController, false> {
@@ -21,6 +27,8 @@ public:
     struct NodeContext {
         std::string nodeName;
         std::string token;
+        std::string signingKey;     // plaintext signing key (for HMAC command signing)
+        bool hmacCapable{false};    // node advertised hmac-v1 capability
         bool authenticated{false};
         std::unordered_map<std::string, std::promise<ToolResult>> pendingCalls;
         std::mutex pendingMutex;
@@ -56,11 +64,16 @@ public:
             return;
         }
 
+        // Look up signing key for this token (for HMAC-signing outgoing commands)
+        std::string signingKey = server->m_nodeManager->GetSigningKeyForToken(token);
+
         auto ctx = std::make_shared<NodeContext>();
         ctx->token = token;
+        ctx->signingKey = signingKey;
         wsConnPtr->setContext(ctx);
 
-        std::cerr << "[node-ws] Connection accepted (token id=" << tokenId << ")\n";
+        std::cerr << "[node-ws] Connection accepted (token id=" << tokenId
+                  << ", hmac=" << (signingKey.empty() ? "disabled" : "enabled") << ")\n";
     }
 
     void handleNewMessage(
@@ -94,7 +107,14 @@ public:
         } else if (msgType == "tool_result") {
             HandleToolResult(wsConnPtr, payload);
         } else if (msgType == "heartbeat") {
-            // Just keep the connection alive
+            // Update last seen timestamp on the server side
+            auto ctx = wsConnPtr->getContext<NodeContext>();
+            if (ctx) {
+                AdminServer* srv = g_activeAdminServer.load();
+                if (srv && srv->m_nodeManager) {
+                    srv->m_nodeManager->UpdateNodeLastSeen(ctx->nodeName);
+                }
+            }
         } else {
             std::cerr << "[node-ws] Unknown message type: " << msgType << "\n";
         }
@@ -142,6 +162,15 @@ private:
             return;
         }
 
+        // Check for HMAC capability
+        Json::Value caps = payload.get("capabilities", Json::arrayValue);
+        for (const auto& c : caps) {
+            if (c.asString() == "hmac-v1") {
+                ctx->hmacCapable = true;
+                break;
+            }
+        }
+
         NodeInfo info;
         info.name = ctx->nodeName;
         info.hostname = payload.get("hostname", "").asString();
@@ -180,6 +209,28 @@ private:
                 msg["arguments"] = argsJson;
             } else {
                 msg["arguments"] = call.arguments; // fallback: raw string
+            }
+
+            // Sign the command with HMAC if signing key is available
+            if (!ctxPtr->signingKey.empty()) {
+                auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                std::string timestamp = std::to_string(now);
+                // Generate a nonce from callId (already unique)
+                std::string nonce = callId;
+
+                // Serialize arguments for signing
+                Json::StreamWriterBuilder wb2;
+                wb2["indentation"] = "";
+                std::string argsStr = Json::writeString(wb2, msg["arguments"]);
+
+                // Sign: call_id + timestamp + nonce + tool + arguments
+                std::string signedPayload = callId + "\n" + timestamp + "\n" + nonce + "\n" + call.name + "\n" + argsStr;
+                std::string hmac = animus::kernel::crypto::HmacSha256Hex(ctxPtr->signingKey, signedPayload);
+
+                msg["timestamp"] = timestamp;
+                msg["nonce"] = nonce;
+                msg["hmac"] = "sha256=" + hmac;
             }
 
             Json::StreamWriterBuilder wb;

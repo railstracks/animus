@@ -108,6 +108,7 @@ static void print_help(const char* argv0) {
     << "  --node                          Run as external node (no LLM/scheduler/channels)\n"
     << "  --server-url <url>              Central server WebSocket URL (e.g. ws://host:port/ws/node)\n"
     << "  --token <token>                 Auth token for server connection\n"
+    << "  --signing-key <key>            HMAC signing key for command verification\n"
     << "  --node-name <name>              Name to register as\n"
     << "  --node-tools <tool1,tool2,...>  Comma-separated tool allowlist\n";
 }
@@ -254,7 +255,8 @@ static bool ParseArg(int argc, char** argv, int& i,
                      std::string& logFilePath,
                      bool& wantsKernel, bool& runKernel, bool& daemonMode,
                      bool& nodeMode, std::string& nodeServerUrl,
-                     std::string& nodeToken, std::string& nodeName,
+                     std::string& nodeToken, std::string& nodeSigningKey,
+                     std::string& nodeName,
                      std::string& nodeTools) {
   const std::string arg = argv[i];
 
@@ -477,6 +479,11 @@ static bool ParseArg(int argc, char** argv, int& i,
     nodeToken = argv[++i];
     return true;
   }
+  if (arg == "--signing-key") {
+    if (i + 1 >= argc) { std::cerr << "--signing-key requires a value\n"; std::exit(2); }
+    nodeSigningKey = argv[++i];
+    return true;
+  }
   if (arg == "--node-name") {
     if (i + 1 >= argc) { std::cerr << "--node-name requires a value\n"; std::exit(2); }
     nodeName = argv[++i];
@@ -672,6 +679,7 @@ int main(int argc, char** argv) {
   std::string logFilePath;
   std::string nodeServerUrl;
   std::string nodeToken;
+  std::string nodeSigningKey;
   std::string nodeName;
   std::string nodeTools;
 
@@ -690,7 +698,7 @@ int main(int argc, char** argv) {
                    configDirFlag, dataDirFlag, promptLogLevelFlag,
                    logFilePath,
                    wantsKernel, runKernel, daemonMode,
-                   nodeMode, nodeServerUrl, nodeToken, nodeName, nodeTools)) {
+                   nodeMode, nodeServerUrl, nodeToken, nodeSigningKey, nodeName, nodeTools)) {
       std::cerr << "Unknown argument: " << arg << "\n\n";
       print_help(argv[0]);
       return 2;
@@ -762,6 +770,7 @@ int main(int argc, char** argv) {
     animus::kernel::NodeDaemonConfig nodeCfg;
     nodeCfg.serverUrl = nodeServerUrl;
     nodeCfg.token = nodeToken;
+    nodeCfg.signingKey = nodeSigningKey;
     nodeCfg.name = nodeName;
     nodeCfg.allowedTools = toolsList;
 

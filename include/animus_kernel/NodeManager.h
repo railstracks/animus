@@ -38,6 +38,8 @@ struct NodeToken {
     int64_t id{0};
     std::string token;         // plaintext (only shown once at creation)
     std::string token_hash;    // stored hash for comparison
+    std::string signing_key;   // plaintext signing key (only shown once at creation)
+    std::string signing_key_hash; // stored hash for comparison
     std::string description;
     int64_t created_at_unix_ms{0};
     bool revoked{false};
@@ -53,14 +55,21 @@ public:
     explicit NodeManager(IDataStore* store);
 
     // --- Token management ---
-    // Generate a new auth token. Returns the plaintext token (shown once).
-    std::string GenerateToken(const std::string& description);
+    // Generate a new auth token + signing key. Returns both (shown once).
+    struct GeneratedCredentials {
+        std::string token;
+        std::string signingKey;
+    };
+    GeneratedCredentials GenerateCredentials(const std::string& description);
     // Validate a token against stored hashes. Returns token ID or -1.
     int64_t ValidateToken(const std::string& token) const;
     // List all tokens (hash only, not plaintext)
     std::vector<NodeToken> ListTokens() const;
     // Revoke a token by ID
     bool RevokeToken(int64_t tokenId);
+    // Get signing key for a token (for server-side HMAC signing).
+    // Returns empty string if token not found or no signing key.
+    std::string GetSigningKeyForToken(const std::string& token) const;
 
     // --- Node connection management ---
     // Register a connected node with its execute callback
@@ -71,6 +80,8 @@ public:
     std::vector<NodeInfo> ListNodes() const;
     // Get info for a specific node
     std::optional<NodeInfo> GetNode(const std::string& name) const;
+    // Update last-seen timestamp for a connected node (called on heartbeat)
+    void UpdateNodeLastSeen(const std::string& name);
     // Execute a tool call on a specific node. Returns result or error.
     ToolResult ExecuteOnNode(const std::string& nodeName, const ToolCall& call);
 
@@ -87,6 +98,9 @@ private:
     IDataStore* m_store;
     AgentStore* m_agentStore{nullptr};  // Optional, for per-agent access control
     mutable std::mutex m_mutex;
+
+    // Plaintext signing keys (in-memory only, not persisted). Keyed by token hash.
+    std::unordered_map<std::string, std::string> m_signingKeysByHash;
 
     // Connected nodes: name → (info, execute function)
     struct ConnectedNode {
