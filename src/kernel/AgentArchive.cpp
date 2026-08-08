@@ -639,8 +639,10 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
     if (tarFiles.empty()) return "empty or invalid archive";
 
     std::unordered_map<std::string, std::string> fileMap;
-    for (auto& tf : tarFiles)
+    for (auto& tf : tarFiles) {
+        ALOG_INFO("archive", "found file in archive: " << tf.name << " (" << tf.data.size() << " bytes)");
         fileMap[tf.name] = std::string(tf.data.begin(), tf.data.end());
+    }
 
     // Parse manifest
     auto mit = fileMap.find("manifest.json");
@@ -686,10 +688,12 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
 
     // Import agent record
     auto ait = fileMap.find("agent.json");
+    ALOG_INFO("archive", "agent.json lookup: " << (ait != fileMap.end() ? "found" : "not found"));
     if (ait != fileMap.end()) {
         Json::Value agentJson;
         std::istringstream as(ait->second);
         if (Json::parseFromStream(rb, as, &agentJson, &errs)) {
+            ALOG_INFO("archive", "agent.json parsed, member names: " << agentJson.getMemberNames().size());
             agentJson["agent_id"] = agentId;
 
             auto check = m_store->Prepare("SELECT agent_id FROM agents WHERE agent_id = ?");
@@ -740,6 +744,9 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                     }
                 }
             }
+        } else {
+            ALOG_ERROR("archive", "failed to parse agent.json: " << errs);
+            return "failed to parse agent.json: " + errs;
         }
     }
 
