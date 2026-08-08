@@ -7,7 +7,9 @@
 #include <thread>
 
 #include <json/json.h>
+#include <fcntl.h>
 #include <signal.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -17,6 +19,7 @@ namespace animus::kernel {
 namespace {
 
 constexpr int kDefaultTimeout = 30;
+constexpr size_t kMaxOutputBytes = 1 * 1024 * 1024;  // 1 MB cap per stream during read
 
 Json::Value ParseArgs(const std::string& args) {
     Json::Value root;
@@ -34,10 +37,13 @@ struct ExecResult {
     std::string stderr_output;
     int exit_code{-1};
     bool timed_out{false};
+    bool output_truncated{false};
 };
 
 // Execute a command and capture stdout/stderr with timeout.
-// Uses pipe + fork + exec for portable capture of both streams.
+// Uses poll() on non-blocking pipes to drain both streams concurrently
+// while independently enforcing the deadline. Creates a process group
+// so the entire child subtree can be killed on timeout.
 ExecResult ExecuteCommand(const std::string& command, const std::string& workingDir, int timeoutSeconds) {
     ExecResult result;
 
@@ -60,7 +66,10 @@ ExecResult ExecuteCommand(const std::string& command, const std::string& working
     }
 
     if (pid == 0) {
-        // Child process
+        // Child process — create own process group so the parent can
+        // kill the entire subtree on timeout.
+        setpgid(0, 0);
+
         close(stdoutPipe[0]);
         close(stderrPipe[0]);
         dup2(stdoutPipe[1], STDOUT_FILENO);
@@ -70,11 +79,14 @@ ExecResult ExecuteCommand(const std::string& command, const std::string& working
 
         // Change working directory if specified
         if (!workingDir.empty()) {
-            (void)chdir(workingDir.c_str());
+            if (chdir(workingDir.c_str()) != 0) {
+                _exit(126);
+            }
         }
 
         // Execute via /bin/sh for shell features (pipes, redirects, etc.)
         execl("/bin/sh", "sh", "-c", command.c_str(), nullptr);
+        // exec failed
         _exit(127);
     }
 
@@ -82,54 +94,127 @@ ExecResult ExecuteCommand(const std::string& command, const std::string& working
     close(stdoutPipe[1]);
     close(stderrPipe[1]);
 
-    // Read stdout and stderr with timeout
+    // Set pipes to non-blocking
+    int stdoutFd = stdoutPipe[0];
+    int stderrFd = stderrPipe[0];
+    int stdoutFlags = fcntl(stdoutFd, F_GETFL, 0);
+    int stderrFlags = fcntl(stderrFd, F_GETFL, 0);
+    if (stdoutFlags >= 0) fcntl(stdoutFd, F_SETFL, stdoutFlags | O_NONBLOCK);
+    if (stderrFlags >= 0) fcntl(stderrFd, F_SETFL, stderrFlags | O_NONBLOCK);
+
+    // Deadline for timeout enforcement
     auto deadline = std::chrono::steady_clock::now() +
                     std::chrono::seconds(timeoutSeconds > 0 ? timeoutSeconds : 3600);
 
-    auto readAll = [](int fd) -> std::string {
-        std::string output;
-        char buffer[4096];
-        ssize_t n;
-        while ((n = read(fd, buffer, sizeof(buffer))) > 0) {
-            output.append(buffer, n);
-        }
-        return output;
-    };
+    bool stdoutClosed = false;
+    bool stderrClosed = false;
+    size_t stdoutBytes = 0;
+    size_t stderrBytes = 0;
 
-    // Simple approach: read stdout, then stderr, check time between
-    // For a production tool we'd use poll/select, but this works for reasonable commands.
-    bool timedOut = false;
-
-    // Read stdout
-    result.stdout_output = readAll(stdoutPipe[0]);
-    close(stdoutPipe[0]);
-
-    // Read stderr
-    result.stderr_output = readAll(stderrPipe[0]);
-    close(stderrPipe[0]);
-
-    // Wait for child with timeout
-    int status = 0;
-    pid_t ret;
-    while ((ret = waitpid(pid, &status, WNOHANG)) == 0) {
-        if (std::chrono::steady_clock::now() > deadline) {
-            // Kill the process group
-            kill(-pid, SIGTERM);
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            kill(-pid, SIGKILL);
-            waitpid(pid, &status, 0);
+    // Drain both pipes concurrently with poll()
+    while (!stdoutClosed || !stderrClosed) {
+        // Check deadline
+        if (std::chrono::steady_clock::now() >= deadline) {
             result.timed_out = true;
-            timedOut = true;
             break;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        // Build pollfd set for open pipes
+        struct pollfd pfds[2];
+        int nfds = 0;
+        int timeoutMs = 200;  // poll timeout — lets us re-check deadline periodically
+
+        if (!stdoutClosed) {
+            pfds[nfds].fd = stdoutFd;
+            pfds[nfds].events = POLLIN;
+            nfds++;
+        }
+        if (!stderrClosed) {
+            pfds[nfds].fd = stderrFd;
+            pfds[nfds].events = POLLIN;
+            nfds++;
+        }
+
+        if (nfds == 0) break;
+
+        int rc = poll(pfds, static_cast<nfds_t>(nfds), timeoutMs);
+        if (rc < 0) {
+            if (errno == EINTR) continue;
+            break;  // poll error
+        }
+        if (rc == 0) continue;  // timeout — loop back and re-check deadline
+
+        // Drain ready pipes
+        for (int i = 0; i < nfds; ++i) {
+            if (!(pfds[i].revents & (POLLIN | POLLHUP | POLLERR))) continue;
+
+            char buffer[8192];
+            ssize_t n = read(pfds[i].fd, buffer, sizeof(buffer));
+
+            if (n > 0) {
+                // Check output limits before appending
+                if (pfds[i].fd == stdoutFd) {
+                    if (stdoutBytes + static_cast<size_t>(n) <= kMaxOutputBytes) {
+                        result.stdout_output.append(buffer, n);
+                        stdoutBytes += static_cast<size_t>(n);
+                    } else {
+                        result.output_truncated = true;
+                    }
+                } else {
+                    if (stderrBytes + static_cast<size_t>(n) <= kMaxOutputBytes) {
+                        result.stderr_output.append(buffer, n);
+                        stderrBytes += static_cast<size_t>(n);
+                    } else {
+                        result.output_truncated = true;
+                    }
+                }
+            } else if (n == 0 || (n < 0 && errno != EINTR && errno != EAGAIN)) {
+                // Pipe closed (EOF or error)
+                if (pfds[i].fd == stdoutFd) {
+                    stdoutClosed = true;
+                    close(stdoutFd);
+                } else {
+                    stderrClosed = true;
+                    close(stderrFd);
+                }
+            }
+        }
     }
 
-    if (!timedOut) {
-        if (WIFEXITED(status)) {
-            result.exit_code = WEXITSTATUS(status);
-        } else if (WIFSIGNALED(status)) {
-            result.exit_code = -WTERMSIG(status);
+    // Close any remaining open pipes
+    if (!stdoutClosed) close(stdoutFd);
+    if (!stderrClosed) close(stderrFd);
+
+    // Handle timeout — kill the entire process group
+    if (result.timed_out) {
+        // SIGTERM first, brief grace, then SIGKILL
+        kill(-pid, SIGTERM);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        kill(-pid, SIGKILL);
+        waitpid(pid, nullptr, 0);
+    } else {
+        // Wait for child to exit (should be quick — pipes are drained)
+        int status = 0;
+        // Poll with deadline in case waitpid hangs (shouldn't, but defensive)
+        while (true) {
+            pid_t ret = waitpid(pid, &status, WNOHANG);
+            if (ret == pid) break;
+            if (ret < 0) break;  // error
+            if (std::chrono::steady_clock::now() >= deadline) {
+                kill(-pid, SIGKILL);
+                waitpid(pid, &status, 0);
+                result.timed_out = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        if (!result.timed_out) {
+            if (WIFEXITED(status)) {
+                result.exit_code = WEXITSTATUS(status);
+            } else if (WIFSIGNALED(status)) {
+                result.exit_code = -WTERMSIG(status);
+            }
         }
     }
 
@@ -244,8 +329,12 @@ ToolResult ShellExecTool::Execute(const ToolCall& call) {
     output["timed_out"] = execResult.timed_out;
     output["stdout"] = execResult.stdout_output;
     output["stderr"] = execResult.stderr_output;
+    if (execResult.output_truncated) {
+        output["output_truncated"] = true;
+    }
 
-    // Truncate very large outputs
+    // Truncate very large outputs (post-read safety, in addition to the
+    // 1 MB cap during read)
     if (output["stdout"].asString().size() > 50000) {
         std::string truncated = output["stdout"].asString();
         truncated.resize(50000);
