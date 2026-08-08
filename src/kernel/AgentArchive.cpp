@@ -1,5 +1,6 @@
 #include "animus_kernel/AgentArchive.h"
 #include "animus_kernel/IDataStore.h"
+#include "animus_kernel/Log.h"
 
 #include <json/json.h>
 
@@ -621,6 +622,8 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                                       const std::string& targetAgentId) {
     if (!m_store) return "no data store";
 
+    ALOG_INFO("archive", "import started: " << archivePath << " mode=" << static_cast<int>(mode) << " target=" << (targetAgentId.empty() ? "(default)" : targetAgentId));
+
     // Read and decompress
     std::ifstream file(archivePath, std::ios::binary);
     if (!file) return "cannot open archive: " + archivePath;
@@ -710,7 +713,12 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                 if (stmt) {
                     for (size_t i = 0; i < fv.size(); ++i)
                         BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
-                    stmt->ExecDML();
+                    if (!stmt->ExecDML()) {
+                        return "failed to insert agent record: " + m_store->ErrMsg();
+                    }
+                    ALOG_INFO("archive", "inserted agent record for " << agentId);
+                } else {
+                    return "failed to prepare agent insert: " + m_store->ErrMsg();
                 }
             } else if (mode == ImportMode::Merge) {
                 std::ostringstream sets;
@@ -762,14 +770,19 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
             }
             auto stmt = m_store->Prepare(
                 "INSERT INTO " + tableName + " (" + cols.str() + ") VALUES (" + vals.str() + ")");
-            if (!stmt) continue;
+            if (!stmt) {
+                ALOG_WARNING("archive", "failed to prepare insert into " << tableName << ": " << m_store->ErrMsg());
+                continue;
+            }
             for (size_t i = 0; i < fv.size(); ++i)
                 BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
-            if (stmt->ExecDML()) {
-                int64_t newId = m_store->LastInsertRowId();
-                if (exportId > 0)
-                    m_idMap[tableName + ":" + std::to_string(exportId)] = newId;
+            if (!stmt->ExecDML()) {
+                ALOG_WARNING("archive", "insert into " << tableName << " failed: " << m_store->ErrMsg());
+                continue;
             }
+            int64_t newId = m_store->LastInsertRowId();
+            if (exportId > 0)
+                m_idMap[tableName + ":" + std::to_string(exportId)] = newId;
         }
     };
 
@@ -892,6 +905,8 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
 
     // Lua scripts
     importTable("lua-scripts.jsonl", "lua_scripts", "id", {});
+
+    ALOG_INFO("archive", "import complete: " << agentId << " (" << m_idMap.size() << " id mappings)");
 
     return "";
 }
