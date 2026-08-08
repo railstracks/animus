@@ -322,7 +322,8 @@ std::string DumpTable(IDataStore* store,
     while (stmt->Step()) {
         Json::Value row = RowToJson(stmt.get(), cols);
         // Use the actual id column (first column) as _export_id for FK remapping
-        if (!cols.empty() && cols[0] == "id")
+        // Only for integer IDs — text IDs (schedules, lua_scripts) use sequential counter
+        if (!cols.empty() && cols[0] == "id" && row[cols[0]].isInt64())
             row["_export_id"] = row[cols[0]];
         else
             row["_export_id"] = static_cast<Json::Int64>(++exportId);
@@ -345,7 +346,7 @@ std::string DumpTableJoin(IDataStore* store,
     wb["indentation"] = "";
     while (stmt->Step()) {
         Json::Value row = RowToJson(stmt.get(), cols);
-        if (!cols.empty() && cols[0] == "id")
+        if (!cols.empty() && cols[0] == "id" && row[cols[0]].isInt64())
             row["_export_id"] = row[cols[0]];
         else
             row["_export_id"] = static_cast<Json::Int64>(++exportId);
@@ -694,6 +695,25 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                 return "agent already exists: " + agentId + " (use merge or replace mode)";
         }
         m_idMap.clear();
+    }
+
+    // Clean up any orphaned data for this agent ID (handles case where agent was
+    // deleted but related rows weren't cascaded)
+    ALOG_INFO("archive", "cleaning up existing data for agent " << agentId);
+    const char* cleanupTables[] = {
+        "diary_entries", "observations", "memory_layers",
+        "ontology_properties", "ontology_entities",
+        "gallivanting_sessions", "gallivanting_threads",
+        "schedules", "consolidation_runs", "consolidation_watermarks",
+        "memory_files", "lua_scripts"
+    };
+    for (const char* tbl : cleanupTables) {
+        auto del = m_store->Prepare(
+            std::string("DELETE FROM ") + tbl + " WHERE agent_id = ?");
+        if (del) {
+            del->BindText(1, agentId);
+            del->ExecDML();
+        }
     }
 
     // Import agent record
