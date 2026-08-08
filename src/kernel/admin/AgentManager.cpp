@@ -1,4 +1,6 @@
 #include "animus_kernel/admin/AgentManager.h"
+#include "animus_kernel/IDataStore.h"
+#include "animus_kernel/MemoryStore.h"
 
 #include <iostream>
 #include <json/writer.h>
