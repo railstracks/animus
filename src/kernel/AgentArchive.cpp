@@ -565,6 +565,43 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
                  "enabled", "created_at", "updated_at"}, agentId)});
     }
 
+    // sessions/
+    if (flags.sessions) {
+        files.push_back({"sessions/sessions.jsonl",
+            DumpTable(m_store, "sessions",
+                {"id", "connector", "conversation_id", "thread_id", "provider_id",
+                 "summary", "agent_id", "created_at_unix_ms",
+                 "last_active_unix_ms", "terminated", "session_type"}, agentId)});
+        files.push_back({"sessions/turns.jsonl",
+            DumpTableJoin(m_store,
+                "SELECT t.id, t.session_id, t.turn_id, t.role, t.content, t.unix_ms, "
+                "t.is_summary, t.compacted_from, t.thinking_content, t.tool_calls, "
+                "t.tool_call_id, t.tool_name, t.intake_processed, "
+                "t.intake_processed_at_unix_ms, t.token_count, t.is_compacted, t.metadata "
+                "FROM session_turns t "
+                "INNER JOIN sessions s ON t.session_id = s.id "
+                "WHERE s.agent_id = ?", agentId,
+                {"id", "session_id", "turn_id", "role", "content", "unix_ms",
+                 "is_summary", "compacted_from", "thinking_content", "tool_calls",
+                 "tool_call_id", "tool_name", "intake_processed",
+                 "intake_processed_at_unix_ms", "token_count", "is_compacted",
+                 "metadata"})});
+    }
+
+    // session_reports/
+    if (flags.reports) {
+        files.push_back({"sessions/reports.jsonl",
+            DumpTableJoin(m_store,
+                "SELECT r.id, r.session_id, r.agent_id, r.summary, r.past_events, "
+                "r.current_activity, r.forward_look, r.created_at_unix_ms, "
+                "r.updated_at_unix_ms, r.embedding, r.embedding_dim "
+                "FROM session_reports r "
+                "WHERE r.agent_id = ?", agentId,
+                {"id", "session_id", "agent_id", "summary", "past_events",
+                 "current_activity", "forward_look", "created_at_unix_ms",
+                 "updated_at_unix_ms", "embedding", "embedding_dim"})});
+    }
+
     // Build tar
     std::vector<uint8_t> tarball;
     for (const auto& [name, content] : files) {
@@ -684,6 +721,9 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
         m_store->Exec("DELETE FROM ontology_entities WHERE agent_id = '" + agentId + "'");
         m_store->Exec("DELETE FROM consolidation_runs WHERE agent_id = '" + agentId + "'");
         m_store->Exec("DELETE FROM consolidation_watermarks WHERE agent_id = '" + agentId + "'");
+        m_store->Exec("DELETE FROM session_reports WHERE agent_id = '" + agentId + "'");
+        m_store->Exec("DELETE FROM session_turns WHERE session_id IN (SELECT id FROM sessions WHERE agent_id = '" + agentId + "')");
+        m_store->Exec("DELETE FROM sessions WHERE agent_id = '" + agentId + "'");
         m_idMap.clear();
     }
 
@@ -705,8 +745,18 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
         "ontology_properties", "ontology_entities",
         "gallivanting_sessions", "gallivanting_threads",
         "schedules", "consolidation_runs", "consolidation_watermarks",
-        "memory_files", "lua_scripts"
+        "memory_files", "lua_scripts",
+        "session_reports"
     };
+    // Sessions + turns need special handling (turns reference sessions via FK)
+    {
+        auto del = m_store->Prepare(
+            "DELETE FROM session_turns WHERE session_id IN "
+            "(SELECT id FROM sessions WHERE agent_id = ?)");
+        if (del) { del->BindText(1, agentId); del->ExecDML(); }
+        del = m_store->Prepare("DELETE FROM sessions WHERE agent_id = ?");
+        if (del) { del->BindText(1, agentId); del->ExecDML(); }
+    }
     for (const char* tbl : cleanupTables) {
         auto del = m_store->Prepare(
             std::string("DELETE FROM ") + tbl + " WHERE agent_id = ?");
@@ -942,6 +992,17 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
 
     // Lua scripts
     importTable("lua-scripts.jsonl", "lua_scripts", "id", {});
+
+    // Sessions (FK: none — sessions.id is the primary key, remapped)
+    importTable("sessions/sessions.jsonl", "sessions", "id", {});
+
+    // Session turns (FK: session_id → sessions)
+    importTable("sessions/turns.jsonl", "session_turns", "id",
+                {{"session_id", "sessions"}});
+
+    // Session reports (FK: session_id → sessions)
+    importTable("sessions/reports.jsonl", "session_reports", "id",
+                {{"session_id", "sessions"}});
 
     ALOG_INFO("archive", "import complete: " << agentId << " (" << m_idMap.size() << " id mappings)");
 
