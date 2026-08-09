@@ -702,11 +702,20 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
     if (!Json::parseFromStream(rb, ms, &manifest, &errs))
         return "failed to parse manifest.json: " + errs;
 
+    // Determine source agent_id from manifest (nested or top-level).
+    // For composable archives (e.g. from external exporters), agent_id may
+    // be absent — it will be determined from agent.json or auto-generated.
     std::string sourceAgentId;
     if (manifest.isMember("agent") && manifest["agent"].isMember("agent_id"))
         sourceAgentId = manifest["agent"]["agent_id"].asString();
-    if (sourceAgentId.empty()) return "manifest missing agent_id";
+    else if (manifest.isMember("agent_id"))
+        sourceAgentId = manifest["agent_id"].asString();
 
+    // Determine the agent_id to use for import:
+    // 1. Explicit targetAgentId (from query param)
+    // 2. agent_id from agent.json (if present)
+    // 3. sourceAgentId from manifest (if present)
+    // 4. Auto-generated (DB-assigned on insert)
     std::string agentId = targetAgentId.empty() ? sourceAgentId : targetAgentId;
 
     // Handle import mode
