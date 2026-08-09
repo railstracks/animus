@@ -600,7 +600,8 @@ static int RunKernel(animus::kernel::KernelConfig& cfg,
   std::cout << "\n";
   std::cout << "Lua:    " << cfg.lua_script_dir << "\n";
   std::cout << "Admin:  " << (cfg.admin.enabled ? "enabled" : "disabled")
-            << " at " << cfg.admin.host << ":" << cfg.admin.port << "\n";
+            << " at " << cfg.admin.host << ":" << cfg.admin.port
+            << " (max body: " << (cfg.admin.clientMaxBodySize / (1024*1024)) << "MB)\n";
   std::cout << "=====================\n";
 
   if (cfg.legacyPaths) {

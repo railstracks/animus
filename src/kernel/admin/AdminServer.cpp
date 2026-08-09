@@ -1257,6 +1257,7 @@ void AdminServer::RunLoop() {
         app.setThreadNum(1);
         app.addListener(m_config.host, m_config.port);
         app.setDocumentRoot(".");
+        app.setClientMaxBodySize(m_config.clientMaxBodySize);
         RegisterWebSocketControllers();
 
         m_running.store(true);
