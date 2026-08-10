@@ -531,6 +531,12 @@ bool AgentManager::ApplyAgentEntityPatch(
     if (!ParseStringField(patch, "default_provider", &agent->default_provider, error)) return false;
     if (!ParseStringField(patch, "default_model", &agent->default_model, error)) return false;
     if (!ParseStringField(patch, "default_vision_model", &agent->default_vision_model, error)) return false;
+    if (!ParseStringField(patch, "intake_provider", &agent->intake_provider, error)) return false;
+    if (!ParseStringField(patch, "intake_model", &agent->intake_model, error)) return false;
+    if (!ParseStringField(patch, "review_provider", &agent->review_provider, error)) return false;
+    if (!ParseStringField(patch, "review_model", &agent->review_model, error)) return false;
+    if (!ParseStringField(patch, "session_report_provider", &agent->session_report_provider, error)) return false;
+    if (!ParseStringField(patch, "session_report_model", &agent->session_report_model, error)) return false;
     if (!ParseStringField(patch, "intake_interval", &agent->intake_interval, error)) return false;
     if (!ParseStringField(patch, "intake_prompt", &agent->intake_prompt, error)) return false;
     if (patch.isMember("context_window")) {

@@ -130,12 +130,26 @@ const formData = ref({
   consolidation_tool_budget: 30,
   intake_interval: '',
   intake_prompt: '',
+  intake_provider: '',
+  intake_model: '',
+  review_provider: '',
+  review_model: '',
+  session_report_provider: '',
+  session_report_model: '',
   enabled_tools: [] as string[],
   allowed_nodes: [] as string[],
   tool_configs: {} as Record<string, unknown>,
 });
 
 const isNew = computed(() => !editingAgent.value);
+
+const providerOptions = computed(() =>
+  providers.value.map((p) => ({ label: p.name || p.provider_id, value: p.provider_id }))
+);
+
+const intakeModelOptions = ref<string[]>([]);
+const reviewModelOptions = ref<string[]>([]);
+const sessionReportModelOptions = ref<string[]>([]);
 
 const visionModelOptions = computed(() => [
   { label: 'None', value: '' },
@@ -372,6 +386,12 @@ function openEdit(a: Agent) {
     consolidation_tool_budget: a.budget.consolidation_tool_budget,
     intake_interval: (a as any).intake_interval || '',
     intake_prompt: (a as any).intake_prompt || '',
+    intake_provider: (a as any).intake_model_config?.provider || '',
+    intake_model: (a as any).intake_model_config?.model || '',
+    review_provider: (a as any).review_model_config?.provider || '',
+    review_model: (a as any).review_model_config?.model || '',
+    session_report_provider: (a as any).session_report_model_config?.provider || '',
+    session_report_model: (a as any).session_report_model_config?.model || '',
     enabled_tools: [...a.enabled_tools],
     allowed_nodes: [...(a.allowed_nodes || [])],
     tool_configs: JSON.parse(JSON.stringify(a.tool_configs || {})),
@@ -426,6 +446,12 @@ async function submitForm() {
       default_vision_model: formData.value.default_vision_model || '',
       intake_interval: formData.value.intake_interval || '',
       intake_prompt: formData.value.intake_prompt || '',
+      intake_provider: formData.value.intake_provider || '',
+      intake_model: formData.value.intake_model || '',
+      review_provider: formData.value.review_provider || '',
+      review_model: formData.value.review_model || '',
+      session_report_provider: formData.value.session_report_provider || '',
+      session_report_model: formData.value.session_report_model || '',
     };
 
     let savedId = formData.value.id;
@@ -603,6 +629,31 @@ watch(
     }
   }
 );
+
+// Load model lists when consolidation providers change
+async function loadConsolidationModels(providerId: string, target: 'intake' | 'review' | 'sessionReport') {
+  if (!providerId) {
+    if (target === 'intake') intakeModelOptions.value = [];
+    if (target === 'review') reviewModelOptions.value = [];
+    if (target === 'sessionReport') sessionReportModelOptions.value = [];
+    return;
+  }
+  try {
+    const data = await apiGet<{ models?: string[] }>(`/api/v1/providers/${providerId}/models`);
+    const models = Array.isArray(data.models) ? data.models : [];
+    if (target === 'intake') intakeModelOptions.value = models;
+    if (target === 'review') reviewModelOptions.value = models;
+    if (target === 'sessionReport') sessionReportModelOptions.value = models;
+  } catch {
+    if (target === 'intake') intakeModelOptions.value = [];
+    if (target === 'review') reviewModelOptions.value = [];
+    if (target === 'sessionReport') sessionReportModelOptions.value = [];
+  }
+}
+
+watch(() => formData.value.intake_provider, (v) => loadConsolidationModels(v, 'intake'));
+watch(() => formData.value.review_provider, (v) => loadConsolidationModels(v, 'review'));
+watch(() => formData.value.session_report_provider, (v) => loadConsolidationModels(v, 'sessionReport'));
 </script>
 
 <template>
@@ -726,6 +777,7 @@ watch(
           <v-tabs v-model="formTab" class="mb-4">
             <v-tab value="identity">{{ t('agents.form.tabs.identity') }}</v-tab>
             <v-tab value="model">{{ t('agents.form.tabs.model') }}</v-tab>
+            <v-tab value="consolidation">Consolidation</v-tab>
             <v-tab value="reasoning">{{ t('agents.form.tabs.reasoning') }}</v-tab>
             <v-tab value="budget">{{ t('agents.form.tabs.budget') }}</v-tab>
             <v-tab value="tools">{{ t('agents.form.tabs.tools') }}</v-tab>
@@ -788,6 +840,98 @@ watch(
                 persistent-hint
                 clearable
               />
+            </v-tabs-window-item>
+
+            <!-- Consolidation Models -->
+            <v-tabs-window-item value="consolidation">
+              <p class="text-body-2 text-medium-emphasis mb-4">
+                Override the provider/model used for each consolidation type. Leave empty to use the agent's default provider/model.
+              </p>
+
+              <!-- Intake -->
+              <div class="text-subtitle-2 mb-2">Intake</div>
+              <v-row dense>
+                <v-col cols="6">
+                  <v-select v-model="formData.intake_provider"
+                    label="Intake Provider"
+                    :items="providerOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+                <v-col cols="6">
+                  <v-select v-model="formData.intake_model"
+                    label="Intake Model"
+                    :items="intakeModelOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+              </v-row>
+
+              <v-divider class="my-4" />
+
+              <!-- Review -->
+              <div class="text-subtitle-2 mb-2">Review</div>
+              <v-row dense>
+                <v-col cols="6">
+                  <v-select v-model="formData.review_provider"
+                    label="Review Provider"
+                    :items="providerOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+                <v-col cols="6">
+                  <v-select v-model="formData.review_model"
+                    label="Review Model"
+                    :items="reviewModelOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+              </v-row>
+
+              <v-divider class="my-4" />
+
+              <!-- Session Reporting -->
+              <div class="text-subtitle-2 mb-2">Session Reporting</div>
+              <v-row dense>
+                <v-col cols="6">
+                  <v-select v-model="formData.session_report_provider"
+                    label="Session Report Provider"
+                    :items="providerOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+                <v-col cols="6">
+                  <v-select v-model="formData.session_report_model"
+                    label="Session Report Model"
+                    :items="sessionReportModelOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+              </v-row>
             </v-tabs-window-item>
 
             <!-- Reasoning -->

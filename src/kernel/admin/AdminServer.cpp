@@ -567,6 +567,22 @@ Json::Value BuildAgentEntityJson(const Agent& a) {
     out["intake_interval"] = a.intake_interval;
     out["intake_prompt"] = a.intake_prompt;
 
+    // Consolidation model overrides
+    Json::Value consIntake(Json::objectValue);
+    consIntake["provider"] = a.intake_provider;
+    consIntake["model"] = a.intake_model;
+    out["intake_model_config"] = consIntake;
+
+    Json::Value consReview(Json::objectValue);
+    consReview["provider"] = a.review_provider;
+    consReview["model"] = a.review_model;
+    out["review_model_config"] = consReview;
+
+    Json::Value consReport(Json::objectValue);
+    consReport["provider"] = a.session_report_provider;
+    consReport["model"] = a.session_report_model;
+    out["session_report_model_config"] = consReport;
+
     out["temperature"] = a.temperature;
 
     Json::Value reasoning(Json::objectValue);

@@ -805,8 +805,21 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                         std::string model;
                         auto agent = m_agentStore->GetById(curAgent);
                         if (agent) {
+                            // Default provider/model
                             if (!agent->default_provider.empty()) providerId = agent->default_provider;
                             if (!agent->default_model.empty()) model = agent->default_model;
+
+                            // Consolidation type overrides — empty falls through to default
+                            if (sessionSubtype == "intake" || sessionSubtype.rfind("intake:", 0) == 0) {
+                                if (!agent->intake_provider.empty()) providerId = agent->intake_provider;
+                                if (!agent->intake_model.empty()) model = agent->intake_model;
+                            } else if (sessionSubtype == "review" || sessionSubtype.rfind("review:", 0) == 0) {
+                                if (!agent->review_provider.empty()) providerId = agent->review_provider;
+                                if (!agent->review_model.empty()) model = agent->review_model;
+                            } else if (sessionSubtype == "session_report") {
+                                if (!agent->session_report_provider.empty()) providerId = agent->session_report_provider;
+                                if (!agent->session_report_model.empty()) model = agent->session_report_model;
+                            }
                         }
 
                         std::string registryKey = providerId;

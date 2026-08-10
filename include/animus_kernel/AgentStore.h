@@ -39,6 +39,14 @@ struct Agent {
     std::string default_model;         // e.g. "gpt-4.1-mini", "glm-5.1"
     std::string default_vision_model;  // e.g. "ollama/llava" — empty = no vision
 
+    // Consolidation model overrides — empty = fall through to default_provider/default_model
+    std::string intake_provider;       // provider for consolidation intake sessions
+    std::string intake_model;          // model for consolidation intake sessions
+    std::string review_provider;       // provider for consolidation review sessions
+    std::string review_model;          // model for consolidation review sessions
+    std::string session_report_provider; // provider for session reporting sessions
+    std::string session_report_model;    // model for session reporting sessions
+
     // Intake (agent-level, not per-layer)
     std::string intake_interval;       // cron expression, empty = no scheduled intake
     std::string intake_prompt;         // override for intake LLM prompt, empty = use default
