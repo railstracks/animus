@@ -10,7 +10,6 @@ option(ANIMUS_BUILD_TESTS "Build test executables" ON)
 option(ANIMUS_USE_SYSTEM_DROGON "Use a preinstalled Drogon package" OFF)
 option(ANIMUS_ADMIN_UI_EMBED "Embed built admin UI assets into animus binary" ON)
 option(ANIMUS_ADMIN_UI_BUILD "Build admin UI during CMake build (requires npm)" OFF)
-option(ANIMUS_WITH_POSTGRESQL "Enable PostgreSQL backend (requires libpq)" OFF)
 
 # ============================================================================
 # Compiler Settings
@@ -284,7 +283,7 @@ add_library(animus_kernel
   src/kernel/AgentKernel.cpp
   src/kernel/AgentArchive.cpp
   src/kernel/data/SqliteDataStore.cpp
-  src/kernel/data/PgDataStore.cpp
+  src/kernel/data/PgDataStore.cpp  # always compiled (unconditional include)
   src/kernel/data/SchemaHelpers.cpp
   src/kernel/data/DatabaseConfig.cpp
   src/kernel/memory/MemoryStore.cpp
@@ -450,13 +449,12 @@ if(ANIMUS_WITH_EMBEDDINGS AND ANIMUS_HAS_EMBEDDINGS)
   target_link_libraries(animus_kernel PRIVATE Threads::Threads)
 endif()
 
-# PostgreSQL backend (optional)
-if(ANIMUS_WITH_POSTGRESQL)
-  find_package(PostgreSQL REQUIRED)
-  target_include_directories(animus_kernel PRIVATE ${PostgreSQL_INCLUDE_DIRS})
-  target_link_libraries(animus_kernel PRIVATE ${PostgreSQL_LIBRARIES})
-  target_compile_definitions(animus_kernel PRIVATE ANIMUS_WITH_POSTGRESQL)
-endif()
+# PostgreSQL backend — always find headers/libs since PgDataStore.cpp is always compiled.
+# The ANIMUS_WITH_POSTGRESQL define enables runtime PostgreSQL usage.
+find_package(PostgreSQL REQUIRED)
+target_include_directories(animus_kernel PRIVATE ${PostgreSQL_INCLUDE_DIRS})
+target_link_libraries(animus_kernel PRIVATE ${PostgreSQL_LIBRARIES})
+target_compile_definitions(animus_kernel PRIVATE ANIMUS_WITH_POSTGRESQL)
 
 target_compile_features(animus_kernel PUBLIC cxx_std_20)
 
@@ -486,17 +484,15 @@ target_link_options(animusd PRIVATE -rdynamic)
 # Migration Tool (SQLite → PostgreSQL)
 # ============================================================================
 
-if(ANIMUS_WITH_POSTGRESQL)
-    add_executable(animus-migrate
-      src/migrate.cpp
-    )
+add_executable(animus-migrate
+  src/migrate.cpp
+)
 
-    target_link_libraries(animus-migrate PRIVATE animus_kernel)
+target_link_libraries(animus-migrate PRIVATE animus_kernel)
 
-    set_target_properties(animus-migrate PROPERTIES
-      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
-    )
-endif()
+set_target_properties(animus-migrate PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+)
 
 # ============================================================================
 # Tests
