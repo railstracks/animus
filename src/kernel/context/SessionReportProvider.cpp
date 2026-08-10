@@ -100,11 +100,21 @@ std::optional<ContextBlock> SessionReportProvider::Provide(
             return a.ageMs < b.ageMs;
         });
 
-    // Sort by relevance (highest similarity first) — for Pool 2
+    // Sort by relevance — reports WITH embeddings by similarity, then reports
+    // WITHOUT embeddings by recency (fallback when embedding data is absent)
     auto byRelevance = scored;
-    std::sort(byRelevance.begin(), byRelevance.end(),
+    std::stable_sort(byRelevance.begin(), byRelevance.end(),
         [](const ScoredReport& a, const ScoredReport& b) {
-            return a.similarity > b.similarity;
+            // Reports with embeddings rank above those without (when similarity is meaningful)
+            bool aHasEmb = a.hasEmbedding;
+            bool bHasEmb = b.hasEmbedding;
+            if (aHasEmb != bHasEmb) return aHasEmb;
+            if (aHasEmb && bHasEmb) {
+                // Both have embeddings — sort by similarity
+                return a.similarity > b.similarity;
+            }
+            // Neither has embeddings — sort by recency (most recent first)
+            return a.ageMs < b.ageMs;
         });
 
     struct SelectedEntry {
@@ -176,8 +186,11 @@ std::optional<ContextBlock> SessionReportProvider::Provide(
         // Skip already-selected (from recency pool)
         if (selectedSessionIds.count(sr.report->session_id)) continue;
 
-        // Skip very low relevance if we're not padding
-        if (useEmbeddings && sr.similarity < 0.2f && !agent.pad_context) continue;
+        // Skip very low relevance reports — but only when we actually have
+        // embedding data to judge relevance. Reports without embeddings fall
+        // through to recency-based inclusion (they're sorted by recency in
+        // byRelevance when embeddings are absent).
+        if (useEmbeddings && sr.hasEmbedding && sr.similarity < 0.2f && !agent.pad_context) continue;
 
         auto entry = formatEntry(sr, "relevant");
         if (charsUsed + entry.charLen > totalCharBudget && !selected.empty()) break;
