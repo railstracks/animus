@@ -86,6 +86,10 @@ private:
     // Also re-chunks files that have changed content since last chunking.
     void ComputePendingEmbeddings();
 
+    // Compute embeddings for session reports that don't have them yet.
+    // Runs after import or startup to backfill missing embedding vectors.
+    void ComputePendingReportEmbeddings();
+
     /// Send the assistant's text response back to the originating social conversation.
     /// For VK/Telegram/IRC auto-reply through ChannelManager.
     void SendAutoReply(const ChannelManager::ReplyTarget& target,

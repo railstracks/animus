@@ -74,6 +74,11 @@ public:
     // Store an embedding vector for a report (for relevance-based retrieval).
     bool StoreEmbedding(int64_t reportId, const std::vector<float>& embedding);
 
+    // List reports that don't have embedding vectors yet.
+    // Returns up to 'limit' reports ordered by most recently updated.
+    std::vector<SessionReportWithEmbedding> ListWithoutEmbeddings(
+        const std::string& agentId, int limit = 100) const;
+
     // List recent reports with embedding vectors attached.
     // Reports without embeddings have has_embedding = false.
     std::vector<SessionReportWithEmbedding> ListRecentWithEmbeddings(

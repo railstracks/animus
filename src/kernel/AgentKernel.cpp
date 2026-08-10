@@ -1390,6 +1390,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
     if (m_embeddingService && m_embeddingService->IsAvailable()) {
         m_jobs.Enqueue([this]() {
             ComputePendingEmbeddings();
+            ComputePendingReportEmbeddings();
         });
     }
 
@@ -1954,6 +1955,45 @@ void AgentKernel::ComputePendingEmbeddings() {
     if (totalChunked > 0 || totalEmbedded > 0) {
         ALOG_INFO("embedding", "Computed " << totalChunked << " chunks, "
                   << totalEmbedded << " embeddings for " << agents.size() << " agents");
+    }
+}
+
+// ============================================================================
+// ComputePendingReportEmbeddings — backfill missing session report embeddings
+// ============================================================================
+
+void AgentKernel::ComputePendingReportEmbeddings() {
+    if (!m_embeddingService || !m_embeddingService->IsAvailable()) return;
+    if (!m_sessionReportStore || !m_agentStore) return;
+
+    auto agents = m_agentStore->List();
+    int totalEmbedded = 0;
+
+    for (const auto& agent : agents) {
+        auto reports = m_sessionReportStore->ListWithoutEmbeddings(agent.id, 200);
+        for (const auto& report : reports) {
+            // Build text from all four fields for a rich embedding
+            std::string embedText = report.summary + " " +
+                                    report.past_events + " " +
+                                    report.current_activity + " " +
+                                    report.forward_look;
+            // Truncate to embedding model's sweet spot
+            if (embedText.size() > 700) {
+                embedText = embedText.substr(0, 700);
+            }
+            if (embedText.empty()) continue;
+
+            auto emb = m_embeddingService->Embed(embedText);
+            if (emb.has_value()) {
+                m_sessionReportStore->StoreEmbedding(report.id, *emb);
+                totalEmbedded++;
+            }
+        }
+    }
+
+    if (totalEmbedded > 0) {
+        ALOG_INFO("embedding", "Computed " << totalEmbedded
+                  << " session report embeddings");
     }
 }
 
