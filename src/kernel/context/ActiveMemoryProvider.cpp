@@ -441,7 +441,9 @@ void ActiveMemoryProvider::AppendOntology(std::string& out,
 
     if (allEntities.empty()) return;
 
-    // Determine baseline inclusion: when ontology is small, include everything
+    // Determine baseline inclusion: when ontology is small, include everything.
+    // For large ontologies, pad_context still includes the most recently
+    // updated entities as baseline (up to max_ontology_items).
     bool baselineInclude = allEntities.size() <= static_cast<size_t>(m_config.ontology_baseline_threshold);
 
     // Score entities by tag match count and keyword match
@@ -452,6 +454,7 @@ void ActiveMemoryProvider::AppendOntology(std::string& out,
         bool isBaseline;  // included because ontology is small, not because of match
     };
     std::vector<ScoredEntity> scored;
+    std::vector<ScoredEntity> unmatched;  // entities with no keyword/tag match (for pad_context)
 
     for (const auto& entity : allEntities) {
         ScoredEntity se{&entity, 0, 0, false};
@@ -493,6 +496,26 @@ void ActiveMemoryProvider::AppendOntology(std::string& out,
         se.isBaseline = (se.tagScore == 0 && se.kwScore == 0);
         if (se.tagScore > 0 || se.kwScore >= 1 || (baselineInclude && se.isBaseline && agent.pad_context)) {
             scored.push_back(se);
+        } else if (se.isBaseline && agent.pad_context && !baselineInclude) {
+            // Large ontology with pad_context: collect unmatched entities
+            // for potential baseline padding below
+            unmatched.push_back(se);
+        }
+    }
+
+    // When pad_context is enabled and we have unmatched entities (large ontology,
+    // no keyword matches), include the most recently updated ones as baseline.
+    // This mirrors how episodic memory pads with weight-sorted observations.
+    if (agent.pad_context && !baselineInclude && !unmatched.empty()) {
+        // Sort unmatched by updated_at_unix_ms descending (most recent first)
+        std::sort(unmatched.begin(), unmatched.end(),
+            [](const ScoredEntity& a, const ScoredEntity& b) {
+                return a.entity->updated_at_unix_ms > b.entity->updated_at_unix_ms;
+            });
+        // Add top N as baseline (up to max_ontology_items minus any already matched)
+        int baselineSlots = m_config.max_ontology_items - static_cast<int>(scored.size());
+        for (int i = 0; i < baselineSlots && i < static_cast<int>(unmatched.size()); ++i) {
+            scored.push_back(unmatched[i]);
         }
     }
 
