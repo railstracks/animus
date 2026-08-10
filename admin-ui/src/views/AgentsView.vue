@@ -491,13 +491,68 @@ const exportLoading = ref<string>('');
 const importInput = ref<HTMLInputElement | null>(null);
 const importLoading = ref(false);
 
-async function exportAgent(id: string) {
+// Export dialog state
+interface ExportFlags {
+  ontology: boolean;
+  schedules: boolean;
+  gallivanting: boolean;
+  gallivantingHistory: boolean;
+  diary: boolean;
+  sessions: boolean;
+  reports: boolean;
+  attachments: boolean;
+  luaScripts: boolean;
+  promptLogs: boolean;
+  embeddings: boolean;
+}
+
+const defaultExportFlags = (): ExportFlags => ({
+  ontology: true,
+  schedules: true,
+  gallivanting: true,
+  gallivantingHistory: false,
+  diary: true,
+  sessions: false,
+  reports: false,
+  attachments: false,
+  luaScripts: true,
+  promptLogs: false,
+  embeddings: true,
+});
+
+const showExportDialog = ref(false);
+const exportTargetAgent = ref('');
+const exportFlags = ref<ExportFlags>(defaultExportFlags());
+
+function openExportDialog(id: string) {
+  exportTargetAgent.value = id;
+  exportFlags.value = defaultExportFlags();
+  showExportDialog.value = true;
+}
+
+async function confirmExport() {
+  const id = exportTargetAgent.value;
+  showExportDialog.value = false;
   exportLoading.value = id;
   try {
+    const components: string[] = [];
+    const f = exportFlags.value;
+    if (f.ontology) components.push('ontology');
+    if (f.schedules) components.push('schedules');
+    if (f.gallivanting) components.push('gallivanting');
+    if (f.gallivantingHistory) components.push('gallivanting_history');
+    if (f.diary) components.push('diary');
+    if (f.sessions) components.push('sessions');
+    if (f.reports) components.push('reports');
+    if (f.attachments) components.push('attachments');
+    if (f.luaScripts) components.push('lua_scripts');
+    if (f.promptLogs) components.push('prompt_logs');
+    if (!f.embeddings) components.push('no_embeddings');
+
     const resp = await fetch(`/api/v1/agents/${id}/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ components: 'all' }),
+      body: JSON.stringify({ components }),
     });
     if (!resp.ok) {
       const errBody = await resp.text();
@@ -741,7 +796,7 @@ watch(() => formData.value.session_report_provider, (v) => loadConsolidationMode
               <v-btn
                 variant="text" size="x-small"
                 :loading="exportLoading === a.id"
-                @click="exportAgent(a.id)"
+                @click="openExportDialog(a.id)"
               >
                 Export
               </v-btn>
@@ -1260,6 +1315,50 @@ watch(() => formData.value.session_report_provider, (v) => loadConsolidationMode
           <v-btn color="primary" @click="submitForm">
             {{ isNew ? t('agents.form.create') : t('agents.form.save') }}
           </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Export Dialog -->
+    <v-dialog v-model="showExportDialog" max-width="560">
+      <v-card rounded="xl" class="pa-2">
+        <v-card-title class="text-h6">
+          Export Agent
+          <span class="text-body-2 text-medium-emphasis ml-2">{{ exportTargetAgent }}</span>
+        </v-card-title>
+        <v-card-text>
+          <p class="text-body-2 text-medium-emphasis mb-4">
+            Choose which components to include. Core data (agent record, memory layers, memory files) is always included.
+          </p>
+
+          <div class="text-subtitle-2 mb-2">Core (always included)</div>
+          <div class="text-body-2 text-medium-emphasis mb-4">
+            Agent record · Memory layers · Memory files
+          </div>
+
+          <v-divider class="mb-3" />
+
+          <div class="text-subtitle-2 mb-2">Optional Components</div>
+          <v-checkbox v-model="exportFlags.ontology" label="Ontology (entities, properties)" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.schedules" label="Schedules" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.gallivanting" label="Gallivanting threads" density="compact" hide-details />
+          <v-checkbox v-if="exportFlags.gallivanting" v-model="exportFlags.gallivantingHistory" label="Include gallivanting session history" density="compact" hide-details class="ml-6" />
+          <v-checkbox v-model="exportFlags.diary" label="Diary entries" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.luaScripts" label="Lua scripts" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.attachments" label="Attachments" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.promptLogs" label="Prompt logs" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.embeddings" label="Embedding vectors" density="compact" hide-details hint="Include embedding data for semantic search" persistent-hint />
+
+          <v-divider class="my-3" />
+
+          <div class="text-subtitle-2 mb-2">Session Data</div>
+          <v-checkbox v-model="exportFlags.sessions" label="Sessions + turns" density="compact" hide-details hint="Full conversation history. Significantly increases archive size." persistent-hint />
+          <v-checkbox v-model="exportFlags.reports" label="Session reports" density="compact" hide-details hint="Consolidated summaries per session" persistent-hint />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showExportDialog = false">Cancel</v-btn>
+          <v-btn color="primary" @click="confirmExport">Export</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
