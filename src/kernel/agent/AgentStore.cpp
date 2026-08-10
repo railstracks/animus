@@ -658,7 +658,9 @@ bool AgentStore::Update(const Agent& agent) {
         "default_provider=?, default_model=?, default_vision_model=?, intake_interval=?, intake_prompt=?, context_window=?, temperature=?, "
         "reasoning_enabled=?, reasoning_effort=?, pad_context=?, "
         "max_chain_steps=?, max_tool_calls_per_chain=?, timeout_seconds=?, episodic_token_budget=?, semantic_token_budget=?, perspectives_token_budget=?, consolidation_tool_budget=?, memory_file_token_budget=?, ambient_context_limit=?, "
-        "enabled_tools=?, tool_configs=?, allowed_nodes=?, session_report_token_budget=?, updated_at_unix_ms=? "
+        "enabled_tools=?, tool_configs=?, allowed_nodes=?, session_report_token_budget=?, updated_at_unix_ms=?, "
+        "intake_provider=?, intake_model=?, review_provider=?, review_model=?, "
+        "session_report_provider=?, session_report_model=? "
         "WHERE agent_id=?");
     if (!stmt) return false;
 
