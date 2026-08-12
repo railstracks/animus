@@ -648,6 +648,14 @@ bool AgentManager::ApplyAgentEntityPatch(
         agent->tool_configs_json = Json::writeString(wb, toolConfigs);
     }
 
+    if (patch.isMember("max_turn_age_days")) {
+        if (!patch["max_turn_age_days"].isUInt()) {
+            if (error) *error = "max_turn_age_days must be a non-negative integer";
+            return false;
+        }
+        agent->max_turn_age_days = patch["max_turn_age_days"].asUInt();
+    }
+
     if (agent->name.empty()) {
         if (error) *error = "name is required";
         return false;

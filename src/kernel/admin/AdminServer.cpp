@@ -628,6 +628,7 @@ Json::Value BuildAgentEntityJson(const Agent& a) {
 
     out["created_at_unix_ms"] = static_cast<Json::Int64>(a.created_at_unix_ms);
     out["updated_at_unix_ms"] = static_cast<Json::Int64>(a.updated_at_unix_ms);
+    out["max_turn_age_days"] = static_cast<Json::UInt>(a.max_turn_age_days);
     // is_default removed — no longer part of Agent struct
     out["is_default"] = false;
     return out;

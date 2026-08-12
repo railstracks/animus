@@ -78,6 +78,9 @@ struct Agent {
     // Timestamps
     std::int64_t created_at_unix_ms{0};
     std::int64_t updated_at_unix_ms{0};
+
+    // Tiered turn storage: age threshold in days for archiving turns (0 = keep forever)
+    std::uint32_t max_turn_age_days{0};
 };
 
 // ============================================================================
@@ -131,7 +134,8 @@ private:
                      const std::string& allowedNodesJson,
                      std::uint32_t sessionReportTokenBudget,
                      const std::string& diarySecret,
-                     std::int64_t createdAtUnixMs, std::int64_t updatedAtUnixMs);
+                     std::int64_t createdAtUnixMs, std::int64_t updatedAtUnixMs,
+                     std::uint32_t maxTurnAgeDays = 0);
 
     IDataStore* m_store;
 };

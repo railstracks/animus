@@ -63,6 +63,7 @@ interface Agent {
   session_report_token_budget: number;
     consolidation_tool_budget: number;
   };
+  max_turn_age_days: number;
   enabled_tools: string[];
   allowed_nodes?: string[];
   tool_configs?: Record<string, unknown>;
@@ -128,6 +129,7 @@ const formData = ref({
   session_report_token_budget: 1500,
   ambient_context_limit: 5000,
   consolidation_tool_budget: 30,
+  max_turn_age_days: 0,
   intake_interval: '',
   intake_prompt: '',
   intake_provider: '',
@@ -343,6 +345,7 @@ function openCreate() {
     session_report_token_budget: 1500,
     ambient_context_limit: 5000,
     consolidation_tool_budget: 30,
+    max_turn_age_days: 0,
     intake_interval: '',
     intake_prompt: '',
     enabled_tools: [],
@@ -384,6 +387,7 @@ function openEdit(a: Agent) {
     ambient_context_limit: a.budget.ambient_context_limit,
     session_report_token_budget: a.budget.session_report_token_budget,
     consolidation_tool_budget: a.budget.consolidation_tool_budget,
+    max_turn_age_days: (a as any).max_turn_age_days || 0,
     intake_interval: (a as any).intake_interval || '',
     intake_prompt: (a as any).intake_prompt || '',
     intake_provider: (a as any).intake_model_config?.provider || '',
@@ -440,6 +444,7 @@ async function submitForm() {
         session_report_token_budget: Number(formData.value.session_report_token_budget),
         consolidation_tool_budget: Number(formData.value.consolidation_tool_budget),
       },
+      max_turn_age_days: Number(formData.value.max_turn_age_days),
       enabled_tools: formData.value.enabled_tools,
       allowed_nodes: formData.value.allowed_nodes,
       tool_configs: formData.value.tool_configs,
@@ -1066,6 +1071,12 @@ watch(() => formData.value.session_report_provider, (v) => loadConsolidationMode
               <v-text-field v-model="formData.consolidation_tool_budget"
                 :label="t('agents.form.consolidationToolBudget')"
                 type="number"
+              />
+              <v-text-field v-model="formData.max_turn_age_days"
+                label="Turn retention (days)"
+                type="number"
+                hint="Archives turns older than N days to cold storage. 0 = keep all in primary storage."
+                persistent-hint
               />
               <v-text-field v-model="formData.intake_interval"
                 :label="t('agents.form.intakeInterval')"

@@ -1112,3 +1112,153 @@
         },
         {drogon::Post});
 }
+
+// ============================================================================
+// Tiered Turn Storage (Ticket 142)
+// ============================================================================
+
+{
+    // POST /api/v1/agents/{agentId}/tier-turns — move old turns to archive table
+    // Query param: ?max_age_days=N (overrides agent's max_turn_age_days)
+    drogon::app().registerHandler(
+        "/api/v1/agents/{}/tier-turns",
+        [](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+           const std::string& agentId) {
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            if (!srv->m_dataStore) {
+                SendJsonError(callback, "data store not available", drogon::k503ServiceUnavailable);
+                return;
+            }
+
+            uint32_t maxAgeDays = 0;
+            std::string param = req->getParameter("max_age_days");
+            if (!param.empty()) {
+                maxAgeDays = static_cast<uint32_t>(std::atoll(param.c_str()));
+            } else {
+                // Use agent's configured max_turn_age_days
+                auto result = srv->m_agentManager.GetAgent(agentId);
+                if (result.agent.has_value()) maxAgeDays = result.agent->max_turn_age_days;
+            }
+            if (maxAgeDays == 0) {
+                SendJsonError(callback, "max_age_days is 0 — no tiering configured", drogon::k400BadRequest);
+                return;
+            }
+
+            int64_t cutoffMs = (std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count()) -
+                (static_cast<int64_t>(maxAgeDays) * 86400 * 1000);
+
+            // Move old turns to archive table (INSERT ... WHERE NOT EXISTS for idempotency)
+            std::string moveSql =
+                "INSERT INTO session_turns_archive "
+                "(id, session_id, turn_id, role, content, unix_ms, is_summary, "
+                "compacted_from, thinking_content, tool_calls, tool_call_id, tool_name, "
+                "intake_processed, intake_processed_at_unix_ms, token_count, is_compacted, metadata) "
+                "SELECT t.id, t.session_id, t.turn_id, t.role, t.content, t.unix_ms, "
+                "t.is_summary, t.compacted_from, t.thinking_content, t.tool_calls, "
+                "t.tool_call_id, t.tool_name, t.intake_processed, "
+                "t.intake_processed_at_unix_ms, t.token_count, t.is_compacted, t.metadata "
+                "FROM session_turns t "
+                "INNER JOIN sessions s ON t.session_id = s.id "
+                "WHERE s.agent_id = ? AND t.unix_ms < ? "
+                "AND NOT EXISTS (SELECT 1 FROM session_turns_archive a WHERE a.id = t.id)";
+            auto moveStmt = srv->m_dataStore->Prepare(moveSql);
+            if (!moveStmt) {
+                SendJsonError(callback, "failed to prepare move query", drogon::k500InternalServerError);
+                return;
+            }
+            moveStmt->BindText(1, agentId);
+            moveStmt->BindInt64(2, cutoffMs);
+            moveStmt->ExecDML();
+            int64_t moved = srv->m_dataStore->Changes();
+
+            // Delete moved turns from primary table
+            std::string delSql =
+                "DELETE FROM session_turns WHERE id IN ("
+                "SELECT t.id FROM session_turns t "
+                "INNER JOIN sessions s ON t.session_id = s.id "
+                "WHERE s.agent_id = ? AND t.unix_ms < ?)";
+            auto delStmt = srv->m_dataStore->Prepare(delSql);
+            if (!delStmt) {
+                SendJsonError(callback, "failed to prepare delete query", drogon::k500InternalServerError);
+                return;
+            }
+            delStmt->BindText(1, agentId);
+            delStmt->BindInt64(2, cutoffMs);
+            delStmt->ExecDML();
+            int64_t deleted = srv->m_dataStore->Changes();
+
+            Json::Value out(Json::objectValue);
+            out["status"] = "ok";
+            out["agent_id"] = agentId;
+            out["max_age_days"] = static_cast<Json::UInt>(maxAgeDays);
+            out["archived"] = static_cast<Json::Int64>(moved);
+            out["deleted_from_primary"] = static_cast<Json::Int64>(deleted);
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+            callback(resp);
+        },
+        {drogon::Post});
+}
+
+{
+    // GET /api/v1/agents/{agentId}/turns/archived — list archived turns
+    // Query params: ?session_id=N&limit=100&offset=0
+    drogon::app().registerHandler(
+        "/api/v1/agents/{}/turns/archived",
+        [](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+           const std::string& agentId) {
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            if (!srv->m_dataStore) {
+                SendJsonError(callback, "data store not available", drogon::k503ServiceUnavailable);
+                return;
+            }
+
+            int64_t limit = 100;
+            int64_t offset = 0;
+            std::string limitStr = req->getParameter("limit");
+            if (!limitStr.empty()) limit = std::atoll(limitStr.c_str());
+            std::string offsetStr = req->getParameter("offset");
+            if (!offsetStr.empty()) offset = std::atoll(offsetStr.c_str());
+
+            std::string sql =
+                "SELECT a.id, a.session_id, a.turn_id, a.role, a.content, a.unix_ms, "
+                "a.is_summary, a.compacted_from, a.thinking_content, a.tool_calls, "
+                "a.tool_call_id, a.tool_name, a.intake_processed, "
+                "a.intake_processed_at_unix_ms, a.token_count, a.is_compacted, a.metadata "
+                "FROM session_turns_archive a "
+                "INNER JOIN sessions s ON a.session_id = s.id "
+                "WHERE s.agent_id = ?";
+            std::string sessionId = req->getParameter("session_id");
+            if (!sessionId.empty()) sql += " AND a.session_id = " + sessionId;
+            sql += " ORDER BY a.unix_ms DESC LIMIT ? OFFSET ?";
+
+            auto stmt = srv->m_dataStore->Prepare(sql);
+            if (!stmt) {
+                SendJsonError(callback, "failed to prepare query", drogon::k500InternalServerError);
+                return;
+            }
+            stmt->BindText(1, agentId);
+            stmt->BindInt64(2, limit);
+            stmt->BindInt64(3, offset);
+
+            Json::Value turns(Json::arrayValue);
+            while (stmt->Step()) {
+                Json::Value t(Json::objectValue);
+                t["id"] = static_cast<Json::Int64>(stmt->ColumnInt64(0));
+                t["session_id"] = static_cast<Json::Int64>(stmt->ColumnInt64(1));
+                t["turn_id"] = static_cast<Json::Int64>(stmt->ColumnInt64(2));
+                t["role"] = stmt->ColumnText(3);
+                t["content"] = stmt->ColumnText(4);
+                t["unix_ms"] = static_cast<Json::Int64>(stmt->ColumnInt64(5));
+                turns.append(t);
+            }
+
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(turns);
+            callback(resp);
+        },
+        {drogon::Get});
+}

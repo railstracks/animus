@@ -646,6 +646,24 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
                  "updated_at_unix_ms", "embedding", "embedding_dim"})});
     }
 
+    // session_turns_archive (exported with sessions — preserves tiered data)
+    if (flags.sessions) {
+        files.push_back({"sessions/turns_archive.jsonl",
+            DumpTableJoin(m_store,
+                "SELECT a.id, a.session_id, a.turn_id, a.role, a.content, a.unix_ms, "
+                "a.is_summary, a.compacted_from, a.thinking_content, a.tool_calls, "
+                "a.tool_call_id, a.tool_name, a.intake_processed, "
+                "a.intake_processed_at_unix_ms, a.token_count, a.is_compacted, a.metadata "
+                "FROM session_turns_archive a "
+                "INNER JOIN sessions s ON a.session_id = s.id "
+                "WHERE s.agent_id = ?", agentId,
+                {"id", "session_id", "turn_id", "role", "content", "unix_ms",
+                 "is_summary", "compacted_from", "thinking_content", "tool_calls",
+                 "tool_call_id", "tool_name", "intake_processed",
+                 "intake_processed_at_unix_ms", "token_count", "is_compacted",
+                 "metadata"})});
+    }
+
     // Build tar
     std::vector<uint8_t> tarball;
     for (const auto& [name, content] : files) {
@@ -1339,6 +1357,56 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                         if (exportId > 0)
                             m_idMap["session_reports:" + std::to_string(exportId)] = newId;
                     }
+                }
+            }
+        }
+    }
+
+    // Session turns archive — dedup by (id) since archive IDs are the original turn IDs
+    {
+        auto fit = fileMap.find("sessions/turns_archive.jsonl");
+        if (fit != fileMap.end()) {
+            auto rows = ParseJSONL(fit->second);
+            for (const auto& row : rows) {
+                int64_t archiveId = 0;
+                if (row.isMember("id") && !row["id"].isNull())
+                    archiveId = row["id"].asInt64();
+
+                // Remap session_id FK
+                int64_t sessionId = 0;
+                if (row.isMember("session_id") && !row["session_id"].isNull())
+                    sessionId = row["session_id"].asInt64();
+                auto mapIt = m_idMap.find("sessions:" + std::to_string(sessionId));
+                if (mapIt != m_idMap.end()) sessionId = mapIt->second;
+
+                // Check if already archived (idempotent)
+                bool exists = false;
+                if (archiveId > 0) {
+                    auto chk = m_store->Prepare(
+                        "SELECT 1 FROM session_turns_archive WHERE id = ?");
+                    if (chk) {
+                        chk->BindInt64(1, archiveId);
+                        if (chk->Step()) exists = true;
+                    }
+                }
+                if (exists) continue;
+
+                std::ostringstream cols, vals;
+                std::vector<FieldValue> fv;
+                for (const auto& key : row.getMemberNames()) {
+                    if (key == "_export_id" || key == "_original_id") continue;
+                    if (!cols.str().empty()) { cols << ", "; vals << ", "; }
+                    cols << key; vals << "?";
+                    FieldValue val = ExtractField(row[key]);
+                    if (key == "session_id") { val.isInt = true; val.intVal = sessionId; }
+                    fv.push_back(val);
+                }
+                auto stmt = m_store->Prepare(
+                    "INSERT INTO session_turns_archive (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                if (stmt) {
+                    for (size_t i = 0; i < fv.size(); ++i)
+                        BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
+                    stmt->ExecDML();
                 }
             }
         }
