@@ -21,6 +21,9 @@ struct KernelConfig {
         bool allowUnauthenticatedLocalhost{true};
         std::string authToken{};
         std::uint32_t websocketMaxMessageBytes{65536};
+        // Max HTTP request body size. Drogon defaults to 1MB.
+        // Set high to allow large .agent archive imports.
+        std::size_t clientMaxBodySize{1024 * 1024 * 1024};  // 1GB
     };
 
     struct AgentModelConfig {

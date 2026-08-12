@@ -118,7 +118,11 @@ public:
     int64_t ColumnInt64(int col) override {
         if (!m_result || m_currentRow >= PQntuples(m_result) || col >= PQnfields(m_result)) return 0;
         if (PQgetisnull(m_result, m_currentRow, col)) return 0;
-        return std::atoll(PQgetvalue(m_result, m_currentRow, col));
+        const char* val = PQgetvalue(m_result, m_currentRow, col);
+        // Postgres boolean columns return "t"/"f"
+        if (val[0] == 't' && val[1] == '\0') return 1;
+        if (val[0] == 'f' && val[1] == '\0') return 0;
+        return std::atoll(val);
     }
     double ColumnDouble(int col) override {
         if (!m_result || m_currentRow >= PQntuples(m_result) || col >= PQnfields(m_result)) return 0.0;
@@ -161,9 +165,11 @@ public:
         if (!m_result || col >= PQnfields(m_result)) return ColumnType::Unknown;
         if (PQgetisnull(m_result, m_currentRow, col)) return ColumnType::Null;
         Oid typeid_ = PQftype(m_result, col);
-        if (typeid_ == 23 || typeid_ == 20 || typeid_ == 21) return ColumnType::Integer;
-        if (typeid_ == 700 || typeid_ == 701 || typeid_ == 1700) return ColumnType::Float;
-        if (typeid_ == 25 || typeid_ == 1043 || typeid_ == 1042) return ColumnType::Text;
+        if (typeid_ == 23 || typeid_ == 20 || typeid_ == 21 || typeid_ == 16) return ColumnType::Integer;  // int4, int8, int2, bool
+        if (typeid_ == 700 || typeid_ == 701 || typeid_ == 1700) return ColumnType::Float;    // float4, float8, numeric
+        if (typeid_ == 25 || typeid_ == 1043 || typeid_ == 1042 ||
+            typeid_ == 114 || typeid_ == 3802) return ColumnType::Text;   // text, varchar, bpchar, json, jsonb
+        // bytea (17), json (114), jsonb (3802) fall through to Unknown → blob/base64
         return ColumnType::Unknown;
     }
     bool IsColumnNull(int col) override {

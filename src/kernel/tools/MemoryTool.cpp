@@ -112,13 +112,13 @@ ToolDefinition MemoryTool::GetDefinition() const {
     def.parameters.push_back({
         "action", "string",
         "Memory operation to perform",
-        true, "", {"search", "recall", "pin", "inspect", "file_list", "file_browse", "file_read", "file_search", "file_headings", "file_write", "file_delete"}
+        true, "", {"search", "pin", "inspect", "file_list", "file_browse", "file_read", "file_search", "file_headings", "file_write", "file_delete"}
     });
 
     // search parameters
     def.parameters.push_back({
         "query", "string",
-        "Search terms or natural language query. Words are OR-matched with stop-word removal for broad recall, ranked by relevance (required for search and recall)",
+        "Search terms or natural language query. Words are OR-matched with stop-word removal for broad recall, ranked by relevance (required for search)",
         false
     });
     def.parameters.push_back({
@@ -134,23 +134,6 @@ ToolDefinition MemoryTool::GetDefinition() const {
     def.parameters.push_back({
         "page", "integer",
         "Pagination offset (default: 0)",
-        false
-    });
-
-    // recall parameters
-    def.parameters.push_back({
-        "count", "integer",
-        "Max results for recall (default: 5, max: 20)",
-        false
-    });
-    def.parameters.push_back({
-        "layers", "array",
-        "Restrict recall to specific layers (array of layer names). Default: all active.",
-        false
-    });
-    def.parameters.push_back({
-        "min_weight", "number",
-        "Minimum observation weight for recall (0.0-1.0)",
         false
     });
 
@@ -248,14 +231,12 @@ ToolResult MemoryTool::Execute(const ToolCall& call) {
 
     if (action.empty()) {
         result.success = false;
-        result.error = "action is required (search, recall, pin, inspect, file_list, file_browse, file_read, file_search, file_headings, file_write, file_delete)";
+        result.error = "action is required (search, pin, inspect, file_list, file_browse, file_read, file_search, file_headings, file_write, file_delete)";
         return result;
     }
 
     if (action == "search") {
         return HandleSearch(agentId, call.arguments);
-    } else if (action == "recall") {
-        return HandleRecall(agentId, call.arguments);
     } else if (action == "pin") {
         return HandlePin(agentId, call.arguments);
     } else if (action == "inspect") {
@@ -363,100 +344,6 @@ ToolResult MemoryTool::HandleSearch(const std::string& agentId,
 
     result.success = true;
     result.output = ResultToJsonString(body);
-    return result;
-}
-
-// ============================================================================
-// recall — weighted retrieval from episodic memory layers
-// ============================================================================
-
-ToolResult MemoryTool::HandleRecall(const std::string& agentId,
-                                     const std::string& rawArgs) {
-    ToolResult result;
-    result.call_id = "";
-
-    auto args = ParseArgs(rawArgs);
-    std::string query = GetStringField(args, "query", "");
-    if (query.empty()) {
-        result.success = false;
-        result.error = "query is required for recall";
-        return result;
-    }
-
-    int count = GetIntField(args, "count", 5);
-    if (count < 1) count = 5;
-    if (count > 20) count = 20;
-
-    double minWeight = GetDoubleField(args, "min_weight", 0.0);
-
-    auto layerFilter = GetStringArray(args, "layers");
-
-    if (!m_store) {
-        result.success = false;
-        result.error = "memory store is not available";
-        return result;
-    }
-
-    // Search observations via FTS5 in episodic layers
-    // Use MemorySearch with only observations domain enabled
-    if (m_search) {
-        memory::MemorySearchDomain domains;
-        domains.observations = true;
-        domains.ontology = false;
-        domains.raw_files = false;
-        domains.diary = false;
-        domains.sessions = false;
-
-        auto results = m_search->Search(query, agentId, domains, count * 3);
-
-        // Filter by layer names if specified
-        Json::Value items(Json::arrayValue);
-        int emitted = 0;
-        for (const auto& r : results) {
-            if (emitted >= count) break;
-            if (r.relevance < minWeight) continue;
-
-            // If layer filter is specified, check the observation's layer
-            if (!layerFilter.empty() && r.layer_id.has_value()) {
-                auto layer = m_store->GetLayer(*r.layer_id);
-                if (!layer) continue;
-                bool match = false;
-                for (const auto& name : layerFilter) {
-                    if (layer->name == name) { match = true; break; }
-                }
-                if (!match) continue;
-            }
-
-            Json::Value item(Json::objectValue);
-            item["id"] = static_cast<Json::Int64>(r.id);
-            item["content"] = r.text;
-            item["relevance"] = r.relevance;
-            item["status"] = r.status;
-            if (r.created_at_unix_ms > 0)
-                item["created_at"] = static_cast<Json::Int64>(r.created_at_unix_ms);
-            if (r.updated_at_unix_ms > 0)
-                item["updated_at"] = static_cast<Json::Int64>(r.updated_at_unix_ms);
-            if (r.layer_id.has_value()) {
-                auto layer = m_store->GetLayer(*r.layer_id);
-                if (layer) {
-                    item["layer"] = layer->name;
-                }
-                item["layer_id"] = static_cast<Json::Int64>(*r.layer_id);
-            }
-            items.append(item);
-            emitted++;
-        }
-
-        Json::Value body(Json::objectValue);
-        body["total"] = static_cast<Json::Int>(emitted);
-        body["results"] = items;
-
-        result.success = true;
-        result.output = ResultToJsonString(body);
-    } else {
-        result.success = false;
-        result.error = "memory search is not available";
-    }
     return result;
 }
 

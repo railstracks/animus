@@ -345,6 +345,32 @@ void SqliteSessionStore::EnsureSchema() {
             is_summary INTEGER NOT NULL DEFAULT 1
         );
     )");
+
+    // Tiered turn storage (Ticket 142): archive table for old turns
+    m_store->Exec(R"(
+        CREATE TABLE IF NOT EXISTS session_turns_archive (
+            id INTEGER PRIMARY KEY,
+            session_id INTEGER NOT NULL,
+            turn_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            unix_ms INTEGER NOT NULL,
+            is_summary INTEGER NOT NULL DEFAULT 0,
+            compacted_from TEXT NOT NULL DEFAULT '[]',
+            thinking_content TEXT NOT NULL DEFAULT '',
+            tool_calls TEXT NOT NULL DEFAULT '[]',
+            tool_call_id TEXT NOT NULL DEFAULT '',
+            tool_name TEXT NOT NULL DEFAULT '',
+            intake_processed INTEGER NOT NULL DEFAULT 0,
+            intake_processed_at_unix_ms INTEGER NOT NULL DEFAULT 0,
+            token_count INTEGER NOT NULL DEFAULT 0,
+            is_compacted INTEGER NOT NULL DEFAULT 0,
+            metadata TEXT NOT NULL DEFAULT '{}'
+        )
+    )");
+    m_store->Exec(
+        "CREATE INDEX IF NOT EXISTS idx_turns_archive_session "
+        "ON session_turns_archive(session_id)");
 }
 
 // ============================================================================

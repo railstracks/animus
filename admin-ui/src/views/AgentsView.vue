@@ -63,6 +63,7 @@ interface Agent {
   session_report_token_budget: number;
     consolidation_tool_budget: number;
   };
+  max_turn_age_days: number;
   enabled_tools: string[];
   allowed_nodes?: string[];
   tool_configs?: Record<string, unknown>;
@@ -128,14 +129,29 @@ const formData = ref({
   session_report_token_budget: 1500,
   ambient_context_limit: 5000,
   consolidation_tool_budget: 30,
+  max_turn_age_days: 0,
   intake_interval: '',
   intake_prompt: '',
+  intake_provider: '',
+  intake_model: '',
+  review_provider: '',
+  review_model: '',
+  session_report_provider: '',
+  session_report_model: '',
   enabled_tools: [] as string[],
   allowed_nodes: [] as string[],
   tool_configs: {} as Record<string, unknown>,
 });
 
 const isNew = computed(() => !editingAgent.value);
+
+const providerOptions = computed(() =>
+  providers.value.map((p) => ({ label: p.name || p.provider_id, value: p.provider_id }))
+);
+
+const intakeModelOptions = ref<string[]>([]);
+const reviewModelOptions = ref<string[]>([]);
+const sessionReportModelOptions = ref<string[]>([]);
 
 const visionModelOptions = computed(() => [
   { label: 'None', value: '' },
@@ -329,6 +345,7 @@ function openCreate() {
     session_report_token_budget: 1500,
     ambient_context_limit: 5000,
     consolidation_tool_budget: 30,
+    max_turn_age_days: 0,
     intake_interval: '',
     intake_prompt: '',
     enabled_tools: [],
@@ -370,8 +387,15 @@ function openEdit(a: Agent) {
     ambient_context_limit: a.budget.ambient_context_limit,
     session_report_token_budget: a.budget.session_report_token_budget,
     consolidation_tool_budget: a.budget.consolidation_tool_budget,
+    max_turn_age_days: (a as any).max_turn_age_days || 0,
     intake_interval: (a as any).intake_interval || '',
     intake_prompt: (a as any).intake_prompt || '',
+    intake_provider: (a as any).intake_model_config?.provider || '',
+    intake_model: (a as any).intake_model_config?.model || '',
+    review_provider: (a as any).review_model_config?.provider || '',
+    review_model: (a as any).review_model_config?.model || '',
+    session_report_provider: (a as any).session_report_model_config?.provider || '',
+    session_report_model: (a as any).session_report_model_config?.model || '',
     enabled_tools: [...a.enabled_tools],
     allowed_nodes: [...(a.allowed_nodes || [])],
     tool_configs: JSON.parse(JSON.stringify(a.tool_configs || {})),
@@ -420,12 +444,19 @@ async function submitForm() {
         session_report_token_budget: Number(formData.value.session_report_token_budget),
         consolidation_tool_budget: Number(formData.value.consolidation_tool_budget),
       },
+      max_turn_age_days: Number(formData.value.max_turn_age_days),
       enabled_tools: formData.value.enabled_tools,
       allowed_nodes: formData.value.allowed_nodes,
       tool_configs: formData.value.tool_configs,
       default_vision_model: formData.value.default_vision_model || '',
       intake_interval: formData.value.intake_interval || '',
       intake_prompt: formData.value.intake_prompt || '',
+      intake_provider: formData.value.intake_provider || '',
+      intake_model: formData.value.intake_model || '',
+      review_provider: formData.value.review_provider || '',
+      review_model: formData.value.review_model || '',
+      session_report_provider: formData.value.session_report_provider || '',
+      session_report_model: formData.value.session_report_model || '',
     };
 
     let savedId = formData.value.id;
@@ -465,13 +496,78 @@ const exportLoading = ref<string>('');
 const importInput = ref<HTMLInputElement | null>(null);
 const importLoading = ref(false);
 
-async function exportAgent(id: string) {
+// Export dialog state
+interface ExportFlags {
+  ontology: boolean;
+  schedules: boolean;
+  gallivanting: boolean;
+  gallivantingHistory: boolean;
+  diary: boolean;
+  sessions: boolean;
+  reports: boolean;
+  attachments: boolean;
+  luaScripts: boolean;
+  promptLogs: boolean;
+  embeddings: boolean;
+}
+
+const defaultExportFlags = (): ExportFlags => ({
+  ontology: true,
+  schedules: true,
+  gallivanting: true,
+  gallivantingHistory: false,
+  diary: true,
+  sessions: false,
+  reports: false,
+  attachments: false,
+  luaScripts: true,
+  promptLogs: false,
+  embeddings: true,
+});
+
+const showExportDialog = ref(false);
+const exportTargetAgent = ref('');
+const exportFlags = ref<ExportFlags>(defaultExportFlags());
+const exportSessionOffset = ref<number>(0);
+const exportSessionLimit = ref<number>(0);  // 0 = all
+
+function openExportDialog(id: string) {
+  exportTargetAgent.value = id;
+  exportFlags.value = defaultExportFlags();
+  exportSessionOffset.value = 0;
+  exportSessionLimit.value = 0;
+  showExportDialog.value = true;
+}
+
+async function confirmExport() {
+  const id = exportTargetAgent.value;
+  showExportDialog.value = false;
   exportLoading.value = id;
   try {
+    const components: string[] = [];
+    const f = exportFlags.value;
+    if (f.ontology) components.push('ontology');
+    if (f.schedules) components.push('schedules');
+    if (f.gallivanting) components.push('gallivanting');
+    if (f.gallivantingHistory) components.push('gallivanting_history');
+    if (f.diary) components.push('diary');
+    if (f.sessions) components.push('sessions');
+    if (f.reports) components.push('reports');
+    if (f.attachments) components.push('attachments');
+    if (f.luaScripts) components.push('lua_scripts');
+    if (f.promptLogs) components.push('prompt_logs');
+    if (!f.embeddings) components.push('no_embeddings');
+
+    const body: Record<string, any> = { components };
+    if (f.sessions && exportSessionLimit.value > 0) {
+      body.session_offset = exportSessionOffset.value;
+      body.session_limit = exportSessionLimit.value;
+    }
+
     const resp = await fetch(`/api/v1/agents/${id}/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ components: 'all' }),
+      body: JSON.stringify(body),
     });
     if (!resp.ok) {
       const errBody = await resp.text();
@@ -505,7 +601,7 @@ async function handleImport(event: Event) {
 
   importLoading.value = true;
   try {
-    const resp = await fetch('/api/v1/agents/import?mode=new', {
+    const resp = await fetch('/api/v1/agents/import?mode=merge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/gzip' },
       body: file,
@@ -603,6 +699,31 @@ watch(
     }
   }
 );
+
+// Load model lists when consolidation providers change
+async function loadConsolidationModels(providerId: string, target: 'intake' | 'review' | 'sessionReport') {
+  if (!providerId) {
+    if (target === 'intake') intakeModelOptions.value = [];
+    if (target === 'review') reviewModelOptions.value = [];
+    if (target === 'sessionReport') sessionReportModelOptions.value = [];
+    return;
+  }
+  try {
+    const data = await apiGet<{ models?: string[] }>(`/api/v1/providers/${providerId}/models`);
+    const models = Array.isArray(data.models) ? data.models : [];
+    if (target === 'intake') intakeModelOptions.value = models;
+    if (target === 'review') reviewModelOptions.value = models;
+    if (target === 'sessionReport') sessionReportModelOptions.value = models;
+  } catch {
+    if (target === 'intake') intakeModelOptions.value = [];
+    if (target === 'review') reviewModelOptions.value = [];
+    if (target === 'sessionReport') sessionReportModelOptions.value = [];
+  }
+}
+
+watch(() => formData.value.intake_provider, (v) => loadConsolidationModels(v, 'intake'));
+watch(() => formData.value.review_provider, (v) => loadConsolidationModels(v, 'review'));
+watch(() => formData.value.session_report_provider, (v) => loadConsolidationModels(v, 'sessionReport'));
 </script>
 
 <template>
@@ -690,7 +811,7 @@ watch(
               <v-btn
                 variant="text" size="x-small"
                 :loading="exportLoading === a.id"
-                @click="exportAgent(a.id)"
+                @click="openExportDialog(a.id)"
               >
                 Export
               </v-btn>
@@ -726,6 +847,7 @@ watch(
           <v-tabs v-model="formTab" class="mb-4">
             <v-tab value="identity">{{ t('agents.form.tabs.identity') }}</v-tab>
             <v-tab value="model">{{ t('agents.form.tabs.model') }}</v-tab>
+            <v-tab value="consolidation">Consolidation</v-tab>
             <v-tab value="reasoning">{{ t('agents.form.tabs.reasoning') }}</v-tab>
             <v-tab value="budget">{{ t('agents.form.tabs.budget') }}</v-tab>
             <v-tab value="tools">{{ t('agents.form.tabs.tools') }}</v-tab>
@@ -788,6 +910,98 @@ watch(
                 persistent-hint
                 clearable
               />
+            </v-tabs-window-item>
+
+            <!-- Consolidation Models -->
+            <v-tabs-window-item value="consolidation">
+              <p class="text-body-2 text-medium-emphasis mb-4">
+                Override the provider/model used for each consolidation type. Leave empty to use the agent's default provider/model.
+              </p>
+
+              <!-- Intake -->
+              <div class="text-subtitle-2 mb-2">Intake</div>
+              <v-row dense>
+                <v-col cols="6">
+                  <v-select v-model="formData.intake_provider"
+                    label="Intake Provider"
+                    :items="providerOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+                <v-col cols="6">
+                  <v-select v-model="formData.intake_model"
+                    label="Intake Model"
+                    :items="intakeModelOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+              </v-row>
+
+              <v-divider class="my-4" />
+
+              <!-- Review -->
+              <div class="text-subtitle-2 mb-2">Review</div>
+              <v-row dense>
+                <v-col cols="6">
+                  <v-select v-model="formData.review_provider"
+                    label="Review Provider"
+                    :items="providerOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+                <v-col cols="6">
+                  <v-select v-model="formData.review_model"
+                    label="Review Model"
+                    :items="reviewModelOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+              </v-row>
+
+              <v-divider class="my-4" />
+
+              <!-- Session Reporting -->
+              <div class="text-subtitle-2 mb-2">Session Reporting</div>
+              <v-row dense>
+                <v-col cols="6">
+                  <v-select v-model="formData.session_report_provider"
+                    label="Session Report Provider"
+                    :items="providerOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+                <v-col cols="6">
+                  <v-select v-model="formData.session_report_model"
+                    label="Session Report Model"
+                    :items="sessionReportModelOptions"
+                    item-title="label"
+                    item-value="value"
+                    clearable
+                    hint="Empty = default"
+                    persistent-hint
+                  />
+                </v-col>
+              </v-row>
             </v-tabs-window-item>
 
             <!-- Reasoning -->
@@ -857,6 +1071,12 @@ watch(
               <v-text-field v-model="formData.consolidation_tool_budget"
                 :label="t('agents.form.consolidationToolBudget')"
                 type="number"
+              />
+              <v-text-field v-model="formData.max_turn_age_days"
+                label="Turn retention (days)"
+                type="number"
+                hint="Archives turns older than N days to cold storage. 0 = keep all in primary storage."
+                persistent-hint
               />
               <v-text-field v-model="formData.intake_interval"
                 :label="t('agents.form.intakeInterval')"
@@ -1116,6 +1336,79 @@ watch(
           <v-btn color="primary" @click="submitForm">
             {{ isNew ? t('agents.form.create') : t('agents.form.save') }}
           </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Export Dialog -->
+    <v-dialog v-model="showExportDialog" max-width="560">
+      <v-card rounded="xl" class="pa-2">
+        <v-card-title class="text-h6">
+          Export Agent
+          <span class="text-body-2 text-medium-emphasis ml-2">{{ exportTargetAgent }}</span>
+        </v-card-title>
+        <v-card-text>
+          <p class="text-body-2 text-medium-emphasis mb-4">
+            Choose which components to include. Core data (agent record, memory layers, memory files) is always included.
+          </p>
+
+          <div class="text-subtitle-2 mb-2">Core (always included)</div>
+          <div class="text-body-2 text-medium-emphasis mb-4">
+            Agent record · Memory layers · Memory files
+          </div>
+
+          <v-divider class="mb-3" />
+
+          <div class="text-subtitle-2 mb-2">Optional Components</div>
+          <v-checkbox v-model="exportFlags.ontology" label="Ontology (entities, properties)" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.schedules" label="Schedules" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.gallivanting" label="Gallivanting threads" density="compact" hide-details />
+          <v-checkbox v-if="exportFlags.gallivanting" v-model="exportFlags.gallivantingHistory" label="Include gallivanting session history" density="compact" hide-details class="ml-6" />
+          <v-checkbox v-model="exportFlags.diary" label="Diary entries" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.luaScripts" label="Lua scripts" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.attachments" label="Attachments" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.promptLogs" label="Prompt logs" density="compact" hide-details />
+          <v-checkbox v-model="exportFlags.embeddings" label="Embedding vectors" density="compact" hide-details hint="Include embedding data for semantic search" persistent-hint />
+
+          <v-divider class="my-3" />
+
+          <div class="text-subtitle-2 mb-2">Session Data</div>
+          <v-checkbox v-model="exportFlags.sessions" label="Sessions + turns" density="compact" hide-details hint="Full conversation history. Significantly increases archive size." persistent-hint />
+          <v-checkbox v-model="exportFlags.reports" label="Session reports" density="compact" hide-details hint="Consolidated summaries per session" persistent-hint />
+          <v-expand-transition>
+            <div v-if="exportFlags.sessions" class="pl-8 pt-2">
+              <div class="text-caption text-medium-emphasis mb-1">Session chunking (optional — for progressive exports)</div>
+              <v-row dense>
+                <v-col cols="6">
+                  <v-text-field
+                    v-model.number="exportSessionOffset"
+                    label="Offset"
+                    type="number"
+                    density="compact"
+                    hide-details
+                    hint="Skip first N sessions"
+                    persistent-hint
+                  />
+                </v-col>
+                <v-col cols="6">
+                  <v-text-field
+                    v-model.number="exportSessionLimit"
+                    label="Limit"
+                    type="number"
+                    density="compact"
+                    hide-details
+                    hint="Max sessions (0 = all)"
+                    persistent-hint
+                  />
+                </v-col>
+              </v-row>
+            </div>
+          </v-expand-transition>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showExportDialog = false">Cancel</v-btn>
+          <v-btn color="primary" @click="confirmExport">Export</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>

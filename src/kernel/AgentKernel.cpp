@@ -805,8 +805,21 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                         std::string model;
                         auto agent = m_agentStore->GetById(curAgent);
                         if (agent) {
+                            // Default provider/model
                             if (!agent->default_provider.empty()) providerId = agent->default_provider;
                             if (!agent->default_model.empty()) model = agent->default_model;
+
+                            // Consolidation type overrides — empty falls through to default
+                            if (sessionSubtype == "intake" || sessionSubtype.rfind("intake:", 0) == 0) {
+                                if (!agent->intake_provider.empty()) providerId = agent->intake_provider;
+                                if (!agent->intake_model.empty()) model = agent->intake_model;
+                            } else if (sessionSubtype == "review" || sessionSubtype.rfind("review:", 0) == 0) {
+                                if (!agent->review_provider.empty()) providerId = agent->review_provider;
+                                if (!agent->review_model.empty()) model = agent->review_model;
+                            } else if (sessionSubtype == "session_report") {
+                                if (!agent->session_report_provider.empty()) providerId = agent->session_report_provider;
+                                if (!agent->session_report_model.empty()) model = agent->session_report_model;
+                            }
                         }
 
                         std::string registryKey = providerId;
@@ -1390,6 +1403,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
     if (m_embeddingService && m_embeddingService->IsAvailable()) {
         m_jobs.Enqueue([this]() {
             ComputePendingEmbeddings();
+            ComputePendingReportEmbeddings();
         });
     }
 
@@ -1954,6 +1968,45 @@ void AgentKernel::ComputePendingEmbeddings() {
     if (totalChunked > 0 || totalEmbedded > 0) {
         ALOG_INFO("embedding", "Computed " << totalChunked << " chunks, "
                   << totalEmbedded << " embeddings for " << agents.size() << " agents");
+    }
+}
+
+// ============================================================================
+// ComputePendingReportEmbeddings — backfill missing session report embeddings
+// ============================================================================
+
+void AgentKernel::ComputePendingReportEmbeddings() {
+    if (!m_embeddingService || !m_embeddingService->IsAvailable()) return;
+    if (!m_sessionReportStore || !m_agentStore) return;
+
+    auto agents = m_agentStore->List();
+    int totalEmbedded = 0;
+
+    for (const auto& agent : agents) {
+        auto reports = m_sessionReportStore->ListWithoutEmbeddings(agent.id, 200);
+        for (const auto& report : reports) {
+            // Build text from all four fields for a rich embedding
+            std::string embedText = report.summary + " " +
+                                    report.past_events + " " +
+                                    report.current_activity + " " +
+                                    report.forward_look;
+            // Truncate to embedding model's sweet spot
+            if (embedText.size() > 700) {
+                embedText = embedText.substr(0, 700);
+            }
+            if (embedText.empty()) continue;
+
+            auto emb = m_embeddingService->Embed(embedText);
+            if (emb.has_value()) {
+                m_sessionReportStore->StoreEmbedding(report.id, *emb);
+                totalEmbedded++;
+            }
+        }
+    }
+
+    if (totalEmbedded > 0) {
+        ALOG_INFO("embedding", "Computed " << totalEmbedded
+                  << " session report embeddings");
     }
 }
 

@@ -434,7 +434,9 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
             "max_tool_calls_per_chain, timeout_seconds, episodic_token_budget, "
             "semantic_token_budget, perspectives_token_budget, "
             "consolidation_tool_budget, enabled_tools, tool_configs, "
-            "diary_secret, pad_context, created_at_unix_ms, updated_at_unix_ms "
+            "diary_secret, pad_context, created_at_unix_ms, updated_at_unix_ms, "
+            "intake_provider, intake_model, review_provider, review_model, "
+            "session_report_provider, session_report_model "
             "FROM agents WHERE agent_id = ?");
         if (!stmt) return "failed to query agent";
         stmt->BindText(1, agentId);
@@ -448,7 +450,9 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
             "max_tool_calls_per_chain", "timeout_seconds", "episodic_token_budget",
             "semantic_token_budget", "perspectives_token_budget",
             "consolidation_tool_budget", "enabled_tools", "tool_configs",
-            "diary_secret", "pad_context", "created_at_unix_ms", "updated_at_unix_ms"
+            "diary_secret", "pad_context", "created_at_unix_ms", "updated_at_unix_ms",
+            "intake_provider", "intake_model", "review_provider", "review_model",
+            "session_report_provider", "session_report_model"
         };
         Json::Value agentObj = RowToJson(stmt.get(), agentCols);
         Json::StreamWriterBuilder wb;
@@ -567,25 +571,65 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
 
     // sessions/
     if (flags.sessions) {
-        files.push_back({"sessions/sessions.jsonl",
-            DumpTable(m_store, "sessions",
-                {"id", "connector", "conversation_id", "thread_id", "provider_id",
-                 "summary", "agent_id", "created_at_unix_ms",
-                 "last_active_unix_ms", "terminated", "session_type"}, agentId)});
-        files.push_back({"sessions/turns.jsonl",
-            DumpTableJoin(m_store,
-                "SELECT t.id, t.session_id, t.turn_id, t.role, t.content, t.unix_ms, "
-                "t.is_summary, t.compacted_from, t.thinking_content, t.tool_calls, "
-                "t.tool_call_id, t.tool_name, t.intake_processed, "
-                "t.intake_processed_at_unix_ms, t.token_count, t.is_compacted, t.metadata "
-                "FROM session_turns t "
-                "INNER JOIN sessions s ON t.session_id = s.id "
-                "WHERE s.agent_id = ?", agentId,
-                {"id", "session_id", "turn_id", "role", "content", "unix_ms",
-                 "is_summary", "compacted_from", "thinking_content", "tool_calls",
-                 "tool_call_id", "tool_name", "intake_processed",
-                 "intake_processed_at_unix_ms", "token_count", "is_compacted",
-                 "metadata"})});
+        // Session export with optional offset/limit for chunked exports.
+        // sessionLimit > 0 enables chunking — exports a window of sessions
+        // ordered by created_at_unix_ms, plus their turns.
+        if (flags.sessionLimit > 0) {
+            std::string offsetClause;
+            if (flags.sessionOffset > 0)
+                offsetClause = " OFFSET " + std::to_string(flags.sessionOffset);
+            std::string limitClause = " LIMIT " + std::to_string(flags.sessionLimit);
+
+            // Export sessions in the window
+            std::string sessWhere = "id IN (SELECT id FROM sessions WHERE agent_id = '" +
+                agentId + "' ORDER BY created_at_unix_ms ASC" +
+                offsetClause + limitClause + ")";
+            files.push_back({"sessions/sessions.jsonl",
+                DumpTable(m_store, "sessions",
+                    {"id", "connector", "conversation_id", "thread_id", "provider_id",
+                     "summary", "agent_id", "created_at_unix_ms",
+                     "last_active_unix_ms", "terminated", "session_type"},
+                    agentId, "agent_id", sessWhere)});
+            // Export turns for sessions in the window
+            files.push_back({"sessions/turns.jsonl",
+                DumpTableJoin(m_store,
+                    (std::string)"SELECT t.id, t.session_id, t.turn_id, t.role, t.content, t.unix_ms, "
+                    "t.is_summary, t.compacted_from, t.thinking_content, t.tool_calls, "
+                    "t.tool_call_id, t.tool_name, t.intake_processed, "
+                    "t.intake_processed_at_unix_ms, t.token_count, t.is_compacted, t.metadata "
+                    "FROM session_turns t "
+                    "INNER JOIN sessions s ON t.session_id = s.id "
+                    "WHERE s.agent_id = ? AND "
+                    "s.id IN (SELECT id FROM sessions WHERE agent_id = '" + agentId +
+                    "' ORDER BY created_at_unix_ms ASC" + offsetClause + limitClause + ")",
+                    agentId,
+                    {"id", "session_id", "turn_id", "role", "content", "unix_ms",
+                     "is_summary", "compacted_from", "thinking_content", "tool_calls",
+                     "tool_call_id", "tool_name", "intake_processed",
+                     "intake_processed_at_unix_ms", "token_count", "is_compacted",
+                     "metadata"})});
+        } else {
+            // Export all sessions + turns
+            files.push_back({"sessions/sessions.jsonl",
+                DumpTable(m_store, "sessions",
+                    {"id", "connector", "conversation_id", "thread_id", "provider_id",
+                     "summary", "agent_id", "created_at_unix_ms",
+                     "last_active_unix_ms", "terminated", "session_type"}, agentId)});
+            files.push_back({"sessions/turns.jsonl",
+                DumpTableJoin(m_store,
+                    "SELECT t.id, t.session_id, t.turn_id, t.role, t.content, t.unix_ms, "
+                    "t.is_summary, t.compacted_from, t.thinking_content, t.tool_calls, "
+                    "t.tool_call_id, t.tool_name, t.intake_processed, "
+                    "t.intake_processed_at_unix_ms, t.token_count, t.is_compacted, t.metadata "
+                    "FROM session_turns t "
+                    "INNER JOIN sessions s ON t.session_id = s.id "
+                    "WHERE s.agent_id = ?", agentId,
+                    {"id", "session_id", "turn_id", "role", "content", "unix_ms",
+                     "is_summary", "compacted_from", "thinking_content", "tool_calls",
+                     "tool_call_id", "tool_name", "intake_processed",
+                     "intake_processed_at_unix_ms", "token_count", "is_compacted",
+                     "metadata"})});
+        }
     }
 
     // session_reports/
@@ -600,6 +644,24 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
                 {"id", "session_id", "agent_id", "summary", "past_events",
                  "current_activity", "forward_look", "created_at_unix_ms",
                  "updated_at_unix_ms", "embedding", "embedding_dim"})});
+    }
+
+    // session_turns_archive (exported with sessions — preserves tiered data)
+    if (flags.sessions) {
+        files.push_back({"sessions/turns_archive.jsonl",
+            DumpTableJoin(m_store,
+                "SELECT a.id, a.session_id, a.turn_id, a.role, a.content, a.unix_ms, "
+                "a.is_summary, a.compacted_from, a.thinking_content, a.tool_calls, "
+                "a.tool_call_id, a.tool_name, a.intake_processed, "
+                "a.intake_processed_at_unix_ms, a.token_count, a.is_compacted, a.metadata "
+                "FROM session_turns_archive a "
+                "INNER JOIN sessions s ON a.session_id = s.id "
+                "WHERE s.agent_id = ?", agentId,
+                {"id", "session_id", "turn_id", "role", "content", "unix_ms",
+                 "is_summary", "compacted_from", "thinking_content", "tool_calls",
+                 "tool_call_id", "tool_name", "intake_processed",
+                 "intake_processed_at_unix_ms", "token_count", "is_compacted",
+                 "metadata"})});
     }
 
     // Build tar
@@ -702,11 +764,20 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
     if (!Json::parseFromStream(rb, ms, &manifest, &errs))
         return "failed to parse manifest.json: " + errs;
 
+    // Determine source agent_id from manifest (nested or top-level).
+    // For composable archives (e.g. from external exporters), agent_id may
+    // be absent — it will be determined from agent.json or auto-generated.
     std::string sourceAgentId;
     if (manifest.isMember("agent") && manifest["agent"].isMember("agent_id"))
         sourceAgentId = manifest["agent"]["agent_id"].asString();
-    if (sourceAgentId.empty()) return "manifest missing agent_id";
+    else if (manifest.isMember("agent_id"))
+        sourceAgentId = manifest["agent_id"].asString();
 
+    // Determine the agent_id to use for import:
+    // 1. Explicit targetAgentId (from query param)
+    // 2. agent_id from agent.json (if present)
+    // 3. sourceAgentId from manifest (if present)
+    // 4. Auto-generated (DB-assigned on insert)
     std::string agentId = targetAgentId.empty() ? sourceAgentId : targetAgentId;
 
     // Handle import mode
@@ -737,9 +808,11 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
         m_idMap.clear();
     }
 
-    // Clean up any orphaned data for this agent ID (handles case where agent was
-    // deleted but related rows weren't cascaded)
-    ALOG_INFO("archive", "cleaning up existing data for agent " << agentId);
+    // In Replace mode: wipe all existing data for this agent.
+    // In Merge mode: keep existing data — dedup logic handles duplicates.
+    // In New mode: agent doesn't exist yet, so no cleanup needed.
+    if (mode == ImportMode::Replace) {
+    ALOG_INFO("archive", "replace mode: wiping existing data for agent " << agentId);
     const char* cleanupTables[] = {
         "diary_entries", "observations", "memory_layers",
         "ontology_properties", "ontology_entities",
@@ -765,6 +838,7 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
             del->ExecDML();
         }
     }
+    } // end Replace mode cleanup
 
     // Import agent record
     auto ait = fileMap.find("agent.json");
@@ -975,10 +1049,111 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
     importTable("ontology/properties.jsonl", "ontology_properties", "id",
                 {{"entity_id", "ontology_entities"}});
 
-    // Gallivanting
-    importTable("gallivanting/threads.jsonl", "gallivanting_threads", "id", {});
-    importTable("gallivanting/sessions.jsonl", "gallivanting_sessions", "id",
-                {{"thread_id", "gallivanting_threads"}});
+    // Gallivanting threads — dedup by (agent_id, name) in merge mode
+    {
+        auto fit = fileMap.find("gallivanting/threads.jsonl");
+        if (fit != fileMap.end()) {
+            auto rows = ParseJSONL(fit->second);
+            for (const auto& row : rows) {
+                int64_t exportId = row.isMember("_export_id") ? row["_export_id"].asInt64() : 0;
+                std::string threadName = row.get("name", "").asString();
+
+                bool exists = false;
+                int64_t existingId = -1;
+                if (mode == ImportMode::Merge) {
+                    auto chk = m_store->Prepare(
+                        "SELECT id FROM gallivanting_threads WHERE agent_id = ? AND name = ?");
+                    if (chk) {
+                        chk->BindText(1, agentId);
+                        chk->BindText(2, threadName);
+                        if (chk->Step()) { existingId = chk->ColumnInt64(0); exists = true; }
+                    }
+                }
+                if (exists) {
+                    if (exportId > 0)
+                        m_idMap["gallivanting_threads:" + std::to_string(exportId)] = existingId;
+                    continue;
+                }
+
+                std::ostringstream cols, vals;
+                std::vector<FieldValue> fv;
+                for (const auto& key : row.getMemberNames()) {
+                    if (key == "_export_id" || key == "_original_id" || key == "id") continue;
+                    if (!cols.str().empty()) { cols << ", "; vals << ", "; }
+                    cols << key; vals << "?";
+                    FieldValue val = ExtractField(row[key]);
+                    if (key == "agent_id") val.strVal = agentId;
+                    fv.push_back(val);
+                }
+                auto stmt = m_store->Prepare(
+                    "INSERT INTO gallivanting_threads (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                if (stmt) {
+                    for (size_t i = 0; i < fv.size(); ++i)
+                        BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
+                    if (stmt->ExecDML()) {
+                        int64_t newId = m_store->LastInsertRowId();
+                        if (exportId > 0)
+                            m_idMap["gallivanting_threads:" + std::to_string(exportId)] = newId;
+                    }
+                }
+            }
+        }
+    }
+
+    // Gallivanting sessions — dedup by (thread_id, started_at_unix_ms) in merge mode
+    {
+        auto fit = fileMap.find("gallivanting/sessions.jsonl");
+        if (fit != fileMap.end()) {
+            auto rows = ParseJSONL(fit->second);
+            for (const auto& row : rows) {
+                int64_t exportId = row.isMember("_export_id") ? row["_export_id"].asInt64() : 0;
+
+                // Remap thread_id FK
+                int64_t threadId = 0;
+                if (row.isMember("thread_id") && !row["thread_id"].isNull())
+                    threadId = row["thread_id"].asInt64();
+                auto mapIt = m_idMap.find("gallivanting_threads:" + std::to_string(threadId));
+                if (mapIt != m_idMap.end()) threadId = mapIt->second;
+
+                int64_t startedAt = row.get("started_at_unix_ms", 0).asInt64();
+
+                bool exists = false;
+                if (mode == ImportMode::Merge && threadId > 0) {
+                    auto chk = m_store->Prepare(
+                        "SELECT 1 FROM gallivanting_sessions WHERE thread_id = ? AND started_at_unix_ms = ?");
+                    if (chk) {
+                        chk->BindInt64(1, threadId);
+                        chk->BindInt64(2, startedAt);
+                        if (chk->Step()) exists = true;
+                    }
+                }
+                if (exists) continue;
+
+                std::ostringstream cols, vals;
+                std::vector<FieldValue> fv;
+                for (const auto& key : row.getMemberNames()) {
+                    if (key == "_export_id" || key == "_original_id" || key == "id") continue;
+                    if (!cols.str().empty()) { cols << ", "; vals << ", "; }
+                    cols << key; vals << "?";
+                    FieldValue val = ExtractField(row[key]);
+                    if (key == "agent_id") val.strVal = agentId;
+                    if (key == "thread_id") { val.isInt = true; val.intVal = threadId; }
+                    fv.push_back(val);
+                }
+                auto stmt = m_store->Prepare(
+                    "INSERT INTO gallivanting_sessions (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                if (stmt) {
+                    for (size_t i = 0; i < fv.size(); ++i)
+                        BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
+                    if (stmt->ExecDML()) {
+                        int64_t newId = m_store->LastInsertRowId();
+                        if (exportId > 0)
+                            m_idMap["gallivanting_sessions:" + std::to_string(exportId)] = newId;
+                    }
+                }
+            }
+        }
+    }
 
     // Diary
     importTable("diary/entries.jsonl", "diary_entries", "id", {});
@@ -993,16 +1168,249 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
     // Lua scripts
     importTable("lua-scripts.jsonl", "lua_scripts", "id", {});
 
-    // Sessions (FK: none — sessions.id is the primary key, remapped)
-    importTable("sessions/sessions.jsonl", "sessions", "id", {});
+    // Sessions — dedup by (agent_id, connector, conversation_id, thread_id) in merge mode
+    {
+        auto fit = fileMap.find("sessions/sessions.jsonl");
+        if (fit != fileMap.end()) {
+            auto rows = ParseJSONL(fit->second);
+            for (const auto& row : rows) {
+                int64_t exportId = row.isMember("_export_id") ? row["_export_id"].asInt64() : 0;
 
-    // Session turns (FK: session_id → sessions)
-    importTable("sessions/turns.jsonl", "session_turns", "id",
-                {{"session_id", "sessions"}});
+                std::string connector = row.get("connector", "").asString();
+                std::string conversationId = row.get("conversation_id", "").asString();
+                std::string threadId = row.get("thread_id", "").asString();
 
-    // Session reports (FK: session_id → sessions)
-    importTable("sessions/reports.jsonl", "session_reports", "id",
-                {{"session_id", "sessions"}});
+                bool exists = false;
+                int64_t existingId = -1;
+                if (mode == ImportMode::Merge) {
+                    auto chk = m_store->Prepare(
+                        "SELECT id FROM sessions WHERE agent_id = ? AND connector = ? "
+                        "AND conversation_id = ? AND thread_id = ?");
+                    if (chk) {
+                        chk->BindText(1, agentId);
+                        chk->BindText(2, connector);
+                        chk->BindText(3, conversationId);
+                        chk->BindText(4, threadId);
+                        if (chk->Step()) { existingId = chk->ColumnInt64(0); exists = true; }
+                    }
+                }
+                if (exists) {
+                    if (exportId > 0)
+                        m_idMap["sessions:" + std::to_string(exportId)] = existingId;
+                    continue;
+                }
+
+                std::ostringstream cols, vals;
+                std::vector<FieldValue> fv;
+                for (const auto& key : row.getMemberNames()) {
+                    if (key == "_export_id" || key == "_original_id" || key == "id") continue;
+                    if (!cols.str().empty()) { cols << ", "; vals << ", "; }
+                    cols << key; vals << "?";
+                    FieldValue val = ExtractField(row[key]);
+                    if (key == "agent_id") val.strVal = agentId;
+                    fv.push_back(val);
+                }
+                auto stmt = m_store->Prepare(
+                    "INSERT INTO sessions (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                if (stmt) {
+                    for (size_t i = 0; i < fv.size(); ++i)
+                        BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
+                    if (stmt->ExecDML()) {
+                        int64_t newId = m_store->LastInsertRowId();
+                        if (exportId > 0)
+                            m_idMap["sessions:" + std::to_string(exportId)] = newId;
+                    }
+                }
+            }
+        }
+    }
+
+    // Session turns — dedup by (session_id, turn_id) in merge mode
+    {
+        auto fit = fileMap.find("sessions/turns.jsonl");
+        if (fit != fileMap.end()) {
+            auto rows = ParseJSONL(fit->second);
+            for (const auto& row : rows) {
+                int64_t exportId = row.isMember("_export_id") ? row["_export_id"].asInt64() : 0;
+
+                // Remap session_id FK
+                int64_t sessionId = 0;
+                if (row.isMember("session_id") && !row["session_id"].isNull())
+                    sessionId = row["session_id"].asInt64();
+                auto mapIt = m_idMap.find("sessions:" + std::to_string(sessionId));
+                if (mapIt != m_idMap.end()) sessionId = mapIt->second;
+
+                int64_t turnId = row.get("turn_id", 0).asInt64();
+
+                bool exists = false;
+                if (mode == ImportMode::Merge && sessionId > 0) {
+                    auto chk = m_store->Prepare(
+                        "SELECT 1 FROM session_turns WHERE session_id = ? AND turn_id = ?");
+                    if (chk) {
+                        chk->BindInt64(1, sessionId);
+                        chk->BindInt64(2, turnId);
+                        if (chk->Step()) exists = true;
+                    }
+                }
+                if (exists) continue;
+
+                std::ostringstream cols, vals;
+                std::vector<FieldValue> fv;
+                for (const auto& key : row.getMemberNames()) {
+                    if (key == "_export_id" || key == "_original_id" || key == "id") continue;
+                    if (!cols.str().empty()) { cols << ", "; vals << ", "; }
+                    cols << key; vals << "?";
+                    FieldValue val = ExtractField(row[key]);
+                    if (key == "session_id") { val.isInt = true; val.intVal = sessionId; }
+                    fv.push_back(val);
+                }
+                auto stmt = m_store->Prepare(
+                    "INSERT INTO session_turns (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                if (stmt) {
+                    for (size_t i = 0; i < fv.size(); ++i)
+                        BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
+                    if (stmt->ExecDML()) {
+                        int64_t newId = m_store->LastInsertRowId();
+                        if (exportId > 0)
+                            m_idMap["session_turns:" + std::to_string(exportId)] = newId;
+                    }
+                }
+            }
+        }
+    }
+
+    // Session reports — upsert by session_id in merge mode
+    {
+        auto fit = fileMap.find("sessions/reports.jsonl");
+        if (fit != fileMap.end()) {
+            auto rows = ParseJSONL(fit->second);
+            for (const auto& row : rows) {
+                int64_t exportId = row.isMember("_export_id") ? row["_export_id"].asInt64() : 0;
+
+                // Remap session_id FK
+                int64_t sessionId = 0;
+                if (row.isMember("session_id") && !row["session_id"].isNull())
+                    sessionId = row["session_id"].asInt64();
+                auto mapIt = m_idMap.find("sessions:" + std::to_string(sessionId));
+                if (mapIt != m_idMap.end()) sessionId = mapIt->second;
+
+                // Merge: upsert by session_id (reports can be revised)
+                bool exists = false;
+                int64_t existingId = -1;
+                if (mode == ImportMode::Merge && sessionId > 0) {
+                    auto chk = m_store->Prepare(
+                        "SELECT id FROM session_reports WHERE session_id = ?");
+                    if (chk) {
+                        chk->BindInt64(1, sessionId);
+                        if (chk->Step()) { existingId = chk->ColumnInt64(0); exists = true; }
+                    }
+                }
+                if (exists) {
+                    // UPDATE existing report
+                    std::ostringstream setClause;
+                    std::vector<FieldValue> fv;
+                    bool first = true;
+                    for (const auto& key : row.getMemberNames()) {
+                        if (key == "_export_id" || key == "_original_id" || key == "id" ||
+                            key == "session_id") continue;
+                        if (!first) setClause << ", "; first = false;
+                        setClause << key << " = ?";
+                        FieldValue val = ExtractField(row[key]);
+                        if (key == "agent_id") val.strVal = agentId;
+                        fv.push_back(val);
+                    }
+                    if (!first) {
+                        auto stmt = m_store->Prepare(
+                            "UPDATE session_reports SET " + setClause.str() +
+                            " WHERE id = ?");
+                        if (stmt) {
+                            for (size_t i = 0; i < fv.size(); ++i)
+                                BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
+                            stmt->BindInt64(static_cast<int>(fv.size() + 1), existingId);
+                            stmt->ExecDML();
+                        }
+                    }
+                    if (exportId > 0)
+                        m_idMap["session_reports:" + std::to_string(exportId)] = existingId;
+                    continue;
+                }
+
+                // INSERT new report
+                std::ostringstream cols, vals;
+                std::vector<FieldValue> fv;
+                for (const auto& key : row.getMemberNames()) {
+                    if (key == "_export_id" || key == "_original_id" || key == "id") continue;
+                    if (!cols.str().empty()) { cols << ", "; vals << ", "; }
+                    cols << key; vals << "?";
+                    FieldValue val = ExtractField(row[key]);
+                    if (key == "agent_id") val.strVal = agentId;
+                    if (key == "session_id") { val.isInt = true; val.intVal = sessionId; }
+                    fv.push_back(val);
+                }
+                auto stmt = m_store->Prepare(
+                    "INSERT INTO session_reports (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                if (stmt) {
+                    for (size_t i = 0; i < fv.size(); ++i)
+                        BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
+                    if (stmt->ExecDML()) {
+                        int64_t newId = m_store->LastInsertRowId();
+                        if (exportId > 0)
+                            m_idMap["session_reports:" + std::to_string(exportId)] = newId;
+                    }
+                }
+            }
+        }
+    }
+
+    // Session turns archive — dedup by (id) since archive IDs are the original turn IDs
+    {
+        auto fit = fileMap.find("sessions/turns_archive.jsonl");
+        if (fit != fileMap.end()) {
+            auto rows = ParseJSONL(fit->second);
+            for (const auto& row : rows) {
+                int64_t archiveId = 0;
+                if (row.isMember("id") && !row["id"].isNull())
+                    archiveId = row["id"].asInt64();
+
+                // Remap session_id FK
+                int64_t sessionId = 0;
+                if (row.isMember("session_id") && !row["session_id"].isNull())
+                    sessionId = row["session_id"].asInt64();
+                auto mapIt = m_idMap.find("sessions:" + std::to_string(sessionId));
+                if (mapIt != m_idMap.end()) sessionId = mapIt->second;
+
+                // Check if already archived (idempotent)
+                bool exists = false;
+                if (archiveId > 0) {
+                    auto chk = m_store->Prepare(
+                        "SELECT 1 FROM session_turns_archive WHERE id = ?");
+                    if (chk) {
+                        chk->BindInt64(1, archiveId);
+                        if (chk->Step()) exists = true;
+                    }
+                }
+                if (exists) continue;
+
+                std::ostringstream cols, vals;
+                std::vector<FieldValue> fv;
+                for (const auto& key : row.getMemberNames()) {
+                    if (key == "_export_id" || key == "_original_id") continue;
+                    if (!cols.str().empty()) { cols << ", "; vals << ", "; }
+                    cols << key; vals << "?";
+                    FieldValue val = ExtractField(row[key]);
+                    if (key == "session_id") { val.isInt = true; val.intVal = sessionId; }
+                    fv.push_back(val);
+                }
+                auto stmt = m_store->Prepare(
+                    "INSERT INTO session_turns_archive (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                if (stmt) {
+                    for (size_t i = 0; i < fv.size(); ++i)
+                        BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
+                    stmt->ExecDML();
+                }
+            }
+        }
+    }
 
     ALOG_INFO("archive", "import complete: " << agentId << " (" << m_idMap.size() << " id mappings)");
 

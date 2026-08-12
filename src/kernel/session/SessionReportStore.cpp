@@ -227,6 +227,38 @@ bool SessionReportStore::StoreEmbedding(int64_t reportId,
     return m_store->Changes() > 0;
 }
 
+std::vector<SessionReportWithEmbedding> SessionReportStore::ListWithoutEmbeddings(
+        const std::string& agentId, int limit) const {
+    auto stmt = m_store->Prepare(
+        "SELECT id, session_id, agent_id, summary, past_events, "
+        "current_activity, forward_look, created_at_unix_ms, updated_at_unix_ms, "
+        "embedding, embedding_dim "
+        "FROM session_reports WHERE agent_id = ? "
+        "AND (embedding_dim IS NULL OR embedding_dim = 0 OR embedding IS NULL) "
+        "ORDER BY updated_at_unix_ms DESC LIMIT ?");
+    if (!stmt) return {};
+
+    stmt->BindText(1, agentId);
+    stmt->BindInt(2, limit);
+
+    std::vector<SessionReportWithEmbedding> reports;
+    while (stmt->Step()) {
+        SessionReportWithEmbedding r;
+        r.id = stmt->ColumnInt64(0);
+        r.session_id = stmt->ColumnInt64(1);
+        r.agent_id = stmt->ColumnText(2);
+        r.summary = stmt->ColumnText(3);
+        r.past_events = stmt->ColumnText(4);
+        r.current_activity = stmt->ColumnText(5);
+        r.forward_look = stmt->ColumnText(6);
+        r.created_at_unix_ms = stmt->ColumnInt64(7);
+        r.updated_at_unix_ms = stmt->ColumnInt64(8);
+        r.has_embedding = false;
+        reports.push_back(std::move(r));
+    }
+    return reports;
+}
+
 std::vector<SessionReportWithEmbedding> SessionReportStore::ListRecentWithEmbeddings(
         const std::string& agentId, int limit) const {
     auto stmt = m_store->Prepare(

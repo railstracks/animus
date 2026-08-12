@@ -441,7 +441,9 @@ void ActiveMemoryProvider::AppendOntology(std::string& out,
 
     if (allEntities.empty()) return;
 
-    // Determine baseline inclusion: when ontology is small, include everything
+    // Determine baseline inclusion: when ontology is small, include everything.
+    // For large ontologies with pad_context, include all entities — the token
+    // budget in the rendering loop is the sole gatekeeper for how many fit.
     bool baselineInclude = allEntities.size() <= static_cast<size_t>(m_config.ontology_baseline_threshold);
 
     // Score entities by tag match count and keyword match
@@ -449,9 +451,10 @@ void ActiveMemoryProvider::AppendOntology(std::string& out,
         const ontology::OntologyEntity* entity;
         int tagScore;     // number of matching tags
         int kwScore;      // number of matching keywords (including property values)
-        bool isBaseline;  // included because ontology is small, not because of match
+        bool isBaseline;  // included as padding, not because of match
     };
     std::vector<ScoredEntity> scored;
+    std::vector<ScoredEntity> unmatched;  // entities with no keyword/tag match (for pad_context)
 
     for (const auto& entity : allEntities) {
         ScoredEntity se{&entity, 0, 0, false};
@@ -493,6 +496,23 @@ void ActiveMemoryProvider::AppendOntology(std::string& out,
         se.isBaseline = (se.tagScore == 0 && se.kwScore == 0);
         if (se.tagScore > 0 || se.kwScore >= 1 || (baselineInclude && se.isBaseline && agent.pad_context)) {
             scored.push_back(se);
+        } else if (se.isBaseline && agent.pad_context && !baselineInclude) {
+            // Large ontology with pad_context: collect unmatched entities
+            // for baseline padding, sorted by recency (most recently updated first)
+            unmatched.push_back(se);
+        }
+    }
+
+    // When pad_context is enabled and we have unmatched entities (large ontology,
+    // no keyword matches), include all of them as baseline — the token budget
+    // in the rendering loop will determine how many actually fit.
+    if (agent.pad_context && !baselineInclude) {
+        std::sort(unmatched.begin(), unmatched.end(),
+            [](const ScoredEntity& a, const ScoredEntity& b) {
+                return a.entity->updated_at_unix_ms > b.entity->updated_at_unix_ms;
+            });
+        for (auto& se : unmatched) {
+            scored.push_back(std::move(se));
         }
     }
 
@@ -528,7 +548,6 @@ void ActiveMemoryProvider::AppendOntology(std::string& out,
     const uint32_t tokenBudget = agent.budget.semanticTokenBudget;
     const uint32_t charBudget = tokenBudget * 4;
     uint32_t charsUsed = 0;
-    int itemsRendered = 0;
 
     for (auto cat : categoryOrder) {
         auto it = grouped.find(cat);
@@ -541,8 +560,6 @@ void ActiveMemoryProvider::AppendOntology(std::string& out,
         charsUsed += catHeader.size();
 
         for (const auto* sePtr : it->second) {
-            if (itemsRendered >= m_config.max_ontology_items) break;
-
             auto props = store->ListProperties(sePtr->entity->id);
 
             // Include all property states: Current, New, and Deprecated.
@@ -567,10 +584,9 @@ void ActiveMemoryProvider::AppendOntology(std::string& out,
 
             out += line;
             charsUsed += line.size();
-            itemsRendered++;
         }
 
-        if (itemsRendered >= m_config.max_ontology_items) break;
+        if (charsUsed >= charBudget) break;
     }
     out += "\n";
 }
