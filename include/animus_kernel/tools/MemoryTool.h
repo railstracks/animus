@@ -12,10 +12,10 @@ class AgentStore;
 // ============================================================================
 // MemoryTool — agent-facing composite memory tool
 //
-// Actions: search, recall, pin, inspect, file_list, file_read, file_write, file_delete
+// Actions: search, pin, inspect, file_list, file_read, file_write, file_delete
 //
 // search      — FTS5 across all memory domains (episodic, semantic, files, diary, sessions)
-// recall      — weighted retrieval from episodic memory layers
+// recall — removed; use search with domains=["episodic"] for the same effect
 // pin         — annotate an observation for consolidation attention
 // inspect     — view memory layer state and perspectives
 // file_list   — list memory files for this agent
@@ -39,7 +39,7 @@ public:
 
 private:
     ToolResult HandleSearch(const std::string& agentId, const std::string& rawArgs);
-    ToolResult HandleRecall(const std::string& agentId, const std::string& rawArgs);
+
     ToolResult HandlePin(const std::string& agentId, const std::string& rawArgs);
     ToolResult HandleInspect(const std::string& agentId, const std::string& rawArgs);
     ToolResult HandleFileList(const std::string& agentId, const std::string& rawArgs);
