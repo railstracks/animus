@@ -523,10 +523,14 @@ const defaultExportFlags = (): ExportFlags => ({
 const showExportDialog = ref(false);
 const exportTargetAgent = ref('');
 const exportFlags = ref<ExportFlags>(defaultExportFlags());
+const exportSessionOffset = ref<number>(0);
+const exportSessionLimit = ref<number>(0);  // 0 = all
 
 function openExportDialog(id: string) {
   exportTargetAgent.value = id;
   exportFlags.value = defaultExportFlags();
+  exportSessionOffset.value = 0;
+  exportSessionLimit.value = 0;
   showExportDialog.value = true;
 }
 
@@ -549,10 +553,16 @@ async function confirmExport() {
     if (f.promptLogs) components.push('prompt_logs');
     if (!f.embeddings) components.push('no_embeddings');
 
+    const body: Record<string, any> = { components };
+    if (f.sessions && exportSessionLimit.value > 0) {
+      body.session_offset = exportSessionOffset.value;
+      body.session_limit = exportSessionLimit.value;
+    }
+
     const resp = await fetch(`/api/v1/agents/${id}/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ components }),
+      body: JSON.stringify(body),
     });
     if (!resp.ok) {
       const errBody = await resp.text();
@@ -586,7 +596,7 @@ async function handleImport(event: Event) {
 
   importLoading.value = true;
   try {
-    const resp = await fetch('/api/v1/agents/import?mode=new', {
+    const resp = await fetch('/api/v1/agents/import?mode=merge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/gzip' },
       body: file,
@@ -1354,6 +1364,35 @@ watch(() => formData.value.session_report_provider, (v) => loadConsolidationMode
           <div class="text-subtitle-2 mb-2">Session Data</div>
           <v-checkbox v-model="exportFlags.sessions" label="Sessions + turns" density="compact" hide-details hint="Full conversation history. Significantly increases archive size." persistent-hint />
           <v-checkbox v-model="exportFlags.reports" label="Session reports" density="compact" hide-details hint="Consolidated summaries per session" persistent-hint />
+          <v-expand-transition>
+            <div v-if="exportFlags.sessions" class="pl-8 pt-2">
+              <div class="text-caption text-medium-emphasis mb-1">Session chunking (optional — for progressive exports)</div>
+              <v-row dense>
+                <v-col cols="6">
+                  <v-text-field
+                    v-model.number="exportSessionOffset"
+                    label="Offset"
+                    type="number"
+                    density="compact"
+                    hide-details
+                    hint="Skip first N sessions"
+                    persistent-hint
+                  />
+                </v-col>
+                <v-col cols="6">
+                  <v-text-field
+                    v-model.number="exportSessionLimit"
+                    label="Limit"
+                    type="number"
+                    density="compact"
+                    hide-details
+                    hint="Max sessions (0 = all)"
+                    persistent-hint
+                  />
+                </v-col>
+              </v-row>
+            </div>
+          </v-expand-transition>
         </v-card-text>
         <v-card-actions>
           <v-spacer />

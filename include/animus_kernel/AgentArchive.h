@@ -38,6 +38,10 @@ struct AgentArchiveComponentFlags {
     bool authTokens    = false;
     bool projects      = false;
     bool embeddings    = true;   // include embedding blobs in memory_files
+
+    // Session export range (0 = no limit)
+    int64_t sessionOffset = 0;   // skip first N sessions (by created_at_unix_ms ASC)
+    int64_t sessionLimit  = 0;   // export at most N sessions (0 = all)
 };
 
 // ────────────────────────────────────────────────────────────────────────────

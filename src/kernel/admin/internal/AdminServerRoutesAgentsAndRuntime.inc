@@ -998,6 +998,12 @@
                 flags.embeddings = true;
             }
 
+            // Session chunking: optional offset and limit for progressive exports
+            if (body && body->isMember("session_offset") && !(*body)["session_offset"].isNull())
+                flags.sessionOffset = (*body)["session_offset"].asInt64();
+            if (body && body->isMember("session_limit") && !(*body)["session_limit"].isNull())
+                flags.sessionLimit = (*body)["session_limit"].asInt64();
+
             // Write to temp file
             std::string tmpPath = "/tmp/animus_export_" + agentId + "_" +
                 std::to_string(std::time(nullptr)) + ".agent";

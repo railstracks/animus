@@ -571,25 +571,65 @@ std::string AgentArchiveWriter::Write(const std::string& agentId,
 
     // sessions/
     if (flags.sessions) {
-        files.push_back({"sessions/sessions.jsonl",
-            DumpTable(m_store, "sessions",
-                {"id", "connector", "conversation_id", "thread_id", "provider_id",
-                 "summary", "agent_id", "created_at_unix_ms",
-                 "last_active_unix_ms", "terminated", "session_type"}, agentId)});
-        files.push_back({"sessions/turns.jsonl",
-            DumpTableJoin(m_store,
-                "SELECT t.id, t.session_id, t.turn_id, t.role, t.content, t.unix_ms, "
-                "t.is_summary, t.compacted_from, t.thinking_content, t.tool_calls, "
-                "t.tool_call_id, t.tool_name, t.intake_processed, "
-                "t.intake_processed_at_unix_ms, t.token_count, t.is_compacted, t.metadata "
-                "FROM session_turns t "
-                "INNER JOIN sessions s ON t.session_id = s.id "
-                "WHERE s.agent_id = ?", agentId,
-                {"id", "session_id", "turn_id", "role", "content", "unix_ms",
-                 "is_summary", "compacted_from", "thinking_content", "tool_calls",
-                 "tool_call_id", "tool_name", "intake_processed",
-                 "intake_processed_at_unix_ms", "token_count", "is_compacted",
-                 "metadata"})});
+        // Session export with optional offset/limit for chunked exports.
+        // sessionLimit > 0 enables chunking — exports a window of sessions
+        // ordered by created_at_unix_ms, plus their turns.
+        if (flags.sessionLimit > 0) {
+            std::string offsetClause;
+            if (flags.sessionOffset > 0)
+                offsetClause = " OFFSET " + std::to_string(flags.sessionOffset);
+            std::string limitClause = " LIMIT " + std::to_string(flags.sessionLimit);
+
+            // Export sessions in the window
+            std::string sessWhere = "id IN (SELECT id FROM sessions WHERE agent_id = '" +
+                agentId + "' ORDER BY created_at_unix_ms ASC" +
+                offsetClause + limitClause + ")";
+            files.push_back({"sessions/sessions.jsonl",
+                DumpTable(m_store, "sessions",
+                    {"id", "connector", "conversation_id", "thread_id", "provider_id",
+                     "summary", "agent_id", "created_at_unix_ms",
+                     "last_active_unix_ms", "terminated", "session_type"},
+                    agentId, "agent_id", sessWhere)});
+            // Export turns for sessions in the window
+            files.push_back({"sessions/turns.jsonl",
+                DumpTableJoin(m_store,
+                    (std::string)"SELECT t.id, t.session_id, t.turn_id, t.role, t.content, t.unix_ms, "
+                    "t.is_summary, t.compacted_from, t.thinking_content, t.tool_calls, "
+                    "t.tool_call_id, t.tool_name, t.intake_processed, "
+                    "t.intake_processed_at_unix_ms, t.token_count, t.is_compacted, t.metadata "
+                    "FROM session_turns t "
+                    "INNER JOIN sessions s ON t.session_id = s.id "
+                    "WHERE s.agent_id = ? AND "
+                    "s.id IN (SELECT id FROM sessions WHERE agent_id = '" + agentId +
+                    "' ORDER BY created_at_unix_ms ASC" + offsetClause + limitClause + ")",
+                    agentId,
+                    {"id", "session_id", "turn_id", "role", "content", "unix_ms",
+                     "is_summary", "compacted_from", "thinking_content", "tool_calls",
+                     "tool_call_id", "tool_name", "intake_processed",
+                     "intake_processed_at_unix_ms", "token_count", "is_compacted",
+                     "metadata"})});
+        } else {
+            // Export all sessions + turns
+            files.push_back({"sessions/sessions.jsonl",
+                DumpTable(m_store, "sessions",
+                    {"id", "connector", "conversation_id", "thread_id", "provider_id",
+                     "summary", "agent_id", "created_at_unix_ms",
+                     "last_active_unix_ms", "terminated", "session_type"}, agentId)});
+            files.push_back({"sessions/turns.jsonl",
+                DumpTableJoin(m_store,
+                    "SELECT t.id, t.session_id, t.turn_id, t.role, t.content, t.unix_ms, "
+                    "t.is_summary, t.compacted_from, t.thinking_content, t.tool_calls, "
+                    "t.tool_call_id, t.tool_name, t.intake_processed, "
+                    "t.intake_processed_at_unix_ms, t.token_count, t.is_compacted, t.metadata "
+                    "FROM session_turns t "
+                    "INNER JOIN sessions s ON t.session_id = s.id "
+                    "WHERE s.agent_id = ?", agentId,
+                    {"id", "session_id", "turn_id", "role", "content", "unix_ms",
+                     "is_summary", "compacted_from", "thinking_content", "tool_calls",
+                     "tool_call_id", "tool_name", "intake_processed",
+                     "intake_processed_at_unix_ms", "token_count", "is_compacted",
+                     "metadata"})});
+        }
     }
 
     // session_reports/
@@ -750,9 +790,11 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
         m_idMap.clear();
     }
 
-    // Clean up any orphaned data for this agent ID (handles case where agent was
-    // deleted but related rows weren't cascaded)
-    ALOG_INFO("archive", "cleaning up existing data for agent " << agentId);
+    // In Replace mode: wipe all existing data for this agent.
+    // In Merge mode: keep existing data — dedup logic handles duplicates.
+    // In New mode: agent doesn't exist yet, so no cleanup needed.
+    if (mode == ImportMode::Replace) {
+    ALOG_INFO("archive", "replace mode: wiping existing data for agent " << agentId);
     const char* cleanupTables[] = {
         "diary_entries", "observations", "memory_layers",
         "ontology_properties", "ontology_entities",
@@ -778,6 +820,7 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
             del->ExecDML();
         }
     }
+    } // end Replace mode cleanup
 
     // Import agent record
     auto ait = fileMap.find("agent.json");
