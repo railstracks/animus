@@ -949,6 +949,8 @@
             // Parse component flags from query or body
             AgentArchiveComponentFlags flags;
 
+            try {
+
             auto body = req->getJsonObject();
             if (body && body->isMember("components")) {
                 const auto& comps = (*body)["components"];
@@ -979,8 +981,8 @@
                 }
             }
 
-            // Also accept "all" shortcut
-            if (body && body->isMember("components") && (*body)["components"].asString() == "all") {
+            // Also accept "all" shortcut (only if components is a string, not an array)
+            if (body && body->isMember("components") && (*body)["components"].isString() && (*body)["components"].asString() == "all") {
                 flags = {};
                 flags.agent = true;
                 flags.memory = true;
@@ -1000,6 +1002,16 @@
             std::string tmpPath = "/tmp/animus_export_" + agentId + "_" +
                 std::to_string(std::time(nullptr)) + ".agent";
 
+            ALOG_INFO("archive", "Export starting for agent " << agentId
+                << " — flags: ontology=" << flags.ontology
+                << " schedules=" << flags.schedules
+                << " gallivanting=" << flags.gallivanting
+                << " diary=" << flags.diary
+                << " sessions=" << flags.sessions
+                << " reports=" << flags.reports
+                << " luaScripts=" << flags.luaScripts
+                << " embeddings=" << flags.embeddings);
+
             AgentArchiveWriter writer(srv->m_dataStore);
             std::string err = writer.Write(agentId, flags, tmpPath);
             if (!err.empty()) {
@@ -1014,6 +1026,10 @@
             callback(resp);
 
             // Note: temp file cleanup is deferred — could use a cleanup timer
+
+            } catch (const std::exception& e) {
+                SendJsonError(callback, std::string("export failed: ") + e.what(), drogon::k500InternalServerError);
+            }
         },
         {drogon::Post});
 }
