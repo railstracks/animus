@@ -711,12 +711,14 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     ChainAssistantMessageCallback assistantMessageCallback,
     const std::string& reasoningEffortOverride,
     bool reasoningEnabledOverride,
-    bool hasReasoningEnabledOverride) {
+    bool hasReasoningEnabledOverride,
+    std::shared_ptr<std::atomic<bool>> stopSignal) {
 
     ExecutionRequest req;
     ResolveAgentOverrides(session, systemPrompt, providerId, configId, model,
                           contextWindowTokens, hasReasoningEnabledOverride,
                           reasoningEnabledOverride, reasoningEffortOverride, req);
+    req.stopSignal = stopSignal;
     return ExecuteStreamingOnSession(session, userMessage, req,
                                      tokenCallback, textCallback, toolEventCallback,
                                      thinkingCallback, toolCallCallback,

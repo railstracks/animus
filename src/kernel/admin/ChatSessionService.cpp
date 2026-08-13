@@ -10,7 +10,6 @@
 
 #include "animus_kernel/AgentStore.h"
 #include "animus_kernel/ChainRunner.h"
-#include "animus_kernel/ExecutionRequest.h"
 #include "animus_kernel/CompactionService.h"
 #include "animus_kernel/CompactionSummaryGenerator.h"
 #include "animus_kernel/llm/LLMProviderRegistry.h"
@@ -362,33 +361,24 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 }
             }
 
-            // Build ExecutionRequest so we can inject stopSignal
-            ExecutionRequest execReq;
-            execReq.systemPrompt = identity;
-            execReq.providerId = registryKey;
-            execReq.configId = registryKey;
-            execReq.model = model;
-            execReq.contextWindow = contextWindow;
-            execReq.reasoningEnabled = requestedReasoningEnabled;
-            execReq.reasoningEffort = requestedReasoningEffort;
-            execReq.stopSignal = stopSignal;
-            // Resolve remaining fields (chain budgets, etc.) from agent config
-            if (agentConfig) {
-                execReq.maxChainSteps = agentConfig->budget.maxChainSteps;
-                execReq.maxToolCallsPerChain = agentConfig->budget.maxToolCallsPerChain;
-                execReq.timeoutSeconds = agentConfig->budget.timeoutSeconds;
-            }
-
             auto result = chainRunner->ExecuteStreamingOnSession(
                 sessionAccess,
                 userContent,
-                execReq,
+                identity,
+                registryKey,
+                providerId,
+                model,
+                contextWindow,
                 tokenCallback,
                 textCallback,
                 toolEventCallback,
                 thinkingCallback,
                 toolCallCallback,
-                nullptr);  // assistantMessageCallback
+                nullptr,  // assistantMessageCallback (WS chat doesn't need it)
+                requestedReasoningEffort,
+                requestedReasoningEnabled,
+                hasReasoningOverride,
+                stopSignal);  // new param
 
             if (result.success && sessions) {
                 sessions->FlushSession(session->Id());
