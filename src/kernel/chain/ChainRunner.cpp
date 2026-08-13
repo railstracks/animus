@@ -330,7 +330,7 @@ ChainResult ChainRunner::ExecuteOnSession(
         // Call LLM (non-streaming)
         auto llmCallStart = std::chrono::steady_clock::now();
         std::string llmErr;
-        auto response = CallLLM(*provider, assembly.request, {}, &llmErr);
+        auto response = CallLLM(*provider, assembly.request, {}, &llmErr, req.stopSignal);
         auto llmCallEnd = std::chrono::steady_clock::now();
         int llmLatencyMs = static_cast<int>(std::chrono::duration<double, std::milli>(llmCallEnd - llmCallStart).count());
         if (!llmErr.empty()) {
@@ -568,7 +568,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         // Call LLM (streaming)
         auto llmCallStart = std::chrono::steady_clock::now();
         std::string llmErr;
-        auto response = CallLLM(*provider, assembly.request, stepTokenCallback, &llmErr);
+        auto response = CallLLM(*provider, assembly.request, stepTokenCallback, &llmErr, req.stopSignal);
         auto llmCallEnd = std::chrono::steady_clock::now();
         int llmLatencyMs = static_cast<int>(std::chrono::duration<double, std::milli>(llmCallEnd - llmCallStart).count());
         if (!llmErr.empty()) {
@@ -576,6 +576,14 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
             result.elapsed_ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - start).count();
             return result;
+        }
+
+        // If LLM was stopped mid-stream, store partial content and break
+        if (response.finish_reason == "stopped") {
+            ALOG_INFO("chain", "LLM call stopped mid-stream — storing partial content and aborting chain");
+            result.success = false;
+            result.error = "stopped";
+            break;
         }
 
         result.prompt_tokens += response.prompt_tokens;
@@ -723,9 +731,18 @@ llm::LLMResponse ChainRunner::CallLLM(
     llm::ILLMProvider& provider,
     llm::LLMRequest& request,
     llm::LLMTokenCallback tokenCallback,
-    std::string* error) {
+    std::string* error,
+    std::shared_ptr<std::atomic<bool>> stopSignal) {
 
     llm::LLMResponse response;
+
+    // Inject stop signal into provider for HTTP-level abort
+    if (stopSignal) {
+        auto* baseProvider = dynamic_cast<llm::LLMProviderBase*>(&provider);
+        if (baseProvider) {
+            baseProvider->SetAbortSignal(stopSignal);
+        }
+    }
 
     if (tokenCallback) {
         // Streaming

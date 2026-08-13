@@ -52,6 +52,12 @@ size_t StreamWriteCallback(void* contents, size_t size, size_t nmemb,
                            void* userp) {
   size_t totalSize = size * nmemb;
   auto* ctx = static_cast<StreamWriteContext*>(userp);
+
+  // Check abort signal — return 0 to make curl abort the transfer
+  if (ctx->provider->ShouldAbort()) {
+    return 0;  // curl treats this as CURLE_WRITE_ERROR
+  }
+
   if (ctx->done) return totalSize;
   ctx->provider->AppendSSEData(static_cast<const char*>(contents), totalSize,
                                &ctx->done);
@@ -196,6 +202,21 @@ LLMMessage LLMProviderBase::StreamComplete(const LLMRequest& request,
   }
 
   int status = DoHTTPRequest(body, /*stream=*/true, std::move(wrappedCallback), nullptr, error);
+
+  // 499 = aborted by stop signal — return partial content, no error
+  if (status == 499) {
+    m_lastFinishReason = "stopped";
+    // Finalize tool call accumulation (in case partial tool calls were received)
+    auto accumulatedCalls = m_toolCallAccumulator.Finalize();
+    if (!accumulatedCalls.empty()) {
+      m_lastToolCalls = std::move(accumulatedCalls);
+    }
+    LLMMessage result;
+    result.role = "assistant";
+    result.content = m_http->accumulated;  // partial content
+    return result;
+  }
+
   if (status != 200) {
     if (error) {
       *error = "HTTP " + std::to_string(status) +
@@ -474,6 +495,7 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
     m_http->sseBuffer.clear();
     m_http->accumulated.clear();
     m_http->responseBody.clear();
+    m_aborted = false;
 
     StreamWriteContext ctx{this, false};
 
@@ -482,6 +504,14 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
 
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
+      // Check if this was an abort via stop signal
+      if (m_aborted) {
+        ALOG_INFO("llm", "streaming aborted by stop signal"
+          << " — accumulated " << m_http->accumulated.size() << " bytes");
+        // Return 499 as a sentinel — not a real HTTP status, means "client closed"
+        if (error) error->clear();
+        return 499;
+      }
       if (error) {
         *error = std::string(errbuf[0] ? errbuf : curl_easy_strerror(res));
       }

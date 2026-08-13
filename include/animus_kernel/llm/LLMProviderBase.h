@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -62,6 +64,28 @@ public:
 
   /// Get completion token count from the last LLM call.
   int GetLastCompletionTokens() const { return m_lastCompletionTokens; }
+
+  // ---------------------------------------------------------------------------
+  // Abort / cancellation
+  // ---------------------------------------------------------------------------
+
+  /// Set an abort signal. When set, the next SSE chunk write callback returns 0
+  /// (signalling curl to abort the transfer). Checked at most one chunk later.
+  void SetAbortSignal(std::shared_ptr<std::atomic<bool>> signal) {
+    m_abortSignal = std::move(signal);
+  }
+
+  /// True if the last streaming call was aborted by the abort signal.
+  bool WasAborted() const { return m_aborted; }
+
+  /// Check if abort signal is set — called by StreamWriteCallback.
+  bool ShouldAbort() {
+    if (m_abortSignal && m_abortSignal->load()) {
+      m_aborted = true;
+      return true;
+    }
+    return false;
+  }
 
   // ---------------------------------------------------------------------------
   // Capabilities
@@ -196,6 +220,10 @@ private:
   // libcurl handle — pimpl to avoid exposing curl headers
   struct HTTPImpl;
   HTTPImpl* m_http{nullptr};
+
+  // Abort signal — when set, the streaming write callback aborts the transfer
+  std::shared_ptr<std::atomic<bool>> m_abortSignal;
+  bool m_aborted{false};
 };
 
 } // namespace animus::kernel::llm
