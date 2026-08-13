@@ -58,6 +58,7 @@ protected:
     /// Get the set of adapter types configured for a specific agent.
     /// Returns all types if agentId is empty.
     std::set<std::string> GetAdapterTypesForAgent(const std::string& agentId) const;
+    std::vector<std::string> GetPlatformIdsForAgent(const std::string& agentId) const;
 
     /// Extract the "action" field from the tool call arguments.
     std::string GetActionFromCall(const ToolCall& call) const override;
