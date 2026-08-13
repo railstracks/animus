@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 namespace animus::kernel {
@@ -35,6 +37,11 @@ struct ExecutionRequest {
     std::uint32_t maxChainSteps = 200;
     std::uint32_t maxToolCallsPerChain = 100;
     std::uint32_t timeoutSeconds = 1800;  // Agent timeout for display + enforcement
+
+    // --- Cancellation ---
+    // When set to true, the chain loop should abort at the next step boundary.
+    // Checked between chain steps and between tool calls.
+    std::shared_ptr<std::atomic<bool>> stopSignal;
 };
 
 } // namespace animus::kernel
