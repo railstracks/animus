@@ -397,6 +397,77 @@
             },
             {drogon::Delete});
 
+        // PUT /api/v1/scheduler/schedules/{id} — update schedule
+        drogon::app().registerHandler(
+            "/api/v1/scheduler/schedules/{1}",
+            [](const drogon::HttpRequestPtr& req,
+               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+               const std::string& id) {
+                AdminServer* server = g_activeAdminServer.load();
+                if (!server) { SendServerNotActive(callback); return; }
+                if (!server->m_scheduler) {
+                    SendJsonError(callback, "scheduler is not configured", drogon::k503ServiceUnavailable);
+                    return;
+                }
+
+                // Fetch existing
+                auto existing = server->m_scheduler->Get(id);
+                if (!existing.has_value()) {
+                    SendJsonError(callback, "schedule not found", drogon::k404NotFound);
+                    return;
+                }
+
+                Json::Value body;
+                std::string parseErr;
+                std::string bodyStr(req->getBody());
+                if (!ParseJsonPayload(bodyStr, &body, &parseErr)) {
+                    SendJsonError(callback, "invalid JSON: " + parseErr, drogon::k400BadRequest);
+                    return;
+                }
+
+                // Apply patches — only mutable fields
+                ScheduleDescriptor updated = *existing;
+                if (body.isMember("tag")) updated.tag = body["tag"].asString();
+                if (body.isMember("message")) updated.message = body["message"].asString();
+                if (body.isMember("cron_expr")) updated.cron_expr = body["cron_expr"].asString();
+                if (body.isMember("timezone")) updated.timezone = body["timezone"].asString();
+                if (body.isMember("enabled")) updated.enabled = body["enabled"].asBool();
+                if (body.isMember("max_fires")) updated.max_fires = body["max_fires"].asInt();
+                if (body.isMember("metadata")) updated.metadata = body["metadata"].asString();
+                // Allow type change (one_shot ↔ recurring)
+                if (body.isMember("schedule_type")) {
+                    std::string typeStr = body["schedule_type"].asString();
+                    updated.type = (typeStr == "recurring") ? ScheduleType::Recurring : ScheduleType::OneShot;
+                }
+                // next_fire can be overridden for one-shots
+                if (body.isMember("next_fire")) updated.next_fire = body["next_fire"].asString();
+
+                std::string err;
+                if (!server->m_scheduler->Update(updated, &err)) {
+                    SendJsonError(callback, err.empty() ? "failed to update schedule" : err, drogon::k500InternalServerError);
+                    return;
+                }
+
+                // Return updated schedule
+                Json::Value out(Json::objectValue);
+                out["id"] = updated.id;
+                out["agent_id"] = updated.agent_id;
+                out["tag"] = updated.tag;
+                out["schedule_type"] = updated.type == ScheduleType::Recurring ? "recurring" : "one_shot";
+                out["next_fire"] = updated.next_fire;
+                out["cron_expr"] = updated.cron_expr;
+                out["timezone"] = updated.timezone;
+                out["message"] = updated.message;
+                out["metadata"] = updated.metadata;
+                out["enabled"] = updated.enabled;
+                out["created_at"] = updated.created_at;
+                out["last_fire"] = updated.last_fire;
+                out["fire_count"] = updated.fire_count;
+                out["max_fires"] = updated.max_fires;
+                callback(drogon::HttpResponse::newHttpJsonResponse(out));
+            },
+            {drogon::Put});
+
         // POST /api/v1/scheduler/schedules — create schedule
         drogon::app().registerHandler(
             "/api/v1/scheduler/schedules",
