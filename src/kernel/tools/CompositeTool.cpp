@@ -189,8 +189,7 @@ ToolDefinition CompositeTool::BuildMergedDefinition() const {
 
     def.parameters.push_back({
         "platform_id", "string",
-        "Instance to use (e.g. 'bluesky:personal', 'vk:community'). "
-        "Required for all actions except 'list'.",
+        "Instance to use. Format: <type>:<name>. Call 'list' to see configured instances.",
         false
     });
 

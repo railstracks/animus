@@ -327,6 +327,47 @@ std::set<std::string> ChannelsTool::GetAdapterTypesForAgent(const std::string& a
     return types;
 }
 
+std::vector<std::string> ChannelsTool::GetPlatformIdsForAgent(const std::string& agentId) const {
+    std::vector<std::string> result;
+
+    if (agentId.empty()) return result;
+
+    // 1. ChannelManager (C++ connectors)
+    if (m_channelManager) {
+        for (const auto& ch : m_channelManager->ListChannels()) {
+            std::string chAgentId = ch.config.get("agent_id", "").asString();
+            if (chAgentId == agentId) {
+                result.push_back(ch.type + ":" + ch.name);
+            }
+        }
+    }
+
+    // 2. AgentConfigStore (Lua adapters)
+    if (m_configStore) {
+        m_configStore->WarmCache(agentId);
+        auto keys = m_configStore->ListKeys(agentId);
+        for (const auto& key : keys) {
+            std::string rest;
+            if (key.size() >= 9 && key.substr(0, 9) == "channels.") {
+                rest = key.substr(9);
+            } else if (key.size() >= 7 && key.substr(0, 7) == "social.") {
+                rest = key.substr(7);
+            } else {
+                continue;
+            }
+            auto dotPos = rest.find('.');
+            if (dotPos == std::string::npos) continue;
+            std::string platformId = rest.substr(0, dotPos);
+            // Avoid duplicates
+            if (std::find(result.begin(), result.end(), platformId) == result.end()) {
+                result.push_back(platformId);
+            }
+        }
+    }
+
+    return result;
+}
+
 ToolDefinition ChannelsTool::BuildMergedDefinition() const {
     // Determine which adapter types to include
     std::set<std::string> includeTypes;
@@ -418,11 +459,30 @@ ToolDefinition ChannelsTool::BuildMergedDefinition() const {
         true, "", actionEnum
     });
 
+    // Build dynamic platform_id enum from configured channels
+    auto platformIds = GetPlatformIdsForAgent(m_currentAgentId);
+    std::vector<std::string> platformIdEnum;
+    if (!platformIds.empty()) {
+        platformIdEnum = platformIds;
+    }
+
+    std::string platformIdDesc;
+    if (platformIds.empty()) {
+        platformIdDesc = "Instance to use. Call 'list' to see configured instances. "
+                         "Format: <type>:<name>";
+    } else {
+        platformIdDesc = "Instance to use. Configured for this agent: ";
+        for (std::size_t i = 0; i < platformIds.size(); ++i) {
+            if (i > 0) platformIdDesc += ", ";
+            platformIdDesc += platformIds[i];
+        }
+        platformIdDesc += ". Use 'list' to see all.";
+    }
+
     def.parameters.push_back({
         "platform_id", "string",
-        "Instance to use (e.g. 'bluesky:personal', 'vk:community'). "
-        "Required for all actions except 'list'.",
-        false
+        platformIdDesc,
+        false, "", platformIdEnum
     });
 
     // Add composite-level parameters
