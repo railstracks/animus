@@ -129,6 +129,10 @@ const socket = ref<WebSocket | null>(null);
 const reconnectTimer = ref<number | null>(null);
 const wsState = ref<WsConnectionState>('closed');
 const lastWsError = ref('');
+const wsRetryCount = ref(0);
+const wsMaxRetries = 10;
+const wsBaseDelay = 1000;
+const wsMaxDelay = 30000;
 
 const adminToken = ref(readAdminToken());
 const draft = ref('');
@@ -641,9 +645,26 @@ function clearReconnectTimer(): void {
 
 function scheduleReconnect(): void {
   clearReconnectTimer();
+  if (wsRetryCount.value >= wsMaxRetries) {
+    // Exceeded retries — stop trying, show reconnect button
+    wsState.value = 'closed';
+    lastWsError.value = 'Connection lost. Click to reconnect.';
+    return;
+  }
+  // Exponential backoff with jitter: delay = min(base * 2^retry, max) ± 25% jitter
+  const exponential = Math.min(wsBaseDelay * Math.pow(2, wsRetryCount.value), wsMaxDelay);
+  const jitter = exponential * 0.25 * (Math.random() * 2 - 1); // ±25%
+  const delay = Math.round(exponential + jitter);
+  wsRetryCount.value++;
   reconnectTimer.value = window.setTimeout(() => {
     connectSocket();
-  }, 1200);
+  }, delay);
+}
+
+function manualReconnect(): void {
+  wsRetryCount.value = 0;
+  lastWsError.value = '';
+  connectSocket();
 }
 
 function closeSocket(): void {
@@ -684,6 +705,8 @@ function connectSocket(): void {
     token: adminToken.value,
     onOpen: () => {
       wsState.value = 'open';
+      wsRetryCount.value = 0;  // reset on successful connection
+      lastWsError.value = '';
       requestSessionsOverSocket();
     },
     onClose: () => {
@@ -1652,7 +1675,7 @@ watch(sessionSearch, () => {
               <div class="token-gauge-bar" :style="{ width: tokenPercent + '%' }" :data-level="tokenLevel"></div>
               <span class="token-gauge-label">{{ formatTokenK(tokenEstimate.estimated_tokens) }} / {{ formatTokenK(tokenEstimate.context_window) }} ({{ tokenPercent }}%)</span>
             </div>
-            <span class="status-chip" :data-state="wsState">{{ wsStateLabel }}</span>
+            <span class="status-chip" :data-state="wsState" @click="wsState === 'closed' && wsRetryCount >= wsMaxRetries ? manualReconnect() : undefined" :style="wsState === 'closed' && wsRetryCount >= wsMaxRetries ? 'cursor: pointer;' : ''">{{ wsState === 'closed' && wsRetryCount >= wsMaxRetries ? 'reconnect' : wsStateLabel }}</span>
             <v-tooltip :text="t('chat.actions.exportSession')" location="bottom">
               <template #activator="{ props }">
                 <v-btn v-bind="props" size="small" variant="text" :disabled="activeMessages.length === 0" @click="exportSession">
