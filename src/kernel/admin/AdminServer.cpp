@@ -1057,7 +1057,7 @@ void AdminServer::SyncIrcInterfaces() {
                         providerId,
                         model,
                         contextWindow);
-                    if (result.success && m_sessions) {
+                    if (m_sessions) {
                         m_sessions->FlushSession(session->Id());
                     }
                     if (!result.success || result.response.empty()) {

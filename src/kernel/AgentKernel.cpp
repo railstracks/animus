@@ -843,7 +843,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                                     providerId,
                                     model,
                                     contextWindow);
-                                if (result.success && m_sessionManager) {
+                                if (m_sessionManager) {
                                     m_sessionManager->FlushSession(session->Id());
                                     if (result.triggered_compaction && m_compactionService) {
                                         m_compactionService->CompactIfNeeded(
@@ -1004,7 +1004,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                         providerId,
                         model,
                         contextWindow);
-                    if (result.success && m_sessionManager) {
+                    if (m_sessionManager) {
                         m_sessionManager->FlushSession(session->Id());
                         if (result.triggered_compaction && m_compactionService) {
                             m_compactionService->CompactIfNeeded(
@@ -1077,7 +1077,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                     model,
                     contextWindow);
 
-                if (result.success && m_sessionManager) {
+                if (m_sessionManager) {
                     m_sessionManager->FlushSession(session->Id());
                     if (result.triggered_compaction && m_compactionService) {
                         m_compactionService->CompactIfNeeded(
@@ -1517,7 +1517,7 @@ void AgentKernel::ExecuteChannelDispatch(
                 nullptr,      // toolCallCallback
                 assistantCb); // assistantMessageCallback
 
-            if (result.success && m_sessionManager) {
+            if (m_sessionManager) {
                 m_sessionManager->FlushSession(session->Id());
 
                 // Store adapter metadata on the last user turn (for message dedup)
