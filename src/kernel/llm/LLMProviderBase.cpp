@@ -472,10 +472,11 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
                    stream ? 0L
                           : static_cast<long>(m_config.connect_timeout_ms) *
                                 4L);
-  // For streaming: abort if no data received for 90 seconds (stall detection)
+  // For streaming: abort if connection truly stalls. Reasoning models (o1/o3,
+  // etc.) can take 2-3 minutes before first token, so be generous here.
   if (stream) {
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);  // 1 byte/sec
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 90L);   // for 90 seconds
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 300L);  // for 300 seconds (5 min)
   }
 
   // Error buffer
