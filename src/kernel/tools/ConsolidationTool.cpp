@@ -48,7 +48,8 @@ ToolDefinition ConsolidationTool::GetDefinition() const {
         "Review, restructure, and curate your episodic memory during consolidation cycles. "
         "Available actions: create, fetch_pending, review, promote, merge, revise, "
         "retire, tag, history, perspective:generate, perspective:review, ontology:upsert, "
-        "memory_file:fetch_pending, memory_file:mark_processed, summary.";
+        "sessions:report, memory_file:fetch_pending, memory_file:mark_processed, summary. "
+        "Action availability depends on session type (intake, review, or session_report).";
     def.resultMode = ToolResultMode::deliver_to_model;
     def.session_types = {"consolidation"};
 
@@ -56,11 +57,13 @@ ToolDefinition ConsolidationTool::GetDefinition() const {
         "action", "string",
         "The consolidation action to perform: "
         "create, fetch_pending, review, promote, merge, revise, retire, tag, history, "
-        "perspective:generate, perspective:review, ontology:upsert, summary",
+        "perspective:generate, perspective:review, ontology:upsert, sessions:report, "
+        "memory_file:fetch_pending, memory_file:mark_processed, summary",
         true,
         "",
         {"create", "fetch_pending", "review", "promote", "merge", "revise", "retire", "tag", "history",
-         "perspective:generate", "perspective:review", "ontology:upsert", "summary"}
+         "perspective:generate", "perspective:review", "ontology:upsert", "sessions:report",
+         "memory_file:fetch_pending", "memory_file:mark_processed", "summary"}
     });
 
     // All other parameters are action-specific and passed via a JSON "params" object
