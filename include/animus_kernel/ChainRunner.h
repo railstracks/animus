@@ -3,6 +3,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <atomic>
 #include <string>
 
 #include "animus_kernel/IncomingEvent.h"
@@ -210,7 +211,8 @@ private:
         llm::ILLMProvider& provider,
         llm::LLMRequest& request,
         llm::LLMTokenCallback tokenCallback,
-        std::string* error);
+        std::string* error,
+        std::shared_ptr<std::atomic<bool>> stopSignal = nullptr);
 
     /// Log an LLM call to the prompt log store (if enabled).
     void LogPromptCall(
