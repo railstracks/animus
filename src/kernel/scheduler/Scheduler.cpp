@@ -414,6 +414,15 @@ bool Scheduler::Cancel(const std::string& id, std::string* error) {
     return m_store.Delete(id, error);
 }
 
+bool Scheduler::Update(const ScheduleDescriptor& sched, std::string* error) {
+    // Recompute next_fire if cron_expr or timezone changed
+    ScheduleDescriptor updated = sched;
+    if (updated.type == ScheduleType::Recurring && !updated.cron_expr.empty()) {
+        updated.next_fire = ComputeNextFire(updated.cron_expr, updated.timezone, IsoNow());
+    }
+    return m_store.Update(updated, error);
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Configuration
 // ──────────────────────────────────────────────────────────────────

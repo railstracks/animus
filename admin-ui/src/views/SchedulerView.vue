@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { apiGet, apiRequest } from '../lib/api';
 
@@ -151,6 +151,43 @@ async function deleteSchedule(id: string): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Edit dialog
+// ---------------------------------------------------------------------------
+const editDialog = ref(false);
+const editLoading = ref(false);
+const editForm = ref<ScheduleItem | null>(null);
+
+function openEdit(item: ScheduleItem) {
+  // Deep copy so we don't mutate the table row
+  editForm.value = JSON.parse(JSON.stringify(item));
+  editDialog.value = true;
+}
+
+async function saveEdit() {
+  if (!editForm.value) return;
+  editLoading.value = true;
+  error.value = '';
+  try {
+    await apiRequest('PUT', `/api/v1/scheduler/schedules/${encodeURIComponent(editForm.value.id)}`, {
+      tag: editForm.value.tag,
+      message: editForm.value.message,
+      cron_expr: editForm.value.cron_expr,
+      timezone: editForm.value.timezone,
+      enabled: editForm.value.enabled,
+      max_fires: editForm.value.max_fires,
+      schedule_type: editForm.value.schedule_type,
+      next_fire: editForm.value.next_fire,
+    });
+    editDialog.value = false;
+    await loadSchedules();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to update schedule';
+  } finally {
+    editLoading.value = false;
+  }
+}
+
 onMounted(() => {
   void refreshAll();
 });
@@ -293,6 +330,15 @@ onMounted(() => {
       </template>
       <template #item.actions="{ item }">
         <v-btn
+          color="primary"
+          variant="text"
+          size="small"
+          prepend-icon="mdi-pencil"
+          @click="openEdit(item)"
+        >
+          Edit
+        </v-btn>
+        <v-btn
           color="error"
           variant="text"
           size="small"
@@ -321,6 +367,113 @@ onMounted(() => {
       </template>
     </v-data-table>
   </v-card>
+
+  <!-- Edit Dialog -->
+  <v-dialog v-model="editDialog" max-width="700px">
+    <v-card v-if="editForm">
+      <v-card-title class="text-h6">
+        Edit Schedule
+        <span class="text-caption text-medium-emphasis ml-2 mono">{{ editForm.id }}</span>
+      </v-card-title>
+      <v-card-text>
+        <v-row dense>
+          <v-col cols="12" sm="6">
+            <v-select
+              v-model="editForm.schedule_type"
+              :items="['one_shot', 'recurring']"
+              label="Schedule Type"
+              density="compact"
+              variant="outlined"
+            />
+          </v-col>
+          <v-col cols="12" sm="6">
+            <v-text-field
+              v-model="editForm.tag"
+              label="Tag"
+              density="compact"
+              variant="outlined"
+              hide-details
+            />
+          </v-col>
+          <v-col v-if="editForm.schedule_type === 'recurring'" cols="12" sm="6">
+            <v-text-field
+              v-model="editForm.cron_expr"
+              label="Cron Expression"
+              density="compact"
+              variant="outlined"
+              hint="e.g. 0 9 * * * for daily at 9am"
+              persistent-hint
+            />
+          </v-col>
+          <v-col v-if="editForm.schedule_type === 'recurring'" cols="12" sm="6">
+            <v-text-field
+              v-model="editForm.timezone"
+              label="Timezone"
+              density="compact"
+              variant="outlined"
+              hint="IANA timezone, e.g. Europe/Amsterdam"
+              persistent-hint
+            />
+          </v-col>
+          <v-col v-if="editForm.schedule_type === 'one_shot'" cols="12" sm="6">
+            <v-text-field
+              v-model="editForm.next_fire"
+              label="Next Fire (ISO-8601)"
+              density="compact"
+              variant="outlined"
+              hint="e.g. 2026-08-20T09:00:00Z"
+              persistent-hint
+            />
+          </v-col>
+          <v-col cols="12" sm="6">
+            <v-text-field
+              v-model.number="editForm.max_fires"
+              label="Max Fires (0 = unlimited)"
+              type="number"
+              density="compact"
+              variant="outlined"
+              hide-details
+            />
+          </v-col>
+          <v-col cols="12">
+            <v-textarea
+              v-model="editForm.message"
+              label="Message / Payload"
+              density="compact"
+              variant="outlined"
+              rows="3"
+              auto-grow
+              hint="Context delivered when the schedule fires"
+              persistent-hint
+            />
+          </v-col>
+          <v-col cols="12">
+            <v-switch
+              v-model="editForm.enabled"
+              color="primary"
+              label="Enabled"
+              density="compact"
+              hide-details
+            />
+          </v-col>
+        </v-row>
+
+        <v-alert type="info" variant="tonal" density="compact" class="mt-3">
+          <span v-if="editForm.schedule_type === 'recurring'">
+            Next fire will be recalculated from the cron expression on save.
+          </span>
+          <span v-else>
+            One-shot schedule — set the exact fire time above.
+          </span>
+        </v-alert>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="editDialog = false">Cancel</v-btn>
+        <v-btn color="primary" :loading="editLoading" @click="saveEdit">Save</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <style scoped>

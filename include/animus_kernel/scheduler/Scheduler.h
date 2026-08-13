@@ -38,6 +38,7 @@ public:
     std::vector<ScheduleDescriptor> List(
         const std::string& agentId, const std::string& tag = "") const;
     bool Cancel(const std::string& id, std::string* error);
+    bool Update(const ScheduleDescriptor& sched, std::string* error);
 
     // Configuration
     void SetPollIntervalMs(uint32_t ms);
