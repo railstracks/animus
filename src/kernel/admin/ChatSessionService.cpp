@@ -10,6 +10,7 @@
 
 #include "animus_kernel/AgentStore.h"
 #include "animus_kernel/ChainRunner.h"
+#include "animus_kernel/ExecutionRequest.h"
 #include "animus_kernel/CompactionService.h"
 #include "animus_kernel/CompactionSummaryGenerator.h"
 #include "animus_kernel/llm/LLMProviderRegistry.h"
@@ -361,23 +362,33 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 }
             }
 
+            // Build ExecutionRequest so we can inject stopSignal
+            ExecutionRequest execReq;
+            execReq.systemPrompt = identity;
+            execReq.providerId = registryKey;
+            execReq.configId = registryKey;
+            execReq.model = model;
+            execReq.contextWindow = contextWindow;
+            execReq.reasoningEnabled = requestedReasoningEnabled;
+            execReq.reasoningEffort = requestedReasoningEffort;
+            execReq.stopSignal = stopSignal;
+            // Resolve remaining fields (chain budgets, etc.) from agent config
+            if (agentConfig) {
+                execReq.maxChainSteps = agentConfig->budget.maxChainSteps;
+                execReq.maxToolCallsPerChain = agentConfig->budget.maxToolCallsPerChain;
+                execReq.timeoutSeconds = agentConfig->budget.timeoutSeconds;
+            }
+
             auto result = chainRunner->ExecuteStreamingOnSession(
                 sessionAccess,
                 userContent,
-                identity,
-                registryKey,
-                providerId,
-                model,
-                contextWindow,
+                execReq,
                 tokenCallback,
                 textCallback,
                 toolEventCallback,
                 thinkingCallback,
                 toolCallCallback,
-                nullptr,  // assistantMessageCallback (WS chat doesn't need it)
-                requestedReasoningEffort,
-                requestedReasoningEnabled,
-                hasReasoningOverride);
+                nullptr);  // assistantMessageCallback
 
             if (result.success && sessions) {
                 sessions->FlushSession(session->Id());
@@ -419,7 +430,7 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 assistantMessageId = turns.back().turn_id;
             }
 
-            if (!result.success) {
+            if (!result.success && result.error != "stopped") {
                 QueueError(wsConnPtr, sessionId, result.error);
             }
 
@@ -427,7 +438,7 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
             doneMsg["type"] = "done";
             doneMsg["session_id"] = std::to_string(sessionId);
             doneMsg["message_id"] = std::to_string(assistantMessageId);
-            doneMsg["interrupted"] = false;
+            doneMsg["interrupted"] = (result.error == "stopped");
             doneMsg["elapsed_ms"] = result.elapsed_ms;
             QueueSendJson(wsConnPtr, doneMsg);
         });
