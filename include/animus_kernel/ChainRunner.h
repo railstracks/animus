@@ -155,7 +155,8 @@ public:
         ChainAssistantMessageCallback assistantMessageCallback = nullptr,
         const std::string& reasoningEffortOverride = "",
         bool reasoningEnabledOverride = false,
-        bool hasReasoningEnabledOverride = false);
+        bool hasReasoningEnabledOverride = false,
+        std::shared_ptr<std::atomic<bool>> stopSignal = nullptr);
 
     // Set the agent store for per-agent tool filtering.
     void SetAgentStore(AgentStore* store) {
