@@ -251,6 +251,7 @@ ChainResult ChainRunner::ExecuteOnSession(
     userTurn.content = userMessage;
     userTurn.unix_ms = NowUnixMs();
     session.AddTurn(std::move(userTurn));
+    m_sessions.FlushSession(session.Id());
 
     // Assemble context from the provider registry.
     std::string resolvedSystemPrompt = req.systemPrompt;
@@ -395,6 +396,7 @@ ChainResult ChainRunner::ExecuteOnSession(
                     interjectionTurn.content = injected;
                     interjectionTurn.unix_ms = NowUnixMs();
                     session.AddTurn(std::move(interjectionTurn));
+                    m_sessions.FlushSession(session.Id());
                     ALOG_DEBUG("chain", "Injected interjection: " << injected.size() << " chars");
                 }
             }
@@ -465,6 +467,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
     userTurn.content = userMessage;
     userTurn.unix_ms = NowUnixMs();
     session.AddTurn(std::move(userTurn));
+    m_sessions.FlushSession(session.Id());
 
     // Assemble context from the provider registry.
     std::string resolvedSystemPrompt = req.systemPrompt;
@@ -672,6 +675,7 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
                     interjectionTurn.content = injected;
                     interjectionTurn.unix_ms = NowUnixMs();
                     session.AddTurn(std::move(interjectionTurn));
+                    m_sessions.FlushSession(session.Id());
                     ALOG_DEBUG("chain/stream", "Injected interjection: "
                               << injected.size() << " chars");
                 }
@@ -832,6 +836,7 @@ bool ChainRunner::ProcessResponse(
             assistantTurn.tool_calls.push_back(FromLLM(call));
         }
         session.AddTurn(std::move(assistantTurn));
+        m_sessions.FlushSession(session.Id());
     } else if (!content.empty() || !thinkingContent.empty()) {
         // Content-only or thinking-only response — store as single assistant turn
         userVisibleText = content;
@@ -842,6 +847,7 @@ bool ChainRunner::ProcessResponse(
         assistantTurn.thinking_content = thinkingContent;
         assistantTurn.unix_ms = NowUnixMs();
         session.AddTurn(std::move(assistantTurn));
+        m_sessions.FlushSession(session.Id());
     }
 
     // 3. Execute tool calls and store results
@@ -891,6 +897,7 @@ bool ChainRunner::ProcessResponse(
         toolResultTurn.tool_name = call.name;
         toolResultTurn.unix_ms = NowUnixMs();
         session.AddTurn(std::move(toolResultTurn));
+        m_sessions.FlushSession(session.Id());
 
         if (toolEventCallback) {
             toolEventCallback(tcNotif, toolResult);
