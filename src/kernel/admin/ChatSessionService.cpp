@@ -380,7 +380,9 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 hasReasoningOverride,
                 stopSignal);  // new param
 
-            if (result.success && sessions) {
+            // Always flush — even on failure, turns added during the chain
+            // (user message, partial responses, tool results) must be persisted.
+            if (sessions) {
                 sessions->FlushSession(session->Id());
 
                 // Trigger compaction if needed — use LLM-based summary generation

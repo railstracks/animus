@@ -69,9 +69,10 @@ ChainResult ChainRunner::Execute(
         ctx.primary, event.text, systemPrompt,
         providerId, providerId, model, contextWindowTokens);
 
-    if (result.success) {
-        m_sessions.FlushSession(ctx.primary.Id());
-    }
+    // Always flush — even on failure, turns added during the chain
+    // (user message, partial responses, tool results) must be persisted.
+    // Otherwise container restart loses everything.
+    m_sessions.FlushSession(ctx.primary.Id());
 
     const auto end = std::chrono::steady_clock::now();
     result.elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
@@ -103,9 +104,10 @@ ChainResult ChainRunner::ExecuteStreaming(
         std::move(tokenCallback), std::move(textCallback),
         std::move(toolEventCallback));
 
-    if (result.success) {
-        m_sessions.FlushSession(ctx.primary.Id());
-    }
+    // Always flush — even on failure, turns added during the chain
+    // (user message, partial responses, tool results) must be persisted.
+    // Otherwise container restart loses everything.
+    m_sessions.FlushSession(ctx.primary.Id());
 
     const auto end = std::chrono::steady_clock::now();
     result.elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
