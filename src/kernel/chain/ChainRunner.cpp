@@ -278,6 +278,14 @@ ChainResult ChainRunner::ExecuteOnSession(
     for (std::uint32_t step = 0; step < req.maxChainSteps; ++step) {
         result.chain_steps = step + 1;
 
+        // Check stop signal between steps
+        if (req.stopSignal && req.stopSignal->load()) {
+            ALOG_INFO("chain", "chain aborted by stop signal at step " << step);
+            result.success = false;
+            result.error = "stopped";
+            break;
+        }
+
         // Assemble prompt
         auto assembly = m_assembler.BuildFromAccess(
             session, "", resolvedSystemPrompt,
@@ -487,6 +495,14 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
 
     for (std::uint32_t step = 0; step < req.maxChainSteps; ++step) {
         result.chain_steps = step + 1;
+
+        // Check stop signal between steps
+        if (req.stopSignal && req.stopSignal->load()) {
+            ALOG_INFO("chain", "chain aborted by stop signal at step " << step);
+            result.success = false;
+            result.error = "stopped";
+            break;
+        }
 
         // Assemble prompt
         auto assembly = m_assembler.BuildFromAccess(

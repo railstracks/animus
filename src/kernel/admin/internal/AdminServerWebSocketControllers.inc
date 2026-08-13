@@ -191,9 +191,11 @@ public:
 
         if (auto context = wsConnPtr->getContext<ConnectionContext>()) {
             context->activeSessionId = std::to_string(sessionId);
-            if (context->stopRequested) {
-                context->stopRequested->store(false);
-            }
+            // Create a fresh stop signal for this request.
+            // Do NOT reuse/reset the previous one — if the prior chain is still
+            // running (stop only suppresses output, chain aborts at step boundary),
+            // its stop signal must remain true to prevent it resuming output.
+            context->stopRequested = std::make_shared<std::atomic<bool>>(false);
         }
 
         std::shared_ptr<std::atomic<bool>> stopSignal;
