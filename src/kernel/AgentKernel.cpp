@@ -747,14 +747,15 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
 
                     consolidationPrompt =
                         "Update session reports for sessions that have new activity.\n\n"
-                        "1. Call consolidation tool with action \"fetch_pending\" to retrieve pending turns.\n"
-                        "2. For each session that had pending turns, update its session report by calling action \"sessions:report\" with params: {session_id, summary, past_events, current_activity, forward_look}. Use these guidelines:\n"
+                        "1. Call the `consolidation` tool with action \"fetch_pending\" to retrieve pending turns.\n"
+                        "2. For each session that had pending turns, update its session report by calling the `consolidation` tool (NOT the `sessions` tool) with action \"sessions:report\" and params: {session_id, summary, past_events, current_activity, forward_look}. Use these guidelines:\n"
                         "   - summary: A stable one-sentence description of what this session is about (update only if it has changed).\n"
                         "   - past_events: Key developments that have transpired since the last report (compress if the session has a long history).\n"
                         "   - current_activity: What is happening right now in this session.\n"
                         "   - forward_look: What you expect to happen next in this session.\n"
                         "   Each field should be ~200 chars max. The report is upserted — it replaces any previous report for that session.\n"
-                        "3. When finished, call action \"summary\".\n\n"
+                        "3. When finished, call the `consolidation` tool with action \"summary\".\n\n"
+                        "IMPORTANT: All actions in this session (fetch_pending, sessions:report, summary) are on the `consolidation` tool. Do NOT use the `sessions` tool for reporting.\n\n"
                         "Do NOT create observations, update ontology, or generate perspectives. This session is strictly for session reports.\n";
                 } else {
                     // Unknown consolidation message — skip
