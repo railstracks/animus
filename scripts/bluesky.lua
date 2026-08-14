@@ -533,6 +533,17 @@ local function do_post(args)
         return { success = false, error = "content is required for post" }
     end
 
+    -- If root_id or post_id is provided, the agent intends to thread.
+    -- Auto-redirect to reply instead of silently creating a standalone post.
+    if (args.root_id and args.root_id ~= "") or (args.post_id and args.post_id ~= "") then
+        log.info("[bluesky] do_post received root_id/post_id — redirecting to reply")
+        -- Populate post_id from root_id if only root_id was given
+        if not args.post_id or args.post_id == "" then
+            args.post_id = args.root_id
+        end
+        return do_reply(args)
+    end
+
     local did, err = ensure_auth(pid)
     if not did then
         return { success = false, error = err }
