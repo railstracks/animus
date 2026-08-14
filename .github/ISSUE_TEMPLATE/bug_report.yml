@@ -1,0 +1,55 @@
+name: Bug Report
+description: Report something that isn't working
+labels: ["bug", "needs-info"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened? One or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to trigger the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include error messages, logs, or stack traces.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - persistence
+        - adapter
+        - scheduler
+        - admin-ui
+        - provider
+        - memory-system
+        - security
+        - infrastructure
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Animus version, OS, database, provider (e.g. v0.3.6, Linux, Postgres 16, Zhipu GLM-5.2)
+    validations:
+      required: false
