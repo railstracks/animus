@@ -201,4 +201,4 @@ Agents working on Animus should use the `gh` CLI for all GitHub operations. The 
 
 ## Questions?
 
-Open an issue with the `question` label, or join the [Discord](https://discord.gg/animus) for discussion.
+Open an issue with the `question` label, or join the [Discord](https://discord.gg/gjXsWYZgA) for discussion.
