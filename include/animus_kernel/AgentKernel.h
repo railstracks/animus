@@ -47,6 +47,7 @@ class AttachmentStore;
 class SopStore;
 class GallivantingStore;
 class SessionNotesStore;
+class AgendaStore;
 class SessionReportStore;
 class ScriptStore;
 class ChannelsTool;
@@ -143,6 +144,7 @@ private:
     DiaryStore* m_diaryStore{nullptr};           // per-agent diary store
     GallivantingStore* m_gallivantingStore{nullptr}; // gallivanting thread/session store
     SessionNotesStore* m_sessionNotesStore{nullptr}; // per-session persistent notes
+    AgendaStore* m_agendaStore{nullptr}; // per-agent calendar/agenda
     SessionReportStore* m_sessionReportStore{nullptr}; // per-session temporal reports
     ContextProviderRegistry* m_contextRegistry{nullptr}; // prompt assembly providers
     SessionTagsStore* m_sessionTagsStore{nullptr}; // session tag keywords
