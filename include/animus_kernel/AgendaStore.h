@@ -73,7 +73,7 @@ public:
 private:
     void EnsureSchema();
 
-    AgendaEvent RowToEvent(const IStatement& stmt) const;
+    AgendaEvent RowToEvent(IStatement& stmt) const;
 
     IDataStore* m_store;
 };

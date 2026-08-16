@@ -226,7 +226,7 @@ std::vector<AgendaEvent> AgendaStore::ListUpcoming(const std::string& agentId,
     return events;
 }
 
-AgendaEvent AgendaStore::RowToEvent(const IStatement& stmt) const {
+AgendaEvent AgendaStore::RowToEvent(IStatement& stmt) const {
     AgendaEvent ev;
     ev.id = stmt.ColumnInt64(0);
     ev.agent_id = stmt.ColumnText(1);
