@@ -124,6 +124,7 @@ ToolResult SopTool::HandleList(const std::string& argsStr) {
         item["category"] = s.category;
         item["version"] = s.version;
         item["description"] = s.description;
+        item["source_server"] = s.source_server;
         items.append(item);
     }
     root["sops"] = items;
@@ -168,6 +169,7 @@ ToolResult SopTool::HandleSearch(const std::string& argsStr) {
         item["category"] = s.category;
         item["version"] = s.version;
         item["description"] = s.description;
+        item["source_server"] = s.source_server;
         items.append(item);
     }
     root["sops"] = items;

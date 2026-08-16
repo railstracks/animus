@@ -36,6 +36,7 @@
                     item["category"] = s.category;
                     item["version"] = s.version;
                     item["description"] = s.description;
+                    item["source_server"] = s.source_server;
                     Json::Value tags(Json::arrayValue);
                     for (const auto& t : s.tags) tags.append(t);
                     item["tags"] = tags;
@@ -83,6 +84,7 @@
                 for (const auto& t : sop->meta.tags) tags.append(t);
                 body["tags"] = tags;
                 body["content"] = sop->content;
+                body["source_server"] = sop->meta.source_server;
 
                 callback(drogon::HttpResponse::newHttpJsonResponse(body));
             },

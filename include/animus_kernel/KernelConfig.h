@@ -262,6 +262,10 @@ struct KernelConfig {
     std::string embedding_model_path;  // resolved from dataDir / "models" / ...
     bool embedding_enabled{true};
 
+    // SOP server registries — remote servers for SOP discovery
+    // Default: the official animus-sop registry. Additional servers can be configured.
+    std::vector<std::string> sop_servers{"https://animus-sop.steadyfort.com"};
+
     // Lua filesystem loading
     std::string lua_script_dir;  // resolved from dataDir / "lua"
     bool lua_load_from_db{true};               // also load from DB (backward compat)

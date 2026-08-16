@@ -12,35 +12,34 @@ class HttpClient;
 
 // ============================================================================
 // SopStore — catalogs and serves Standard Operating Procedure files
-// Ticket 125: SOP System
+// Sources SOPs from remote animus-sop registry servers (REST API).
+// Local directory used as cache only.
 // ============================================================================
 
 struct SopMeta {
-    std::string name;         // unique slug (from frontmatter or filename)
+    std::string name;         // unique slug
     std::string title;        // human-readable title
-    std::string category;     // top-level grouping
+    std::string category;     // top-level grouping (may be empty)
     std::vector<std::string> tags;
-    std::string version;      // semver string
+    std::string version;      // version string
     std::string description;  // one-line summary
+    std::string source_server; // which server this SOP came from
 };
 
 struct SopEntry {
     SopMeta meta;
-    std::string content;      // full markdown content (without frontmatter)
-    std::string raw;          // full file content including frontmatter
-    std::filesystem::path filepath;
+    std::string content;      // full markdown content
+    std::filesystem::path filepath; // local cache path (if cached)
 };
 
 class SopStore {
 public:
-    /// Construct with local sops directory and optional remote source URL.
-    /// remoteUrl should point to a GitHub contents API endpoint or similar.
-    SopStore(const std::filesystem::path& sopsDir,
-             HttpClient* httpClient = nullptr,
-             const std::string& remoteUrl = "");
+    /// Construct with local cache directory, HTTP client, and list of SOP server URLs.
+    SopStore(const std::filesystem::path& cacheDir,
+             HttpClient* httpClient,
+             const std::vector<std::string>& serverUrls);
 
-    /// Scan the local directory and build the catalog. Called on startup.
-    /// If a remote source is configured, fetches and caches remote SOPs first.
+    /// Fetch SOP listings from all configured servers. Called on startup.
     void Refresh();
 
     /// List SOPs, optionally filtered by category. Paginated.
@@ -62,28 +61,46 @@ public:
     /// Whether the store has any SOPs loaded.
     bool HasSops() const { return !m_entries.empty(); }
 
+    /// Get the list of configured server URLs.
+    const std::vector<std::string>& GetServerUrls() const { return m_serverUrls; }
+
 private:
-    std::filesystem::path m_sopsDir;
+    std::filesystem::path m_cacheDir;
     HttpClient* m_httpClient{nullptr};
-    std::string m_remoteUrl;
+    std::vector<std::string> m_serverUrls;
 
     std::vector<SopEntry> m_entries;
 
-    /// Fetch remote SOP listing and download files to local cache.
-    void FetchRemoteSops();
+    /// Fetch SOP listing from a single server via REST API.
+    /// Calls GET /api/v1/sops on the server, parses JSON response.
+    void FetchFromServer(const std::string& serverUrl);
 
-    /// Parse YAML-like frontmatter from markdown content.
-    /// Returns {frontmatter_lines, body_content}.
-    std::pair<std::string, std::string> SplitFrontmatter(const std::string& raw) const;
+    /// Fetch full SOP content from a server by name.
+    /// Calls GET /api/v1/sops/:name and caches the result.
+    std::optional<SopEntry> FetchSopContent(const std::string& serverUrl,
+                                             const std::string& name);
 
-    /// Extract a field value from frontmatter text.
-    std::string GetField(const std::string& frontmatter, const std::string& key) const;
+    /// Load cached SOPs from local directory.
+    void LoadCachedSops();
 
-    /// Parse a YAML-like list value: [item1, item2, item3]
-    std::vector<std::string> ParseList(const std::string& value) const;
+    /// Parse JSON array from /api/v1/sops response into SopMeta entries.
+    /// Returns list of (name, title, version, description, tags, category) tuples.
+    struct RemoteSopInfo {
+        std::string name;
+        std::string title;
+        std::string version;
+        std::string description;
+        std::string category;
+        std::vector<std::string> tags;
+    };
+    std::vector<RemoteSopInfo> ParseSopListing(const std::string& jsonBody) const;
 
-    /// Generate slug from filename if frontmatter name is missing.
-    std::string SlugFromFilename(const std::filesystem::path& filepath) const;
+    /// Parse a single SOP from /api/v1/sops/:name response.
+    std::optional<SopEntry> ParseSopDetail(const std::string& jsonBody,
+                                            const std::string& serverUrl) const;
+
+    /// Ensure the cache directory exists.
+    void EnsureCacheDir();
 };
 
 } // namespace animus::kernel
