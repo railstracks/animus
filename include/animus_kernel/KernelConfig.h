@@ -44,6 +44,7 @@ struct KernelConfig {
         std::uint32_t memoryFileTokenBudget{2500};
         std::uint32_t ambientContextLimit{5000};
         std::uint32_t sessionReportTokenBudget{1500};
+        std::uint32_t maxToolResultChars{75000};       // Max chars per tool result before truncation (~25k tokens)
     };
 
     struct AgentRuntimeConfig {
