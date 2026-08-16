@@ -144,19 +144,37 @@
         <v-card-title class="text-h6">SOP Server Registries</v-card-title>
         <v-card-text>
           <p class="text-body-2 text-medium-emphasis mb-3">
-            Configure remote SOP registry servers. The default server (animus-sop.steadyfort.com) is always included.
+            Configure remote SOP registry servers. Enter the base URL — the API path (/api/v1/sops) is appended automatically. The default server is always included.
           </p>
-          <v-text-field
-            v-for="(srv, i) in editableServers"
-            :key="i"
-            v-model="editableServers[i]"
-            density="comfortable"
-            :rules="[v => !!v || 'URL required']"
-            append-icon="mdi-close"
-            @click:append="editableServers.splice(i, 1)"
-            class="mb-2"
-          />
-          <v-btn size="small" variant="text" prepend-icon="mdi-plus" @click="editableServers.push('')">
+          <v-list density="comfortable">
+            <v-list-item v-for="(srv, i) in editableServers" :key="i" class="px-0">
+              <div class="d-flex align-center">
+                <v-text-field
+                  v-model="editableServers[i]"
+                  density="comfortable"
+                  hide-details
+                  placeholder="https://example.com"
+                  :rules="[v => !!v || 'URL required']"
+                  prepend-icon="mdi-server-network"
+                  class="flex-grow-1"
+                />
+                <v-tooltip text="Delete server" location="top">
+                  <template #activator="{ props }">
+                    <v-btn
+                      v-bind="props"
+                      icon="mdi-delete-outline"
+                      size="small"
+                      variant="text"
+                      color="error"
+                      class="ml-2"
+                      @click="editableServers.splice(i, 1)"
+                    />
+                  </template>
+                </v-tooltip>
+              </div>
+            </v-list-item>
+          </v-list>
+          <v-btn size="small" variant="tonal" prepend-icon="mdi-plus" class="mt-2" @click="editableServers.push('')">
             Add server
           </v-btn>
         </v-card-text>
