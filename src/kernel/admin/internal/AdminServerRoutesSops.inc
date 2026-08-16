@@ -183,3 +183,115 @@
                 callback(resp);
             },
             {drogon::Post, drogon::Options});
+
+        // ===================================================================
+        // SOP Server Configuration API
+        // GET  /api/v1/sops/servers — list configured SOP server URLs
+        // PUT  /api/v1/sops/servers — update SOP server list
+        // POST /api/v1/sops/refresh — re-fetch from all servers
+        // ===================================================================
+
+        // GET /api/v1/sops/servers
+        drogon::app().registerHandler(
+            "/api/v1/sops/servers",
+            [this](const drogon::HttpRequestPtr&,
+                   std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+                if (!m_sopStore) {
+                    SendJsonError(callback, "SOP store not available", drogon::k503ServiceUnavailable);
+                    return;
+                }
+
+                Json::Value body;
+                Json::Value servers(Json::arrayValue);
+                for (const auto& url : m_sopStore->GetServerUrls()) {
+                    servers.append(url);
+                }
+                body["servers"] = servers;
+                body["count"] = static_cast<Json::UInt>(m_sopStore->GetServerUrls().size());
+                callback(drogon::HttpResponse::newHttpJsonResponse(body));
+            },
+            {drogon::Get, drogon::Options});
+
+        // PUT /api/v1/sops/servers
+        drogon::app().registerHandler(
+            "/api/v1/sops/servers",
+            [this](const drogon::HttpRequestPtr& req,
+                   std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+                if (!m_sopStore) {
+                    SendJsonError(callback, "SOP store not available", drogon::k503ServiceUnavailable);
+                    return;
+                }
+
+                auto body = req->getJsonObject();
+                if (!body) {
+                    SendJsonError(callback, "request body must be JSON", drogon::k400BadRequest);
+                    return;
+                }
+
+                if (!(*body).isMember("servers") || !(*body)["servers"].isArray()) {
+                    SendJsonError(callback, "'servers' must be an array of URL strings", drogon::k400BadRequest);
+                    return;
+                }
+
+                std::vector<std::string> newServers;
+                for (const auto& item : (*body)["servers"]) {
+                    if (!item.isString()) {
+                        SendJsonError(callback, "each server must be a string URL", drogon::k400BadRequest);
+                        return;
+                    }
+                    std::string url = item.asString();
+                    if (url.empty()) continue;
+                    if (url.find("http://") != 0 && url.find("https://") != 0) {
+                        SendJsonError(callback, "server URLs must start with http:// or https://", drogon::k400BadRequest);
+                        return;
+                    }
+                    if (!url.empty() && url.back() == '/') url.pop_back();
+                    newServers.push_back(url);
+                }
+
+                // Ensure default server is always present
+                bool hasDefault = false;
+                const std::string defaultServer = "https://animus-sop.steadyfort.com";
+                for (const auto& s : newServers) {
+                    if (s == defaultServer) { hasDefault = true; break; }
+                }
+                if (!hasDefault) newServers.insert(newServers.begin(), defaultServer);
+
+                // Persist to config store
+                if (m_configStore) {
+                    Json::Value serversJson(Json::arrayValue);
+                    for (const auto& s : newServers) serversJson.append(s);
+                    Json::StreamWriterBuilder writer;
+                    m_configStore->Set("__kernel__", "sop_servers",
+                                       Json::writeString(writer, serversJson));
+                }
+
+                Json::Value resp;
+                resp["status"] = "ok";
+                resp["servers"] = Json::Value(Json::arrayValue);
+                for (const auto& s : newServers) resp["servers"].append(s);
+                resp["count"] = static_cast<Json::UInt>(newServers.size());
+                resp["warning"] = "Server list updated. Restart kernel to fetch from new servers.";
+                callback(drogon::HttpResponse::newHttpJsonResponse(resp));
+            },
+            {drogon::Put});
+
+        // POST /api/v1/sops/refresh — re-fetch from all configured servers
+        drogon::app().registerHandler(
+            "/api/v1/sops/refresh",
+            [this](const drogon::HttpRequestPtr&,
+                   std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+                if (!m_sopStore) {
+                    SendJsonError(callback, "SOP store not available", drogon::k503ServiceUnavailable);
+                    return;
+                }
+
+                m_sopStore->Refresh();
+
+                Json::Value resp;
+                resp["status"] = "ok";
+                resp["total_sops"] = static_cast<Json::UInt64>(m_sopStore->Count());
+                resp["servers"] = static_cast<Json::UInt>(m_sopStore->GetServerUrls().size());
+                callback(drogon::HttpResponse::newHttpJsonResponse(resp));
+            },
+            {drogon::Post});

@@ -2,6 +2,31 @@
   <div class="pa-4">
     <h1 class="text-h5 mb-4">{{ t('sops.title') }}</h1>
 
+    <!-- Server management -->
+    <v-card elevation="2" rounded="lg" class="mb-4">
+      <v-card-item>
+        <div class="d-flex align-center justify-space-between">
+          <v-card-title class="text-subtitle-1">SOP Servers</v-card-title>
+          <div class="d-flex gap-2">
+            <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="refreshing" @click="refreshSops">
+              Refresh
+            </v-btn>
+            <v-btn size="small" variant="text" prepend-icon="mdi-cog" @click="serverDialog = true">
+              Manage
+            </v-btn>
+          </div>
+        </div>
+      </v-card-item>
+      <v-card-text v-if="servers.length">
+        <v-chip v-for="srv in servers" :key="srv" size="small" color="primary" variant="tonal" class="mr-1 mb-1">
+          {{ srv }}
+        </v-chip>
+      </v-card-text>
+      <v-card-text v-else class="text-medium-emphasis text-body-2">
+        No servers configured. Default: https://animus-sop.steadyfort.com
+      </v-card-text>
+    </v-card>
+
     <!-- Search and filters -->
     <v-card elevation="2" rounded="lg" class="mb-4">
       <v-card-text>
@@ -52,16 +77,20 @@
           <v-card-item>
             <v-card-title class="text-subtitle-1">{{ sop.title }}</v-card-title>
             <v-card-subtitle>
-              <v-chip size="x-small" color="primary" class="mr-1">{{ sop.category }}</v-chip>
+              <v-chip size="x-small" color="primary" class="mr-1">{{ sop.category || 'general' }}</v-chip>
               <span class="text-medium-emphasis">v{{ sop.version }}</span>
             </v-card-subtitle>
           </v-card-item>
           <v-card-text>
             <p class="text-body-2 mb-2">{{ sop.description }}</p>
-            <div v-if="sop.tags && sop.tags.length" class="d-flex flex-wrap gap-1">
-              <v-chip v-for="tag in sop.tags" :key="tag" size="x-small" variant="outlined" class="mr-1 mb-1">
+            <div class="d-flex flex-wrap gap-1 mb-2">
+              <v-chip v-for="tag in (sop.tags || [])" :key="tag" size="x-small" variant="outlined" class="mr-1 mb-1">
                 {{ tag }}
               </v-chip>
+            </div>
+            <div v-if="sop.source_server" class="text-caption text-medium-emphasis">
+              <v-icon size="x-small" class="mr-1">mdi-server-network</v-icon>
+              {{ sop.source_server }}
             </div>
           </v-card-text>
           <v-card-actions>
@@ -97,7 +126,7 @@
       <v-card>
         <v-card-title class="text-h6">
           {{ viewingSop?.title }}
-          <v-chip size="x-small" color="primary" class="ml-2">{{ viewingSop?.category }}</v-chip>
+          <v-chip size="x-small" color="primary" class="ml-2">{{ viewingSop?.category || 'general' }}</v-chip>
         </v-card-title>
         <v-card-text>
           <pre class="text-body-2 sop-content">{{ viewingSop?.content }}</pre>
@@ -109,7 +138,37 @@
       </v-card>
     </v-dialog>
 
-    <!-- Install result snackbar -->
+    <!-- Server management dialog -->
+    <v-dialog v-model="serverDialog" max-width="600px">
+      <v-card>
+        <v-card-title class="text-h6">SOP Server Registries</v-card-title>
+        <v-card-text>
+          <p class="text-body-2 text-medium-emphasis mb-3">
+            Configure remote SOP registry servers. The default server (animus-sop.steadyfort.com) is always included.
+          </p>
+          <v-text-field
+            v-for="(srv, i) in editableServers"
+            :key="i"
+            v-model="editableServers[i]"
+            density="comfortable"
+            :rules="[v => !!v || 'URL required']"
+            append-icon="mdi-close"
+            @click:append="editableServers.splice(i, 1)"
+            class="mb-2"
+          />
+          <v-btn size="small" variant="text" prepend-icon="mdi-plus" @click="editableServers.push('')">
+            Add server
+          </v-btn>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="serverDialog = false">Cancel</v-btn>
+          <v-btn color="primary" :loading="savingServers" @click="saveServers">Save</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Snackbar -->
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="3000">
       {{ snackbar.text }}
     </v-snackbar>
@@ -129,6 +188,7 @@ interface Sop {
   version: string;
   description: string;
   tags: string[];
+  source_server?: string;
   content?: string;
   _selectedAgent?: string;
   _installing?: boolean;
@@ -141,9 +201,14 @@ interface Agent {
 
 const sops = ref<Sop[]>([]);
 const loading = ref(false);
+const refreshing = ref(false);
 const searchQuery = ref('');
 const categoryFilter = ref<string | null>(null);
 const agents = ref<Agent[]>([]);
+const servers = ref<string[]>([]);
+const serverDialog = ref(false);
+const editableServers = ref<string[]>([]);
+const savingServers = ref(false);
 const viewDialog = ref(false);
 const viewingSop = ref<Sop | null>(null);
 const snackbar = ref({ show: false, text: '', color: 'success' });
@@ -180,6 +245,17 @@ async function loadSops() {
   }
 }
 
+async function loadServers() {
+  try {
+    const resp = await fetch('/api/v1/sops/servers');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    servers.value = data.servers || [];
+  } catch (e) {
+    console.error('Failed to load SOP servers:', e);
+  }
+}
+
 async function loadAgents() {
   try {
     const resp = await fetch('/api/v1/agents');
@@ -200,7 +276,7 @@ async function viewSop(sop: Sop) {
     const resp = await fetch(`/api/v1/sops/${sop.name}`);
     if (!resp.ok) throw new Error('Failed to load SOP');
     const data = await resp.json();
-    viewingSop.value = { ...sop, content: data.content };
+    viewingSop.value = { ...sop, content: data.content, source_server: data.source_server };
     viewDialog.value = true;
   } catch (e) {
     console.error(e);
@@ -237,9 +313,69 @@ async function installSop(sop: Sop) {
   }
 }
 
+async function refreshSops() {
+  refreshing.value = true;
+  try {
+    const resp = await fetch('/api/v1/sops/refresh', { method: 'POST' });
+    if (!resp.ok) throw new Error('Refresh failed');
+    const data = await resp.json();
+    snackbar.value = {
+      show: true,
+      text: `Refreshed: ${data.total_sops} SOPs from ${data.servers} server(s)`,
+      color: 'success',
+    };
+    await loadSops();
+  } catch (e: any) {
+    snackbar.value = {
+      show: true,
+      text: e.message || 'Refresh failed',
+      color: 'error',
+    };
+  } finally {
+    refreshing.value = false;
+  }
+}
+
+function openServerDialog() {
+  editableServers.value = [...servers.value];
+  serverDialog.value = true;
+}
+
+async function saveServers() {
+  savingServers.value = true;
+  try {
+    const resp = await fetch('/api/v1/sops/servers', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ servers: editableServers.value.filter(s => s.trim()) }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || 'Save failed');
+    }
+    const data = await resp.json();
+    servers.value = data.servers || [];
+    serverDialog.value = false;
+    snackbar.value = {
+      show: true,
+      text: data.warning || 'Servers updated. Restart kernel to fetch from new servers.',
+      color: 'success',
+    };
+  } catch (e: any) {
+    snackbar.value = {
+      show: true,
+      text: e.message || 'Save failed',
+      color: 'error',
+    };
+  } finally {
+    savingServers.value = false;
+  }
+}
+
 onMounted(() => {
   loadSops();
   loadAgents();
+  loadServers();
 });
 </script>
 
@@ -253,4 +389,5 @@ onMounted(() => {
   overflow-y: auto;
 }
 .gap-1 { gap: 4px; }
+.gap-2 { gap: 8px; }
 </style>

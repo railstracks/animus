@@ -548,6 +548,22 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
     m_adminServer->SetAttachmentStore(m_attachmentStore.get());
     ALOG_INFO("attachment", "Store initialized");
 
+    // Load persisted SOP server list if available
+    if (m_configStore) {
+        std::string persisted = m_configStore->Get("__kernel__", "sop_servers");
+        if (!persisted.empty()) {
+            Json::Value arr;
+            Json::CharReaderBuilder reader;
+            std::istringstream iss(persisted);
+            std::string errs;
+            if (Json::parseFromStream(reader, iss, &arr, &errs) && arr.isArray()) {
+                m_config.sop_servers.clear();
+                for (const auto& item : arr) {
+                    if (item.isString()) m_config.sop_servers.push_back(item.asString());
+                }
+            }
+        }
+    }
     // --- SOP store (Ticket 125) ---
     m_sopStore = std::make_unique<SopStore>(m_config.dataDir / "sops", &m_httpClient, m_config.sop_servers);
     m_sopStore->Refresh();
