@@ -587,6 +587,7 @@ bool AgentManager::ApplyAgentEntityPatch(
         ParseUInt32Field(budget, "memory_file_token_budget", &agent->budget.memoryFileTokenBudget, nullptr);
         ParseUInt32Field(budget, "ambient_context_limit", &agent->budget.ambientContextLimit, nullptr);
         ParseUInt32Field(budget, "session_report_token_budget", &agent->budget.sessionReportTokenBudget, nullptr);
+        ParseUInt32Field(budget, "max_tool_result_chars", &agent->budget.maxToolResultChars, nullptr);
         ParseUInt32Field(budget, "consolidation_tool_budget", &agent->budget.consolidationToolBudget, nullptr);
     }
 

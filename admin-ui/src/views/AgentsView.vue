@@ -61,6 +61,7 @@ interface Agent {
   memory_file_token_budget: number;
   ambient_context_limit: number;
   session_report_token_budget: number;
+    max_tool_result_chars: number;
     consolidation_tool_budget: number;
   };
   max_turn_age_days: number;
@@ -128,6 +129,7 @@ const formData = ref({
   memory_file_token_budget: 2500,
   session_report_token_budget: 1500,
   ambient_context_limit: 5000,
+  max_tool_result_chars: 75000,
   consolidation_tool_budget: 30,
   max_turn_age_days: 0,
   intake_interval: '',
@@ -344,6 +346,7 @@ function openCreate() {
     memory_file_token_budget: 2500,
     session_report_token_budget: 1500,
     ambient_context_limit: 5000,
+    max_tool_result_chars: 75000,
     consolidation_tool_budget: 30,
     max_turn_age_days: 0,
     intake_interval: '',
@@ -386,6 +389,7 @@ function openEdit(a: Agent) {
     memory_file_token_budget: a.budget.memory_file_token_budget,
     ambient_context_limit: a.budget.ambient_context_limit,
     session_report_token_budget: a.budget.session_report_token_budget,
+    max_tool_result_chars: a.budget.max_tool_result_chars || 75000,
     consolidation_tool_budget: a.budget.consolidation_tool_budget,
     max_turn_age_days: (a as any).max_turn_age_days || 0,
     intake_interval: (a as any).intake_interval || '',
@@ -442,6 +446,7 @@ async function submitForm() {
         memory_file_token_budget: Number(formData.value.memory_file_token_budget),
         ambient_context_limit: Number(formData.value.ambient_context_limit),
         session_report_token_budget: Number(formData.value.session_report_token_budget),
+        max_tool_result_chars: Number(formData.value.max_tool_result_chars),
         consolidation_tool_budget: Number(formData.value.consolidation_tool_budget),
       },
       max_turn_age_days: Number(formData.value.max_turn_age_days),
@@ -1071,6 +1076,12 @@ watch(() => formData.value.session_report_provider, (v) => loadConsolidationMode
               <v-text-field v-model="formData.consolidation_tool_budget"
                 :label="t('agents.form.consolidationToolBudget')"
                 type="number"
+              />
+              <v-text-field v-model="formData.max_tool_result_chars"
+                label="Max tool result (chars)"
+                type="number"
+                hint="Tool outputs exceeding this many characters are truncated. Default: 75000 (~25k tokens)."
+                persistent-hint
               />
               <v-text-field v-model="formData.max_turn_age_days"
                 label="Turn retention (days)"

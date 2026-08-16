@@ -888,10 +888,14 @@ bool ChainRunner::ProcessResponse(
     ToolExecutionContext execCtx;
     execCtx.sessionKey = session.Key().ToString();
     execCtx.agentId = session.AgentId();
+    std::size_t maxToolResultChars = 75000;  // default
     if (m_agentStore && !session.AgentId().empty()) {
         auto agent = m_agentStore->GetById(session.AgentId());
         if (agent) {
             execCtx.toolConfigs = agent->tool_configs_json;
+            if (agent->budget.maxToolResultChars > 0) {
+                maxToolResultChars = agent->budget.maxToolResultChars;
+            }
         }
     }
 
@@ -913,20 +917,19 @@ bool ChainRunner::ProcessResponse(
         toolCallsExecuted++;
 
         // Truncate oversized tool results to prevent prompt overflow.
-        // Default limit: 75,000 chars (~25k tokens). Truncated results
-        // include a notice so the LLM knows data was omitted.
-        static constexpr std::size_t MAX_TOOL_RESULT_CHARS = 75000;
-        if (toolResult.output.size() > MAX_TOOL_RESULT_CHARS) {
-            const std::size_t omitted = toolResult.output.size() - MAX_TOOL_RESULT_CHARS;
-            toolResult.output = toolResult.output.substr(0, MAX_TOOL_RESULT_CHARS)
+        // Configurable per-agent via budget.maxToolResultChars (default: 75000 chars, ~25k tokens).
+        // Truncated results include a notice so the LLM knows data was omitted.
+        if (toolResult.output.size() > maxToolResultChars) {
+            const std::size_t omitted = toolResult.output.size() - maxToolResultChars;
+            toolResult.output = toolResult.output.substr(0, maxToolResultChars)
                 + "\n\n[... tool output truncated: "
                 + std::to_string(omitted)
                 + " chars omitted (limit: "
-                + std::to_string(MAX_TOOL_RESULT_CHARS)
-                + " chars, ~25k tokens). Use a narrower query or save to file. ...]";
+                + std::to_string(maxToolResultChars)
+                + " chars). Use a narrower query or save to file. ...]";
             ALOG_WARNING("chain", "Tool " << call.name
-                      << " output truncated: " << (MAX_TOOL_RESULT_CHARS + omitted)
-                      << " chars -> " << MAX_TOOL_RESULT_CHARS);
+                      << " output truncated: " << (maxToolResultChars + omitted)
+                      << " chars -> " << maxToolResultChars);
         }
 
         // Store tool result turn

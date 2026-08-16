@@ -520,6 +520,7 @@ Json::Value BuildAgentJson(const KernelConfig::AgentRuntimeConfig& config, std::
     budget["memory_file_token_budget"] = config.budget.memoryFileTokenBudget;
     budget["ambient_context_limit"] = config.budget.ambientContextLimit;
     budget["session_report_token_budget"] = config.budget.sessionReportTokenBudget;
+    budget["max_tool_result_chars"] = config.budget.maxToolResultChars;
     out["budget"] = budget;
 
     Json::Value runtime(Json::objectValue);
@@ -603,6 +604,7 @@ Json::Value BuildAgentEntityJson(const Agent& a) {
     budget["memory_file_token_budget"] = static_cast<Json::UInt>(a.budget.memoryFileTokenBudget);
     budget["ambient_context_limit"] = static_cast<Json::UInt>(a.budget.ambientContextLimit);
     budget["session_report_token_budget"] = static_cast<Json::UInt>(a.budget.sessionReportTokenBudget);
+    budget["max_tool_result_chars"] = static_cast<Json::UInt>(a.budget.maxToolResultChars);
     budget["consolidation_tool_budget"] = static_cast<Json::UInt>(a.budget.consolidationToolBudget);
     out["budget"] = budget;
 
@@ -625,6 +627,7 @@ Json::Value BuildAgentEntityJson(const Agent& a) {
     out["allowed_nodes"] = allowedNodes;
 
     out["session_report_token_budget"] = a.budget.sessionReportTokenBudget;
+    out["max_tool_result_chars"] = static_cast<Json::UInt>(a.budget.maxToolResultChars);
 
     out["created_at_unix_ms"] = static_cast<Json::Int64>(a.created_at_unix_ms);
     out["updated_at_unix_ms"] = static_cast<Json::Int64>(a.updated_at_unix_ms);
