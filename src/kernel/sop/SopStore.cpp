@@ -68,7 +68,8 @@ void SopStore::FetchFromServer(const std::string& serverUrl) {
     if (resp.status_code != 200) {
         std::cerr << "[sop] Failed to fetch from " << serverUrl
                   << ": HTTP " << resp.status_code
-                  << " — " << resp.error << std::endl;
+                  << " — " << resp.error
+                  << " (body: " << resp.body.substr(0, 200) << ")" << std::endl;
         return;
     }
 
@@ -118,8 +119,11 @@ void SopStore::FetchFromServer(const std::string& serverUrl) {
                 std::ofstream ofs(cachePath);
                 if (ofs) ofs << entry.content;
             } else {
-                // Skip SOPs we can't fetch content for
-                continue;
+                // Content fetch failed — still list the SOP with metadata.
+                // Content will be lazy-fetched on Get() or the user can retry.
+                std::cerr << "[sop] Listing '" << info.name
+                          << "' without content (fetch failed from "
+                          << serverUrl << ")" << std::endl;
             }
         }
 
@@ -150,7 +154,10 @@ std::vector<SopStore::RemoteSopInfo> SopStore::ParseSopListing(const std::string
         RemoteSopInfo info;
         info.name = item.get("name", "").asString();
         info.title = item.get("title", "").asString();
-        info.version = item.get("version", "").asString();
+        // Version may be numeric or string
+        const auto& verVal = item.get("version", Json::Value(""));
+        if (verVal.isString()) info.version = verVal.asString();
+        else if (verVal.isNumeric()) info.version = std::to_string(verVal.asInt64());
         info.description = item.get("description", "").asString();
         info.category = item.get("category", "").asString();
 
@@ -211,7 +218,11 @@ std::optional<SopEntry> SopStore::ParseSopDetail(const std::string& jsonBody,
     entry.meta.name = root.get("name", "").asString();
     entry.meta.title = root.get("title", "").asString();
     entry.meta.category = root.get("category", "").asString();
-    entry.meta.version = root.get("version", "1.0.0").asString();
+    // Version may be numeric or string
+    const auto& verVal = root.get("version", Json::Value("1.0.0"));
+    if (verVal.isString()) entry.meta.version = verVal.asString();
+    else if (verVal.isNumeric()) entry.meta.version = std::to_string(verVal.asInt64());
+    else entry.meta.version = "1.0.0";
     entry.meta.description = root.get("description", "").asString();
     entry.meta.source_server = serverUrl;
     entry.content = root.get("content", "").asString();
