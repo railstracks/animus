@@ -136,7 +136,8 @@ private:
                      std::uint32_t sessionReportTokenBudget,
                      const std::string& diarySecret,
                      std::int64_t createdAtUnixMs, std::int64_t updatedAtUnixMs,
-                     std::uint32_t maxTurnAgeDays = 0);
+                     std::uint32_t maxTurnAgeDays = 0,
+                     std::uint32_t maxToolResultChars = 75000);
 
     IDataStore* m_store;
 };
