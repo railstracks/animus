@@ -11,7 +11,7 @@
             <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="refreshing" @click="refreshSops">
               Refresh
             </v-btn>
-            <v-btn size="small" variant="text" prepend-icon="mdi-cog" @click="serverDialog = true">
+            <v-btn size="small" variant="text" prepend-icon="mdi-cog" @click="openServerDialog">
               Manage
             </v-btn>
           </div>
