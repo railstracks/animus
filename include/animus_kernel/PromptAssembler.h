@@ -15,6 +15,7 @@ class TokenEstimator {
 public:
     std::size_t Estimate(const std::string& text) const;
     std::size_t EstimateTurns(const std::vector<struct SessionTurn>& turns) const;
+    std::size_t EstimateMessages(const std::vector<llm::LLMMessage>& messages) const;
 };
 
 // Builds an LLMRequest from session state + user message.
