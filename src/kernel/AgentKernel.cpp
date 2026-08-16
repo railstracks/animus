@@ -68,11 +68,13 @@
 #include "animus_kernel/tools/ConsolidationTool.h"
 #include "animus_kernel/tools/ScheduleTool.h"
 #include "animus_kernel/tools/SessionsTool.h"
+#include "animus_kernel/tools/AgendaTool.h"
 #include "animus_kernel/tools/ChannelsTool.h"
 #include "animus_kernel/tools/EmailTool.h"
 #include "animus_kernel/scheduler/Scheduler.h"
 #include "animus_kernel/admin/DiaryManager.h"
 #include "animus_kernel/SessionNotesStore.h"
+#include "animus_kernel/AgendaStore.h"
 #include "animus_kernel/SessionReportStore.h"
 #include "animus_kernel/SessionTagsStore.h"
 #include "animus_kernel/PromptLogStore.h"
@@ -83,6 +85,7 @@
 #include "animus_kernel/context/ActiveMemoryProvider.h"
 #include "animus_kernel/context/ChannelContextProvider.h"
 #include "animus_kernel/context/RuntimeEnvironmentProvider.h"
+#include "animus_kernel/context/TemporalContextProvider.h"
 
 #include "animus_kernel/tools/DiceTool.h"
 #include "animus_kernel/tools/CalculatorTool.h"
@@ -154,6 +157,7 @@ AgentKernel::~AgentKernel() {
     delete m_providerThrottle; m_providerThrottle = nullptr;
     delete m_scheduler; m_scheduler = nullptr;
     delete m_sessionNotesStore; m_sessionNotesStore = nullptr;
+    delete m_agendaStore; m_agendaStore = nullptr;
     delete m_sessionReportStore; m_sessionReportStore = nullptr;
     delete m_contextRegistry; m_contextRegistry = nullptr;
     delete m_sessionTagsStore; m_sessionTagsStore = nullptr;
@@ -380,6 +384,9 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         m_sessionNotesStore = new SessionNotesStore(m_dataStore);
         m_adminServer->SetSessionNotesStore(m_sessionNotesStore);
 
+        // --- Agenda Store (per-agent calendar/agenda events) ---
+        m_agendaStore = new AgendaStore(m_dataStore);
+
         // --- Consolidation Tool (session-gated: only available during consolidation sessions) ---
         m_tools.Register(std::make_unique<ConsolidationTool>(m_memoryStore, m_ontologyStore, m_sessionManager, m_memoryFileStore, m_agentStore, m_sessionReportStore, m_embeddingService));
 
@@ -397,6 +404,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         m_contextRegistry = new ContextProviderRegistry();
         m_contextRegistry->Register(std::make_unique<IdentityProvider>());
         m_contextRegistry->Register(std::make_unique<RuntimeEnvironmentProvider>());
+        m_contextRegistry->Register(std::make_unique<TemporalContextProvider>(m_agendaStore));
         m_contextRegistry->Register(
             std::make_unique<SessionNotesProvider>(m_sessionNotesStore));
         m_contextRegistry->Register(
@@ -414,6 +422,9 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // --- Sessions Tool (agent-facing session layer access) ---
         m_tools.Register(std::make_unique<SessionsTool>(
             m_sessionManager, m_sessionNotesStore, m_sessionTagsStore, m_compactionService));
+
+        // --- Agenda Tool (agent-facing calendar/agenda) ---
+        m_tools.Register(std::make_unique<AgendaTool>(m_agendaStore));
         m_memorySearch = new memory::MemorySearch(
             m_memoryStore, m_ontologyStore, m_memoryFileStore, m_diaryStore);
         m_memorySearch->SetSessionManager(m_sessionManager);
@@ -548,8 +559,24 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
     m_adminServer->SetAttachmentStore(m_attachmentStore.get());
     ALOG_INFO("attachment", "Store initialized");
 
+    // Load persisted SOP server list if available
+    if (m_configStore) {
+        std::string persisted = m_configStore->Get("__kernel__", "sop_servers");
+        if (!persisted.empty()) {
+            Json::Value arr;
+            Json::CharReaderBuilder reader;
+            std::istringstream iss(persisted);
+            std::string errs;
+            if (Json::parseFromStream(reader, iss, &arr, &errs) && arr.isArray()) {
+                m_config.sop_servers.clear();
+                for (const auto& item : arr) {
+                    if (item.isString()) m_config.sop_servers.push_back(item.asString());
+                }
+            }
+        }
+    }
     // --- SOP store (Ticket 125) ---
-    m_sopStore = std::make_unique<SopStore>(m_config.dataDir / "sops", &m_httpClient);
+    m_sopStore = std::make_unique<SopStore>(m_config.dataDir / "sops", &m_httpClient, m_config.sop_servers);
     m_sopStore->Refresh();
     m_adminServer->SetSopStore(m_sopStore.get());
     ALOG_INFO("sop", "Store initialized");

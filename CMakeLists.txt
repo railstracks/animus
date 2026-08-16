@@ -304,6 +304,7 @@ add_library(animus_kernel
   src/kernel/session/SessionNotesStore.cpp
   src/kernel/session/SessionReportStore.cpp
   src/kernel/session/SessionTagsStore.cpp
+  src/kernel/agent/AgendaStore.cpp
   src/kernel/session/DefaultSessionRouter.cpp
   src/kernel/session/SessionRoutingRule.cpp
   src/kernel/session/Session.cpp
@@ -350,6 +351,7 @@ add_library(animus_kernel
   src/kernel/tools/MemoryTool.cpp
   src/kernel/tools/ScheduleTool.cpp
   src/kernel/tools/SessionsTool.cpp
+  src/kernel/tools/AgendaTool.cpp
   src/kernel/tools/CompositeTool.cpp
   src/kernel/tools/ChannelsTool.cpp
   src/kernel/tools/LuaTool.cpp
@@ -387,6 +389,7 @@ add_library(animus_kernel
   src/kernel/context/ActiveMemoryProvider.cpp
             src/kernel/context/ChannelContextProvider.cpp
   src/kernel/context/RuntimeEnvironmentProvider.cpp
+  src/kernel/context/TemporalContextProvider.cpp
   src/kernel/lua/LuaState.cpp
   src/kernel/lua/LuaToolHandler.cpp
   src/kernel/lua/ScriptStore.cpp

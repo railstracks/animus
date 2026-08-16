@@ -330,6 +330,22 @@ ChainResult ChainRunner::ExecuteOnSession(
         }
         toolResultMessages.clear();
 
+        // Pre-flight: check if prompt exceeds context window before calling LLM.
+        // This catches cases where large tool results (stored as session turns)
+        // pushed the assembly over the limit.
+        if (req.contextWindow > 0 && assembly.total_tokens > req.contextWindow) {
+            ALOG_ERROR("chain", "Prompt exceeds context window before LLM call: "
+                      << assembly.total_tokens << " > " << req.contextWindow
+                      << " (turns=" << session.Turns().size() << ")");
+            result.success = false;
+            result.error = "prompt exceeds context window (" + std::to_string(assembly.total_tokens)
+                         + " / " + std::to_string(req.contextWindow) + " tokens)";
+            result.triggered_compaction = true;
+            result.elapsed_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - start).count();
+            return result;
+        }
+
         // Call LLM (non-streaming)
         auto llmCallStart = std::chrono::steady_clock::now();
         std::string llmErr;
@@ -548,6 +564,20 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
             assembly.request.messages.push_back(std::move(msg));
         }
         toolResultMessages.clear();
+
+        // Pre-flight: check if prompt exceeds context window before calling LLM.
+        if (req.contextWindow > 0 && assembly.total_tokens > req.contextWindow) {
+            ALOG_ERROR("chain", "Prompt exceeds context window before LLM call: "
+                      << assembly.total_tokens << " > " << req.contextWindow
+                      << " (turns=" << session.Turns().size() << ")");
+            result.success = false;
+            result.error = "prompt exceeds context window (" + std::to_string(assembly.total_tokens)
+                         + " / " + std::to_string(req.contextWindow) + " tokens)";
+            result.triggered_compaction = true;
+            result.elapsed_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - start).count();
+            return result;
+        }
 
         ALOG_DEBUG("chain/stream", "Step " << step
                   << ": toolResultMessages=" << toolResultMessages.size()
@@ -858,10 +888,14 @@ bool ChainRunner::ProcessResponse(
     ToolExecutionContext execCtx;
     execCtx.sessionKey = session.Key().ToString();
     execCtx.agentId = session.AgentId();
+    std::size_t maxToolResultChars = 75000;  // default
     if (m_agentStore && !session.AgentId().empty()) {
         auto agent = m_agentStore->GetById(session.AgentId());
         if (agent) {
             execCtx.toolConfigs = agent->tool_configs_json;
+            if (agent->budget.maxToolResultChars > 0) {
+                maxToolResultChars = agent->budget.maxToolResultChars;
+            }
         }
     }
 
@@ -881,6 +915,22 @@ bool ChainRunner::ProcessResponse(
         ToolResult toolResult = m_execService->Execute(call, execCtx, &routeResult);
 
         toolCallsExecuted++;
+
+        // Truncate oversized tool results to prevent prompt overflow.
+        // Configurable per-agent via budget.maxToolResultChars (default: 75000 chars, ~25k tokens).
+        // Truncated results include a notice so the LLM knows data was omitted.
+        if (toolResult.output.size() > maxToolResultChars) {
+            const std::size_t omitted = toolResult.output.size() - maxToolResultChars;
+            toolResult.output = toolResult.output.substr(0, maxToolResultChars)
+                + "\n\n[... tool output truncated: "
+                + std::to_string(omitted)
+                + " chars omitted (limit: "
+                + std::to_string(maxToolResultChars)
+                + " chars). Use a narrower query or save to file. ...]";
+            ALOG_WARNING("chain", "Tool " << call.name
+                      << " output truncated: " << (maxToolResultChars + omitted)
+                      << " chars -> " << maxToolResultChars);
+        }
 
         // Store tool result turn
         SessionTurn toolResultTurn;

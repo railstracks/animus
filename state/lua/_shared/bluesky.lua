@@ -325,6 +325,172 @@ local function auth_post(platform_id, endpoint, body_table)
     return resp
 end
 
+--- Chat API helpers (Bluesky DMs via chat.bsky.convo.*)
+-- Chat endpoints require atproto-proxy header to route to the chat service.
+local CHAT_HOST = "https://api.bsky.chat"
+
+local function auth_chat_get(platform_id, endpoint, params)
+    local jwt = authenticate(platform_id)
+    if not jwt then return { status = 0, body = "authentication failed" } end
+    local url = CHAT_HOST .. endpoint
+    if params then
+        local parts = {}
+        for k, v in pairs(params) do
+            parts[#parts + 1] = url_encode(k) .. "=" .. url_encode(tostring(v))
+        end
+        if #parts > 0 then url = url .. "?" .. table.concat(parts, "&") end
+    end
+    local resp = animus.http_get(url, {
+        headers = { ["Authorization"] = "Bearer " .. jwt }
+    })
+    if is_expired_token(resp) then
+        jwt = reauth(platform_id)
+        if not jwt then return { status = 401, body = "re-auth failed" } end
+        resp = animus.http_get(url, {
+            headers = { ["Authorization"] = "Bearer " .. jwt }
+        })
+    end
+    return resp
+end
+
+local function auth_chat_post(platform_id, endpoint, body_table)
+    local jwt = authenticate(platform_id)
+    if not jwt then return { status = 0, body = "authentication failed" } end
+    local url = CHAT_HOST .. endpoint
+    local resp = animus.http_post(url, {
+        headers = {
+            ["Authorization"] = "Bearer " .. jwt,
+            ["Content-Type"] = "application/json"
+        },
+        body = json.encode(body_table)
+    })
+    if is_expired_token(resp) then
+        jwt = reauth(platform_id)
+        if not jwt then return { status = 401, body = "re-auth failed" } end
+        resp = animus.http_post(url, {
+            headers = {
+                ["Authorization"] = "Bearer " .. jwt,
+                ["Content-Type"] = "application/json"
+            },
+            body = json.encode(body_table)
+        })
+    end
+    return resp
+end
+
+--- List conversations (DM inbox).
+local function do_chat_list(args)
+    local pid = args.platform_id
+    if not pid or pid == "" then
+        return { success = false, error = "platform_id is required" }
+    end
+    local params = { limit = tonumber(args.limit) or 50 }
+    local resp = auth_chat_get(pid, "/xrpc/chat.bsky.convo.listConvos", params)
+    if resp.status ~= 200 then
+        return { success = false, error = "chat_list failed (" .. resp.status .. "): " .. tostring(resp.body) }
+    end
+    local ok, data = pcall(json.decode, resp.body)
+    if not ok then return { success = false, error = "invalid JSON response" } end
+    local convos = {}
+    if data.convos then
+        for _, c in ipairs(data.convos) do
+            local lastMsg = ""
+            if c.lastMessage and c.lastMessage.text then lastMsg = c.lastMessage.text end
+            table.insert(convos, {
+                id = c.id,
+                unread_count = c.unreadCount or 0,
+                muted = c.muted or false,
+                last_message = lastMsg,
+                members = c.members or {}
+            })
+        end
+    end
+    return { success = true, convos = convos, cursor = data.cursor or "" }
+end
+
+--- Get messages in a conversation.
+local function do_chat_messages(args)
+    local pid = args.platform_id
+    if not pid or pid == "" then
+        return { success = false, error = "platform_id is required" }
+    end
+    if not args.convo_id or args.convo_id == "" then
+        return { success = false, error = "convo_id is required" }
+    end
+    local params = { convoId = args.convo_id, limit = tonumber(args.limit) or 50 }
+    local resp = auth_chat_get(pid, "/xrpc/chat.bsky.convo.getMessages", params)
+    if resp.status ~= 200 then
+        return { success = false, error = "chat_messages failed (" .. resp.status .. "): " .. tostring(resp.body) }
+    end
+    local ok, data = pcall(json.decode, resp.body)
+    if not ok then return { success = false, error = "invalid JSON response" } end
+    local messages = {}
+    if data.messages then
+        for _, m in ipairs(data.messages) do
+            if m["$type"] == "chat.bsky.convo.defs#messageView" then
+                local senderHandle = ""
+                if m.sender and m.sender.handle then senderHandle = m.sender.handle end
+                table.insert(messages, {
+                    id = m.id,
+                    rev = m.rev,
+                    text = m.text or "",
+                    sender = senderHandle,
+                    sent_at = m.sentAt or ""
+                })
+            end
+        end
+    end
+    return { success = true, messages = messages, cursor = data.cursor or "" }
+end
+
+--- Send a DM to a conversation.
+local function do_chat_send(args)
+    local pid = args.platform_id
+    if not pid or pid == "" then
+        return { success = false, error = "platform_id is required" }
+    end
+    if not args.convo_id or args.convo_id == "" then
+        return { success = false, error = "convo_id is required" }
+    end
+    if not args.content or args.content == "" then
+        return { success = false, error = "content is required" }
+    end
+    local body = {
+        convoId = args.convo_id,
+        message = { text = args.content }
+    }
+    local resp = auth_chat_post(pid, "/xrpc/chat.bsky.convo.sendMessage", body)
+    if resp.status ~= 200 then
+        return { success = false, error = "chat_send failed (" .. resp.status .. "): " .. tostring(resp.body) }
+    end
+    local ok, data = pcall(json.decode, resp.body)
+    if not ok then return { success = true, message = "sent (unparsed response)" } end
+    return { success = true, message_id = data.id or "", rev = data.rev or "" }
+end
+
+--- Get or create a conversation for specific members (by DID).
+local function do_chat_get_convo(args)
+    local pid = args.platform_id
+    if not pid or pid == "" then
+        return { success = false, error = "platform_id is required" }
+    end
+    if not args.member_did or args.member_did == "" then
+        return { success = false, error = "member_did is required" }
+    end
+    local body = { members = { args.member_did } }
+    local resp = auth_chat_post(pid, "/xrpc/chat.bsky.convo.getConvoForMembers", body)
+    if resp.status ~= 200 then
+        return { success = false, error = "chat_get_convo failed (" .. resp.status .. "): " .. tostring(resp.body) }
+    end
+    local ok, data = pcall(json.decode, resp.body)
+    if not ok then return { success = false, error = "invalid JSON response" } end
+    return {
+        success = true,
+        convo_id = data.convo and data.convo.id or "",
+        convo = data.convo or {}
+    }
+end
+
 --- Parse AT-URI into collection and rkey.
 -- "at://did:plc:xxx/app.bsky.feed.post/3k..." → "app.bsky.feed.post", "3k..."
 local function parse_at_uri(uri)
@@ -365,6 +531,17 @@ local function do_post(args)
     local pid = args.platform_id
     if not args.content or args.content == "" then
         return { success = false, error = "content is required for post" }
+    end
+
+    -- If root_id or post_id is provided, the agent intends to thread.
+    -- Auto-redirect to reply instead of silently creating a standalone post.
+    if (args.root_id and args.root_id ~= "") or (args.post_id and args.post_id ~= "") then
+        log.info("[bluesky] do_post received root_id/post_id — redirecting to reply")
+        -- Populate post_id from root_id if only root_id was given
+        if not args.post_id or args.post_id == "" then
+            args.post_id = args.root_id
+        end
+        return do_reply(args)
     end
 
     local did, err = ensure_auth(pid)
@@ -693,6 +870,55 @@ local function do_browse(args)
     }
 end
 
+-- ---------------------------------------------------------------------------
+-- Heartbeat — proactive auth health check
+-- Called periodically by the poller to keep the session alive.
+-- Checks if access_jwt is expired and refreshes if needed.
+-- Returns status info for logging.
+-- ---------------------------------------------------------------------------
+
+local function do_heartbeat(args)
+    local pid = args.platform_id
+    local jwt_key = cfg_key(pid, "access_jwt")
+    local jwt = config.get(jwt_key)
+
+    if not jwt or jwt == "" then
+        -- No cached token — try full auth
+        local ok, err = refresh_auth(pid)
+        if not ok then
+            return { success = false, error = tostring(err) }
+        end
+        return { success = true, output = json.encode({ refreshed = true, method = "createSession" }) }
+    end
+
+    if is_jwt_expired(jwt) then
+        log.warn("[bluesky] heartbeat: token expired for " .. pid .. ", refreshing")
+        local refreshed = try_refresh_session(pid)
+        if refreshed then
+            return { success = true, output = json.encode({ refreshed = true, method = "refreshSession" }) }
+        end
+        local ok, err = refresh_auth(pid)
+        if not ok then
+            return { success = false, error = tostring(err) }
+        end
+        return { success = true, output = json.encode({ refreshed = true, method = "createSession" }) }
+    end
+
+    -- Token still valid — verify with a lightweight API call
+    local resp = auth_get(pid, "/xrpc/app.bsky.notification.listNotifications", { limit = "1" })
+    if resp.status == 200 then
+        return { success = true, output = json.encode({ refreshed = false, healthy = true }) }
+    end
+
+    -- Token passed expiry check but server rejected it — force re-auth
+    log.warn("[bluesky] heartbeat: token passed expiry check but server returned " .. tostring(resp.status) .. ", re-authing")
+    local ok, err = refresh_auth(pid)
+    if not ok then
+        return { success = false, error = tostring(err) }
+    end
+    return { success = true, output = json.encode({ refreshed = true, method = "createSession", reason = "server_rejected" }) }
+end
+
 local function do_delete(args)
     local pid = args.platform_id
     if not args.post_id or args.post_id == "" then
@@ -733,7 +959,7 @@ animus.register_channel({
     id = "bluesky",
     name = "Bluesky",
     capabilities = {"read", "write", "search"},
-    actions = {"post", "reply", "like", "browse", "search", "get_notifications", "delete"},
+    actions = {"post", "reply", "like", "browse", "search", "get_notifications", "delete", "heartbeat", "chat_list", "chat_messages", "chat_send", "chat_get_convo"},
     schema = {
         post = {
             { name = "content", type = "string", required = true, description = "Post text (max 300 graphemes)" },
@@ -764,6 +990,27 @@ animus.register_channel({
         },
         delete = {
             { name = "post_id", type = "string", required = true, description = "AT-URI of the post to delete" }
+        },
+        heartbeat = {
+            { name = "platform_id", type = "string", required = true, description = "Platform instance ID" }
+        },
+        chat_list = {
+            { name = "platform_id", type = "string", required = true, description = "Platform instance ID" },
+            { name = "limit", type = "integer", required = false, description = "Max conversations (default 50)" }
+        },
+        chat_messages = {
+            { name = "platform_id", type = "string", required = true, description = "Platform instance ID" },
+            { name = "convo_id", type = "string", required = true, description = "Conversation ID" },
+            { name = "limit", type = "integer", required = false, description = "Max messages (default 50)" }
+        },
+        chat_send = {
+            { name = "platform_id", type = "string", required = true, description = "Platform instance ID" },
+            { name = "convo_id", type = "string", required = true, description = "Conversation ID" },
+            { name = "content", type = "string", required = true, description = "Message text (max 10k chars)" }
+        },
+        chat_get_convo = {
+            { name = "platform_id", type = "string", required = true, description = "Platform instance ID" },
+            { name = "member_did", type = "string", required = true, description = "DID of the member to chat with" }
         }
     },
     handler = function(args)
@@ -779,6 +1026,11 @@ animus.register_channel({
         elseif action == "browse" then return do_browse(args)
         elseif action == "get_notifications" then return do_get_notifications(args)
         elseif action == "delete" then return do_delete(args)
+        elseif action == "heartbeat" then return do_heartbeat(args)
+        elseif action == "chat_list" then return do_chat_list(args)
+        elseif action == "chat_messages" then return do_chat_messages(args)
+        elseif action == "chat_send" then return do_chat_send(args)
+        elseif action == "chat_get_convo" then return do_chat_get_convo(args)
         else return { success = false, error = "unknown action: " .. tostring(action) }
         end
     end

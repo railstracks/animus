@@ -44,6 +44,7 @@ struct KernelConfig {
         std::uint32_t memoryFileTokenBudget{2500};
         std::uint32_t ambientContextLimit{5000};
         std::uint32_t sessionReportTokenBudget{1500};
+        std::uint32_t maxToolResultChars{75000};       // Max chars per tool result before truncation (~25k tokens)
     };
 
     struct AgentRuntimeConfig {
@@ -260,6 +261,10 @@ struct KernelConfig {
     // Embedding configuration
     std::string embedding_model_path;  // resolved from dataDir / "models" / ...
     bool embedding_enabled{true};
+
+    // SOP server registries — remote servers for SOP discovery
+    // Default: the official animus-sop registry. Additional servers can be configured.
+    std::vector<std::string> sop_servers{"https://animus-sop.steadyfort.com"};
 
     // Lua filesystem loading
     std::string lua_script_dir;  // resolved from dataDir / "lua"

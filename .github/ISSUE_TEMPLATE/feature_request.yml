@@ -1,0 +1,51 @@
+name: Feature Request
+description: Propose a new feature or enhancement
+labels: ["enhancement", "needs-info"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What should the feature do? One or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why is this needed? What problem does it solve?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Bullet list of what "done" looks like. Each item should be testable.
+      value: |
+        - [ ] 
+        - [ ] 
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - persistence
+        - adapter
+        - scheduler
+        - admin-ui
+        - provider
+        - memory-system
+        - security
+        - infrastructure
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: related
+    attributes:
+      label: Related
+      description: Links to related issues, PRs, or discussions.
+    validations:
+      required: false

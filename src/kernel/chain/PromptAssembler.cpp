@@ -23,6 +23,14 @@ std::size_t TokenEstimator::EstimateTurns(const std::vector<SessionTurn>& turns)
     return total;
 }
 
+std::size_t TokenEstimator::EstimateMessages(const std::vector<llm::LLMMessage>& messages) const {
+    std::size_t total = 0;
+    for (const auto& msg : messages) {
+        total += Estimate(msg.content) + 4;  // +4 for message overhead
+    }
+    return total;
+}
+
 PromptAssemblyResult PromptAssembler::BuildFromAccess(
     const SessionAccess& session,
     const std::string& userMessage,

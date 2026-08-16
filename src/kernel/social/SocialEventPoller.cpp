@@ -788,11 +788,19 @@ void SocialEventPoller::BlueskyPollLoop(InstanceState* state) {
                 if (authorDisplayName.empty()) authorDisplayName = authorHandle;
             }
 
-            // Extract post text
+            // Extract post text and reply threading info
             std::string postText;
             std::string postUri;
+            std::string rootUri;   // Thread root AT-URI (from record.reply.root)
             if (n.isMember("record")) {
                 postText = GetString(n["record"], "text");
+                // For replies, the record contains a "reply" object with root and parent URIs
+                if (n["record"].isMember("reply")) {
+                    rootUri = GetString(n["record"]["reply"], "root");
+                    if (rootUri.empty() && n["record"]["reply"]["root"].isMember("uri")) {
+                        rootUri = GetString(n["record"]["reply"]["root"], "uri");
+                    }
+                }
             }
             if (n.isMember("uri")) {
                 postUri = GetString(n, "uri");
@@ -804,16 +812,31 @@ void SocialEventPoller::BlueskyPollLoop(InstanceState* state) {
             std::string sessionType = (reason == "reply") ? "chat" : "chat";
             std::string routingKey = "post:" + postUri;
 
+            // Build reply context header so the agent knows how to respond via Bluesky
+            // post_id = the incoming post's URI (what the agent should reply to)
+            // root_id = the thread root URI (required for proper threading in Bluesky)
+            std::string replyContext;
+            if (reason == "reply" || reason == "mention" || reason == "quote") {
+                // For replies: post_id = the reply's own URI, root_id = thread root
+                // For mentions/quotes: post_id = the post's URI, root_id = same (it's a top-level post)
+                std::string replyPostId = postUri;
+                std::string replyRootId = rootUri.empty() ? postUri : rootUri;
+                replyContext = "\n\n[Reply via Bluesky channel: use the 'reply' action with "
+                               "post_id=\"" + replyPostId + "\" "
+                               "root_id=\"" + replyRootId + "\" "
+                               "and platform_id=\"" + state->config.platform_id + "\"]";
+            }
+
             std::string message;
             if (reason == "mention") {
                 message = "[Bluesky mention from " + authorDisplayName + " (@"
-                          + authorHandle + ")]\n" + postText;
+                          + authorHandle + ")]\n" + postText + replyContext;
             } else if (reason == "reply") {
                 message = "[Bluesky reply from " + authorDisplayName + " (@"
-                          + authorHandle + ")]\n" + postText;
+                          + authorHandle + ")]\n" + postText + replyContext;
             } else if (reason == "quote") {
                 message = "[Bluesky quote from " + authorDisplayName + " (@"
-                          + authorHandle + ")]\n" + postText;
+                          + authorHandle + ")]\n" + postText + replyContext;
             } else {
                 continue;  // Skip unknown reasons
             }

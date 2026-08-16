@@ -50,3 +50,5 @@ state/wa-auth/
 state/wa-auth-test.json
 
 models/
+memory.db
+state/sops/

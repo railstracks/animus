@@ -24,6 +24,7 @@ struct AgentBudgetConfig {
     std::uint32_t memoryFileTokenBudget{2500};  // Max tokens for MemoryFile context in active memory
     std::uint32_t ambientContextLimit{5000};     // Max tokens for ambient (Tier 2) MemoryFile context
     std::uint32_t sessionReportTokenBudget{1500}; // Max tokens for session reports in active memory
+    std::uint32_t maxToolResultChars{75000};       // Max chars per tool result before truncation (~25k tokens)
 };
 
 struct Agent {
@@ -135,7 +136,8 @@ private:
                      std::uint32_t sessionReportTokenBudget,
                      const std::string& diarySecret,
                      std::int64_t createdAtUnixMs, std::int64_t updatedAtUnixMs,
-                     std::uint32_t maxTurnAgeDays = 0);
+                     std::uint32_t maxTurnAgeDays = 0,
+                     std::uint32_t maxToolResultChars = 75000);
 
     IDataStore* m_store;
 };

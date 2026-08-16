@@ -336,6 +336,10 @@ void AgentStore::EnsureSchema() {
         if (!schema::ColumnExists(m_store, "agents", "max_turn_age_days"))
             m_store->Exec("ALTER TABLE agents ADD COLUMN max_turn_age_days INTEGER NOT NULL DEFAULT 0");
 
+        // Per-agent tool result truncation limit (Issue #5, v0.3.7)
+        if (!schema::ColumnExists(m_store, "agents", "max_tool_result_chars"))
+            m_store->Exec("ALTER TABLE agents ADD COLUMN max_tool_result_chars INTEGER NOT NULL DEFAULT 75000");
+
         // Migration: reset context_window from old default (128000) to 0 (uncapped).
         // The old default was set when context_window was a legacy field. Now it's
         // the single agent-level context limit. 0 means "use provider/model limit".
@@ -374,7 +378,8 @@ Agent AgentStore::RowToAgent(
         std::uint32_t sessionReportTokenBudget,
         const std::string& diarySecret,
         std::int64_t createdAtUnixMs, std::int64_t updatedAtUnixMs,
-        std::uint32_t maxTurnAgeDays) {
+        std::uint32_t maxTurnAgeDays,
+        std::uint32_t maxToolResultChars) {
     Agent a;
     a.id = idStr;
     a.numeric_id = id;
@@ -409,6 +414,7 @@ Agent AgentStore::RowToAgent(
     a.created_at_unix_ms = createdAtUnixMs;
     a.updated_at_unix_ms = updatedAtUnixMs;
     a.max_turn_age_days = maxTurnAgeDays;
+    a.budget.maxToolResultChars = maxToolResultChars;
     return a;
 }
 
@@ -426,7 +432,7 @@ std::vector<Agent> AgentStore::List() {
         "enabled_tools, tool_configs, allowed_nodes, session_report_token_budget, "
         "created_at_unix_ms, updated_at_unix_ms, diary_secret, "
         "intake_provider, intake_model, review_provider, review_model, "
-        "session_report_provider, session_report_model, max_turn_age_days "
+        "session_report_provider, session_report_model, max_turn_age_days, max_tool_result_chars "
         "FROM agents ORDER BY created_at_unix_ms ASC");
     if (!stmt) return result;
 
@@ -457,7 +463,8 @@ std::vector<Agent> AgentStore::List() {
             static_cast<std::uint32_t>(stmt->ColumnInt64(28)),
             stmt->ColumnText(31),
             stmt->ColumnInt64(29), stmt->ColumnInt64(30),
-            static_cast<std::uint32_t>(stmt->ColumnInt64(38))));
+            static_cast<std::uint32_t>(stmt->ColumnInt64(38)),
+            static_cast<std::uint32_t>(stmt->ColumnInt64(39))));
         result.back().intake_provider = stmt->ColumnText(32);
         result.back().intake_model = stmt->ColumnText(33);
         result.back().review_provider = stmt->ColumnText(34);
@@ -477,7 +484,7 @@ std::optional<Agent> AgentStore::GetById(const std::string& id) {
         "enabled_tools, tool_configs, allowed_nodes, session_report_token_budget, "
         "created_at_unix_ms, updated_at_unix_ms, diary_secret, "
         "intake_provider, intake_model, review_provider, review_model, "
-        "session_report_provider, session_report_model, max_turn_age_days "
+        "session_report_provider, session_report_model, max_turn_age_days, max_tool_result_chars "
         "FROM agents WHERE agent_id=?");
     if (!stmt) return std::nullopt;
     stmt->BindText(1, id);
@@ -509,7 +516,8 @@ std::optional<Agent> AgentStore::GetById(const std::string& id) {
            static_cast<std::uint32_t>(stmt->ColumnInt64(28)),
            stmt->ColumnText(31),
            stmt->ColumnInt64(29), stmt->ColumnInt64(30),
-           static_cast<std::uint32_t>(stmt->ColumnInt64(38)));
+           static_cast<std::uint32_t>(stmt->ColumnInt64(38)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(39)));
         a.intake_provider = stmt->ColumnText(32);
         a.intake_model = stmt->ColumnText(33);
         a.review_provider = stmt->ColumnText(34);
@@ -530,7 +538,7 @@ std::optional<Agent> AgentStore::GetByName(const std::string& name) {
         "enabled_tools, tool_configs, allowed_nodes, session_report_token_budget, "
         "created_at_unix_ms, updated_at_unix_ms, diary_secret, "
         "intake_provider, intake_model, review_provider, review_model, "
-        "session_report_provider, session_report_model, max_turn_age_days "
+        "session_report_provider, session_report_model, max_turn_age_days, max_tool_result_chars "
         "FROM agents WHERE name=?");
     if (!stmt) return std::nullopt;
     stmt->BindText(1, name);
@@ -562,7 +570,8 @@ std::optional<Agent> AgentStore::GetByName(const std::string& name) {
            static_cast<std::uint32_t>(stmt->ColumnInt64(28)),
            stmt->ColumnText(31),
            stmt->ColumnInt64(29), stmt->ColumnInt64(30),
-           static_cast<std::uint32_t>(stmt->ColumnInt64(38)));
+           static_cast<std::uint32_t>(stmt->ColumnInt64(38)),
+           static_cast<std::uint32_t>(stmt->ColumnInt64(39)));
         a.intake_provider = stmt->ColumnText(32);
         a.intake_model = stmt->ColumnText(33);
         a.review_provider = stmt->ColumnText(34);
@@ -600,8 +609,8 @@ Agent AgentStore::Create(const Agent& agent) {
         "enabled_tools, tool_configs, allowed_nodes, session_report_token_budget, "
         "created_at_unix_ms, updated_at_unix_ms, diary_secret, "
         "intake_provider, intake_model, review_provider, review_model, "
-        "session_report_provider, session_report_model, max_turn_age_days) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        "session_report_provider, session_report_model, max_turn_age_days, max_tool_result_chars) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
     if (!stmt) {
         std::cerr << "[agent-store] insert failed: " << m_store->ErrMsg() << std::endl;
         return {};
@@ -648,6 +657,7 @@ Agent AgentStore::Create(const Agent& agent) {
     stmt->BindText(36, agent.session_report_provider);
     stmt->BindText(37, agent.session_report_model);
     stmt->BindInt(38, static_cast<int>(agent.max_turn_age_days));
+    stmt->BindInt(39, static_cast<int>(agent.budget.maxToolResultChars));
 
     // For non-SELECT statements, Step() returns false on SQLITE_DONE.
     // Treat the operation as successful if the row is now queryable.
@@ -670,7 +680,7 @@ bool AgentStore::Update(const Agent& agent) {
         "max_chain_steps=?, max_tool_calls_per_chain=?, timeout_seconds=?, episodic_token_budget=?, semantic_token_budget=?, perspectives_token_budget=?, consolidation_tool_budget=?, memory_file_token_budget=?, ambient_context_limit=?, "
         "enabled_tools=?, tool_configs=?, allowed_nodes=?, session_report_token_budget=?, updated_at_unix_ms=?, "
         "intake_provider=?, intake_model=?, review_provider=?, review_model=?, "
-        "session_report_provider=?, session_report_model=?, max_turn_age_days=? "
+        "session_report_provider=?, session_report_model=?, max_turn_age_days=?, max_tool_result_chars=? "
         "WHERE agent_id=?");
     if (!stmt) return false;
 
@@ -709,7 +719,8 @@ bool AgentStore::Update(const Agent& agent) {
     stmt->BindText(33, agent.session_report_provider);
     stmt->BindText(34, agent.session_report_model);
     stmt->BindInt(35, static_cast<int>(agent.max_turn_age_days));
-    stmt->BindText(36, agent.id);
+    stmt->BindInt(36, static_cast<int>(agent.budget.maxToolResultChars));
+    stmt->BindText(37, agent.id);
 
     // For non-SELECT statements, Step() returns false on SQLITE_DONE.
     // Verify success by checking that exactly one row was affected.
