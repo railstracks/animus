@@ -395,7 +395,7 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                     if (providerRegistry && chainRunner) {
                         CompactionSummaryGenerator::Config genConfig;
                         genConfig.provider_id = registryKey;
-                        genConfig.config_id = registryKey;
+                        genConfig.config_id = providerId;
                         genConfig.model = model;
                         CompactionSummaryGenerator gen(
                             *providerRegistry,

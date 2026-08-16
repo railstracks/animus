@@ -1,6 +1,7 @@
 #include "animus_kernel/CompactionSummaryGenerator.h"
 
 #include <sstream>
+#include <iostream>
 
 namespace animus::kernel {
 
@@ -41,7 +42,18 @@ std::unique_ptr<llm::ILLMProvider> CompactionSummaryGenerator::CreateProvider() 
             if (!m_config.model.empty()) {
                 config.default_model = m_config.model;
             }
+        } else {
+            std::cerr << "[compaction] config lookup failed for id='" << m_config.config_id
+                      << "' — provider will have empty base_url" << std::endl;
         }
+    }
+
+    // Guard: if base_url is empty, don't even try to create the provider —
+    // it would produce "URL rejected: No host part" from libcurl.
+    if (config.base_url.empty()) {
+        std::cerr << "[compaction] provider '" << config.provider_id
+                  << "' has empty base_url — aborting LLM compaction" << std::endl;
+        return nullptr;
     }
 
     return m_providers.Create(config);
