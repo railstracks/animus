@@ -583,7 +583,10 @@ end
 local function do_reply(args)
     local pid = args.platform_id
     if not args.post_id or args.post_id == "" then
-        return { success = false, error = "post_id is required for reply (AT-URI of parent)" }
+        return { success = false, error = "post_id is required for reply (AT-URI of direct parent)" }
+    end
+    if not args.root_id or args.root_id == "" then
+        return { success = false, error = "root_id is required for reply (AT-URI of thread root). Use the post's URI if replying to a top-level post." }
     end
     if not args.content or args.content == "" then
         return { success = false, error = "content is required for reply" }
@@ -600,11 +603,9 @@ local function do_reply(args)
         return { success = false, error = "could not resolve parent post: " .. tostring(err) }
     end
 
-    -- For the root: if the parent is a top-level post, root == parent.
-    -- If the parent is itself a reply, we'd need to traverse. For v1, root == parent.
-    local root_uri = args.root_id or args.post_id
+    -- Resolve root CID (may be same as parent for top-level posts)
     local root_cid = parent_cid
-    if args.root_id and args.root_id ~= args.post_id then
+    if args.root_id ~= args.post_id then
         root_cid, err = get_cid(pid, args.root_id)
         if not root_cid then
             root_cid = parent_cid -- fallback
@@ -617,7 +618,7 @@ local function do_reply(args)
         createdAt = iso_now(),
         langs = args.langs or { "en" },
         reply = {
-            root = { uri = root_uri, cid = root_cid },
+            root = { uri = args.root_id, cid = root_cid },
             parent = { uri = args.post_id, cid = parent_cid }
         }
     }
@@ -962,14 +963,14 @@ animus.register_channel({
     actions = {"post", "reply", "like", "browse", "search", "get_notifications", "delete", "heartbeat", "chat_list", "chat_messages", "chat_send", "chat_get_convo"},
     schema = {
         post = {
-            { name = "content", type = "string", required = true, description = "Post text (max 300 graphemes)" },
+            { name = "content", type = "string", required = true, description = "Create a new root-level post (NOT a reply). Use 'reply' action to respond to another post." },
             { name = "visibility", type = "string", required = false, description = "Not used by Bluesky (always public)" },
             { name = "langs", type = "array", required = false, description = "BCP-47 language codes (default: ['en'])" }
         },
         reply = {
-            { name = "post_id", type = "string", required = true, description = "AT-URI of the post to reply to" },
-            { name = "content", type = "string", required = true, description = "Reply text" },
-            { name = "root_id", type = "string", required = false, description = "AT-URI of the thread root (defaults to post_id)" }
+            { name = "post_id", type = "string", required = true, description = "AT-URI of the direct parent post you are replying to" },
+            { name = "root_id", type = "string", required = true, description = "AT-URI of the thread root post (top-level post that started the thread)" },
+            { name = "content", type = "string", required = true, description = "Reply text (max 300 graphemes)" }
         },
         like = {
             { name = "post_id", type = "string", required = true, description = "AT-URI of the post to like" }
