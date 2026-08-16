@@ -696,7 +696,14 @@ local function do_search(args)
         return { success = false, error = "query is required for search" }
     end
 
-    local params = { q = args.query }
+    -- Normalize query: Bluesky search treats space-separated words as keywords.
+    -- Strip stray % signs that cause tokenization issues (e.g. "S%P" -> "SP").
+    -- For phrase search, agents should use quotes in the query.
+    local query = args.query:gsub("%%", "")
+    -- Collapse multiple spaces and trim
+    query = query:gsub("%s+", " "):match("^%s*(.-)%s*$") or query
+
+    local params = { q = query }
     if args.limit then
         params.limit = tostring(math.min(tonumber(args.limit) or 25, 100))
     else
@@ -920,6 +927,85 @@ local function do_heartbeat(args)
     return { success = true, output = json.encode({ refreshed = true, method = "createSession", reason = "server_rejected" }) }
 end
 
+local function do_view_replies(args)
+    local pid = args.platform_id
+    if not args.post_id or args.post_id == "" then
+        return { success = false, error = "post_id is required for view_replies (AT-URI of the post)" }
+    end
+
+    local did, err = ensure_auth(pid)
+    if not did then
+        return { success = false, error = err }
+    end
+
+    -- Use getPostThread to retrieve the full thread structure
+    local params = { uri = args.post_id }
+    if args.depth then
+        params.depth = tostring(math.min(tonumber(args.depth) or 10, 100))
+    end
+
+    local resp = auth_get(pid, "/xrpc/app.bsky.feed.getPostThread", params)
+
+    if resp.status ~= 200 then
+        return { success = false, error = "view_replies failed (" .. resp.status .. "): " .. tostring(resp.body) }
+    end
+
+    local ok, data = pcall(json.decode, resp.body)
+    if not ok then
+        return { success = true, output = resp.body }
+    end
+
+    -- Extract replies from the thread structure
+    -- getPostThread returns { thread: { $type: "app.bsky.feed.defs#threadViewPost", post: {...}, replies: [...] } }
+    local replies = {}
+    local function extract_replies(thread, depth)
+        if not thread or not thread.replies then return end
+        for _, reply in ipairs(thread.replies) do
+            -- Skip blocked/not-found entries
+            local rt = reply["$type"] or ""
+            if rt ~= "app.bsky.feed.defs#blockedPost" and rt ~= "app.bsky.feed.defs#notFoundPost" then
+                local entry = {
+                    uri = "",
+                    text = "",
+                    author = "",
+                    author_display = "",
+                    indexed_at = "",
+                    depth = depth
+                }
+                if reply.post then
+                    entry.uri = reply.post.uri or ""
+                    entry.indexed_at = reply.post.indexedAt or ""
+                    if reply.post.record then
+                        entry.text = reply.post.record.text or ""
+                    end
+                    if reply.post.author then
+                        entry.author = reply.post.author.handle or ""
+                        entry.author_display = reply.post.author.displayName or ""
+                    end
+                    if reply.post.replyCount then entry.reply_count = reply.post.replyCount end
+                    if reply.post.likeCount then entry.like_count = reply.post.likeCount end
+                end
+                replies[#replies + 1] = entry
+                -- Recurse into nested replies
+                extract_replies(reply, depth + 1)
+            end
+        end
+    end
+
+    if data.thread then
+        extract_replies(data.thread, 1)
+    end
+
+    return {
+        success = true,
+        output = json.encode({
+            post_uri = args.post_id,
+            reply_count = #replies,
+            replies = replies
+        })
+    }
+end
+
 local function do_delete(args)
     local pid = args.platform_id
     if not args.post_id or args.post_id == "" then
@@ -960,7 +1046,7 @@ animus.register_channel({
     id = "bluesky",
     name = "Bluesky",
     capabilities = {"read", "write", "search"},
-    actions = {"post", "reply", "like", "browse", "search", "get_notifications", "delete", "heartbeat", "chat_list", "chat_messages", "chat_send", "chat_get_convo"},
+    actions = {"post", "reply", "like", "browse", "search", "get_notifications", "view_replies", "delete", "heartbeat", "chat_list", "chat_messages", "chat_send", "chat_get_convo"},
     schema = {
         post = {
             { name = "content", type = "string", required = true, description = "Create a new root-level post (NOT a reply). Use 'reply' action to respond to another post." },
@@ -976,7 +1062,7 @@ animus.register_channel({
             { name = "post_id", type = "string", required = true, description = "AT-URI of the post to like" }
         },
         search = {
-            { name = "query", type = "string", required = true, description = "Search query" },
+            { name = "query", type = "string", required = true, description = "Search query: space-separated keywords (e.g. 'market forecast'). Use quotes for phrase search. Do NOT wrap the entire query in quotes unless you want an exact phrase match." },
             { name = "limit", type = "integer", required = false, description = "Max results (1-100, default 25)" },
             { name = "sort", type = "string", required = false, description = "'latest' or 'top' (default: latest)" },
             { name = "cursor", type = "string", required = false, description = "Pagination cursor" }
@@ -988,6 +1074,10 @@ animus.register_channel({
         get_notifications = {
             { name = "limit", type = "integer", required = false, description = "Max notifications (1-100, default 50)" },
             { name = "cursor", type = "string", required = false, description = "Pagination cursor" }
+        },
+        view_replies = {
+            { name = "post_id", type = "string", required = true, description = "AT-URI of the post to retrieve replies for" },
+            { name = "depth", type = "integer", required = false, description = "Max reply depth to traverse (1-100, default 10)" }
         },
         delete = {
             { name = "post_id", type = "string", required = true, description = "AT-URI of the post to delete" }
@@ -1026,6 +1116,7 @@ animus.register_channel({
         elseif action == "search" then return do_search(args)
         elseif action == "browse" then return do_browse(args)
         elseif action == "get_notifications" then return do_get_notifications(args)
+        elseif action == "view_replies" then return do_view_replies(args)
         elseif action == "delete" then return do_delete(args)
         elseif action == "heartbeat" then return do_heartbeat(args)
         elseif action == "chat_list" then return do_chat_list(args)
