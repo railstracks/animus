@@ -10,6 +10,14 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <thread>
+#include <atomic>
+#include <chrono>
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <arpa/inet.h>
 
 #include "animus_kernel/llm/ILLMProvider.h"
 #include "animus_kernel/llm/LLMProviderBase.h"
@@ -18,6 +26,7 @@
 #include "animus_kernel/llm/LLMTypes.h"
 #include "animus_kernel/llm/OpenAICodexProvider.h"
 #include "animus_kernel/llm/OpenAICompat.h"
+#include "animus_kernel/llm/OpenAIProvider.h"
 #include "animus_kernel/KernelConfig.h"
 
 using namespace animus::kernel::llm;
@@ -515,6 +524,219 @@ void TestExtractJsonStringUnicodeEscapes() {
 }
 
 // ============================================================================
+// Retry tests — minimal local HTTP server on an ephemeral port (127.0.0.1)
+// ============================================================================
+
+class RetryTestServer {
+public:
+  int port{0};
+  int failCount{0};      // first N requests get failStatus
+  int failStatus{503};
+  std::atomic<int> requestsServed{0};
+
+  RetryTestServer() = default;
+  ~RetryTestServer() { Stop(); }
+
+  bool Start() {
+    listenFd_ = socket(AF_INET, SOCK_STREAM, 0);
+    if (listenFd_ < 0) return false;
+    int opt = 1;
+    setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    addr.sin_port = 0;  // ephemeral
+    if (bind(listenFd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
+      return false;
+    if (listen(listenFd_, 8) != 0) return false;
+    socklen_t len = sizeof(addr);
+    if (getsockname(listenFd_, reinterpret_cast<sockaddr*>(&addr), &len) != 0)
+      return false;
+    port = ntohs(addr.sin_port);
+
+    thread_ = std::thread([this] { Run(); });
+    return true;
+  }
+
+  void Stop() {
+    stopping_ = true;
+    if (listenFd_ >= 0) {
+      shutdown(listenFd_, SHUT_RDWR);
+      close(listenFd_);
+      listenFd_ = -1;
+    }
+    if (thread_.joinable()) thread_.join();
+  }
+
+private:
+  void Run() {
+    while (!stopping_) {
+      int fd = accept(listenFd_, nullptr, nullptr);
+      if (fd < 0) break;  // listener closed
+
+      // Drain the request (headers + body) until 150ms of silence.
+      struct timeval tv {0, 150000};
+      setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+      char buf[4096];
+      while (true) {
+        int n = recv(fd, buf, sizeof(buf), 0);
+        if (n <= 0) break;
+      }
+
+      ++requestsServed;
+      std::string body;
+      std::string statusLine;
+      if (requestsServed.load() <= failCount) {
+        statusLine = "HTTP/1.1 " + std::to_string(failStatus) + " Fail\r\n";
+        body = "{\"error\":{\"message\":\"transient\"}}";
+      } else {
+        statusLine = "HTTP/1.1 200 OK\r\n";
+        body =
+            "{\"id\":\"x\",\"object\":\"chat.completion\",\"choices\":[{\"index\":0,"
+            "\"message\":{\"role\":\"assistant\",\"content\":\"RETRY_OK\"},"
+            "\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":5,"
+            "\"completion_tokens\":2}}";
+      }
+      std::string resp = statusLine +
+          "Content-Type: application/json\r\n" +
+          "Content-Length: " + std::to_string(body.size()) + "\r\n" +
+          "Connection: close\r\n\r\n" + body;
+      send(fd, resp.c_str(), resp.size(), MSG_NOSIGNAL);
+      close(fd);
+    }
+  }
+
+  int listenFd_{-1};
+  std::thread thread_;
+  std::atomic<bool> stopping_{false};
+};
+
+static LLMProviderConfig MakeRetryTestConfig(const RetryTestServer& server,
+                                             int maxAttempts, int intervalMs) {
+  LLMProviderConfig config;
+  config.provider_id = "openai";
+  config.base_url = "http://127.0.0.1:" + std::to_string(server.port) + "/v1";
+  config.api_key = "test-key";
+  config.default_model = "gpt-test";
+  config.connect_timeout_ms = 3000;
+  config.extra["retry_max_attempts"] = std::to_string(maxAttempts);
+  config.extra["retry_interval_ms"] = std::to_string(intervalMs);
+  return config;
+}
+
+void TestRetrySucceedsAfterTransientFailures() {
+  TEST("Retry: succeeds after transient 503s");
+  RetryTestServer server;
+  server.failCount = 2;
+  server.failStatus = 503;
+  if (!server.Start()) {
+    FAIL("failed to start test server");
+    return;
+  }
+  OpenAIProvider provider(MakeRetryTestConfig(server, 5, 100));
+  LLMRequest request;
+  request.model = "gpt-test";
+  request.messages.push_back({"user", "hello"});
+  std::string error;
+  LLMMessage msg = provider.Complete(request, &error);
+  if (msg.content == "RETRY_OK" && server.requestsServed.load() == 3) {
+    PASS();
+  } else {
+    FAIL("content='" + msg.content + "' requests=" +
+         std::to_string(server.requestsServed.load()) + " err=" + error);
+  }
+}
+
+void TestRetryExhaustionReportsAttempts() {
+  TEST("Retry: exhaustion reports attempt count");
+  RetryTestServer server;
+  server.failCount = 1000;  // always fail
+  server.failStatus = 503;
+  if (!server.Start()) {
+    FAIL("failed to start test server");
+    return;
+  }
+  OpenAIProvider provider(MakeRetryTestConfig(server, 2, 100));
+  LLMRequest request;
+  request.model = "gpt-test";
+  request.messages.push_back({"user", "hello"});
+  std::string error;
+  LLMMessage msg = provider.Complete(request, &error);
+  if (msg.content.empty() && error.find("after 2 attempts") != std::string::npos &&
+      server.requestsServed.load() == 2) {
+    PASS();
+  } else {
+    FAIL("error='" + error + "' requests=" +
+         std::to_string(server.requestsServed.load()));
+  }
+}
+
+void TestRetrySkipsNonRetryableStatus() {
+  TEST("Retry: 401 fails fast without retrying");
+  RetryTestServer server;
+  server.failCount = 1000;
+  server.failStatus = 401;
+  if (!server.Start()) {
+    FAIL("failed to start test server");
+    return;
+  }
+  OpenAIProvider provider(MakeRetryTestConfig(server, 5, 100));
+  LLMRequest request;
+  request.model = "gpt-test";
+  request.messages.push_back({"user", "hello"});
+  std::string error;
+  LLMMessage msg = provider.Complete(request, &error);
+  if (msg.content.empty() && server.requestsServed.load() == 1) {
+    PASS();
+  } else {
+    FAIL("requests=" + std::to_string(server.requestsServed.load()) +
+         " (expected 1)");
+  }
+}
+
+void TestRetryTransportErrorRetries() {
+  TEST("Retry: transport error (connection refused) retries then fails");
+  // Point at a port with no listener: bind then close to get a free port,
+  // guaranteeing connection refusal.
+  int tmpFd = socket(AF_INET, SOCK_STREAM, 0);
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+  addr.sin_port = 0;
+  bind(tmpFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+  socklen_t len = sizeof(addr);
+  getsockname(tmpFd, reinterpret_cast<sockaddr*>(&addr), &len);
+  int freePort = ntohs(addr.sin_port);
+  close(tmpFd);
+
+  LLMProviderConfig config;
+  config.provider_id = "openai";
+  config.base_url = "http://127.0.0.1:" + std::to_string(freePort) + "/v1";
+  config.api_key = "test-key";
+  config.default_model = "gpt-test";
+  config.connect_timeout_ms = 2000;
+  config.extra["retry_max_attempts"] = "3";
+  config.extra["retry_interval_ms"] = "100";
+
+  auto start = std::chrono::steady_clock::now();
+  OpenAIProvider provider(config);
+  LLMRequest request;
+  request.model = "gpt-test";
+  request.messages.push_back({"user", "hello"});
+  std::string error;
+  LLMMessage msg = provider.Complete(request, &error);
+  auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - start).count();
+  if (msg.content.empty() &&
+      error.find("after 3 attempts") != std::string::npos &&
+      elapsedMs >= 200) {  // two 100ms backoffs happened
+    PASS();
+  } else {
+    FAIL("error='" + error + "' elapsed=" + std::to_string(elapsedMs) + "ms");
+  }
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -538,6 +760,10 @@ int main() {
   TestOpenAICodexBuildRequestBody();
   TestOpenAICodexParseResponseAndStreamEvents();
   TestExtractJsonStringUnicodeEscapes();
+  TestRetrySucceedsAfterTransientFailures();
+  TestRetryExhaustionReportsAttempts();
+  TestRetrySkipsNonRetryableStatus();
+  TestRetryTransportErrorRetries();
 
   std::cout << "\n";
   std::cout << "Results: " << testsPassed << " passed, " << testsFailed

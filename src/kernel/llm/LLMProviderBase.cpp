@@ -1,11 +1,13 @@
 #include "animus_kernel/Log.h"
 #include "animus_kernel/llm/LLMProviderBase.h"
 
+#include <chrono>
 #include <cstring>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <json/json.h>
 
 #include "animus_kernel/llm/OpenAICompat.h"
@@ -428,6 +430,111 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
                                    LLMTokenCallback tokenCallback,
                                    std::string* responseBody,
                                    std::string* error) {
+  // Retry policy from per-provider config.extra. Unset → modest defaults.
+  // Providers known to be flaky (e.g. Ollama Cloud) can set e.g.
+  //   retry_max_attempts=45, retry_interval_ms=60000
+  // to keep knocking for ~45 minutes.
+  int maxAttempts = 3;
+  int retryIntervalMs = 10000;
+  {
+    auto it = m_config.extra.find("retry_max_attempts");
+    if (it != m_config.extra.end()) {
+      int v = std::atoi(it->second.c_str());
+      if (v >= 1 && v <= 120) maxAttempts = v;
+    }
+    it = m_config.extra.find("retry_interval_ms");
+    if (it != m_config.extra.end()) {
+      int v = std::atoi(it->second.c_str());
+      if (v >= 100 && v <= 3600000) retryIntervalMs = v;
+    }
+  }
+
+  std::string lastError;
+  for (int attempt = 1; attempt <= maxAttempts; ++attempt) {
+    // Each attempt re-parses nothing — DoHTTPRequestOnce resets all
+    // per-request state (sseBuffer/accumulated/responseBody/m_aborted).
+    int status = DoHTTPRequestOnce(body, stream, tokenCallback, responseBody,
+                                   error);
+
+    // Success, user abort, or definitive client error — no retry.
+    // 499 = stop signal (never retry a deliberate abort).
+    if (status == 200 || status == 499) return status;
+
+    // Streaming with partial delivery: bytes reached the callback already;
+    // a retry would duplicate content in the assembled response. Fail fast.
+    if (stream && status != 200 && !m_http->responseBody.empty()) {
+      ALOG_WARNING("llm", "stream failed mid-delivery (HTTP " << status
+                << ") — not retrying to avoid duplicated partial content");
+      return status;
+    }
+
+    const bool transportError = (status == 0);
+    if (!transportError && !IsRetryableHTTPStatus(status)) {
+      return status;  // definitive server rejection (4xx etc.) — fail fast
+    }
+
+    lastError = error ? *error : "";
+    if (lastError.empty() && responseBody && !responseBody->empty()) {
+      // Non-2xx responses often carry a JSON error body — surface a preview.
+      lastError = responseBody->substr(0, 200);
+    }
+
+    if (attempt == maxAttempts) break;
+
+    ALOG_WARNING("llm", "provider request failed (attempt " << attempt << "/"
+              << maxAttempts << "): " << (transportError ? "transport error" : "HTTP " + std::to_string(status))
+              << " — " << (lastError.empty() ? "no detail" : lastError)
+              << " — retrying in " << (retryIntervalMs < 1000
+                  ? std::to_string(retryIntervalMs) + "ms"
+                  : std::to_string(retryIntervalMs / 1000) + "s"));
+
+    if (!SleepInterruptible(retryIntervalMs)) {
+      // Aborted during backoff — respect the stop signal immediately.
+      if (error) *error = "aborted during retry backoff";
+      return stream ? 499 : 0;
+    }
+  }
+
+  ALOG_ERROR("llm", "provider request failed after " << maxAttempts
+            << " attempt(s): " << (lastError.empty() ? "unknown error" : lastError));
+  if (error) {
+    *error = "after " + std::to_string(maxAttempts) + " attempts: " +
+             (lastError.empty() ? "unknown error" : lastError);
+  }
+  return 0;
+}
+
+bool LLMProviderBase::IsRetryableHTTPStatus(int status) {
+  switch (status) {
+    case 408:  // Request Timeout
+    case 425:  // Too Early
+    case 429:  // Too Many Requests
+    case 500:  // Internal Server Error
+    case 502:  // Bad Gateway
+    case 503:  // Service Unavailable
+    case 504:  // Gateway Timeout
+    case 529:  // Provider overloaded (Anthropic convention)
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool LLMProviderBase::SleepInterruptible(int totalMs) {
+  const int chunkMs = 250;
+  for (int elapsed = 0; elapsed < totalMs; elapsed += chunkMs) {
+    if (ShouldAbort()) return false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(
+        std::min(chunkMs, totalMs - elapsed)));
+  }
+  return !ShouldAbort();
+}
+
+int LLMProviderBase::DoHTTPRequestOnce(const std::string& body,
+                                   bool stream,
+                                   LLMTokenCallback tokenCallback,
+                                   std::string* responseBody,
+                                   std::string* error) {
   if (!m_http || !m_http->easy) {
     if (error) *error = "Curl handle not initialized";
     return 0;
@@ -492,7 +599,9 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
   }
 
   if (stream) {
-    m_http->tokenCallback = std::move(tokenCallback);
+    // Copy (not move): the retry wrapper in DoHTTPRequest may invoke this
+    // function multiple times and needs the callback to stay valid.
+    m_http->tokenCallback = tokenCallback;
     m_http->sseBuffer.clear();
     m_http->accumulated.clear();
     m_http->responseBody.clear();
