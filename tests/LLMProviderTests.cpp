@@ -532,6 +532,8 @@ public:
   int port{0};
   int failCount{0};      // first N requests get failStatus
   int failStatus{503};
+  bool sseMode{false};       // serve SSE streams instead of JSON bodies
+  int sseJunkRequests{0};    // first N SSE requests stream <unk> floods
   std::atomic<int> requestsServed{0};
 
   RetryTestServer() = default;
@@ -586,7 +588,31 @@ private:
       ++requestsServed;
       std::string body;
       std::string statusLine;
-      if (requestsServed.load() <= failCount) {
+      std::string contentType = "application/json";
+      if (sseMode && requestsServed.load() <= sseJunkRequests) {
+        // Degenerate <unk> flood — never terminates properly.
+        statusLine = "HTTP/1.1 200 OK\r\n";
+        contentType = "text/event-stream";
+        body = "data: {\"choices\":[{\"delta\":{\"content\":\"<unk>\"}}]}\r\n\r\n";
+        std::string chunk =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"<unk>\"}}]}\r\n\r\n";
+        for (int i = 0; i < 40; ++i) body += chunk;
+      } else if (sseMode) {
+        // Clean SSE stream.
+        statusLine = "HTTP/1.1 200 OK\r\n";
+        contentType = "text/event-stream";
+        body =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"HELLO\"}}]}\r\n\r\n"
+            "data: {\"choices\":[{\"delta\":{\"content\":\" WORLD\"},\"finish_reason\":\"stop\"}]}\r\n\r\n"
+            "data: [DONE]\r\n\r\n";
+      } else if (requestsServed.load() == 1 && degenerateBodyFirst_) {
+        // 200 with a degenerate JSON body.
+        statusLine = "HTTP/1.1 200 OK\r\n";
+        body = "{\"id\":\"x\",\"object\":\"chat.completion\",\"choices\":[{\"index\":0,"
+                "\"message\":{\"role\":\"assistant\",\"content\":";
+        for (int i = 0; i < 15; ++i) body += "<unk>";
+        body += "},\"finish_reason\":\"stop\"}]}";
+      } else if (requestsServed.load() <= failCount) {
         statusLine = "HTTP/1.1 " + std::to_string(failStatus) + " Fail\r\n";
         body = "{\"error\":{\"message\":\"transient\"}}";
       } else {
@@ -598,7 +624,7 @@ private:
             "\"completion_tokens\":2}}";
       }
       std::string resp = statusLine +
-          "Content-Type: application/json\r\n" +
+          "Content-Type: " + contentType + "\r\n" +
           "Content-Length: " + std::to_string(body.size()) + "\r\n" +
           "Connection: close\r\n\r\n" + body;
       send(fd, resp.c_str(), resp.size(), MSG_NOSIGNAL);
@@ -609,6 +635,10 @@ private:
   int listenFd_{-1};
   std::thread thread_;
   std::atomic<bool> stopping_{false};
+  bool degenerateBodyFirst_{false};
+
+public:
+  void SetDegenerateBodyFirst() { degenerateBodyFirst_ = true; }
 };
 
 static LLMProviderConfig MakeRetryTestConfig(const RetryTestServer& server,
@@ -736,6 +766,53 @@ void TestRetryTransportErrorRetries() {
   }
 }
 
+void TestDegenerateStreamRetries() {
+  TEST("Retry: <unk> stream flood aborts and retries to success");
+  RetryTestServer server;
+  server.sseMode = true;
+  server.sseJunkRequests = 1;  // first request is a <unk> flood
+  if (!server.Start()) {
+    FAIL("failed to start test server");
+    return;
+  }
+  OpenAIProvider provider(MakeRetryTestConfig(server, 5, 100));
+  LLMRequest request;
+  request.model = "gpt-test";
+  request.messages.push_back({"user", "hello"});
+  std::string error;
+  std::string streamed;
+  LLMMessage msg = provider.StreamComplete(
+      request, [&](const LLMToken& t) { streamed += t.content; }, &error);
+  if (msg.content == "HELLO WORLD" && server.requestsServed.load() == 2) {
+    PASS();
+  } else {
+    FAIL("content='" + msg.content + "' requests=" +
+         std::to_string(server.requestsServed.load()) + " err=" + error);
+  }
+}
+
+void TestDegenerateBodyRetries() {
+  TEST("Retry: non-streaming <unk> body treated as failure and retried");
+  RetryTestServer server;
+  server.SetDegenerateBodyFirst();
+  if (!server.Start()) {
+    FAIL("failed to start test server");
+    return;
+  }
+  OpenAIProvider provider(MakeRetryTestConfig(server, 5, 100));
+  LLMRequest request;
+  request.model = "gpt-test";
+  request.messages.push_back({"user", "hello"});
+  std::string error;
+  LLMMessage msg = provider.Complete(request, &error);
+  if (msg.content == "RETRY_OK" && server.requestsServed.load() == 2) {
+    PASS();
+  } else {
+    FAIL("content='" + msg.content + "' requests=" +
+         std::to_string(server.requestsServed.load()) + " err=" + error);
+  }
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -764,6 +841,8 @@ int main() {
   TestRetryExhaustionReportsAttempts();
   TestRetrySkipsNonRetryableStatus();
   TestRetryTransportErrorRetries();
+  TestDegenerateStreamRetries();
+  TestDegenerateBodyRetries();
 
   std::cout << "\n";
   std::cout << "Results: " << testsPassed << " passed, " << testsFailed
