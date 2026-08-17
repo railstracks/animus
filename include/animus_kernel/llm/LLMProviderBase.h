@@ -163,17 +163,29 @@ protected:
   // Shared HTTP machinery
   // ---------------------------------------------------------------------------
 
-  /// Execute an HTTP POST request.
+  /// Execute an HTTP POST request, retrying transient failures.
   ///
   /// For streaming (stream=true):
   ///   - Calls tokenCallback for each parsed SSE token.
   ///   - responseBody is not set.
+  ///   - Retried only when the server delivered zero bytes (nothing was
+  ///     forwarded to the callback); partial delivery fails fast to avoid
+  ///     duplicate content.
   ///
   /// For non-streaming (stream=false):
   ///   - Sets responseBody to the full response body.
   ///   - tokenCallback is not called.
   ///
-  /// Returns HTTP status code, or 0 on connection error.
+  /// Retries transport errors (timeouts, connection resets) and transient
+  /// HTTP statuses (408, 429, 5xx). Other 4xx fail fast — retrying an auth
+  /// or schema error is pointless. Aborts via stop signal are never retried.
+  ///
+  /// Retry policy is read from config.extra (per-provider):
+  ///   - "retry_max_attempts"  (default "3", incl. first attempt)
+  ///   - "retry_interval_ms"   (default "10000")
+  ///
+  /// Returns HTTP status code, or 0 on connection error (after exhausting
+  /// retries). 499 = aborted by stop signal.
   int DoHTTPRequest(const std::string& body,
                     bool stream,
                     LLMTokenCallback tokenCallback,
@@ -200,6 +212,20 @@ protected:
   SSEToolCallAccumulator& ToolCallAccumulator() { return m_toolCallAccumulator; }
 
 private:
+  // Single-attempt HTTP POST (no retry). See DoHTTPRequest for the retry wrapper.
+  int DoHTTPRequestOnce(const std::string& body,
+                        bool stream,
+                        LLMTokenCallback tokenCallback,
+                        std::string* responseBody,
+                        std::string* error);
+
+  // True for HTTP statuses worth retrying (408/429/5xx/529). 0 = transport error
+  // is handled by the caller explicitly.
+  static bool IsRetryableHTTPStatus(int status);
+
+  // Sleep in interruptible chunks; returns false if the abort signal fired.
+  bool SleepInterruptible(int totalMs);
+
   LLMProviderConfig m_config;
   bool m_available{true};
 
