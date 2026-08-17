@@ -63,6 +63,12 @@ size_t StreamWriteCallback(void* contents, size_t size, size_t nmemb,
   if (ctx->done) return totalSize;
   ctx->provider->AppendSSEData(static_cast<const char*>(contents), totalSize,
                                &ctx->done);
+  // Degenerate output guard: kill the transfer once the <unk> run exceeds
+  // the threshold, so the retry wrapper can re-request instead of streaming
+  // garbage for hours.
+  if (ctx->provider->IsDegenerateOutput()) {
+    return 0;  // curl treats this as CURLE_WRITE_ERROR
+  }
   return totalSize;
 }
 
@@ -79,6 +85,24 @@ LLMProviderBase::LLMProviderBase(const LLMProviderConfig& config)
     delete m_http;
     m_http = nullptr;
     throw std::runtime_error("Failed to initialize curl handle");
+  }
+
+  // Degenerate-output guard threshold (see ProcessSSELine).
+  {
+    auto it = m_config.extra.find("degenerate_max_run");
+    if (it != m_config.extra.end()) {
+      int v = std::atoi(it->second.c_str());
+      if (v >= 2 && v <= 10000) m_degenerateMaxRun = v;
+    }
+  }
+  // Optional hard per-request timeout in ms. 0 keeps current behavior
+  // (non-stream: 4x connect timeout, stream: unlimited overall).
+  {
+    auto it = m_config.extra.find("request_timeout_ms");
+    if (it != m_config.extra.end()) {
+      int v = std::atoi(it->second.c_str());
+      if (v >= 1000 && v <= 86400000) m_requestTimeoutMs = v;
+    }
   }
 }
 
@@ -384,6 +408,20 @@ bool LLMProviderBase::ProcessSSELine(const std::string& line,
 
   auto token = ParseSSELine(data);
   if (token.has_value()) {
+    // Degenerate-output detection: a token whose content is solely "<unk>"
+    // repetitions (thinking or regular). Legitimate responses essentially
+    // never emit even one; a run of them means the endpoint has degenerated.
+    if (IsUnkOnly(token->content)) {
+      ++m_degenerateRun;
+      if (m_degenerateRun >= m_degenerateMaxRun) {
+        m_degenerateOutput = true;
+        ALOG_WARNING("llm", "degenerate output: " << m_degenerateRun
+                  << " consecutive <unk> tokens — aborting stream");
+      }
+    } else if (!token->content.empty()) {
+      m_degenerateRun = 0;
+    }
+
     // Only accumulate non-thinking tokens into the response content.
     // Thinking tokens are streamed to the UI via the callback but
     // should not be part of the accumulated response text.
@@ -456,13 +494,25 @@ int LLMProviderBase::DoHTTPRequest(const std::string& body,
     int status = DoHTTPRequestOnce(body, stream, tokenCallback, responseBody,
                                    error);
 
+    // Non-streaming 200-that-isn't: a degenerate body is a failure worth
+    // retrying even though the HTTP status was fine.
+    if (status == 200 && responseBody && IsDegenerateBody(*responseBody)) {
+      ALOG_WARNING("llm", "provider returned degenerate response body "
+                "(<unk> flood) — treating as failure");
+      if (error) *error = "degenerate output: <unk> token flood from provider";
+      status = 0;  // fall through to the retryable path below
+    }
+
     // Success, user abort, or definitive client error — no retry.
     // 499 = stop signal (never retry a deliberate abort).
     if (status == 200 || status == 499) return status;
 
     // Streaming with partial delivery: bytes reached the callback already;
-    // a retry would duplicate content in the assembled response. Fail fast.
-    if (stream && status != 200 && !m_http->responseBody.empty()) {
+    // a retry would duplicate content in the assembled response. Fail fast —
+    // EXCEPT degenerate floods: the delivered bytes are junk being rejected,
+    // and per-attempt accumulation state is reset, so retry is safe.
+    if (stream && status != 200 && !m_http->responseBody.empty() &&
+        !m_degenerateOutput) {
       ALOG_WARNING("llm", "stream failed mid-delivery (HTTP " << status
                 << ") — not retrying to avoid duplicated partial content");
       return status;
@@ -520,6 +570,33 @@ bool LLMProviderBase::IsRetryableHTTPStatus(int status) {
   }
 }
 
+bool LLMProviderBase::IsUnkOnly(const std::string& s) {
+  const std::string tag = "<unk>";
+  std::string t = s;
+  int hits = 0;
+  std::size_t pos;
+  while ((pos = t.find(tag)) != std::string::npos) {
+    t.erase(pos, tag.size());
+    ++hits;
+  }
+  if (hits == 0) return false;
+  return t.find_first_not_of(" \t\r\n") == std::string::npos;
+}
+
+bool LLMProviderBase::IsDegenerateBody(const std::string& body) {
+  // A legitimate response never contains a run of <unk> tokens; anything
+  // with 10+ occurrences is a degenerate flood.
+  const std::string tag = "<unk>";
+  int hits = 0;
+  std::size_t pos = 0;
+  while ((pos = body.find(tag, pos)) != std::string::npos) {
+    ++hits;
+    pos += tag.size();
+    if (hits >= 10) return true;
+  }
+  return false;
+}
+
 bool LLMProviderBase::SleepInterruptible(int totalMs) {
   const int chunkMs = 250;
   for (int elapsed = 0; elapsed < totalMs; elapsed += chunkMs) {
@@ -535,6 +612,11 @@ int LLMProviderBase::DoHTTPRequestOnce(const std::string& body,
                                    LLMTokenCallback tokenCallback,
                                    std::string* responseBody,
                                    std::string* error) {
+  // Per-attempt state reset (the retry wrapper may call this repeatedly).
+  m_aborted = false;
+  m_degenerateOutput = false;
+  m_degenerateRun = 0;
+
   if (!m_http || !m_http->easy) {
     if (error) *error = "Curl handle not initialized";
     return 0;
@@ -572,13 +654,21 @@ int LLMProviderBase::DoHTTPRequestOnce(const std::string& body,
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, m_http->headers);
   }
 
-  // Timeouts
-  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS,
-                   static_cast<long>(m_config.connect_timeout_ms));
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS,
-                   stream ? 0L
-                          : static_cast<long>(m_config.connect_timeout_ms) *
-                                4L);
+  // Timeouts. request_timeout_ms (extra) overrides everything; otherwise
+  // non-streaming gets 4x connect timeout and streaming gets an overall-
+  // unlimited window guarded by the low-speed stall detector below.
+  {
+    const long reqTimeout = m_requestTimeoutMs > 0
+        ? static_cast<long>(m_requestTimeoutMs)
+        : 0L;
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS,
+                     static_cast<long>(m_config.connect_timeout_ms));
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS,
+                     reqTimeout != 0L
+                         ? reqTimeout
+                         : (stream ? 0L
+                                   : static_cast<long>(m_config.connect_timeout_ms) * 4L));
+  }
   // For streaming: abort if connection truly stalls. Reasoning models (o1/o3,
   // etc.) can take 2-3 minutes before first token, so be generous here.
   if (stream) {
@@ -621,6 +711,14 @@ int LLMProviderBase::DoHTTPRequestOnce(const std::string& body,
         // Return 499 as a sentinel — not a real HTTP status, means "client closed"
         if (error) error->clear();
         return 499;
+      }
+      // Degenerate output guard tripped — treat as retryable failure.
+      if (m_degenerateOutput) {
+        if (error) {
+          *error = "degenerate output: <unk> token flood from provider (" +
+                   std::to_string(m_degenerateRun) + " consecutive)";
+        }
+        return 0;
       }
       if (error) {
         *error = std::string(errbuf[0] ? errbuf : curl_easy_strerror(res));

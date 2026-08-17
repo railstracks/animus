@@ -78,6 +78,9 @@ public:
   /// True if the last streaming call was aborted by the abort signal.
   bool WasAborted() const { return m_aborted; }
 
+  /// True if the current attempt tripped the degenerate-output guard.
+  bool IsDegenerateOutput() const { return m_degenerateOutput; }
+
   /// Check if abort signal is set — called by StreamWriteCallback.
   bool ShouldAbort() {
     if (m_abortSignal && m_abortSignal->load()) {
@@ -226,6 +229,12 @@ private:
   // Sleep in interruptible chunks; returns false if the abort signal fired.
   bool SleepInterruptible(int totalMs);
 
+  // True if the string consists solely of "<unk>" repetitions and whitespace.
+  static bool IsUnkOnly(const std::string& s);
+
+  // True if a completed (non-streaming) response body is a degenerate flood.
+  static bool IsDegenerateBody(const std::string& body);
+
   LLMProviderConfig m_config;
   bool m_available{true};
 
@@ -237,6 +246,18 @@ private:
 
   // SSE tool call accumulator — assembles delta fragments across chunks
   SSEToolCallAccumulator m_toolCallAccumulator;
+
+  // Degenerate-output detection: some endpoints (notably Ollama Cloud)
+  // occasionally degenerate into endless "<unk>" token floods, usually in
+  // the reasoning channel. Aborting turns it into a retryable failure
+  // instead of a multi-hour stream the human has to stop manually.
+  int m_degenerateRun{0};              // consecutive junk tokens seen
+  bool m_degenerateOutput{false};      // threshold exceeded this attempt
+  int m_degenerateMaxRun{25};          // extra["degenerate_max_run"]
+
+  // Optional per-request hard timeout (extra["request_timeout_ms"]).
+  // 0 = current behavior (non-stream: 4x connect timeout, stream: unlimited).
+  int m_requestTimeoutMs{0};
 
 protected:
   // Cached capabilities for the current model
