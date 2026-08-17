@@ -886,7 +886,6 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             // Gallivanting sessions get a fresh session each trigger so
             // exploration isn't contaminated by prior gallivanting context.
             // The session type is set to "gallivanting" for tool filtering.
-            std::string sessionTag = tag;
             bool isGallivanting = (tag == "gallivanting");
 
             std::string connector;
@@ -895,7 +894,14 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                     std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count());
             } else {
-                connector = "scheduled:" + tag + ":" + agentId;
+                // Unique session per fire (timestamp suffix) so each run
+                // starts fresh instead of accumulating context in one
+                // long-lived session. Same pattern as consolidation and
+                // gallivanting above. Poll loop is single-threaded, so the
+                // millisecond timestamp is collision-free per schedule.
+                connector = "scheduled:" + tag + ":" + agentId + ":" + std::to_string(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
             }
 
             SessionKey key{ connector, "" };
