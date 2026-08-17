@@ -9,6 +9,7 @@
 #include <json/writer.h>
 
 #include <chrono>
+#include <cctype>
 #include <sstream>
 #include <thread>
 #include <iostream>
@@ -53,6 +54,19 @@ std::string iso_now_bsky() {
     std::ostringstream oss;
     oss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%S.000Z");
     return oss.str();
+}
+
+// Simple URL encoder for query parameter values
+std::string UrlEncode(const std::string& s) {
+    std::ostringstream out;
+    for (unsigned char c : s) {
+        if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            out << static_cast<char>(c);
+        } else {
+            out << '%' << std::uppercase << std::hex << static_cast<int>(c);
+        }
+    }
+    return out.str();
 }
 
 std::string ExtractAdapterType(const std::string& platformId) {
@@ -792,6 +806,9 @@ void SocialEventPoller::BlueskyPollLoop(InstanceState* state) {
             std::string postText;
             std::string postUri;
             std::string rootUri;   // Thread root AT-URI (from record.reply.root)
+            std::string parentUri; // Direct parent AT-URI (from record.reply.parent)
+            std::string parentText; // Text of the parent post (fetched for context)
+            std::string parentAuthor; // Author of the parent post
             if (n.isMember("record")) {
                 postText = GetString(n["record"], "text");
                 // For replies, the record contains a "reply" object with root and parent URIs
@@ -800,10 +817,75 @@ void SocialEventPoller::BlueskyPollLoop(InstanceState* state) {
                     if (rootUri.empty() && n["record"]["reply"]["root"].isMember("uri")) {
                         rootUri = GetString(n["record"]["reply"]["root"], "uri");
                     }
+                    parentUri = GetString(n["record"]["reply"], "parent");
+                    if (parentUri.empty() && n["record"]["reply"]["parent"].isMember("uri")) {
+                        parentUri = GetString(n["record"]["reply"]["parent"], "uri");
+                    }
                 }
             }
             if (n.isMember("uri")) {
                 postUri = GetString(n, "uri");
+            }
+
+            // For replies, fetch the parent post text so the agent has context.
+            // Bluesky posts are max 300 graphemes, so this is cheap to include in full.
+            if (!parentUri.empty()) {
+                BlueskyAuth auth = BlueskyAuthenticate(state);
+                if (!auth.access_jwt.empty()) {
+                    // Use getPostThread with depth=0 to fetch just the parent
+                    std::string threadUrl = auth.pds +
+                        "/xrpc/app.bsky.feed.getPostThread?uri=" +
+                        UrlEncode(parentUri) + "&depth=0";
+                    HttpClient::Request threadReq;
+                    threadReq.url = threadUrl;
+                    threadReq.method = "GET";
+                    threadReq.headers["Authorization"] = "Bearer " + auth.access_jwt;
+                    auto threadResp = m_httpClient.Execute(threadReq);
+                    if (threadResp.status_code == 200) {
+                        auto threadData = ParseJson(threadResp.body);
+                        if (threadData.isMember("thread") && threadData["thread"].isMember("post")) {
+                            const auto& parentPost = threadData["thread"]["post"];
+                            if (parentPost.isMember("record") && parentPost["record"].isMember("text")) {
+                                parentText = GetString(parentPost["record"], "text");
+                            }
+                            if (parentPost.isMember("author") && parentPost["author"].isMember("handle")) {
+                                parentAuthor = GetString(parentPost["author"], "handle");
+                            }
+                            // Also extract root text if different from parent
+                            if (!rootUri.empty() && rootUri != parentUri) {
+                                // Fetch root post text too
+                                std::string rootThreadUrl = auth.pds +
+                                    "/xrpc/app.bsky.feed.getPostThread?uri=" +
+                                    UrlEncode(rootUri) + "&depth=0";
+                                HttpClient::Request rootReq;
+                                rootReq.url = rootThreadUrl;
+                                rootReq.method = "GET";
+                                rootReq.headers["Authorization"] = "Bearer " + auth.access_jwt;
+                                auto rootResp = m_httpClient.Execute(rootReq);
+                                if (rootResp.status_code == 200) {
+                                    auto rootData = ParseJson(rootResp.body);
+                                    if (rootData.isMember("thread") && rootData["thread"].isMember("post")) {
+                                        const auto& rootPost = rootData["thread"]["post"];
+                                        std::string rootText = "";
+                                        std::string rootAuthor = "";
+                                        if (rootPost.isMember("record") && rootPost["record"].isMember("text")) {
+                                            rootText = GetString(rootPost["record"], "text");
+                                        }
+                                        if (rootPost.isMember("author") && rootPost["author"].isMember("handle")) {
+                                            rootAuthor = GetString(rootPost["author"], "handle");
+                                        }
+                                        if (!rootText.empty()) {
+                                            parentText = "[Thread root from @" + rootAuthor + "]\n" +
+                                                         rootText +
+                                                         "\n\n[Reply target from @" + parentAuthor + "]\n" +
+                                                         parentText;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             if (postText.empty() && reason != "custom-feed") continue;
@@ -833,7 +915,11 @@ void SocialEventPoller::BlueskyPollLoop(InstanceState* state) {
                           + authorHandle + ")]\n" + postText + replyContext;
             } else if (reason == "reply") {
                 message = "[Bluesky reply from " + authorDisplayName + " (@"
-                          + authorHandle + ")]\n" + postText + replyContext;
+                          + authorHandle + ")]\n" + postText;
+                if (!parentText.empty()) {
+                    message += "\n\n--- Replying to ---\n" + parentText;
+                }
+                message += replyContext;
             } else if (reason == "quote") {
                 message = "[Bluesky quote from " + authorDisplayName + " (@"
                           + authorHandle + ")]\n" + postText + replyContext;
