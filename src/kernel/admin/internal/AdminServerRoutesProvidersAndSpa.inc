@@ -64,37 +64,42 @@
                     return;
                 }
 
-                Json::Value models(Json::arrayValue);
+                // FetchCapabilities hits each provider over HTTP (up to ~60s
+                // per provider). Must run off the IO thread — see
+                // AdminServer::RunBlocking.
+                AdminServer::RunBlocking([server, callback]() {
+                    Json::Value models(Json::arrayValue);
 
-                for (const auto& state : server->m_providerManager.ListProviders()) {
-                    auto configOpt = server->m_providerManager.GetProviderConfig(state.providerId);
-                    if (!configOpt) continue;
+                    for (const auto& state : server->m_providerManager.ListProviders()) {
+                        auto configOpt = server->m_providerManager.GetProviderConfig(state.providerId);
+                        if (!configOpt) continue;
 
-                    auto provider = server->m_providerRegistry->Create(*configOpt);
-                    if (!provider) continue;
+                        auto provider = server->m_providerRegistry->Create(*configOpt);
+                        if (!provider) continue;
 
-                    auto* baseProvider = dynamic_cast<llm::LLMProviderBase*>(provider.get());
-                    if (!baseProvider) continue;
+                        auto* baseProvider = dynamic_cast<llm::LLMProviderBase*>(provider.get());
+                        if (!baseProvider) continue;
 
-                    // FetchCapabilities populates raw_features with all model IDs
-                    std::string modelForCap = state.defaultModel.empty()
-                        ? "_list" : state.defaultModel;
-                    baseProvider->FetchCapabilities(modelForCap);
+                        // FetchCapabilities populates raw_features with all model IDs
+                        std::string modelForCap = state.defaultModel.empty()
+                            ? "_list" : state.defaultModel;
+                        baseProvider->FetchCapabilities(modelForCap);
 
-                    // GetVisionModelIds returns vision-capable model IDs
-                    auto visionModels = baseProvider->GetVisionModelIds();
-                    for (const auto& m : visionModels) {
-                        Json::Value entry(Json::objectValue);
-                        entry["provider_id"] = state.providerId;
-                        entry["model_id"] = m;
-                        entry["label"] = state.providerId + "/" + m;
-                        models.append(entry);
+                        // GetVisionModelIds returns vision-capable model IDs
+                        auto visionModels = baseProvider->GetVisionModelIds();
+                        for (const auto& m : visionModels) {
+                            Json::Value entry(Json::objectValue);
+                            entry["provider_id"] = state.providerId;
+                            entry["model_id"] = m;
+                            entry["label"] = state.providerId + "/" + m;
+                            models.append(entry);
+                        }
                     }
-                }
 
-                Json::Value out(Json::objectValue);
-                out["models"] = models;
-                callback(drogon::HttpResponse::newHttpJsonResponse(out));
+                    Json::Value out(Json::objectValue);
+                    out["models"] = models;
+                    callback(drogon::HttpResponse::newHttpJsonResponse(out));
+                });
             },
             {drogon::Get});
 
@@ -135,29 +140,32 @@
                     return;
                 }
 
-                Json::Value models(Json::arrayValue);
-                bool ok = false;
-                std::string modelsErr;
-                if (!server->m_providerManager.FetchProviderModels(
-                        id, server->m_providerRegistry, &models, &ok, &modelsErr)) {
-                    Json::Value out;
-                    out["error"] = modelsErr;
-                    auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
-                    if (modelsErr.rfind("provider not found:", 0) == 0) {
-                        resp->setStatusCode(drogon::k404NotFound);
-                    } else {
-                        resp->setStatusCode(drogon::k500InternalServerError);
+                // Hits the provider over HTTP — off the IO thread.
+                AdminServer::RunBlocking([server, id, callback]() {
+                    Json::Value models(Json::arrayValue);
+                    bool ok = false;
+                    std::string modelsErr;
+                    if (!server->m_providerManager.FetchProviderModels(
+                            id, server->m_providerRegistry, &models, &ok, &modelsErr)) {
+                        Json::Value out;
+                        out["error"] = modelsErr;
+                        auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                        if (modelsErr.rfind("provider not found:", 0) == 0) {
+                            resp->setStatusCode(drogon::k404NotFound);
+                        } else {
+                            resp->setStatusCode(drogon::k500InternalServerError);
+                        }
+                        callback(resp);
+                        return;
                     }
-                    callback(resp);
-                    return;
-                }
 
-                Json::Value out(Json::objectValue);
-                out["provider_id"] = id;
-                out["models"] = models;
-                out["fetched"] = ok;
+                    Json::Value out(Json::objectValue);
+                    out["provider_id"] = id;
+                    out["models"] = models;
+                    out["fetched"] = ok;
 
-                callback(drogon::HttpResponse::newHttpJsonResponse(out));
+                    callback(drogon::HttpResponse::newHttpJsonResponse(out));
+                });
             },
             {drogon::Get});
 
@@ -173,29 +181,32 @@
                     return;
                 }
 
-                llm::ProviderCapabilities caps;
-                bool ok = false;
-                std::string capErr;
-                if (!server->m_providerManager.RefreshProviderCapabilities(
-                        id,
-                        server->m_providerRegistry,
-                        std::string(req->getParameter("model")),
-                        &caps,
-                        &ok,
-                        &capErr)) {
-                    Json::Value out;
-                    out["error"] = capErr;
-                    auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
-                    if (capErr.rfind("provider not found:", 0) == 0) {
-                        resp->setStatusCode(drogon::k404NotFound);
-                    } else if (capErr == "no default model configured for this provider") {
-                        resp->setStatusCode(drogon::k400BadRequest);
-                    } else {
-                        resp->setStatusCode(drogon::k500InternalServerError);
+                // Hits the provider over HTTP — off the IO thread.
+                const std::string model = req->getParameter("model");
+                AdminServer::RunBlocking([server, id, model, callback]() {
+                    llm::ProviderCapabilities caps;
+                    bool ok = false;
+                    std::string capErr;
+                    if (!server->m_providerManager.RefreshProviderCapabilities(
+                            id,
+                            server->m_providerRegistry,
+                            model,
+                            &caps,
+                            &ok,
+                            &capErr)) {
+                        Json::Value out;
+                        out["error"] = capErr;
+                        auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
+                        if (capErr.rfind("provider not found:", 0) == 0) {
+                            resp->setStatusCode(drogon::k404NotFound);
+                        } else if (capErr == "no default model configured for this provider") {
+                            resp->setStatusCode(drogon::k400BadRequest);
+                        } else {
+                            resp->setStatusCode(drogon::k500InternalServerError);
+                        }
+                        callback(resp);
+                        return;
                     }
-                    callback(resp);
-                    return;
-                }
 
                 Json::Value out(Json::objectValue);
                 out["provider_id"] = id;
@@ -215,9 +226,10 @@
                     rawFeatures.append(f);
                 }
                 capsJson["raw_features"] = rawFeatures;
-                out["capabilities"] = capsJson;
+                    out["capabilities"] = capsJson;
 
-                callback(drogon::HttpResponse::newHttpJsonResponse(out));
+                    callback(drogon::HttpResponse::newHttpJsonResponse(out));
+                });
             },
             {drogon::Get});
 
