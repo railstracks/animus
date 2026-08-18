@@ -65,6 +65,7 @@ else()
     GIT_REPOSITORY https://github.com/drogonframework/drogon.git
     GIT_TAG v1.9.12
     GIT_SHALLOW TRUE
+    PATCH_COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/drogon-ws-upgrade-reused-connection.patch
   )
   FetchContent_MakeAvailable(drogon)
 
