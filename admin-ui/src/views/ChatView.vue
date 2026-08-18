@@ -1893,7 +1893,7 @@ watch(sessionSearch, () => {
                   <v-select
                     v-if="reasoningEnabled && reasoningSupported"
                     v-model="reasoningEffort"
-                    :items="['low', 'medium', 'high', 'xhigh']"
+                    :items="['low', 'medium', 'high', 'max', 'xhigh']"
                     :label="t('chat.reasoning.effort')"
                     density="compact"
                     variant="outlined"

@@ -1017,7 +1017,7 @@ watch(() => formData.value.session_report_provider, (v) => loadConsolidationMode
               />
               <v-select v-model="formData.reasoning_effort"
                 :label="t('agents.form.reasoningEffort')"
-                :items="['low', 'medium', 'high', 'xhigh']"
+                :items="['low', 'medium', 'high', 'max', 'xhigh']"
                 :disabled="!formData.reasoning_enabled"
               />
               <v-switch v-model="formData.pad_context"

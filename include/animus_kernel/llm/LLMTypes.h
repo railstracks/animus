@@ -19,17 +19,18 @@ namespace animus::kernel::llm {
 
 /// Reasoning effort levels. Empty string = disabled.
 /// Providers map this to their own parameter format:
-///   Ollama:  "reasoning_effort": "high"
+///   Ollama:  "reasoning_effort": "high" / "max"
 ///   OpenAI:  "reasoning_effort": "high" / "xhigh"
 ///   Z.ai:    "thinking": {"type": "enabled"}
 ///   Cohere:  "thinking": {"type": "enabled"}
 ///
-/// Valid values: "", "none", "low", "medium", "high", "xhigh"
-/// "xhigh" is OpenAI-specific; other providers silently ignore it.
+/// Valid values: "", "none", "low", "medium", "high", "max", "xhigh"
+/// "max" is used by Ollama and others; "xhigh" is OpenAI-specific.
+/// Providers that don't support a given level silently ignore it.
 
 inline bool IsReasoningEffort(const std::string& effort) {
     return effort == "none" || effort == "low" || effort == "medium"
-        || effort == "high" || effort == "xhigh";
+        || effort == "high" || effort == "max" || effort == "xhigh";
 }
 
 inline bool IsReasoningEnabled(const std::string& effort) {
@@ -120,7 +121,7 @@ struct LLMRequest {
     /// Tool choice: "auto" (model decides), "none" (no tools), or specific tool name.
     std::string tool_choice{"auto"};
 
-    /// Reasoning effort — empty string (disabled) or "none"/"low"/"medium"/"high"/"xhigh".
+    /// Reasoning effort — empty string (disabled) or "none"/"low"/"medium"/"high"/"max"/"xhigh".
     /// Providers map this to their native thinking/reasoning parameter.
     std::string reasoning_effort;
 };
