@@ -1267,6 +1267,19 @@ std::string ChannelManager::BlueskyResolveParentCid(PollerState* state, const st
 void ChannelManager::BlueskyPollLoop(PollerState* state) {
     ALOG_INFO("bluesky", "poll loop starting for " << state->channel_name);
 
+    // Restore persisted notification watermark (survives daemon restarts).
+    // Without this, every restart reprocesses the first notifications page —
+    // the agent re-replies to old mentions/quotes (observed: 12 identical
+    // replies across one day of container restarts).
+    if (state->bsky_last_seen.empty() && m_configStore) {
+        state->bsky_last_seen = m_configStore->Get("",
+            "social." + state->channel_name + ".last_seen");
+        if (!state->bsky_last_seen.empty()) {
+            ALOG_INFO("bluesky", "restored notification watermark "
+                      << state->bsky_last_seen << " for " << state->channel_name);
+        }
+    }
+
     // Initial auth
     if (!BlueskyReAuth(state)) {
         ALOG_ERROR("bluesky", "initial auth failed for " << state->channel_name);
@@ -1365,12 +1378,6 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
             int processed = 0;
             int totalNotifs = notifs.size();
 
-            // Query session metadata for already-processed notification URIs
-            std::set<std::string> seenUris;
-            // Build set from all chat sessions for this channel's notifications
-            // Notification URIs are stored as metadata on chat sessions
-            // For now, use in-memory watermark as primary dedup
-
             ALOG_INFO("bluesky", "listNotifications returned " << totalNotifs
                       << " notifications, watermark=" << state->bsky_last_seen);
 
@@ -1400,6 +1407,28 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                 postUri = GetString(n, "uri");
 
                 if (postText.empty()) continue;
+
+                // --- Session-metadata dedup (survives watermark loss) ---
+                // The post URI is stored as metadata on its session after the
+                // first dispatch; re-fires (restart with lost watermark, cursor
+                // reset, notification re-index) are skipped. Mirrors the DM
+                // rev-ID dedup in BlueskyChatPollLoop.
+                if (m_sessionQuery && !postUri.empty()) {
+                    std::string postSessionKey = "chat:" + state->channel_name
+                        + ":post:" + postUri;
+                    auto stored = m_sessionQuery(postSessionKey, "bluesky_post_uris");
+                    bool alreadyProcessed = false;
+                    for (const auto& u : stored) {
+                        if (u == postUri) { alreadyProcessed = true; break; }
+                    }
+                    if (alreadyProcessed) {
+                        ALOG_INFO("bluesky", "skipping already-processed "
+                                  << reason << " " << postUri);
+                        if (latestSeen.empty() || indexedAt > latestSeen)
+                            latestSeen = indexedAt;
+                        continue;
+                    }
+                }
 
                 // --- Auto-reply filtering ---
                 bool autoReply = GetString(state->config, "auto_reply") != "false";
@@ -1431,21 +1460,53 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                     }
                 }
 
+                // Thread refs: for replies, record.reply.root.uri is the thread
+                // root (may differ from the parent when replying mid-thread).
+                // For mentions/quotes the post itself is the root.
+                std::string rootUri = postUri;
+                if (n.isMember("record") && n["record"].isMember("reply")
+                    && n["record"]["reply"].isMember("root")) {
+                    std::string r = GetString(n["record"]["reply"]["root"], "uri");
+                    if (!r.empty()) rootUri = r;
+                }
+
                 std::string message = "[Bluesky " + reason + " from " + authorDisplayName
-                    + " (@" + authorHandle + ")]\n" + postText;
+                    + " (@" + authorHandle + ")]\n"
+                    + "post_id: " + postUri + "\n"
+                    + "root_id: " + rootUri + "\n"
+                    + postText + "\n\n"
+                    + "[This is a post " + reason + ", not a DM. Reply using the channels "
+                    + "tool: action=\"reply\", platform_id=\"" + state->channel_type
+                    + ":" + state->channel_name
+                    + "\", post_id and root_id above, content=your reply. "
+                    + "Your final text response will NOT be posted automatically.]";
 
                 ALOG_INFO("bluesky", "dispatching " << reason << " from @"
                           << authorHandle << " for " << state->channel_name);
 
-                DispatchToSession(state, "post:" + postUri, message, "chat");
+                // Metadata carries the post URI for the session-level dedup above
+                Json::Value uris(Json::arrayValue);
+                uris.append(postUri);
+                Json::StreamWriterBuilder wb;
+                wb["indentation"] = "";
+                std::string metadata = "{\"bluesky_post_uris\":" + Json::writeString(wb, uris) + "}";
+
+                DispatchToSession(state, "post:" + postUri, message, "chat", metadata);
 
                 processed++;
                 if (latestSeen.empty() || indexedAt > latestSeen)
                     latestSeen = indexedAt;
             }
 
-            if (latestSeen != state->bsky_last_seen)
+            if (latestSeen != state->bsky_last_seen) {
                 state->bsky_last_seen = latestSeen;
+                // Persist so restarts don't reprocess old notifications
+                if (m_configStore) {
+                    m_configStore->Set("",
+                        "social." + state->channel_name + ".last_seen",
+                        latestSeen);
+                }
+            }
 
             // Mark as seen
             {
@@ -1631,7 +1692,8 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             }
 
             if (shouldDispatch) {
-                newMessages.push_back("[Bluesky DM from " + senderName + "]\n" + text);
+                newMessages.push_back("[Bluesky DM from " + senderName + "]\n" + text
+                    + "\n\n[Your final text response will be delivered to this DM automatically.]");
                 newRevs.push_back(rev);
             }
         }

@@ -1532,10 +1532,16 @@ void AgentKernel::ExecuteChannelDispatch(
         [this, session, sessionKey, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval, metadata]() {
             // Per-message callback: send each assistant message to the channel
             // immediately rather than only the final response.
-            ChainAssistantMessageCallback assistantCb =
-                [this, replyTarget](const std::string& text) {
+            // Only for Chat (DM) targets — Wall (post reply/mention) targets
+            // require the agent to reply explicitly via the channels tool with
+            // post_id/root_id; auto-posting the final text caused duplicate
+            // and low-quality replies (agent narration leaking to the feed).
+            ChainAssistantMessageCallback assistantCb;
+            if (replyTarget.type == ChannelManager::ReplyTarget::Chat) {
+                assistantCb = [this, replyTarget](const std::string& text) {
                     SendAutoReply(replyTarget, text);
                 };
+            }
 
             auto sessionAccess = SessionAccess(session, SessionAccessMode::ReadWrite);
             auto result = m_chainRunner->ExecuteOnSession(
