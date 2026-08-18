@@ -1,0 +1,17 @@
+--- a/lib/src/HttpServer.cc	2026-08-18 03:36:24.570297597 +0200
++++ b/lib/src/HttpServer.cc	2026-08-18 03:36:24.582297607 +0200
+@@ -277,9 +277,11 @@
+ {
+     assert(!requests.empty());
+ 
+-    // will only be checked for the first request
+-    if (requestParser->firstReq() && requests.size() == 1 &&
+-        isWebSocket(requests[0]))
++    // Websocket upgrades are valid on any request of a persistent
++    // connection, not just the first: proxies with upstream keepalive pools
++    // (nginx `keepalive`) legitimately send upgrades on recycled
++    // connections. Pipelined batches remain excluded (size == 1 guard).
++    if (requests.size() == 1 && isWebSocket(requests[0]))
+     {
+         auto &req = requests[0];
+         req->startProcessing();
