@@ -56,7 +56,7 @@ struct KernelConfig {
         // Thinking mode configuration (native provider thinking)
         // When reasoning_effort is non-empty, providers use native thinking.
         bool reasoningEnabled{false};
-        std::string reasoning_effort{"high"}; // Effort level: "none"/"low"/"medium"/"high"/"xhigh"
+        std::string reasoning_effort{"high"}; // Effort level: "none"/"low"/"medium"/"high"/"max"/"xhigh"
         std::string reasoningInstruction; // Kept for API compat, no longer injected into prompts
 
         // Agent self-management

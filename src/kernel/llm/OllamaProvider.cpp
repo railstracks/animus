@@ -20,7 +20,7 @@ std::string OllamaProvider::BuildRequestBody(
   std::string body = BuildOpenAIRequestBody(request);
 
   // When reasoning effort is set, add the "reasoning_effort" parameter.
-  // Ollama's /v1 endpoint accepts: "none", "low", "medium", "high".
+  // Ollama's /v1 endpoint accepts: "none", "low", "medium", "high", "max".
   // ("xhigh" is OpenAI-specific; Ollama silently ignores unknown values.)
   if (IsReasoningEnabled(request.reasoning_effort)) {
     body.insert(body.size() - 1,
