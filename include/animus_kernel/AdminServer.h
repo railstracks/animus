@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -92,6 +93,16 @@ public:
         std::string* error);
 
     void Stop();
+
+    /// Runs blocking work (e.g., provider HTTP calls) off the single drogon
+    /// IO thread. The admin server uses one IO thread; a handler that blocks
+    /// on an external endpoint wedges ALL routes (observed in production:
+    /// capability fetches against a degraded provider made /auth/status time
+    /// out). Handlers capture the drogon callback by value and invoke it from
+    /// the task when done — drogon callbacks are safe to call from any thread.
+    /// Copy everything needed off the HttpRequestPtr before returning from
+    /// the handler; do not touch req from inside the task.
+    static bool RunBlocking(std::function<void()> task);
 
     bool IsRunning() const;
     std::uint64_t UptimeSeconds() const;

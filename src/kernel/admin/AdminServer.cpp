@@ -14,9 +14,11 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <condition_variable>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -54,6 +56,74 @@ bool ParseJsonPayload(const std::string& payload, Json::Value* out, std::string*
     }
     return true;
 }
+
+// ============================================================================
+// Blocking-work pool for handlers that must call external endpoints
+// (provider capabilities/models). The drogon admin server runs a single IO
+// thread; a sync network call in a handler wedges every route until it times
+// out (up to 60s per provider, multiplied across providers for vision-models).
+// Handlers submit the blocking work here and invoke the drogon callback when
+// done. Deliberately leaked (never destroyed) — the process owns its lifetime.
+// ============================================================================
+namespace {
+class BlockingWorkPool {
+public:
+    explicit BlockingWorkPool(int threads) {
+        for (int i = 0; i < threads; ++i) {
+            std::thread([this] { Loop(); }).detach();
+        }
+    }
+
+    void Submit(std::function<void()> task) {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            ++m_inFlight;
+            m_queue.push_back(std::move(task));
+        }
+        m_cv.notify_one();
+    }
+
+    // Waits up to waitMs for queued+running tasks to finish. Called during
+    // shutdown so pending tasks don't touch a destroyed AdminServer. Bounded:
+    // a stuck provider fetch must not hang process exit (docker kill follows).
+    void DrainFor(int waitMs) {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_drainCv.wait_for(lock, std::chrono::milliseconds(waitMs), [this] {
+            return m_inFlight == 0 && m_queue.empty();
+        });
+    }
+
+private:
+    void Loop() {
+        for (;;) {
+            std::function<void()> task;
+            {
+                std::unique_lock<std::mutex> lock(m_mutex);
+                m_cv.wait(lock, [this] { return !m_queue.empty(); });
+                task = std::move(m_queue.front());
+                m_queue.pop_front();
+            }
+            task();
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                --m_inFlight;
+            }
+            m_drainCv.notify_all();
+        }
+    }
+
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    std::condition_variable m_drainCv;
+    std::deque<std::function<void()>> m_queue;
+    int m_inFlight{0};
+};
+
+BlockingWorkPool& BlockingPool() {
+    static BlockingWorkPool* pool = new BlockingWorkPool(2);
+    return *pool;
+}
+}  // namespace
 
 std::once_flag g_handlersRegistered;
 std::atomic<AdminServer*> g_activeAdminServer{nullptr};
@@ -886,6 +956,10 @@ bool AdminServer::Start(
 void AdminServer::Stop() {
     m_interfaceManager.StopAllIrcInterfaces();
 
+    // Give pending blocking-work tasks a bounded chance to finish before the
+    // server state they capture is destroyed.
+    adminserver_internal::BlockingPool().DrainFor(2000);
+
     if (!m_thread.joinable()) {
         m_running.store(false);
         m_started.store(false);
@@ -1265,6 +1339,11 @@ bool AdminServer::TriggerModelClientReinitialization(std::string* error) {
     // When LLMRegistry/clients land, this is where reinit will call into that layer.
     (void)error;
     m_modelReinitCount.fetch_add(1);
+    return true;
+}
+
+bool AdminServer::RunBlocking(std::function<void()> task) {
+    adminserver_internal::BlockingPool().Submit(std::move(task));
     return true;
 }
 
