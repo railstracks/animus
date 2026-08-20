@@ -437,6 +437,24 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                     displayText = "[" + channelId + "] " + authorUsername + ": " + content;
                 }
 
+                // Guild-channel responses are NOT auto-delivered (Wall target:
+                // the assistant-message callback is deliberately null — see
+                // AgentKernel::ExecuteChannelDispatch). Tell the agent the truth
+                // and give it the server-side IDs so it can reply via the
+                // channels tool. Mirrors the honest Bluesky footer pattern.
+                // TODO(v0.4.0 #16): reply resolves from session ReplyTarget and
+                // this footer's echoed IDs disappear.
+                if (shouldRespond && !isDm) {
+                    displayText +=
+                        "\n\n[This is a guild-channel message. Plain-text responses "
+                        "are NOT delivered to the channel. Reply using the channels "
+                        "tool: action=\"reply\", platform_id=\"" + state->channel_type
+                        + ":" + state->channel_name
+                        + "\", channel_id=\"" + channelId
+                        + "\", message_id=\"" + msgId
+                        + "\", content=your reply.]";
+                }
+
                 if (shouldRespond) {
                     std::cerr << "[discord] MESSAGE_CREATE: " << displayText << std::endl;
                 } else {
