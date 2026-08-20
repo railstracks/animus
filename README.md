@@ -23,7 +23,7 @@ Animus is a **C++ agent framework** — a modular, efficient runtime for AI agen
 
 ## Current Status
 
-**v0.2.7** — Active development. Core kernel, admin server, LLM pipeline, tool system, multi-tenant architecture, channel system, Lua scripting, memory system, social adapters, authentication, and diffusion are all operational.
+**v0.3.10** — Active development. Core kernel, admin server, LLM pipeline, tool system, multi-tenant architecture, channel system, Lua scripting, memory system, social adapters, authentication, scheduled tasks, external nodes, agent export/import, and diffusion are all operational.
 
 | Area | Status |
 |------|--------|
@@ -47,6 +47,11 @@ Animus is a **C++ agent framework** — a modular, efficient runtime for AI agen
 | Diffusion (GetImg + Stability AI) | ✅ Live |
 | Chat attachments (per-channel, token-secured) | ✅ Live |
 | SOP system (Standard Operating Procedures) | ✅ Live |
+| Scheduled tasks (cron + interval, per-agent isolation) | ✅ Live |
+| External nodes (HMAC-signed remote commands) | ✅ Live |
+| Agent export/import (composable `.agent` archives) | ✅ Live |
+| Session notes + agenda tool | ✅ Live |
+| Temporal context provider (time-aware assembly) | ✅ Live |
 | Interjection (inject into active chains) | ✅ Live |
 | PostgreSQL backend + connection pool | ✅ Live |
 | SQLite → PostgreSQL migration tool | ✅ Live |
