@@ -303,6 +303,7 @@ add_library(animus_kernel
   src/kernel/session/InMemorySessionStore.cpp
   src/kernel/session/SqliteSessionStore.cpp
   src/kernel/session/SessionNotesStore.cpp
+  src/kernel/session/ChannelContextStore.cpp
   src/kernel/session/SessionReportStore.cpp
   src/kernel/session/SessionTagsStore.cpp
   src/kernel/agent/AgendaStore.cpp
@@ -625,6 +626,19 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME OntologyStoreTests COMMAND animus_ontology_store_tests)
+
+    add_executable(animus_channel_context_store_tests
+      tests/ChannelContextStoreTests.cpp
+    )
+    target_link_libraries(animus_channel_context_store_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_channel_context_store_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_channel_context_store_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME ChannelContextStoreTests COMMAND animus_channel_context_store_tests)
 
     add_executable(animus_memory_file_store_tests
       tests/MemoryFileStoreTests.cpp
