@@ -303,6 +303,7 @@ add_library(animus_kernel
   src/kernel/session/InMemorySessionStore.cpp
   src/kernel/session/SqliteSessionStore.cpp
   src/kernel/session/SessionNotesStore.cpp
+  src/kernel/session/ChannelContextStore.cpp
   src/kernel/session/SessionReportStore.cpp
   src/kernel/session/SessionTagsStore.cpp
   src/kernel/agent/AgendaStore.cpp
