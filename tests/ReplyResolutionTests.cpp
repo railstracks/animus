@@ -14,6 +14,7 @@
 
 #include <iostream>
 #include <string>
+#include <unistd.h>
 
 using namespace animus::kernel;
 
@@ -30,7 +31,8 @@ void Assert(bool condition, const std::string& msg) {
 
 std::string MakeTempDbPath() {
     char tmp[] = "/tmp/animus_reply_res_test_XXXXXX";
-    mkstemp(tmp);
+    int fd = mkstemp(tmp);
+    if (fd >= 0) close(fd);
     return std::string(tmp) + ".db";
 }
 
