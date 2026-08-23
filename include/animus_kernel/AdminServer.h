@@ -64,6 +64,7 @@ struct DiscoveredScript;
 class ChannelsTool;
 class LuaState;
 class SessionNotesStore;
+class ChannelContextStore;
 class SessionReportStore;
 class ContextProviderRegistry;
 class SessionTagsStore;
@@ -154,6 +155,7 @@ public:
     memory::MemoryFileStore* m_memoryFileStore{nullptr};
     memory::MemorySearch* m_memorySearch{nullptr};
     SessionNotesStore* m_sessionNotesStore{nullptr};
+    ChannelContextStore* m_channelContextStore{nullptr};
     SessionReportStore* m_sessionReportStore{nullptr};
     ContextProviderRegistry* m_contextRegistry{nullptr};
     SessionTagsStore* m_sessionTagsStore{nullptr};
@@ -183,6 +185,8 @@ public:
 
     SessionNotesStore* GetSessionNotesStore() const { return m_sessionNotesStore; }
     void SetSessionNotesStore(SessionNotesStore* store) { m_sessionNotesStore = store; }
+    ChannelContextStore* GetChannelContextStore() const { return m_channelContextStore; }
+    void SetChannelContextStore(ChannelContextStore* store) { m_channelContextStore = store; }
     SessionReportStore* GetSessionReportStore() const { return m_sessionReportStore; }
     void SetSessionReportStore(SessionReportStore* store) { m_sessionReportStore = store; }
     void SetContextRegistry(ContextProviderRegistry* registry) { m_contextRegistry = registry; }

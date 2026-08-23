@@ -390,6 +390,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // Written by ExecuteChannelDispatch (both direct and queue-flush paths
         // funnel through it); read by the ChannelContextProvider (#15).
         m_channelContextStore = new ChannelContextStore(m_dataStore);
+        m_adminServer->SetChannelContextStore(m_channelContextStore);
 
         // --- Agenda Store (per-agent calendar/agenda events) ---
         m_agendaStore = new AgendaStore(m_dataStore);

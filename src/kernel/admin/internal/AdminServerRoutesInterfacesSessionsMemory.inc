@@ -3169,6 +3169,82 @@
             {drogon::Delete});
 
         // ====================================================================
+        // Channel Context API (#14 — admin visibility of trusted arrivals)
+        // ====================================================================
+
+        // GET /api/v1/sessions/{sessionKey}/channel-context
+        drogon::app().registerHandler(
+            "/api/v1/sessions/{1}/channel-context",
+            [](const drogon::HttpRequestPtr& req,
+               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+               const std::string& sessionKey) {
+                AdminServer* server = g_activeAdminServer.load();
+                if (!server) { SendServerNotActive(callback); return; }
+                if (!server->m_channelContextStore) {
+                    SendJsonError(callback, "channel context store not available",
+                                 drogon::k503ServiceUnavailable);
+                    return;
+                }
+                std::string agentId = req->getParameter("agent_id");
+                if (agentId.empty()) agentId = "default";
+
+                // The store keys arrivals under "channel:" + sessionKey to
+                // match the dispatch convention. Accept both bare and prefixed
+                // forms from the caller for ergonomics.
+                std::string storeKey = sessionKey;
+                if (storeKey.rfind("channel:", 0) != 0)
+                    storeKey = "channel:" + storeKey;
+
+                auto latest = server->m_channelContextStore->LatestArrival(storeKey, agentId);
+                auto recent = server->m_channelContextStore->RecentArrivals(storeKey, agentId, 20);
+                auto pending = server->m_channelContextStore->PendingArrivals(storeKey, agentId);
+
+                auto arrivalToJson = [](const ChannelArrival& a) {
+                    Json::Value obj(Json::objectValue);
+                    obj["id"] = static_cast<Json::Int64>(a.id);
+                    obj["channel_type"] = a.channel_type;
+                    obj["channel_name"] = a.channel_name;
+                    obj["platform_id"] = a.platform_id;
+                    obj["message_type"] = a.message_type;
+                    obj["author_id"] = a.author_id;
+                    obj["author_handle"] = a.author_handle;
+                    obj["delivery"] = a.delivery;
+                    obj["peer_id"] = a.peer_id;
+                    obj["post_id"] = a.post_id;
+                    obj["group_id"] = a.group_id;
+                    obj["email_thread_id"] = a.email_thread_id;
+                    obj["source_message_id"] = a.source_message_id;
+                    obj["reply_parent_id"] = a.reply_parent_id;
+                    obj["thread_root_id"] = a.thread_root_id;
+                    obj["created_at_unix_ms"] = static_cast<Json::Int64>(a.created_at_unix_ms);
+                    obj["consumed"] = a.consumed;
+                    return obj;
+                };
+
+                Json::Value body(Json::objectValue);
+                if (latest) {
+                    body["latest"] = arrivalToJson(*latest);
+                } else {
+                    body["latest"] = Json::nullValue;
+                }
+
+                Json::Value recentArr(Json::arrayValue);
+                for (const auto& a : recent)
+                    recentArr.append(arrivalToJson(a));
+                body["recent"] = recentArr;
+                body["recent_count"] = static_cast<Json::Int>(recent.size());
+
+                Json::Value pendingArr(Json::arrayValue);
+                for (const auto& a : pending)
+                    pendingArr.append(arrivalToJson(a));
+                body["pending"] = pendingArr;
+                body["pending_count"] = static_cast<Json::Int>(pending.size());
+
+                callback(drogon::HttpResponse::newHttpJsonResponse(body));
+            },
+            {drogon::Get});
+
+        // ====================================================================
         // Context Provider Registry API
         // ====================================================================
 
