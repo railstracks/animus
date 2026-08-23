@@ -641,6 +641,19 @@ if(ANIMUS_BUILD_TESTS)
     )
     add_test(NAME ChannelContextStoreTests COMMAND animus_channel_context_store_tests)
 
+    add_executable(animus_reply_resolution_tests
+      tests/ReplyResolutionTests.cpp
+    )
+    target_link_libraries(animus_reply_resolution_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_reply_resolution_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_reply_resolution_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME ReplyResolutionTests COMMAND animus_reply_resolution_tests)
+
     add_executable(animus_memory_file_store_tests
       tests/MemoryFileStoreTests.cpp
     )

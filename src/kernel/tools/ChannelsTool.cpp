@@ -2,6 +2,7 @@
 #include "animus_kernel/AgentConfigStore.h"
 #include "animus_kernel/ChannelManager.h"
 #include "animus_kernel/ChannelState.h"
+#include "animus_kernel/ChannelContextStore.h"
 
 #include <json/json.h>
 #include <json/writer.h>
@@ -201,7 +202,73 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
     }
 
     // Delegate to CompositeTool::Execute for the actual work
-    auto result = CompositeTool::Execute(call);
+    // ── #16: Reply-target resolution from session store ──────────
+    // If this is a reply action and the caller didn't provide target IDs,
+    // fill them from the ChannelContextStore's LatestArrival for this
+    // session. The model no longer needs to echo IDs from message text —
+    // the store holds the server-resolved values.
+    //
+    // Only fills MISSING fields — explicit args always win. This is the
+    // trust boundary: if the model passes a post_id, it's the model's
+    // choice; the store only provides defaults for omitted fields.
+    ToolCall resolvedCall = call;
+    if (m_channelContextStore && action == "reply" && !platformId.empty()) {
+        std::string sessionKey = GetStringField(preArgs, "__session_key", "");
+        std::string agentId = GetStringField(preArgs, "__agent_id", "");
+
+        if (!sessionKey.empty()) {
+            auto latest = m_channelContextStore->LatestArrival(sessionKey, agentId);
+            if (latest) {
+                Json::Value args = ParseArgs(call.arguments);
+                bool modified = false;
+
+                // Helper: fill a field only if it's absent or empty
+                auto fillIfMissing = [&](const char* field,
+                                         const std::string& val) {
+                    if (val.empty()) return;
+                    if (!args.isMember(field) ||
+                        (args[field].isString() && args[field].asString().empty())) {
+                        args[field] = val;
+                        modified = true;
+                    }
+                };
+
+                // Bluesky: post_id (direct parent) + root_id (thread root)
+                fillIfMissing("post_id", latest->post_id);
+                fillIfMissing("root_id", latest->thread_root_id.empty()
+                                             ? latest->post_id
+                                             : latest->thread_root_id);
+
+                // Discord: channel_id + message_id
+                if (latest->channel_type == "discord") {
+                    fillIfMissing("channel_id", latest->channel_name);
+                    fillIfMissing("message_id", latest->source_message_id);
+                }
+
+                // Email: thread_id
+                fillIfMissing("thread_id", latest->email_thread_id);
+
+                // IRC: channel target
+                fillIfMissing("channel", latest->peer_id);
+
+                // Telegram / WhatsApp: chat_id from peer_id
+                if (latest->channel_type == "telegram" ||
+                    latest->channel_type == "whatsapp") {
+                    fillIfMissing("chat_id", latest->peer_id);
+                }
+
+                if (modified) {
+                    Json::StreamWriterBuilder wb;
+                    wb.settings_["indentation"] = "";
+                    resolvedCall.arguments = Json::writeString(wb, args);
+                    preArgs = args;
+                    platformId = GetStringField(preArgs, "platform_id");
+                }
+            }
+        }
+    }
+
+    auto result = CompositeTool::Execute(resolvedCall);
 
     // If the agent just created a post, register the post_id for session routing
     if (result.success && m_postCreatedCb &&

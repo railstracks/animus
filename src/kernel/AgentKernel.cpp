@@ -555,6 +555,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // so adapters can register into it during Phase 2
         m_channelsTool = new ChannelsTool();
         m_channelsTool->SetConfigStore(m_configStore);
+        m_channelsTool->SetChannelContextStore(m_channelContextStore);
         // Note: m_channelManager is null here — wired in Initialize()
         m_tools.Register(std::unique_ptr<IToolHandler>(m_channelsTool));
         m_adminServer->SetChannelsTool(m_channelsTool);
