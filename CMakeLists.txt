@@ -387,6 +387,7 @@ add_library(animus_kernel
   src/kernel/context/ContextProviderRegistry.cpp
   src/kernel/context/IdentityProvider.cpp
   src/kernel/context/SessionNotesProvider.cpp
+  src/kernel/context/ChannelContextProvider.cpp
   src/kernel/context/SessionReportProvider.cpp
   src/kernel/context/ActiveMemoryProvider.cpp
             src/kernel/context/ChannelContextProvider.cpp

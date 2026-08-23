@@ -82,9 +82,9 @@
 #include "animus_kernel/ContextProviderRegistry.h"
 #include "animus_kernel/context/IdentityProvider.h"
 #include "animus_kernel/context/SessionNotesProvider.h"
+#include "animus_kernel/context/ChannelContextProvider.h"
 #include "animus_kernel/context/SessionReportProvider.h"
 #include "animus_kernel/context/ActiveMemoryProvider.h"
-#include "animus_kernel/context/ChannelContextProvider.h"
 #include "animus_kernel/context/RuntimeEnvironmentProvider.h"
 #include "animus_kernel/context/TemporalContextProvider.h"
 
@@ -415,6 +415,14 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         m_contextRegistry->Register(std::make_unique<TemporalContextProvider>(m_agendaStore));
         m_contextRegistry->Register(
             std::make_unique<SessionNotesProvider>(m_sessionNotesStore));
+
+        // Channel Context Provider (#15) — renders trusted channel arrivals
+        // as a system-message context block. Reads from ChannelContextStore
+        // (#14), written by ExecuteChannelDispatch before the chain runs.
+        if (m_channelContextStore) {
+            m_contextRegistry->Register(
+                std::make_unique<ChannelContextProvider>(m_channelContextStore));
+        }
         m_contextRegistry->Register(
             std::make_unique<SessionReportProvider>(
                 m_sessionReportStore, m_embeddingService));
@@ -422,8 +430,6 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             std::make_unique<ActiveMemoryProvider>(
                 m_memoryStore, m_diaryStore, m_ontologyStore, m_memoryFileStore,
                 m_sessionTagsStore, m_sessionManager, m_scheduler, m_embeddingService));
-        m_contextRegistry->Register(
-            std::make_unique<ChannelContextProvider>());
         m_chainRunner->SetContextRegistry(m_contextRegistry);
         m_adminServer->SetContextRegistry(m_contextRegistry);
 
