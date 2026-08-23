@@ -466,3 +466,6 @@ Apache License 2.0. See `LICENSE` for details.
 ---
 
 *Animus is under active development. The architecture and API surface are stabilizing but not yet frozen.*
+## Contributor API lane
+
+See [docs/contributor-api-lane.md](docs/contributor-api-lane.md).
