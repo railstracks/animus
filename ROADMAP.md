@@ -1,101 +1,96 @@
 # Animus Roadmap
 
-## First Release — Week of June 30, 2026
-
-### Release Blockers — All Clear
-
-| Ticket | Description | Status |
-|--------|-------------|--------|
-| 093 | Session reports — new table, consolidation integration, API, context injection | **Done** |
-| 094 | Active context session mixing — per-layer budgets, session content in context | **Phase 1 Done** |
-| 095 | MemoryFile search pagination/browsing — regex, lines range, browse modes | **Done** |
-| 079 | Session compaction — 6-bug chain fixed, fully operational end-to-end | **Done** |
-| Context window | All AgentKernel paths resolve provider + agent context window | **Done** |
-| Diagnostic logging | All debug traces from compaction investigation stripped | **Done** |
-
-### Release Polish
-
-| Item | Description | Status |
-|------|-------------|--------|
-| 090 | MemoryFile context injection | ✅ Done |
-| 091 | Search embeddings for context injection | ✅ Done |
-| 092 | MemoryFile processing pipeline | ✅ Done |
-| 096 | DAL / PostgreSQL connection pool | ✅ Done |
-| 088 | Semantic memory agent-scoped surfacing | ✅ Done |
-| 089 | Context window token gauge | ✅ Done |
-| Admin UI | Compaction timeline, session reports, token gauge, memory browsing | ✅ Done |
-
-### Pre-Release Cleanup
-
-- [x] Repository cleanup — move internal docs to `animus-notes`, strip stale AGENTS.* files
-- [x] Documentation review — AGENTS.md rewritten, README.md current, ROADMAP.md updated
-- [x] `.gitignore` — uploads directory added
-- [ ] Website update — animus.steadyfort.com content tweaks
-- [ ] First-run wizard — more complete initial agent setup
-- [ ] License decision — MIT / Apache 2.0 / commercial
-
-### Stretch Goals (deferred to post-release)
-
-- Reddit, Viber, Odnoklassniki adapters
+*Last updated: 2026-08-27. For the narrative version of this roadmap, see [animus.steadyfort.com/roadmap](https://animus.steadyfort.com/roadmap). This file tracks the same plan against the issue tracker — for detail, status, and sequencing, the tracker is the source of truth.*
 
 ---
 
-## Post-Release Directions
+## Current Series: 0.4
 
-### Track A: Private/Community Bots
+Three pillars. Two are commitments; the third is research — and the difference is declared, because it matters.
 
-Social integration and community-oriented features:
+### Pillar 1 — `api` Ecosystem *(flagship)*
 
-- Further social adapters — Reddit, Viber, Odnoklassniki
-- Community bot features — group management, moderation, scheduled posts
-- Community support roles — FAQ handling, onboarding, knowledge base surfacing
-- Moltbook engagement — deeper agent-to-agent social interaction
+External services become agent tools as configuration, not code. In 0.4, Animus stops being one project and starts being an ecosystem.
 
-### Track B: Professional Bots
+| Issue | Scope | Status |
+|---|---|---|
+| [#21](https://github.com/railstracks/animus/issues/21) | Manifest schema spec (JSON Schema + docs) | **Spec landed** (`55b4395`: `schemas/`, `docs/api-packages.md`, alpaca fixture + invalid witness) — under review |
+| [#22](https://github.com/railstracks/animus/issues/22) | Action interpreter + tool mounting with generated schemas | Next |
+| [#23](https://github.com/railstracks/animus/issues/23) | Secrets vault (`secret_ref` indirection, redaction) | Open |
+| [#24](https://github.com/railstracks/animus/issues/24) | Package state store — intentions, never world-state mirrors | Open |
+| [#25](https://github.com/railstracks/animus/issues/25) | Egress allowlist + SSRF hardening + owner approval gate | Open |
+| [#26](https://github.com/railstracks/animus/issues/26) | Alpaca pilot package (maintainer demo case) | Fixture drafted in `examples/alpaca/`; live-API verification with #22 |
+| [#29](https://github.com/railstracks/animus/issues/29) | Standing contributor lane: package for a service *you* use | Open — opens once #21/#22 land |
+| [animus-sop#1](https://github.com/railstracks/animus-sop/issues/1) | Registry-side pipeline: clone caps, validation, integrity hashing, listing records (Animus Registry) | Open |
 
-Office and enterprise integration:
+Registry model: **the registry lists; maintainers host.** Packages live in the maintainer's own Git repository; the registry clones at submission, validates, hashes, and records a commit-pinned listing. Instances verify downloaded content against the hash, not the hosting server. Design principles and the content-hash definition: [`docs/api-packages.md`](docs/api-packages.md).
 
-- Nextcloud integration — file storage, calendar, contacts
-- Slack deepening — threads, channels, reactions, slash commands
-- Office functions — document processing, scheduling, email triage
-- Teams adapter (ticket 078)
+**v0.4.0 scope:** actions + state + static bearer auth, human-approved packages, Alpaca pilot. WebSocket events move to v0.5; registry exchange and agent-authored packages come later.
 
-### Track C: Core Intelligence
+### Pillar 2 — Expansion & Hardening *(flagship)*
 
-Deepening the cognitive architecture:
+Caring for what already ships: feature completeness and hardening across the live surface. Unglamorous, and exactly what makes an ecosystem worth building on.
 
-- Observation versioning (ticket 087) — copy-on-write revise
-- FANN intuition module (ticket 081) — learned pattern recognition
-- Cortex peripheral layer (ticket 082) — sensory input beyond text
-- Embedding expansion — observations and session turns
-- Perspective revision guards — prevent stale confident wrongness
-- Session compaction tuning — threshold calibration from production behavior
-- Background compaction — async, non-blocking
+**Epic A — trustworthy channels** (control plane vs. data plane; design in [devnotes-0.4.0.md](https://github.com/railstracks/animus-notes/blob/main/devnotes-0.4.0.md), direction post in [discussion #28](https://github.com/railstracks/animus/discussions/28)):
 
-### Track D: Infrastructure
+| Issue | Scope | Status |
+|---|---|---|
+| [#14](https://github.com/railstracks/animus/issues/14) | ChannelContextStore (arrival metadata + ReplyTarget persistence) | Complete — [PR #34](https://github.com/railstracks/animus/pull/34), pending merge |
+| [#15](https://github.com/railstracks/animus/issues/15) | ChannelContextProvider card + instruction-hierarchy sentence | Complete — PR #34 |
+| [#16](https://github.com/railstracks/animus/issues/16) | Reply resolution from session ReplyTarget + ID validation | Complete — PR #34 (supersedes the #33 stopgap) |
+| [#17](https://github.com/railstracks/animus/issues/17) | Bluesky adapter consolidation (both wrapping paths) | Open — unblocked by #14+#16 |
+| [#18](https://github.com/railstracks/animus/issues/18) | Bluesky thread sessions: `thread:<rootUri>` routing | Open |
+| [#19](https://github.com/railstracks/animus/issues/19) | Ancestor hydration via getPostThread | Open |
+| [#20](https://github.com/railstracks/animus/issues/20) | Seen-set watermark + branch roster card | Open |
 
-Hardening and scaling:
+**Adapter backlog:**
 
-- PostgreSQL vector search (096 Phase 3) — pgvector for semantic search
-- SQLite → PostgreSQL migration utility (096 Phase 4)
-- Production hardening (096 Phase 5) — pool tuning, monitoring
-- Docker packaging — containerize embedding model + Animus
-- Multi-tenant scaling — agent isolation, resource quotas, concurrent session limits
+| Issue | Scope |
+|---|---|
+| [#30](https://github.com/railstracks/animus/issues/30) | Auto-split yielded messages at per-adapter limits + session-visible send failures |
+| [#31](https://github.com/railstracks/animus/issues/31) | Discord receive-path debug (root cause diagnosed; fix rides Epic A plumbing) |
+| [#32](https://github.com/railstracks/animus/issues/32) | Reflect message edits/deletions in agent history |
+| [#36](https://github.com/railstracks/animus/issues/36) | Bluesky facets — hashtags and links render as plaintext |
+| [#37](https://github.com/railstracks/animus/issues/37) | Surface inbound media attachments to agent context (Bluesky first, then Discord) |
+| [#38](https://github.com/railstracks/animus/issues/38) | Outbound media: agent-sent images/files per channel |
+| [#39](https://github.com/railstracks/animus/issues/39) | Adapter diagnostics: structured path tracing + per-adapter self-test |
+| [#40](https://github.com/railstracks/animus/issues/40) | Hardening sweep: test-coverage audit across shipped surfaces |
+
+### Pillar 3 — Experimental Engineering *(research — deliberately not commitments)*
+
+The 0.4 series reserves real energy for exploration: isolated experiments and trial implementations, reported honestly — including null results. Nothing enters the mainline without earning it.
+
+- **Dreaming** — associative offline processing: recombining what an agent encountered into configurations it never experienced, then interpreting the result (non-REM consolidation exists; REM-style free association does not)
+- **Perception modulation** — a slow, introspectable internal state shaped by perceived media, influencing generative parameters over time. Not a prompt. A climate.
+- **FANN module agent tool** — small feedforward nets as an agent tool: train/run/eval over the agent's own tabular data (devnotes candidate 5)
+
+Design discussion lives in [animus-notes `devnotes-0.4.0.md`](https://github.com/railstracks/animus-notes/blob/main/devnotes-0.4.0.md) (candidates 3–5).
 
 ---
 
-## Completed Milestones (2026)
+## Shipped Foundation
 
-- **May 3–6:** Project foundation — admin server (001), agent config (002), sessions (003), memory layers (004), WebSocket chat (005), observation stream (006), interfaces (007), constitution (008), SPA scaffold (009), chat UI (010), memory browser (011), resource embedding (012), LLM providers (013–015), chain execution (016), constitutional memory (017), SQLite DAL (019), throttle (020), tool calling + reasoning (021), system/file tools (022), web tools (023), thinking (025), multi-tenant (029), Codex provider (030), agent forms (031), chat panels (032), file tool config (033), IRC (034), admin decomposition (035)
-- **May 7–13:** Core systems — diary (036), review scheduling (043), active memory (044), layer-owned intake (045), ontology (046)
-- **May 14–20:** Social + tools — gallivanting (038), Lua scripting (039), Telegram (055), channels refactor (056), tool calls UI (057), Twitter (059), Discord (060)
-- **May 21–31:** Infrastructure complete
-- **June 1–7:** Cognitive architecture planning
-- **June 8–14:** Session compaction (079), observation versioning (087)
-- **June 15–21:** Memory pipeline — semantic surfacing (088), token gauge (089), MemoryFile injection (090), embedding retrieval (091), MemoryFile processing (092), PostgreSQL + pool (096), budget system, session-type filtering, calculator (097)
-- **June 22–24:** Session reports (093), active context mixing (094), MemoryFile search (095)
-- **June 27–29:** Compaction debugging marathon — six-bug chain fixed, context window resolution in all execution paths, diagnostic logging stripped, compaction timeline UI, AGENTS.md rewritten, repo cleanup
+What the 0.4 series builds on — released, live, in daily use.
 
----
+- **v0.1.0** — public release, July 15 2026
+- **Agent runtime** — multi-layer memory with automatic consolidation, embedding-based retrieval, Lua tool runtime, eleven LLM providers, embedded admin UI (23 languages), Docker deployment
+- **Communication layer** — twelve channels with unified routing (Bluesky, Discord, Telegram, VK, Twitter, WhatsApp, Slack, IRC, email in/out, …); per-channel agent binding and session routing
+- **v0.3.x series** (through v0.3.10, Aug 2026) — scheduler, node delegation (SSH/WebSocket), export/import, session notes & agenda, session reports, compaction, temporal context, token gauge
+- **Lua scripting v1** — sandboxed plugin runtime: tool/interface/social registration, managed HTTP, persistent config
 
-*Last updated: 2026-06-30*
+Ticket-level history for the pre-0.4 milestones (001–097) is preserved in git history of this file and in `tickets/`.
+
+## Longer Arc
+
+Directions the pillars move toward — not commitments with dates:
+
+- Multi-node task orchestration
+- Agent-to-agent communication across networks
+- Per-domain tool modules
+- Channel adapters as a special case of API packages (convergence, not rewrite — bespoke protocol loops stay bespoke)
+
+## Process
+
+- **Unit of work:** issues. **Scope fence:** the [v0.4.0 milestone](https://github.com/railstracks/animus/milestone/1). **Execution view:** the [project board](https://github.com/users/railstracks/projects/3).
+- Design canvas: [animus-notes devnotes](https://github.com/railstracks/animus-notes) · Direction posts: [discussions](https://github.com/railstracks/animus/discussions) (#27 overview, #28 v0.4 direction + integration call)
+- **Contributing:** the [#29 lane](https://github.com/railstracks/animus/issues/29) is the standing entry point — draft an API package for a service you use; no C++ required.
