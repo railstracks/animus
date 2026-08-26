@@ -1,0 +1,142 @@
+{
+  "manifestVersion": 1,
+  "package": {
+    "name": "alpaca",
+    "version": "0.1.0",
+    "description": "Alpaca paper-trading: market browsing, OHLCV history, and order actions, with a local strategy book.",
+    "license": "MIT",
+    "keywords": ["trading", "markets", "alpaca", "paper-trading"],
+    "publisher": "railstracks"
+  },
+  "compatibility": {
+    "animus": ">=0.4.0"
+  },
+  "auth": {
+    "scheme": "headers",
+    "secrets": [
+      { "secretRef": "alpaca_key_id", "header": "APCA-API-KEY-ID" },
+      { "secretRef": "alpaca_secret_key", "header": "APCA-API-SECRET-KEY" }
+    ]
+  },
+  "egress": {
+    "domains": ["paper-api.alpaca.markets", "data.alpaca.markets"]
+  },
+  "state": {
+    "description": "Strategy book — intentions only. Positions exist nowhere else, so they live here: reasoning, entry time/price/volume, target exit, exit limits. Broker positions, balances, and live data are always pulled via actions, never mirrored into state.",
+    "advisoryMaxBytes": 262144,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "positions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "symbol": { "type": "string" },
+              "reasoning": { "type": "string", "description": "Why this position exists — the strategic intent." },
+              "opened_at": { "type": "string", "format": "date-time" },
+              "quantity": { "type": "number", "exclusiveMinimum": 0 },
+              "entry_price": { "type": "number" },
+              "target_exit_price": { "type": "number" },
+              "exit_limits": { "type": "string", "description": "Stop / limit conditions, as executable intent." }
+            },
+            "required": ["symbol", "reasoning", "quantity", "entry_price"]
+          }
+        }
+      }
+    }
+  },
+  "actions": [
+    {
+      "name": "browse_markets",
+      "summary": "List tradable assets on the paper account",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://paper-api.alpaca.markets/v2/assets",
+        "query": { "status": "active", "asset_class": "us_equity" },
+        "headers": { "Accept": "application/json" }
+      },
+      "response": { "processor": { "language": "lua", "file": "processors/markets.lua" } }
+    },
+    {
+      "name": "get_bars",
+      "summary": "OHLCV bar history for a symbol",
+      "params": {
+        "type": "object",
+        "properties": {
+          "symbol": { "type": "string", "minLength": 1, "maxLength": 10 },
+          "timeframe": { "enum": ["1Min", "5Min", "15Min", "1Hour", "1Day"], "default": "1Day" },
+          "start": { "type": "string", "description": "ISO-8601 or RFC-3339 inclusive start." },
+          "end": { "type": "string", "description": "ISO-8601 or RFC-3339 exclusive end." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 10000 }
+        },
+        "required": ["symbol"],
+        "additionalProperties": false
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://data.alpaca.markets/v2/stocks/{symbol}/bars",
+        "query": {
+          "timeframe": "{timeframe}",
+          "start": "{start}",
+          "end": "{end}",
+          "limit": "{limit}"
+        },
+        "headers": { "Accept": "application/json" }
+      },
+      "response": { "processor": { "language": "lua", "file": "processors/bars.lua" } }
+    },
+    {
+      "name": "submit_order",
+      "summary": "Submit a market order on the paper account",
+      "params": {
+        "type": "object",
+        "properties": {
+          "symbol": { "type": "string", "minLength": 1, "maxLength": 10 },
+          "qty": { "type": "number", "exclusiveMinimum": 0 },
+          "side": { "enum": ["buy", "sell"] }
+        },
+        "required": ["symbol", "qty", "side"],
+        "additionalProperties": false
+      },
+      "request": {
+        "method": "POST",
+        "url": "https://paper-api.alpaca.markets/v2/orders",
+        "headers": { "Accept": "application/json" },
+        "body": {
+          "contentType": "application/json",
+          "template": {
+            "symbol": "{symbol}",
+            "qty": "{qty}",
+            "side": "{side}",
+            "type": "market",
+            "time_in_force": "day"
+          }
+        }
+      },
+      "response": { "processor": { "language": "lua", "file": "processors/order.lua" } }
+    },
+    {
+      "name": "cancel_order",
+      "summary": "Cancel an open order by id",
+      "params": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "string", "minLength": 1 }
+        },
+        "required": ["order_id"],
+        "additionalProperties": false
+      },
+      "request": {
+        "method": "DELETE",
+        "url": "https://paper-api.alpaca.markets/v2/orders/{order_id}"
+      },
+      "response": { "processor": { "language": "lua", "file": "processors/cancel.lua" } }
+    }
+  ]
+}

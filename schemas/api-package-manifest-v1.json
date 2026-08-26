@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/railstracks/animus/main/schemas/api-package-manifest-v1.json",
+  "title": "Animus API package manifest (v1)",
+  "description": "Declarative description of a third-party service integration: typed actions (HTTP request templates + Lua response processors), optional reserved events, local state schema, vault-indirected auth, and an explicit egress allowlist. Consumed by the `api` tool (issue #22) and validated by the Animus Registry at submission (issue #21).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifestVersion", "package", "auth", "egress", "actions"],
+  "properties": {
+    "manifestVersion": { "const": 1 },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "description"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+          "description": "Globally unique package slug (registry namespace)."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$",
+          "description": "Semantic version of the package."
+        },
+        "description": { "type": "string", "minLength": 10, "maxLength": 500 },
+        "license": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9.+\\-]{3,40}$",
+          "description": "SPDX identifier (e.g. MIT, Apache-2.0)."
+        },
+        "homepage": { "type": "string", "pattern": "^https://[^\\s]+$" },
+        "repository": {
+          "type": "string",
+          "pattern": "^https://[^\\s]+$",
+          "description": "Informational. The registry listing record is the authoritative source provenance."
+        },
+        "keywords": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,30}$" }
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Informational display name of the maintaining party."
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "animus": {
+          "type": "string",
+          "pattern": "^[><=~^ ]*[0-9][0-9.]*",
+          "description": "Semver range of Animus versions this package is tested against, e.g. >=0.4.0."
+        }
+      }
+    },
+    "auth": {
+      "description": "Authentication scheme. Every secret is a vault reference (secretRef); literal credentials are structurally unrepresentable — the schema admits no field that carries a token value.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scheme"],
+          "properties": {
+            "scheme": { "const": "none" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scheme", "secretRef"],
+          "properties": {
+            "scheme": { "const": "bearer" },
+            "secretRef": { "$ref": "#/$defs/secretRef" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scheme", "secretRef", "header"],
+          "properties": {
+            "scheme": { "const": "header" },
+            "secretRef": { "$ref": "#/$defs/secretRef" },
+            "header": { "$ref": "#/$defs/headerName" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scheme", "secrets"],
+          "properties": {
+            "scheme": { "const": "headers" },
+            "secrets": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["secretRef", "header"],
+                "properties": {
+                  "secretRef": { "$ref": "#/$defs/secretRef" },
+                  "header": { "$ref": "#/$defs/headerName" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scheme", "secretRef", "query"],
+          "properties": {
+            "scheme": { "const": "query" },
+            "secretRef": { "$ref": "#/$defs/secretRef" },
+            "query": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,60}$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scheme", "userRef", "passRef"],
+          "properties": {
+            "scheme": { "const": "basic" },
+            "userRef": { "$ref": "#/$defs/secretRef" },
+            "passRef": { "$ref": "#/$defs/secretRef" }
+          }
+        }
+      ]
+    },
+    "egress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domains"],
+      "properties": {
+        "domains": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/hostname" },
+          "description": "Complete allowlist of hosts this package may contact — request templates, Lua processor HTTP calls, and event sockets are all constrained to it. No wildcards: hosts are exact."
+        }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "What this state holds and why it exists nowhere else. State holds intentions, never world-state mirrors."
+        },
+        "schema": {
+          "type": "object",
+          "description": "JSON Schema (draft 2020-12) describing the local state struct."
+        },
+        "advisoryMaxBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 1048576,
+          "description": "Advisory cap; the kernel enforces its own hard limit (issue #24)."
+        }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "summary", "params", "request", "response"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,40}$",
+            "description": "Action identifier; mounted as a tool per issue #22 (api.<package>.<name>)."
+          },
+          "summary": { "type": "string", "minLength": 5, "maxLength": 120 },
+          "description": { "type": "string", "maxLength": 2000 },
+          "params": {
+            "type": "object",
+            "description": "JSON Schema for the action's parameters. Must describe an object at the top level."
+          },
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["method", "url"],
+            "properties": {
+              "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+              "url": {
+                "type": "string",
+                "pattern": "^https://[A-Za-z0-9.\\-]+(:[0-9]+)?(/[A-Za-z0-9._{}\\-/%]*)?$",
+                "description": "Absolute https URL. {placeholder} segments reference declared params. http:// is rejected — secrets must never cross plaintext transport."
+              },
+              "query": {
+                "type": "object",
+                "additionalProperties": { "type": "string" },
+                "description": "Query parameters; values may contain {placeholders}."
+              },
+              "headers": {
+                "type": "object",
+                "additionalProperties": { "type": "string", "pattern": "^[^\\r\\n]+$" },
+                "propertyNames": { "pattern": "^[A-Za-z0-9\\-]+$" },
+                "description": "Static request headers (e.g. Accept). Auth headers are injected by the kernel from the vault — never declared here."
+              },
+              "body": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["contentType", "template"],
+                "properties": {
+                  "contentType": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.\\-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.\\-]*$" },
+                  "template": {
+                    "description": "Body template: an object (serialized as JSON) or a string (sent verbatim). String values may contain {placeholders}."
+                  }
+                }
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["processor"],
+            "properties": {
+              "processor": { "$ref": "#/$defs/processorRef" }
+            }
+          }
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "description": "Reserved for v0.5 (issue #22 phasing). v0.4 interpreters ignore this section with a warning.",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "transport", "url", "processor"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,40}$" },
+          "description": { "type": "string", "maxLength": 2000 },
+          "transport": { "const": "websocket" },
+          "url": {
+            "type": "string",
+            "pattern": "^wss://[A-Za-z0-9.\\-]+(:[0-9]+)?(/[A-Za-z0-9._{}\\-/%]*)?$"
+          },
+          "subscribe": {
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 16,
+            "items": { "type": "object" },
+            "description": "Frames to send after connect. Secret injection uses the {\"$secretRef\": \"name\"} marker object — never a literal."
+          },
+          "processor": { "$ref": "#/$defs/processorRef" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "secretRef": {
+      "type": "string",
+      "pattern": "^[a-z0-9_][a-z0-9_.\\-]{0,63}$",
+      "description": "Vault key resolved kernel-side (issue #23). Not a credential."
+    },
+    "headerName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9\\-]{1,64}$"
+    },
+    "hostname": {
+      "type": "string",
+      "pattern": "^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$",
+      "description": "Exact lowercase hostname, no scheme, path, or wildcard."
+    },
+    "processorRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "file"],
+      "properties": {
+        "language": { "const": "lua" },
+        "file": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_./\\-]{0,200}\\.lua$",
+          "description": "Path relative to the package root. Sandboxed Lua; runs under the egress allowlist and sandbox audit rules."
+        }
+      }
+    }
+  }
+}

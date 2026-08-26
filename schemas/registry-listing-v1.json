@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/railstracks/animus/main/schemas/registry-listing-v1.json",
+  "title": "Animus Registry listing record (v1)",
+  "description": "What the Animus Registry (animus-sop successor) records and serves for a submitted API package. Computed by the registry at submission time from a clone of the maintainer's repository — instances verify downloaded content against these values instead of trusting the hosting server. See docs/api-packages.md for the submission pipeline and content-hash definition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["listingVersion", "package", "source", "integrity", "submittedAt"],
+  "properties": {
+    "listingVersion": { "const": 1 },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$" },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git", "commit"],
+      "properties": {
+        "git": {
+          "type": "string",
+          "pattern": "^https://[^\\s]+$",
+          "description": "Maintainer-hosted Git repository the package was cloned from. The registry lists; maintainers host."
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Immutable commit the listing pins. Instances fetch exactly this commit and nothing else."
+        },
+        "ref": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "The ref (branch/tag) submitted, recorded for provenance. The commit is the pin; the ref is history."
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifestDigest", "contentHash"],
+      "properties": {
+        "manifestDigest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithm", "value"],
+          "properties": {
+            "algorithm": { "const": "sha256" },
+            "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        "contentHash": {
+          "description": "Hash over the combined source tree at the pinned commit (definition in docs/api-packages.md). Algorithm is carried in-band so a future sha256 switch does not change the record format.",
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["algorithm", "value"],
+              "properties": {
+                "algorithm": { "const": "md5" },
+                "value": { "type": "string", "pattern": "^[0-9a-f]{32}$" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["algorithm", "value"],
+              "properties": {
+                "algorithm": { "const": "sha256" },
+                "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Observed size stats at submission, recorded so drift is visible across versions.",
+      "properties": {
+        "treeBytes": { "type": "integer", "minimum": 1 },
+        "fileCount": { "type": "integer", "minimum": 1 },
+        "largestFileBytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "moderation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "official": { "type": "boolean" },
+        "status": { "enum": ["pending", "approved", "rejected"] }
+      }
+    },
+    "submittedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "submittedBy": { "type": "string", "minLength": 1, "maxLength": 80 }
+  }
+}

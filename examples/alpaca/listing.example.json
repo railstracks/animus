@@ -1,0 +1,30 @@
+{
+  "listingVersion": 1,
+  "package": { "name": "alpaca", "version": "0.1.0" },
+  "source": {
+    "git": "https://github.com/mrsommer/animus-pkg-alpaca.git",
+    "commit": "9f1c2ab45d6e7f8901234abcdef5678901234abc",
+    "ref": "main"
+  },
+  "integrity": {
+    "manifestDigest": {
+      "algorithm": "sha256",
+      "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "contentHash": {
+      "algorithm": "md5",
+      "value": "d41d8cd98f00b204e9800998ecf8427e"
+    }
+  },
+  "limits": {
+    "treeBytes": 18342,
+    "fileCount": 7,
+    "largestFileBytes": 5023
+  },
+  "moderation": {
+    "official": true,
+    "status": "approved"
+  },
+  "submittedAt": "2026-08-26T22:00:00Z",
+  "submittedBy": "mrsommer"
+}
