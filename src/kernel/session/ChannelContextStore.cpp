@@ -50,6 +50,16 @@ void ChannelContextStore::EnsureSchema() {
         "PRIMARY KEY (session_key, agent_id, uri))");
 }
 
+std::string ChannelContextStore::NormalizeSessionKey(const std::string& key) {
+    // Raw dispatch keys: "channel:chat:discord:1". SessionKey::ToString():
+    // "channel:chat:discord:1||" (connector|conversation|thread with empty
+    // trailing components). Strip trailing '|' so both forms canonicalize
+    // identically; non-empty trailing components are unaffected.
+    std::string k = key;
+    while (!k.empty() && k.back() == '|') k.pop_back();
+    return k;
+}
+
 ChannelArrival ChannelContextStore::AddArrival(const ChannelArrival& arrival) {
     const int64_t now = NowUnixMs();
 
@@ -62,7 +72,7 @@ ChannelArrival ChannelContextStore::AddArrival(const ChannelArrival& arrival) {
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)");
     if (!stmt) return {};
 
-    stmt->BindText(1, arrival.session_key);
+    stmt->BindText(1, NormalizeSessionKey(arrival.session_key));
     stmt->BindText(2, arrival.agent_id);
     stmt->BindText(3, arrival.channel_type);
     stmt->BindText(4, arrival.channel_name);
@@ -101,7 +111,7 @@ std::vector<ChannelArrival> ChannelContextStore::PendingArrivals(
         "ORDER BY id ASC");
     if (!stmt) return {};
 
-    stmt->BindText(1, sessionKey);
+    stmt->BindText(1, NormalizeSessionKey(sessionKey));
     stmt->BindText(2, agentId);
 
     std::vector<ChannelArrival> arrivals;
@@ -143,7 +153,7 @@ std::optional<ChannelArrival> ChannelContextStore::LatestArrival(
         "ORDER BY id DESC LIMIT 1");
     if (!stmt) return std::nullopt;
 
-    stmt->BindText(1, sessionKey);
+    stmt->BindText(1, NormalizeSessionKey(sessionKey));
     stmt->BindText(2, agentId);
 
     if (!stmt->Step()) return std::nullopt;
@@ -184,7 +194,7 @@ std::vector<ChannelArrival> ChannelContextStore::RecentArrivals(
         "ORDER BY id DESC LIMIT ?");
     if (!stmt) return {};
 
-    stmt->BindText(1, sessionKey);
+    stmt->BindText(1, NormalizeSessionKey(sessionKey));
     stmt->BindText(2, agentId);
     stmt->BindInt64(3, limit);
 
@@ -232,7 +242,7 @@ int ChannelContextStore::MarkAllConsumed(const std::string& sessionKey,
         "WHERE session_key = ? AND agent_id = ? AND consumed = 0");
     if (!stmt) return 0;
 
-    stmt->BindText(1, sessionKey);
+    stmt->BindText(1, NormalizeSessionKey(sessionKey));
     stmt->BindText(2, agentId);
     stmt->ExecDML();
     return static_cast<int>(m_store->Changes());
@@ -247,7 +257,7 @@ int ChannelContextStore::Prune(const std::string& sessionKey,
         "ORDER BY id DESC LIMIT -1 OFFSET ?)");
     if (!stmt) return 0;
 
-    stmt->BindText(1, sessionKey);
+    stmt->BindText(1, NormalizeSessionKey(sessionKey));
     stmt->BindText(2, agentId);
     stmt->BindInt64(3, keepLast);
     stmt->ExecDML();
@@ -261,7 +271,7 @@ int ChannelContextStore::Prune(const std::string& sessionKey,
             "WHERE session_key = ? AND agent_id = ? "
             "ORDER BY created_at_unix_ms DESC LIMIT -1 OFFSET 500)");
         if (uriStmt) {
-            uriStmt->BindText(1, sessionKey);
+            uriStmt->BindText(1, NormalizeSessionKey(sessionKey));
             uriStmt->BindText(2, agentId);
             uriStmt->ExecDML();
         }
@@ -277,7 +287,7 @@ bool ChannelContextStore::AddSeenUri(const std::string& sessionKey,
         "(session_key, agent_id, uri, created_at_unix_ms) VALUES (?, ?, ?, ?)");
     if (!stmt) return false;
 
-    stmt->BindText(1, sessionKey);
+    stmt->BindText(1, NormalizeSessionKey(sessionKey));
     stmt->BindText(2, agentId);
     stmt->BindText(3, uri);
     stmt->BindInt64(4, NowUnixMs());
@@ -293,7 +303,7 @@ bool ChannelContextStore::HasSeenUri(const std::string& sessionKey,
         "WHERE session_key = ? AND agent_id = ? AND uri = ?");
     if (!stmt) return false;
 
-    stmt->BindText(1, sessionKey);
+    stmt->BindText(1, NormalizeSessionKey(sessionKey));
     stmt->BindText(2, agentId);
     stmt->BindText(3, uri);
     const bool seen = stmt->Step();

@@ -164,6 +164,39 @@ int TestReopenPersistence() {
     return 0;
 }
 
+int TestKeyFormSeam() {
+    std::cerr << "  [ChannelContext] key-form seam (raw vs ToString)...\n";
+    const auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    ChannelContextStore store(&dataStore);
+
+    // Write raw dispatch form, read SessionKey::ToString() form
+    store.AddArrival(MakeArrival("channel:chat:discord:999", "agent-a", "m1"));
+    auto pending = store.PendingArrivals("channel:chat:discord:999||", "agent-a");
+    Assert(pending.size() == 1, "piped key reads raw-keyed arrival");
+    Assert(pending[0].session_key == "channel:chat:discord:999",
+           "stored key stays canonical");
+
+    // Seen-URI watermark across forms
+    store.AddSeenUri("channel:chat:discord:999", "agent-a", "u1");
+    Assert(store.HasSeenUri("channel:chat:discord:999||", "agent-a", "u1"),
+           "seen-uri cross-form");
+
+    // Consume-marking across forms
+    store.MarkAllConsumed("channel:chat:discord:999||", "agent-a");
+    auto latest = store.LatestArrival("channel:chat:discord:999", "agent-a");
+    Assert(latest.has_value() && latest->consumed, "mark-consumed cross-form");
+
+    // Normalization semantics
+    Assert(ChannelContextStore::NormalizeSessionKey("a||") == "a",
+           "normalize strips empty trailing components");
+    Assert(ChannelContextStore::NormalizeSessionKey("a|b") == "a|b",
+           "normalize keeps non-empty trailing components");
+    Assert(ChannelContextStore::NormalizeSessionKey("") == "",
+           "normalize handles empty");
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -173,6 +206,7 @@ int main() {
     TestPrune();
     TestSeenUris();
     TestReopenPersistence();
+    TestKeyFormSeam();
     if (g_failures == 0) {
         std::cerr << "  ALL PASSED\n";
         return 0;

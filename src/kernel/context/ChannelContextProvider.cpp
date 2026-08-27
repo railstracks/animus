@@ -101,9 +101,10 @@ std::optional<ContextBlock> ChannelContextProvider::Provide(
 
     const std::string sessionKey = session.Key().ToString();
 
-    // The store keys arrivals under "channel:" + sessionKey. The session
-    // key from SessionAccess is already in that form (ExecuteChannelDispatch
-    // creates sessions with the "channel:" prefix), so we query directly.
+    // The store keys arrivals under the raw dispatch form
+    // ("channel:chat:discord:123"). SessionKey::ToString() appends empty
+    // pipe-separated components ("...||"); the store normalizes keys at
+    // every boundary, so both producer forms hit the same rows.
     auto pending = m_store->PendingArrivals(sessionKey, agent.id);
     if (pending.empty()) return std::nullopt;
 

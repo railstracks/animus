@@ -109,6 +109,12 @@ public:
     static constexpr int kDefaultKeepArrivals = 20;
     static constexpr int kMaxArrivalsPerSession = 100;  // hard cap (Prune enforces)
 
+    // Canonicalize session keys across their two producer forms: raw dispatch
+    // keys ("channel:chat:discord:123") and SessionKey::ToString() output with
+    // trailing empty pipe components ("channel:chat:discord:123||"). Applied
+    // at every store boundary so lookups hit regardless of producer.
+    static std::string NormalizeSessionKey(const std::string& key);
+
 private:
     static int64_t NowUnixMs();
     IDataStore* m_store;

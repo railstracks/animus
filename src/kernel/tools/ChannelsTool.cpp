@@ -212,7 +212,7 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
     // trust boundary: if the model passes a post_id, it's the model's
     // choice; the store only provides defaults for omitted fields.
     ToolCall resolvedCall = call;
-    if (m_channelContextStore && action == "reply" && !platformId.empty()) {
+    if (m_channelContextStore && action == "reply") {
         std::string sessionKey = GetStringField(preArgs, "__session_key", "");
         std::string agentId = GetStringField(preArgs, "__agent_id", "");
 
@@ -233,15 +233,25 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
                     }
                 };
 
+                // Addressing first: platform_id routes the call to the adapter.
+                // Models often omit it on minimal replies — fill from the
+                // arrival so the call reaches the right platform.
+                fillIfMissing("platform_id", latest->platform_id);
+
                 // Bluesky: post_id (direct parent) + root_id (thread root)
                 fillIfMissing("post_id", latest->post_id);
                 fillIfMissing("root_id", latest->thread_root_id.empty()
                                              ? latest->post_id
                                              : latest->thread_root_id);
 
-                // Discord: channel_id + message_id
+                // Discord: channel_id + message_id. Live-truth mapping (Aug 27
+                // workstation verification): guild/wall messages carry the
+                // channel id in post_id, DMs in peer_id. channel_name is the
+                // configured instance name ("discord"), never a channel id.
                 if (latest->channel_type == "discord") {
-                    fillIfMissing("channel_id", latest->channel_name);
+                    fillIfMissing("channel_id", latest->post_id.empty()
+                                                     ? latest->peer_id
+                                                     : latest->post_id);
                     fillIfMissing("message_id", latest->source_message_id);
                 }
 

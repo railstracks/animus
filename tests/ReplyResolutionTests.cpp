@@ -76,17 +76,22 @@ int TestLatestArrivalProvidesReplyTargets() {
     discordArrival.session_key = "channel:discord:test";
     discordArrival.agent_id = "agent-a";
     discordArrival.channel_type = "discord";
-    discordArrival.channel_name = "123456789";
+    discordArrival.channel_name = "discord";   // instance name, never an id
     discordArrival.platform_id = "discord:PERSONAL";
     discordArrival.message_type = "mention";
     discordArrival.delivery = "tool";
+    discordArrival.post_id = "123456789";   // channel id rides post_id (wall)
     discordArrival.source_message_id = "987654321";
     store.AddArrival(discordArrival);
 
-    auto discordLatest = store.LatestArrival("channel:discord:test", "agent-a");
-    Assert(discordLatest.has_value(), "discord latest exists");
-    Assert(discordLatest->channel_name == "123456789",
-           "discord channel_id from channel_name");
+    // Read via SessionKey::ToString() form — the seam that broke #15/#16
+    // in production (trailing empty pipe components miss raw-keyed rows)
+    auto discordLatest = store.LatestArrival("channel:discord:test||", "agent-a");
+    Assert(discordLatest.has_value(), "discord latest exists (piped key)");
+    Assert(discordLatest->post_id == "123456789",
+           "discord channel id from post_id (wall targets)");
+    Assert(discordLatest->channel_name == "discord",
+           "channel_name is the instance name, not an id");
     Assert(discordLatest->source_message_id == "987654321",
            "discord message_id from source_message_id");
 
