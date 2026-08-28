@@ -10,6 +10,11 @@
 
 #include "animus_kernel/tools/ChannelsTool.h"
 #include "animus_kernel/ChannelContextStore.h"
+#include "animus_kernel/context/ChannelContextProvider.h"
+#include "animus_kernel/Session.h"
+#include "animus_kernel/AgentStore.h"
+
+#include <memory>
 #include "animus_kernel/SqliteDataStore.h"
 
 #include <iostream>
@@ -144,12 +149,61 @@ int TestLatestSurvivesConsumption() {
     return 0;
 }
 
+int TestProviderRendersForUnboundAgent() {
+    std::cerr << "  [reply-resolution] provider renders for unbound-agent session...\n";
+    const auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    ChannelContextStore store(&dataStore);
+    ChannelContextProvider provider(&store);
+
+    // Arrival exactly as the IRC dispatch writes it: raw colon-form key,
+    // agent_id = literal "default" (channel has no agent binding).
+    ChannelArrival arrival;
+    arrival.session_key = "channel:irc:irc:channel:#vm_test";
+    arrival.agent_id = "default";
+    arrival.channel_type = "irc";
+    arrival.channel_name = "irc";
+    arrival.platform_id = "irc:irc";
+    arrival.message_type = "chat";
+    arrival.delivery = "auto";
+    arrival.source_message_id = "m-irc-1";
+    store.AddArrival(arrival);
+
+    // The session as the chain sees it: whole dispatch key in the connector
+    // field (ToString() yields trailing pipes), agent "default", and an EMPTY
+    // Agent record — ChainRunner resolves Agent{} when GetById("default")
+    // misses. Pre-fix, the provider returned nullopt on agent.id.empty()
+    // and the card silently never rendered (live IRC failure, Aug 28).
+    SessionKey key{"channel:irc:irc:channel:#vm_test", "", ""};
+    auto session = std::make_shared<Session>(1, key);
+    session->SetAgentId("default");
+    SessionAccess access(session, SessionAccessMode::ReadOnly);
+
+    Agent emptyAgent{};
+    auto block = provider.Provide(emptyAgent, access);
+    Assert(block.has_value(), "card renders for unbound-agent session");
+    if (block) {
+        Assert(block->content.find("Message type: chat") != std::string::npos,
+               "card carries message type + auto-delivery semantics");
+        Assert(block->content.find("Source: irc") != std::string::npos,
+               "card carries origin line");
+    }
+
+    // Second arrival for same session must render as queue-flush (2 cards)
+    store.AddArrival(arrival);
+    auto block2 = provider.Provide(emptyAgent, access);
+    Assert(block2.has_value() && block2->content.find("Arrival 2 of 2") != std::string::npos,
+           "queue-flush renders one card per pending arrival");
+    return 0;
+}
+
 } // namespace
 
 int main() {
     std::cerr << "[ReplyResolutionTests]\n";
     TestLatestArrivalProvidesReplyTargets();
     TestLatestSurvivesConsumption();
+    TestProviderRendersForUnboundAgent();
     if (g_failures == 0) {
         std::cerr << "  ALL PASSED\n";
         return 0;

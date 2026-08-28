@@ -97,7 +97,18 @@ std::optional<ContextBlock> ChannelContextProvider::Provide(
         const Agent& agent,
         const SessionAccess& session) const {
     if (!m_store) return std::nullopt;
-    if (agent.id.empty()) return std::nullopt;
+
+    // Agent resolution: the store partitions arrivals by the agent id the
+    // DISPATCH recorded (session->AgentId(), AgentKernel ~1551). ChainRunner
+    // resolves the Agent RECORD via GetById(session.AgentId()) — for
+    // unbound channels (e.g. IRC without an agent binding) the session id
+    // is the literal "default", no such agent row exists, and the record
+    // resolves to an empty Agent{}. Querying by agent.id would then skip
+    // every arrival. Query by the session's own agent id — the same value
+    // the write side used — so cards render for bound and unbound channels
+    // alike. (Live-verified failure mode, Aug 28: IRC cards silently absent.)
+    const std::string sessionAgentId = session.AgentId();
+    if (sessionAgentId.empty()) return std::nullopt;
 
     const std::string sessionKey = session.Key().ToString();
 
@@ -105,7 +116,7 @@ std::optional<ContextBlock> ChannelContextProvider::Provide(
     // ("channel:chat:discord:123"). SessionKey::ToString() appends empty
     // pipe-separated components ("...||"); the store normalizes keys at
     // every boundary, so both producer forms hit the same rows.
-    auto pending = m_store->PendingArrivals(sessionKey, agent.id);
+    auto pending = m_store->PendingArrivals(sessionKey, sessionAgentId);
     if (pending.empty()) return std::nullopt;
 
     std::ostringstream content;
