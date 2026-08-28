@@ -1576,6 +1576,19 @@ void AgentKernel::ExecuteChannelDispatch(
                 arrival.reply_parent_id = meta.get("reply_parent_id", "").asString();
                 arrival.thread_root_id = meta.get("thread_root_id",
                                                   meta.get("root_id", "").asString()).asString();
+                if (meta.isMember("origin") && meta["origin"].isObject()) {
+                    Json::StreamWriterBuilder wb;
+                    wb["indentation"] = "";
+                    arrival.origin = Json::writeString(wb, meta["origin"]);
+                    // Conventional origin keys map into typed fields when the
+                    // adapter doesn't set them explicitly.
+                    if (arrival.author_handle.empty())
+                        arrival.author_handle =
+                            meta["origin"].get("user", "").asString();
+                    if (arrival.author_id.empty())
+                        arrival.author_id =
+                            meta["origin"].get("user_id", "").asString();
+                }
             }
         }
         if (arrival.message_type.empty()) {

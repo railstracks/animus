@@ -10,6 +10,8 @@
 #include "animus_kernel/ChannelManager.h"
 #include "animus_kernel/interfaces/IrcInterface.h"
 
+#include <json/json.h>
+
 namespace animus::kernel {
 
 using namespace channel_detail;
@@ -116,14 +118,26 @@ void IrcAdapter::OnMessage(const std::string& sourceNick,
     std::string sessionType = "irc";
     std::string sessionKey = sessionType + ":" + m_channelName + ":" + conversationId;
 
-    std::string replyHint = "\n\nYou are responding via IRC. Respond naturally — "
-        "your reply will be sent automatically. Do NOT use the social tool to reply.";
+    // Inline reply hints removed (#15): delivery semantics live in the
+    // Channel Context card (system message), not the user turn.
     std::string prompt;
     if (channelMessage) {
-        prompt = "IRC message from " + sourceNick + " in " + target + ":\n" + message + replyHint;
+        prompt = "IRC message from " + sourceNick + " in " + target + ":\n" + message;
     } else {
-        prompt = "IRC private message from " + sourceNick + ":\n" + message + replyHint;
+        prompt = "IRC private message from " + sourceNick + ":\n" + message;
     }
+
+    // Origin metadata (#15/#42): adapter-supplied source map. The card prints
+    // present keys only ("User: …", "Channel: …"). IRC has no platform ids;
+    // the channel key is omitted for DMs.
+    Json::Value origin;
+    origin["user"] = sourceNick;
+    if (channelMessage) origin["channel"] = target;
+    Json::Value dispatchMeta;
+    dispatchMeta["origin"] = origin;
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    const std::string metadata = Json::writeString(wb, dispatchMeta);
 
     ChannelReplyTarget replyTarget;
     replyTarget.channel_name = m_channelName;
@@ -132,7 +146,7 @@ void IrcAdapter::OnMessage(const std::string& sourceNick,
     replyTarget.irc_target = channelMessage ? target : sourceNick;
     replyTarget.interface_name = m_channelName;
 
-    m_ctx.dispatch(agentId, sessionKey, prompt, sessionType, replyTarget, "{}");
+    m_ctx.dispatch(agentId, sessionKey, prompt, sessionType, replyTarget, metadata);
 }
 
 void IrcAdapter::OnStatus(bool connected, std::uint64_t eventUnixMs) {
