@@ -90,7 +90,7 @@ ToolDefinition SessionsTool::GetDefinition() const {
     def.name = "sessions";
     def.description =
         "Access your session layer — list conversations, search history, "
-        "reply to other sessions, and maintain working notes for the current "
+        "and maintain working notes for the current "
         "session. Session notes are persistent bullet points that survive "
         "across turns — use them for reminders, decisions, and context that "
         "matters for this specific conversation.";
@@ -100,7 +100,7 @@ ToolDefinition SessionsTool::GetDefinition() const {
         "action", "string",
         "Session operation to perform",
         true, "", {
-            "list", "search", "history", "reply",
+            
             "notes:list", "notes:add", "notes:update",
             "notes:remove", "notes:reorder",
             "tags:list", "tags:set", "tags:remove",
@@ -136,13 +136,6 @@ ToolDefinition SessionsTool::GetDefinition() const {
     def.parameters.push_back({
         "limit", "integer",
         "Max messages to return (default 10, max 50)",
-        false
-    });
-
-    // reply parameters
-    def.parameters.push_back({
-        "message", "string",
-        "Message to send (required for reply)",
         false
     });
 
@@ -212,8 +205,6 @@ ToolResult SessionsTool::Execute(const ToolCall& call) {
         return HandleSearch(agentId, call.arguments);
     } else if (action == "history") {
         return HandleHistory(agentId, call.arguments);
-    } else if (action == "reply") {
-        return HandleReply(agentId, call.arguments);
     } else if (action == "notes:list") {
         return HandleNotesList(agentId, call.arguments);
     } else if (action == "notes:add") {
@@ -464,86 +455,6 @@ ToolResult SessionsTool::HandleHistory(const std::string& agentId,
 
 // ============================================================================
 // reply — send a message to another session
-// ============================================================================
-
-ToolResult SessionsTool::HandleReply(const std::string& agentId,
-                                      const std::string& rawArgs) {
-    ToolResult result;
-    result.call_id = "";
-
-    auto args = ParseArgs(rawArgs);
-    std::string sessionKey = GetStringField(args, "session_key", "");
-    std::string message = GetStringField(args, "message", "");
-
-    if (sessionKey.empty()) {
-        result.success = false;
-        result.error = "session_key is required for reply";
-        return result;
-    }
-    if (message.empty()) {
-        result.success = false;
-        result.error = "message is required for reply";
-        return result;
-    }
-
-    if (!m_sessions) {
-        result.success = false;
-        result.error = "session manager not available";
-        return result;
-    }
-
-    // Find the target session
-    auto allSessions = m_sessions->ListSessions();
-    std::shared_ptr<Session> target;
-    for (const auto& s : allSessions) {
-        if (s && s->Key().ToString() == sessionKey) {
-            target = s;
-            break;
-        }
-    }
-
-    if (!target) {
-        result.success = false;
-        result.error = "session not found: " + sessionKey;
-        return result;
-    }
-
-    if (target->AgentId() != agentId) {
-        result.success = false;
-        result.error = "session does not belong to this agent";
-        return result;
-    }
-
-    if (target->IsTerminated()) {
-        result.success = false;
-        result.error = "session is terminated";
-        return result;
-    }
-
-    // Add assistant turn to the target session
-    SessionTurn assistantTurn;
-    assistantTurn.role = "assistant";
-    assistantTurn.content = message;
-    assistantTurn.unix_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    target->AddTurn(std::move(assistantTurn));
-
-    // Flush the session so it persists
-    m_sessions->FlushSession(target->Id());
-
-    Json::Value body(Json::objectValue);
-    body["success"] = true;
-    body["session_key"] = sessionKey;
-    body["message"] = Truncate(message, 200);
-
-    // Note: actual delivery to the interface (Signal, WhatsApp, etc.) is
-    // handled by the session pipeline — the turn is stored and will be
-    // delivered on the next flush/routing cycle.
-
-    result.success = true;
-    result.output = ResultToJsonString(body);
-    return result;
-}
 
 // ============================================================================
 // notes:list
