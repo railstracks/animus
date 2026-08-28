@@ -309,6 +309,26 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
 
                 std::cerr << "[discord] READY — session_id=" << sessionId
                           << " bot_user_id=" << botUserId << std::endl;
+            } else if (eventType == "GUILD_CREATE") {
+                // #42: cache guild + channel names once per connection —
+                // names for cards/bodies/logs with zero extra REST calls.
+                state->discord_guild_name = GetString(data, "name");
+                if (data.isMember("channels") && data["channels"].isArray()) {
+                    for (const auto& ch : data["channels"]) {
+                        std::string id = GetString(ch, "id");
+                        std::string name = GetString(ch, "name");
+                        if (!id.empty() && !name.empty())
+                            state->discord_channel_names[id] = name;
+                    }
+                }
+                std::cerr << "[discord] GUILD_CREATE: " << state->discord_guild_name
+                          << " (" << state->discord_channel_names.size()
+                          << " channels cached)" << std::endl;
+            } else if (eventType == "CHANNEL_UPDATE") {
+                std::string cuId = GetString(data, "id");
+                std::string cuName = GetString(data, "name");
+                if (!cuId.empty() && !cuName.empty())
+                    state->discord_channel_names[cuId] = cuName;
             } else if (eventType == "RESUMED") {
                 std::cerr << "[discord] RESUMED — replayed missed events" << std::endl;
             } else if (eventType == "MESSAGE_CREATE") {
@@ -323,6 +343,7 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 std::string guildId = GetString(data, "guild_id");
                 std::string msgId = GetString(data, "id");
                 std::string authorUsername = GetString(data["author"], "username");
+                std::string authorDisplay = GetString(data["author"], "global_name"); // #42
 
                 // Deduplicate
                 if (state->seenEventStrIds.count(msgId)) break;
@@ -434,7 +455,12 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 if (isDm) {
                     displayText = "[DM] " + authorUsername + ": " + content;
                 } else {
-                    displayText = "[" + channelId + "] " + authorUsername + ": " + content;
+                    auto it = state->discord_channel_names.find(channelId);
+                    std::string chLabel = (it != state->discord_channel_names.end() &&
+                                           !it->second.empty())
+                                              ? "#" + it->second
+                                              : channelId; // cache miss: id fallback
+                    displayText = "[" + chLabel + "] " + authorUsername + ": " + content;
                 }
 
                 if (shouldRespond) {
@@ -455,7 +481,39 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 }
 
                 if (shouldRespond) {
-                    DispatchToSession(state, routingKey, displayText, "chat");
+                    // ── Dispatch metadata (#15/#42) ──
+                    // origin: display names alongside ids (ids stay canonical
+                    // for addressing; names are display-only — trust rule §4a).
+                    // message_id → arrival.source_message_id → the #16 reply
+                    // fill passes it as message_id for message-reference
+                    // replies. Before this, wall arrivals carried no message
+                    // id and the model improvised raw API calls to find one
+                    // (Aug 28 incident, 14-step reply).
+                    Json::Value meta;
+                    Json::Value origin;
+                    origin["user"] = authorUsername;
+                    if (!authorId.empty()) origin["user_id"] = authorId;
+                    if (!authorDisplay.empty()) origin["user_display"] = authorDisplay;
+                    if (isDm) {
+                        origin["channel"] = "Direct Message";
+                    } else {
+                        auto it = state->discord_channel_names.find(channelId);
+                        if (it != state->discord_channel_names.end() && !it->second.empty())
+                            origin["channel"] = it->second;
+                        if (!channelId.empty()) origin["channel_id"] = channelId;
+                        if (!state->discord_guild_name.empty())
+                            origin["server"] = state->discord_guild_name;
+                    }
+                    meta["origin"] = origin;
+                    meta["message_id"] = msgId;
+                    meta["message_type"] = isDm ? "chat" : "wall";
+                    meta["reply_instructions"] = isDm
+                        ? "Your text replies are delivered automatically; do NOT use the channels tool to send your reply"
+                        : "Reply using the channels tool with action=reply; channel_id and message_id are provided by the reply target and filled automatically. Text replies are NOT delivered.";
+                    Json::StreamWriterBuilder wb;
+                    wb["indentation"] = "";
+                    std::string metadata = Json::writeString(wb, meta);
+                    DispatchToSession(state, routingKey, displayText, "chat", metadata);
                 } else {
                     LogToSession(state, routingKey, displayText, "chat");
                 }

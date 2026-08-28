@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <map>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -206,6 +207,8 @@ private:
 
         // Discord Gateway state
         std::string discord_bot_user_id;
+        std::string discord_guild_name;                            // #42: GUILD_CREATE
+        std::map<std::string, std::string> discord_channel_names;  // #42: id -> name
 
         // WhatsApp state
         std::string whatsapp_qr_url;
