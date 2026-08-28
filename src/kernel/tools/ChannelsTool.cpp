@@ -79,6 +79,23 @@ ChannelsTool::ChannelsTool()
         "depends on configuration.")
 {}
 
+
+// ── Secret masking for channel config in tool output (#15 hardening) ──
+// Live incident Aug 28: list_channels leaked the Discord bot_token — the
+// config-store path's deny-list (access_jwt/app_password/access_token) had
+// drifted from the ChannelManager path's (bot_token/access_token/…), and the
+// token fell through the gap; the model then authed raw REST calls with it.
+// One shared rule now. Substring-based so future config fields named
+// *token*/*secret*/*password*/*jwt*/*api_key* are masked by default.
+static bool IsSensitiveConfigKey(const std::string& key) {
+    auto contains = [&](const char* needle) {
+        return key.find(needle) != std::string::npos;
+    };
+    return contains("token") || contains("secret") ||
+           contains("password") || contains("jwt") ||
+           key == "api_key";
+}
+
 ToolDefinition ChannelsTool::GetDefinition() const {
     // If we have an agent filter set, build a fresh filtered definition.
     // Otherwise use the finalized schema from FinalizeSchema().
@@ -632,9 +649,8 @@ ToolResult ChannelsTool::HandleCompositeAction(const ToolCall& call,
                     std::string platformId = rest.substr(0, dotPos);
                     std::string field = rest.substr(dotPos + 1);
 
-                    // Skip sensitive fields
-                    if (field == "access_jwt" || field == "app_password" ||
-                        field == "access_token") continue;
+                    // Skip sensitive fields (shared rule — see helper above)
+                    if (IsSensitiveConfigKey(field)) continue;
 
                     if (instanceMap.find(platformId) == instanceMap.end()) {
                         instanceMap[platformId] = Json::objectValue;
@@ -726,8 +742,7 @@ ToolResult ChannelsTool::HandleCompositeAction(const ToolCall& call,
                 // Merge non-sensitive config fields
                 if (!ch.config.isNull() && ch.config.isObject()) {
                     for (const auto& key : ch.config.getMemberNames()) {
-                        if (key == "bot_token" || key == "access_token" ||
-                            key == "app_password" || key == "password") continue;
+                        if (IsSensitiveConfigKey(key)) continue;
                         entry[key] = ch.config[key];
                     }
                 }
