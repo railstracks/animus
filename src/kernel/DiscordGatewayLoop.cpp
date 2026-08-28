@@ -666,6 +666,23 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
     // Run the event loop — blocks until quit() is called
     loop.loop();
 
+    // ── #31 fix: tear down the abandoned connection before reconnecting ──
+    // Previously the old wsPtr/event-loop were abandoned while still
+    // connected: the orphaned socket kept heartbeating the old session_id
+    // while the new cycle opened a second connection. Discord saw duplicate
+    // sessions — events were delivered to the zombie (two thread mentions
+    // eaten this way, Aug 29), then the shared session invalidated
+    // (INVALID_SESSION can_resume=0). Close, then stop, every cycle.
+    {
+        auto conn = wsPtr->getConnection();
+        if (conn && conn->connected()) {
+            std::cerr << "[discord] Closing previous connection before reconnect"
+                      << std::endl;
+            conn->forceClose();
+        }
+        wsPtr->stop();
+    }
+
         // Loop exited — either shutdown, RECONNECT, INVALID_SESSION, or connection close
         if (shouldReconnect && state->active) {
             // Brief delay before reconnecting to avoid hammering
