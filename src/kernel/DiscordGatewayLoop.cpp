@@ -448,7 +448,16 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                     shouldLog = true;
                 }
 
-                if (!shouldRespond && !shouldLog) break;
+                if (!shouldRespond && !shouldLog) {
+                    // Visible drop (Aug 29): config-filtered messages were
+                    // silently discarded before this line — silence cost a
+                    // false zombie-connection diagnosis. Every non-response
+                    // now states its reason.
+                    std::cerr << "[discord] Dropped (config): [" << channelId
+                              << "] " << authorUsername << ": "
+                              << content.substr(0, 80) << std::endl;
+                    break;
+                }
 
                 // Build message text
                 std::string displayText;
