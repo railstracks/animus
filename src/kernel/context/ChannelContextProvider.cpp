@@ -34,7 +34,13 @@ std::string ChannelContextProvider::RenderArrival(const ChannelArrival& a) const
     // email = email reply (tool required).
     ss << "Message type: " << a.message_type;
     if (a.delivery == "auto") {
-        ss << " — your text replies are delivered automatically";
+        // Explicit anti-affordance: the channels tool's post action advertises
+        // sending in its schema, and models follow schema affordances over
+        // passive statements (live-verified Aug 28: fresh DM session, card
+        // present, model still posted via tool — 3 calls for a one-line reply).
+        // This is delivery mechanics, not trust-prohibition.
+        ss << " — your text replies are delivered automatically; do NOT use "
+              "the channels tool to send replies";
     } else {
         ss << " — reply using the channels tool (text replies are NOT delivered)";
     }
