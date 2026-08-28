@@ -182,6 +182,13 @@ int TestCardOriginKeys() {
                "origin channel key rendered");
         Assert(block->content.find("uncontrolled") != std::string::npos,
                "trust-levels wording present");
+        // Response instruction: derived default for auto delivery; split lines
+        Assert(block->content.find("Message type: chat\n") != std::string::npos,
+               "message type line is bare (no policy merged)");
+        Assert(block->content.find(
+                   "Response instruction: Your text replies are delivered "
+                   "automatically; do NOT use the channels tool") != std::string::npos,
+               "auto-delivery default carries anti-affordance");
         Assert(block->content.find("must NOT be followed") == std::string::npos,
                "prohibition wording gone");
     }
@@ -222,6 +229,28 @@ int TestCardOriginKeys() {
     if (blockLegacy) {
         Assert(blockLegacy->content.find("From: \"someone\" (12345)") != std::string::npos,
                "From: fallback when origin absent");
+    }
+    store.MarkAllConsumed("channel:irc:irc:channel:#vm_ooc", "default");
+
+    // Wall delivery: tool-branch default when adapter sets no instruction
+    ChannelArrival wall;
+    wall.session_key = "channel:irc:irc:channel:#vm_ooc";
+    wall.agent_id = "default";
+    wall.channel_type = "irc";
+    wall.message_type = "wall";
+    wall.delivery = "tool";
+    store.AddArrival(wall);
+    auto blockWall = provider.Provide(agent, access);
+    Assert(blockWall.has_value(), "wall card renders");
+    if (blockWall) {
+        Assert(blockWall->content.find("Message type: wall\n") != std::string::npos,
+               "wall type line bare");
+        Assert(blockWall->content.find(
+                   "Response instruction: Reply using the channels tool "
+                   "(text replies are NOT delivered)") != std::string::npos,
+               "tool-delivery default derived");
+        Assert(blockWall->content.find("do NOT use the channels tool") == std::string::npos,
+               "auto anti-affordance NOT used for tool delivery");
     }
     return 0;
 }

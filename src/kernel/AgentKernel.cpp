@@ -1580,6 +1580,7 @@ void AgentKernel::ExecuteChannelDispatch(
                 arrival.reply_parent_id = meta.get("reply_parent_id", "").asString();
                 arrival.thread_root_id = meta.get("thread_root_id",
                                                   meta.get("root_id", "").asString()).asString();
+                arrival.reply_instructions = meta.get("reply_instructions", "").asString();
                 if (meta.isMember("origin") && meta["origin"].isObject()) {
                     Json::StreamWriterBuilder wb;
                     wb["indentation"] = "";

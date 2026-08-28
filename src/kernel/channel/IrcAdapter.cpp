@@ -135,6 +135,11 @@ void IrcAdapter::OnMessage(const std::string& sourceNick,
     if (channelMessage) origin["channel"] = target;
     Json::Value dispatchMeta;
     dispatchMeta["origin"] = origin;
+    // Channel-definition good form (#42): adapters state their delivery
+    // semantics explicitly rather than relying on the kernel default.
+    dispatchMeta["reply_instructions"] =
+        "Your text replies are delivered automatically; do NOT use the "
+        "channels tool to send your reply";
     Json::StreamWriterBuilder wb;
     wb["indentation"] = "";
     const std::string metadata = Json::writeString(wb, dispatchMeta);

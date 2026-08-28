@@ -32,19 +32,26 @@ std::string ChannelContextProvider::RenderArrival(const ChannelArrival& a) const
     // ── Message type ──
     // chat = DM (auto-delivered), wall = guild mention/post reply (tool required),
     // email = email reply (tool required).
-    ss << "Message type: " << a.message_type;
-    if (a.delivery == "auto") {
-        // Explicit anti-affordance: the channels tool's post action advertises
-        // sending in its schema, and models follow schema affordances over
-        // passive statements (live-verified Aug 28: fresh DM session, card
-        // present, model still posted via tool — 3 calls for a one-line reply).
-        // This is delivery mechanics, not trust-prohibition.
-        ss << " — your text replies are delivered automatically; do NOT use "
-              "the channels tool to send replies";
+    ss << "Message type: " << a.message_type << "\n";
+
+    // ── Response instruction (adapter-stated delivery semantics) ──
+    // Separate from message type: classification vs policy. Adapters SHOULD
+    // state their channel's semantics explicitly ("good form", #42); the
+    // kernel/card derives the standard line from delivery mode when unset.
+    // The auto-delivery default carries the explicit anti-affordance —
+    // schema affordances (channels post) beat passive statements
+    // (live-verified Aug 28: fresh session, card present, model still
+    // posted via tool until the negative was stated).
+    if (!a.reply_instructions.empty()) {
+        ss << "Response instruction: " << a.reply_instructions << "\n";
+    } else if (a.delivery == "auto") {
+        ss << "Response instruction: Your text replies are delivered "
+              "automatically; do NOT use the channels tool to send your "
+              "reply\n";
     } else {
-        ss << " — reply using the channels tool (text replies are NOT delivered)";
+        ss << "Response instruction: Reply using the channels tool (text "
+              "replies are NOT delivered)\n";
     }
-    ss << "\n";
 
     // ── Origin (adapter-supplied key/value pairs, present keys only) ──
     // The origin map is passed by the channel adapter through dispatch

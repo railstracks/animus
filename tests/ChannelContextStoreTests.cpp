@@ -187,6 +187,15 @@ int TestKeyFormSeam() {
     auto latest = store.LatestArrival("channel:chat:discord:999", "agent-a");
     Assert(latest.has_value() && latest->consumed, "mark-consumed cross-form");
 
+    // Reply instructions round-trip
+    auto ri = MakeArrival("channel:chat:irc:r1", "agent-a", "mo");
+    ri.reply_instructions = "Your text replies are delivered automatically";
+    store.AddArrival(ri);
+    auto rip = store.PendingArrivals("channel:chat:irc:r1", "agent-a");
+    Assert(rip.size() == 1 &&
+           rip[0].reply_instructions == ri.reply_instructions,
+           "reply_instructions round-trips");
+
     // Origin map round-trips compact JSON
     auto o = MakeArrival("channel:chat:irc:o1", "agent-a", "mo");
     o.origin = "{\"user\":\"priest^\",\"channel\":\"#vm_ooc\"}";

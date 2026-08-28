@@ -39,6 +39,10 @@ struct ChannelArrival {
     // --- Author (data, never instruction position) ---------------------------
     std::string author_id;           // platform-stable id (snowflake / DID / uid)
     std::string author_handle;       // display handle/name — attacker-influenced
+    std::string reply_instructions;  // adapter-stated delivery semantics for
+                                     // THIS channel ("Your text replies are
+                                     // delivered automatically; …"); kernel
+                                     // derives from delivery when unset.
     std::string origin;              // adapter-supplied origin map (compact JSON:
                                      // {"user":…,"channel":…,"trust":…}); card
                                      // prints present keys only. Trust attaches
