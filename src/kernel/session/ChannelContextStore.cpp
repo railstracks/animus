@@ -32,10 +32,16 @@ void ChannelContextStore::EnsureSchema() {
             source_message_id TEXT NOT NULL DEFAULT '',
             reply_parent_id TEXT NOT NULL DEFAULT '',
             thread_root_id TEXT NOT NULL DEFAULT '',
+            origin TEXT NOT NULL DEFAULT '',
             created_at_unix_ms INTEGER NOT NULL,
             consumed INTEGER NOT NULL DEFAULT 0
         );
     )");
+
+    // Migration: origin map column (#15/#42) for pre-origin schemas
+    if (!schema::ColumnExists(m_store, "channel_arrivals", "origin")) {
+        m_store->Exec("ALTER TABLE channel_arrivals ADD COLUMN origin TEXT NOT NULL DEFAULT ''");
+    }
 
     m_store->Exec(
         "CREATE INDEX IF NOT EXISTS idx_channel_arrivals_session "
@@ -67,9 +73,9 @@ ChannelArrival ChannelContextStore::AddArrival(const ChannelArrival& arrival) {
         "INSERT INTO channel_arrivals (session_key, agent_id, channel_type, "
         "channel_name, platform_id, message_type, author_id, author_handle, "
         "delivery, peer_id, post_id, group_id, email_thread_id, "
-        "source_message_id, reply_parent_id, thread_root_id, "
+        "source_message_id, reply_parent_id, thread_root_id, origin, "
         "created_at_unix_ms, consumed) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)");
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)");
     if (!stmt) return {};
 
     stmt->BindText(1, NormalizeSessionKey(arrival.session_key));
@@ -88,7 +94,8 @@ ChannelArrival ChannelContextStore::AddArrival(const ChannelArrival& arrival) {
     stmt->BindText(14, arrival.source_message_id);
     stmt->BindText(15, arrival.reply_parent_id);
     stmt->BindText(16, arrival.thread_root_id);
-    stmt->BindInt64(17, now);
+    stmt->BindText(17, arrival.origin);
+    stmt->BindInt64(18, now);
     stmt->ExecDML();
     stmt->Finalize();
 
@@ -105,7 +112,8 @@ std::vector<ChannelArrival> ChannelContextStore::PendingArrivals(
         "SELECT id, session_key, agent_id, channel_type, channel_name, "
         "platform_id, message_type, author_id, author_handle, delivery, "
         "peer_id, post_id, group_id, email_thread_id, source_message_id, "
-        "reply_parent_id, thread_root_id, created_at_unix_ms, consumed "
+        "reply_parent_id, thread_root_id, origin, "
+        "created_at_unix_ms, consumed "
         "FROM channel_arrivals "
         "WHERE session_key = ? AND agent_id = ? AND consumed = 0 "
         "ORDER BY id ASC");
@@ -134,8 +142,9 @@ std::vector<ChannelArrival> ChannelContextStore::PendingArrivals(
         a.source_message_id = stmt->ColumnText(14);
         a.reply_parent_id = stmt->ColumnText(15);
         a.thread_root_id = stmt->ColumnText(16);
-        a.created_at_unix_ms = stmt->ColumnInt64(17);
-        a.consumed = stmt->ColumnInt64(18) != 0;
+        a.origin = stmt->ColumnText(17);
+        a.created_at_unix_ms = stmt->ColumnInt64(18);
+        a.consumed = stmt->ColumnInt64(19) != 0;
         arrivals.push_back(std::move(a));
     }
     return arrivals;
@@ -147,7 +156,8 @@ std::optional<ChannelArrival> ChannelContextStore::LatestArrival(
         "SELECT id, session_key, agent_id, channel_type, channel_name, "
         "platform_id, message_type, author_id, author_handle, delivery, "
         "peer_id, post_id, group_id, email_thread_id, source_message_id, "
-        "reply_parent_id, thread_root_id, created_at_unix_ms, consumed "
+        "reply_parent_id, thread_root_id, origin, "
+        "created_at_unix_ms, consumed "
         "FROM channel_arrivals "
         "WHERE session_key = ? AND agent_id = ? "
         "ORDER BY id DESC LIMIT 1");
@@ -176,8 +186,9 @@ std::optional<ChannelArrival> ChannelContextStore::LatestArrival(
     a.source_message_id = stmt->ColumnText(14);
     a.reply_parent_id = stmt->ColumnText(15);
     a.thread_root_id = stmt->ColumnText(16);
-    a.created_at_unix_ms = stmt->ColumnInt64(17);
-    a.consumed = stmt->ColumnInt64(18) != 0;
+    a.origin = stmt->ColumnText(17);
+    a.created_at_unix_ms = stmt->ColumnInt64(18);
+    a.consumed = stmt->ColumnInt64(19) != 0;
     return a;
 }
 
@@ -188,7 +199,8 @@ std::vector<ChannelArrival> ChannelContextStore::RecentArrivals(
         "SELECT id, session_key, agent_id, channel_type, channel_name, "
         "platform_id, message_type, author_id, author_handle, delivery, "
         "peer_id, post_id, group_id, email_thread_id, source_message_id, "
-        "reply_parent_id, thread_root_id, created_at_unix_ms, consumed "
+        "reply_parent_id, thread_root_id, origin, "
+        "created_at_unix_ms, consumed "
         "FROM channel_arrivals "
         "WHERE session_key = ? AND agent_id = ? "
         "ORDER BY id DESC LIMIT ?");
@@ -218,8 +230,9 @@ std::vector<ChannelArrival> ChannelContextStore::RecentArrivals(
         a.source_message_id = stmt->ColumnText(14);
         a.reply_parent_id = stmt->ColumnText(15);
         a.thread_root_id = stmt->ColumnText(16);
-        a.created_at_unix_ms = stmt->ColumnInt64(17);
-        a.consumed = stmt->ColumnInt64(18) != 0;
+        a.origin = stmt->ColumnText(17);
+        a.created_at_unix_ms = stmt->ColumnInt64(18);
+        a.consumed = stmt->ColumnInt64(19) != 0;
         arrivals.push_back(std::move(a));
     }
     return arrivals;

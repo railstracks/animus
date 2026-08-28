@@ -187,6 +187,13 @@ int TestKeyFormSeam() {
     auto latest = store.LatestArrival("channel:chat:discord:999", "agent-a");
     Assert(latest.has_value() && latest->consumed, "mark-consumed cross-form");
 
+    // Origin map round-trips compact JSON
+    auto o = MakeArrival("channel:chat:irc:o1", "agent-a", "mo");
+    o.origin = "{\"user\":\"priest^\",\"channel\":\"#vm_ooc\"}";
+    store.AddArrival(o);
+    auto op = store.PendingArrivals("channel:chat:irc:o1", "agent-a");
+    Assert(op.size() == 1 && op[0].origin == o.origin, "origin JSON round-trips");
+
     // Normalization semantics
     Assert(ChannelContextStore::NormalizeSessionKey("a||") == "a",
            "normalize strips empty trailing components");

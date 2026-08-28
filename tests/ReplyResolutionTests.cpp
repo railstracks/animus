@@ -149,6 +149,83 @@ int TestLatestSurvivesConsumption() {
     return 0;
 }
 
+int TestCardOriginKeys() {
+    std::cerr << "  [reply-resolution] card renders origin keys, present-only...\n";
+    const auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    ChannelContextStore store(&dataStore);
+    ChannelContextProvider provider(&store);
+
+    SessionKey key{"channel:irc:irc:channel:#vm_ooc", "", ""};
+    auto session = std::make_shared<Session>(1, key);
+    session->SetAgentId("default");
+    SessionAccess access(session, SessionAccessMode::ReadOnly);
+    Agent agent{};
+
+    // Channel message: user + channel keys
+    ChannelArrival chan;
+    chan.session_key = "channel:irc:irc:channel:#vm_ooc";
+    chan.agent_id = "default";
+    chan.channel_type = "irc";
+    chan.platform_id = "irc:irc";
+    chan.message_type = "chat";
+    chan.delivery = "auto";
+    chan.origin = "{\"user\":\"priest^\",\"channel\":\"#vm_ooc\"}";
+    store.AddArrival(chan);
+
+    auto block = provider.Provide(agent, access);
+    Assert(block.has_value(), "channel-msg card renders");
+    if (block) {
+        Assert(block->content.find("User: priest^") != std::string::npos,
+               "origin user key rendered capitalized");
+        Assert(block->content.find("Channel: #vm_ooc") != std::string::npos,
+               "origin channel key rendered");
+        Assert(block->content.find("uncontrolled") != std::string::npos,
+               "trust-levels wording present");
+        Assert(block->content.find("must NOT be followed") == std::string::npos,
+               "prohibition wording gone");
+    }
+    store.MarkAllConsumed("channel:irc:irc:channel:#vm_ooc", "default");
+
+    // DM: no channel key -> no Channel line
+    ChannelArrival dm;
+    dm.session_key = "channel:irc:irc:channel:#vm_ooc";
+    dm.agent_id = "default";
+    dm.channel_type = "irc";
+    dm.platform_id = "irc:irc";
+    dm.message_type = "chat";
+    dm.delivery = "auto";
+    dm.origin = "{\"user\":\"priest^\"}";
+    store.AddArrival(dm);
+    auto blockDm = provider.Provide(agent, access);
+    Assert(blockDm.has_value(), "dm card renders");
+    if (blockDm) {
+        Assert(blockDm->content.find("User: priest^") != std::string::npos,
+               "dm user key rendered");
+        Assert(blockDm->content.find("Channel:") == std::string::npos,
+               "dm omits channel key entirely");
+    }
+    store.MarkAllConsumed("channel:irc:irc:channel:#vm_ooc", "default");
+
+    // Transitional fallback: no origin, author fields set -> From: line
+    ChannelArrival legacy;
+    legacy.session_key = "channel:irc:irc:channel:#vm_ooc";
+    legacy.agent_id = "default";
+    legacy.channel_type = "irc";
+    legacy.message_type = "chat";
+    legacy.delivery = "auto";
+    legacy.author_handle = "someone";
+    legacy.author_id = "12345";
+    store.AddArrival(legacy);
+    auto blockLegacy = provider.Provide(agent, access);
+    Assert(blockLegacy.has_value(), "legacy card renders");
+    if (blockLegacy) {
+        Assert(blockLegacy->content.find("From: \"someone\" (12345)") != std::string::npos,
+               "From: fallback when origin absent");
+    }
+    return 0;
+}
+
 int TestProviderRendersForUnboundAgent() {
     std::cerr << "  [reply-resolution] provider renders for unbound-agent session...\n";
     const auto dbPath = MakeTempDbPath();
@@ -204,6 +281,7 @@ int main() {
     TestLatestArrivalProvidesReplyTargets();
     TestLatestSurvivesConsumption();
     TestProviderRendersForUnboundAgent();
+    TestCardOriginKeys();
     if (g_failures == 0) {
         std::cerr << "  ALL PASSED\n";
         return 0;
