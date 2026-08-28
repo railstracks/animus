@@ -396,7 +396,11 @@ ChainResult ChainRunner::ExecuteOnSession(
 
         if (!userVisibleText.empty()) {
             result.response = userVisibleText;
-            if (assistantMessageCallback) {
+            // Deliver to the channel only when this step made no tool calls:
+            // text alongside a tool call is loop narration ("Let me check…"),
+            // not a user-facing reply. (Aug 28 DM leak: one intent delivered
+            // as four messages — narration shipped per-segment.)
+            if (toolCallsThisStep == 0 && assistantMessageCallback) {
                 assistantMessageCallback(userVisibleText);
             }
         }
@@ -682,7 +686,11 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         }
         if (!userVisibleText.empty()) {
             result.response = userVisibleText;
-            if (assistantMessageCallback) {
+            // Deliver to the channel only when this step made no tool calls:
+            // text alongside a tool call is loop narration ("Let me check…"),
+            // not a user-facing reply. (Aug 28 DM leak: one intent delivered
+            // as four messages — narration shipped per-segment.)
+            if (toolCallsThisStep == 0 && assistantMessageCallback) {
                 assistantMessageCallback(userVisibleText);
             }
         }

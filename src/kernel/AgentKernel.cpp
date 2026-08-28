@@ -1482,9 +1482,13 @@ void AgentKernel::ExecuteChannelDispatch(
     auto session = m_sessionManager->GetOrCreate(key);
     if (!session) return;
 
-    // Ensure the session has the correct agent_id
-    if (!agentId.empty() && session->AgentId().empty()) {
-        session->SetAgentId(agentId);
+    // Ensure the session has the correct agent_id. Unbound adapters pass
+    // empty — 'default' is the canonical unbound id and the store's partition
+    // key. Live-verified failure (Aug 28, DM session 298): fresh sessions
+    // stayed empty → arrival.agent_id='' → provider bails on the empty check
+    // → no Channel Context card → model fell back to tool-posting its reply.
+    if (session->AgentId().empty()) {
+        session->SetAgentId(agentId.empty() ? "default" : agentId);
     }
 
     // Resolve provider
