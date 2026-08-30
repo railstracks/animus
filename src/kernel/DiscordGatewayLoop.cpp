@@ -182,7 +182,11 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
          const drogon::WebSocketClientPtr&,
          const drogon::WebSocketMessageType& type) {
 
-        if (type != drogon::WebSocketMessageType::Text) return;
+        if (type != drogon::WebSocketMessageType::Text) {
+            std::cerr << "[discord] NON-TEXT FRAME type=" << static_cast<int>(type)
+                      << " len=" << message.size() << std::endl;
+            return;
+        }
 
         Json::Value payload = ParseJson(message);
         int op = payload.isMember("op") ? payload["op"].asInt() : -1;
@@ -236,6 +240,17 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                         gatewayAlive = false;
                         wsPtr->stop();
                         return;
+                    }
+                    // #31 instrumentation: seq advances only when Discord
+                    // delivered events; log the delta, not every beat.
+                    {
+                        static uint64_t lastLoggedSeq = 0;
+                        if (lastSeq != lastLoggedSeq) {
+                            std::cerr << "[discord] heartbeat seq=" << lastSeq
+                                      << " (+" << (lastSeq - lastLoggedSeq)
+                                      << " events since last beat)" << std::endl;
+                            lastLoggedSeq = lastSeq;
+                        }
                     }
                     Json::Value hb;
                     hb["op"] = discord_op::HEARTBEAT;
@@ -294,6 +309,15 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
 
         case discord_op::DISPATCH: {
             // Opcode 0: Dispatch event
+            // #31 instrumentation (Aug 29): every dispatch event is ground
+            // truth for delivery — thread probes vanished with zero trace on
+            // healthy sockets twice. Log t + seq BEFORE any filtering.
+            std::cerr << "[discord] DISPATCH t=" << eventType
+                      << " seq=" << (payload.isMember("s") && !payload["s"].isNull()
+                                  ? std::to_string(payload["s"].asUInt64())
+                                  : std::string("-"))
+                      << " ch=" << GetString(data, "channel_id")
+                      << std::endl;
             if (eventType == "READY") {
                 // Cache session info
                 sessionId = GetString(data, "session_id");
@@ -308,7 +332,10 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 state->discord_bot_user_id = botUserId;
 
                 std::cerr << "[discord] READY — session_id=" << sessionId
-                          << " bot_user_id=" << botUserId << std::endl;
+                          << " bot_user_id=" << botUserId
+                          << " v=" << (data.isMember("v") ? std::to_string(data["v"].asInt()) : std::string("?"))
+                          << " encoding=" << GetString(payload, "_encoding")
+                          << std::endl;
             } else if (eventType == "GUILD_CREATE") {
                 // #42: cache guild + channel names once per connection —
                 // names for cards/bodies/logs with zero extra REST calls.
@@ -324,6 +351,19 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 std::cerr << "[discord] GUILD_CREATE: " << state->discord_guild_name
                           << " (" << state->discord_channel_names.size()
                           << " channels cached)" << std::endl;
+                // #threads diagnostic (Aug 30): dump thread sync info from GUILD_CREATE
+                {
+                    const Json::Value& threads = data["threads"];
+                    int nthreads = threads.size();
+                    std::cerr << "[discord] GUILD_CREATE threads[] count=" << nthreads;
+                    for (const auto& th : threads) {
+                        std::cerr << " id=" << GetString(th, "id")
+                                  << " type=" << th["type"].asInt()
+                                  << " name=" << GetString(th, "name");
+                    }
+                    std::cerr << " | thread_members count="
+                              << data["thread_members"].size() << std::endl;
+                }
             } else if (eventType == "CHANNEL_UPDATE") {
                 std::string cuId = GetString(data, "id");
                 std::string cuName = GetString(data, "name");
@@ -603,6 +643,11 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
     // --- Build connect request ---
     auto req = drogon::HttpRequest::newHttpRequest();
     req->setMethod(drogon::Get);
+    // #threads root cause (Aug 30): the version/encoding query params MUST ride
+    // in the upgrade GET path. Without them Discord defaults the session to
+    // gateway v6 — which predates threads, so thread MESSAGE_CREATEs are never
+    // dispatched (channels still work, masking the issue for months).
+    req->setPath(wsPath);
 
     std::cerr << "[discord] Connecting to Gateway: " << wsHostUrl << wsPath << std::endl;
 
