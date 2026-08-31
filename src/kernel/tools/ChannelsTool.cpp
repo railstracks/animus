@@ -123,6 +123,30 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
     std::string action = GetStringField(preArgs, "action");
     std::string adapterType = ExtractAdapterType(platformId);
 
+    // C++ bridge: WhatsApp reply/send — no HTTP API; sends go through the
+    // gateway outbox via ChannelManager (same path as auto-replies).
+    if (adapterType == "whatsapp" && m_channelManager &&
+        (action == "reply" || action == "send_message")) {
+        ToolResult result;
+        result.call_id = call.id;
+        std::string chatId = GetStringField(preArgs, "chat_id");
+        if (chatId.empty()) chatId = GetStringField(preArgs, "peer_id");
+        std::string content = GetStringField(preArgs, "content");
+        if (chatId.empty() || content.empty()) {
+            result.success = false;
+            result.error = "WhatsApp reply requires 'chat_id' (or 'peer_id') and 'content' parameters";
+            return result;
+        }
+        ChannelManager::ReplyTarget rt;
+        rt.channel_name = ExtractInstanceName(platformId);
+        rt.channel_type = "whatsapp";
+        rt.peer_id = chatId;
+        m_channelManager->SendReply(rt, content);
+        result.success = true;
+        result.output = "Message sent to WhatsApp chat " + chatId;
+        return result;
+    }
+
     // C++ bridge: IRC actions that need ChannelManager access
     if (adapterType == "irc" && m_channelManager) {
         ToolResult result;
@@ -283,10 +307,13 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
                 // IRC: channel target
                 fillIfMissing("channel", latest->peer_id);
 
-                // Telegram / WhatsApp: chat_id from peer_id
+                // Telegram / WhatsApp: chat_id from peer_id (group arrivals
+                // carry the chat jid in post_id — Wall-shaped targets)
                 if (latest->channel_type == "telegram" ||
                     latest->channel_type == "whatsapp") {
-                    fillIfMissing("chat_id", latest->peer_id);
+                    fillIfMissing("chat_id", latest->peer_id.empty()
+                                             ? latest->post_id
+                                             : latest->peer_id);
                 }
 
                 // VK: wall comments answer a specific post (post_id, from

@@ -1230,7 +1230,24 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                     &rawSignalMgr->signed_pre_keys(),
                     &rawSignalMgr->identity());
 
-                std::string displayText = "[WA] " + decrypted.sender + ": " + decrypted.text;
+                // Attribution header (#15/#42 pattern): per-message origin —
+                // push name when the node carries it, bare JID otherwise.
+                // Device suffix stripped for display. No channel tag: the
+                // context card declares the channel.
+                std::string baseSender = decrypted.sender;
+                {
+                    auto colonPos = baseSender.find(':');
+                    if (colonPos != std::string::npos) {
+                        auto atPos = baseSender.find('@');
+                        if (atPos != std::string::npos && atPos > colonPos)
+                            baseSender = baseSender.substr(0, colonPos) + baseSender.substr(atPos);
+                    }
+                }
+                std::string who = decrypted.senderName.empty()
+                    ? baseSender
+                    : decrypted.senderName + " (user:" + baseSender + ")";
+                std::string displayText =
+                    "WhatsApp message from " + who + ":\n" + decrypted.text;
 
                 // Extract message timestamp from the node
                 int64_t msgTs = 0;
@@ -1277,9 +1294,33 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                         auth.save(authFile);
                     }
                 } else {
-                    // Live message — dispatch immediately
+                    // Live message — dispatch immediately, with context card
+                    // (#15/#42 pattern). Delivery is tool-only: chats may be
+                    // groups, so silence must be a first-class outcome.
                     std::cerr << "[whatsapp] Message: " << displayText << std::endl;
-                    DispatchToSession(state, routingKey, displayText, "chat");
+
+                    std::string chatJid = decrypted.isGroup ? decrypted.from : baseFrom;
+                    Json::Value meta;
+                    meta["message_type"] = "chat";
+                    meta["delivery"] = "tool";
+                    Json::Value origin;
+                    if (!decrypted.senderName.empty())
+                        origin["user_display"] = decrypted.senderName;
+                    origin["user_id"] = baseSender; // stable per-sender jid
+                    meta["origin"] = origin;
+                    meta["chat_id"] = chatJid;
+                    meta["chat_type"] = decrypted.isGroup ? "group" : "dm";
+                    meta["source_message_id"] = decrypted.messageId;
+                    meta["reply_instructions"] =
+                        "Reply using the channels tool with action=reply; chat_id is "
+                        "provided by the arrival and filled automatically. Text "
+                        "replies are NOT delivered. If the message is not addressed "
+                        "to you, staying silent is correct.";
+                    Json::StreamWriterBuilder wb;
+                    wb["indentation"] = "";
+                    std::string metadata = Json::writeString(wb, meta);
+
+                    DispatchToSession(state, routingKey, displayText, "chat", metadata);
                     // Update timestamp
                     if (msgTs > 0) {
                         auth.lastMessageTs[decrypted.from] = msgTs;

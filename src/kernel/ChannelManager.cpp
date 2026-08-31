@@ -536,12 +536,20 @@ void ChannelManager::SendReply(const ReplyTarget& target, const std::string& tex
         if (!outboxMutex || !outbox) return;
 
         {
+            // Chat target: peer_id. Group arrivals build Wall targets
+            // (post_id = group jid) — accept both so group replies work.
+            std::string chatJid = target.peer_id.empty() ? target.post_id : target.peer_id;
+            if (chatJid.empty()) {
+                ALOG_WARNING("channels", "WhatsApp SendReply: no chat target "
+                          << "(peer_id/post_id both empty) — dropping");
+                return;
+            }
             std::lock_guard<std::mutex> olk(*outboxMutex);
             OutboundMessage msg;
-            msg.baseJid = target.peer_id;
-            msg.jid = target.peer_id;
+            msg.baseJid = chatJid;
+            msg.jid = chatJid;
             msg.text = text;
-            msg.is_group = animus::whatsapp::isJidGroup(target.peer_id);
+            msg.is_group = animus::whatsapp::isJidGroup(chatJid);
             outbox->push_back(std::move(msg));
         }
         return;
