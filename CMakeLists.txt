@@ -378,6 +378,7 @@ add_library(animus_kernel
             src/kernel/WhatsAppGatewayLoop.cpp
             src/kernel/signal/SignalTypes.cpp
             src/kernel/signal/InMemorySignalStore.cpp
+            src/kernel/signal/FileSignalStore.cpp
             src/kernel/signal/SignalCrypto.cpp
             src/kernel/signal/SignalSessionManager.cpp
             src/kernel/signal/DoubleRatchet.cpp

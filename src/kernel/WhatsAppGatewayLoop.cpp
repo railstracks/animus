@@ -59,7 +59,9 @@ using animus::whatsapp::ADV_HOSTED_ACCOUNT_SIG_PREFIX;
 using animus::whatsapp::ADV_HOSTED_DEVICE_SIG_PREFIX;
 using animus::whatsapp::KEY_BUNDLE_TYPE;
 using animus::whatsapp::handleEncryptedMessage;
+#include "animus_kernel/signal/FileSignalStore.h"
 using animus::signal::create_in_memory_manager;
+using animus::signal::create_file_manager;
 using animus::signal::SignalAddress;
 using animus::signal::SignalMessageType;
 using animus::signal::EncryptedMessage;
@@ -227,7 +229,9 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
     } else {
         authIdKey = animus::signal::SignalIdentityKey::generate(1);
     }
-    auto signalMgr = animus::signal::create_in_memory_manager(std::move(authIdKey));
+    // #53: file-backed stores — peer sessions/identities survive restarts.
+    // Own pre-keys are still populated from auth state below (auth.json).
+    auto signalMgr = create_file_manager(authDir + "/signal", std::move(authIdKey));
     animus::signal::SignalSessionManager* rawSignalMgr = signalMgr.get();
 
     // Populate Signal stores from auth state so we can decrypt inbound messages.
@@ -265,6 +269,19 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
     // Map from base JID → last-seen device JID for outgoing encryption
     // e.g., "199930794737855@lid" → "199930794737855:26@lid"
     std::unordered_map<std::string, std::string> lastDeviceJid;
+    // #53: device routing map persists across restarts (baseJid -> device jid)
+    {
+        std::ifstream ldF(authDir + "/last-device.json", std::ios::binary);
+        if (ldF.is_open()) {
+            Json::Value ldRoot;
+            std::string ldErrs;
+            Json::CharReaderBuilder ldRb;
+            if (Json::parseFromStream(ldRb, ldF, &ldRoot, &ldErrs)) {
+                for (auto it = ldRoot.begin(); it != ldRoot.end(); ++it)
+                    lastDeviceJid[it.name()] = it->asString();
+            }
+        }
+    }
     std::mutex lastDeviceMutex;
 
     state->config["_wa_outbox_mutex"] = reinterpret_cast<Json::UInt64>(&outboxMutex);
@@ -393,7 +410,7 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
     std::mutex pendingOfflineMutex;
 
     // --- Frame callback (runs on transport's background thread) ---
-    transport.onFrame([this, state, &noise, &auth, &authFile, &handshakeComplete,
+    transport.onFrame([this, state, &noise, &auth, &authFile, &authDir, &handshakeComplete,
                        &connMutex, &connCV, &transport, rawSignalMgr,
                        &outbox, &outboxMutex, &sendNode, &postLoginStep,
                        &pendingOffline, &pendingOfflineMutex,
@@ -1296,10 +1313,23 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                     if (colonPos != std::string::npos) {
                         auto atPos = baseFrom.find('@');
                         if (atPos != std::string::npos && atPos > colonPos) {
-                            // Store device JID → base JID mapping for outgoing replies
+                            // Store device JID → base JID mapping for outgoing replies (#53: persisted)
                             {
                                 std::lock_guard<std::mutex> lk(lastDeviceMutex);
                                 lastDeviceJid[baseFrom.substr(0, colonPos) + baseFrom.substr(atPos)] = decrypted.from;
+                                Json::Value ldRoot(Json::objectValue);
+                                for (const auto& [k, v] : lastDeviceJid) ldRoot[k] = v;
+                                Json::StreamWriterBuilder ldWb;
+                                ldWb["indentation"] = "";
+                                std::string ldData = Json::writeString(ldWb, ldRoot);
+                                std::string ldTmp = authDir + "/last-device.json.tmp";
+                                {
+                                    std::ofstream ldF(ldTmp, std::ios::binary | std::ios::trunc);
+                                    if (ldF.is_open()) {
+                                        ldF.write(ldData.data(), (std::streamsize)ldData.size());
+                                    }
+                                }
+                                std::rename(ldTmp.c_str(), (authDir + "/last-device.json").c_str());
                             }
                             baseFrom = baseFrom.substr(0, colonPos) + baseFrom.substr(atPos);
                         }
