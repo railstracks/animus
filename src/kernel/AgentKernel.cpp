@@ -1581,6 +1581,11 @@ void AgentKernel::ExecuteChannelDispatch(
                 arrival.thread_root_id = meta.get("thread_root_id",
                                                   meta.get("root_id", "").asString()).asString();
                 arrival.reply_instructions = meta.get("reply_instructions", "").asString();
+                // Adapter-declared delivery override (#42: adapters state their
+                // channel's semantics): "tool" suppresses Chat-target
+                // auto-delivery — Bluesky chats are tool-only (groups exist,
+                // silence must be first-class).
+                arrival.delivery = meta.get("delivery", arrival.delivery).asString();
                 if (meta.isMember("origin") && meta["origin"].isObject()) {
                     Json::StreamWriterBuilder wb;
                     wb["indentation"] = "";
@@ -1604,17 +1609,34 @@ void AgentKernel::ExecuteChannelDispatch(
         m_channelContextStore->Prune(arrival.session_key, arrival.agent_id);
     }
 
+    // Auto-delivery decision: Chat targets default to auto, but adapters may
+    // declare "tool" delivery in dispatch metadata (see arrival override above).
+    bool autoDeliver = (replyTarget.type == ChannelManager::ReplyTarget::Chat);
+    {
+        Json::Value meta;
+        Json::CharReaderBuilder rb;
+        std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+        std::string errs;
+        if (reader->parse(metadata.data(), metadata.data() + metadata.size(),
+                          &meta, &errs)
+            && meta.isObject()
+            && meta.get("delivery", "").asString() == "tool") {
+            autoDeliver = false;
+        }
+    }
+
     m_jobs.EnqueueInLane(
         ::animus::jobs::JobLane::Cognition,
-        [this, session, sessionKey, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval, metadata]() {
+        [this, session, sessionKey, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval, metadata, autoDeliver]() {
             // Per-message callback: send each assistant message to the channel
             // immediately rather than only the final response.
             // Only for Chat (DM) targets — Wall (post reply/mention) targets
             // require the agent to reply explicitly via the channels tool with
             // post_id/root_id; auto-posting the final text caused duplicate
             // and low-quality replies (agent narration leaking to the feed).
+            // Adapters may opt out of auto-delivery entirely (delivery:"tool").
             ChainAssistantMessageCallback assistantCb;
-            if (replyTarget.type == ChannelManager::ReplyTarget::Chat) {
+            if (autoDeliver) {
                 assistantCb = [this, replyTarget](const std::string& text) {
                     SendAutoReply(replyTarget, text);
                 };

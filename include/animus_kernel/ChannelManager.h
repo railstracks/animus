@@ -251,7 +251,13 @@ private:
                            const std::string& routingKey,
                            const std::string& message,
                            const std::string& sessionType,
-                           const std::string& metadata = "{}");
+                           const std::string& metadata = "{}",
+                           // Optional adapter-stated session key: lets the
+                           // routing key (reply target) and the session key
+                           // (conversation identity) diverge — Bluesky threads
+                           // key sessions by thread ROOT while each post keeps
+                           // its own reply target (Aug 31).
+                           const std::string& explicitSessionKey = "");
 
     // Log message to session history without triggering an agent chain.
     // Used for channel tracking — messages are stored as context for later mentions.

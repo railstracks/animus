@@ -255,11 +255,16 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
                 // arrival so the call reaches the right platform.
                 fillIfMissing("platform_id", latest->platform_id);
 
-                // Bluesky: post_id (direct parent) + root_id (thread root)
+                // Bluesky: post_id (direct parent) + root_id (thread root);
+                // chat arrivals fill the convo id instead (Aug 31 — chat
+                // replies go through action=chat_send with convo_id).
                 fillIfMissing("post_id", latest->post_id);
                 fillIfMissing("root_id", latest->thread_root_id.empty()
                                              ? latest->post_id
                                              : latest->thread_root_id);
+                if (latest->channel_type == "bluesky") {
+                    fillIfMissing("convo_id", latest->peer_id);
+                }
 
                 // Discord: channel_id + message_id. Live-truth mapping (Aug 27
                 // workstation verification): guild/wall messages carry the
