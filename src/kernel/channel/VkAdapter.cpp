@@ -135,7 +135,11 @@ void VkAdapter::ProcessMessageNew(const std::string& objectJson) {
     int64_t groupId = 0;
     try { groupId = std::stoll(rt->group_id); } catch (...) {}
     int64_t fromIdVal = std::stoll(fromId);
-    if (fromIdVal == -groupId || fromIdVal == groupId) return;
+    if (fromIdVal == -groupId || fromIdVal == groupId) {
+        ALOG_DEBUG("vk", "chat message from the community itself (from_id="
+                  << fromId << ") — skipping");
+        return;
+    }
 
     if (!rt->RememberEvent(messageId)) return;
 
@@ -191,7 +195,13 @@ void VkAdapter::ProcessWallPostNew(const std::string& objectJson) {
     int64_t groupId = 0;
     try { groupId = std::stoll(rt->group_id); } catch (...) {}
     int64_t fromIdVal = std::stoll(fromId);
-    if (fromIdVal == -groupId || fromIdVal == groupId) return;
+    if (fromIdVal == -groupId || fromIdVal == groupId) {
+        // Community-authored (admin posting "as community" or bot output):
+        // anti-loop skip, but visible — silence cost us an hour tonight.
+        ALOG_DEBUG("vk", "wall post from the community itself (from_id="
+                  << fromId << ") — skipping");
+        return;
+    }
 
     int64_t postIdInt = GetInt(obj, "id");
     if (!rt->RememberEvent(postIdInt)) return;
@@ -240,7 +250,13 @@ void VkAdapter::ProcessWallReplyNew(const std::string& objectJson) {
     int64_t groupId = 0;
     try { groupId = std::stoll(rt->group_id); } catch (...) {}
     int64_t fromIdVal = std::stoll(fromId);
-    if (fromIdVal == -groupId || fromIdVal == groupId) return;
+    if (fromIdVal == -groupId || fromIdVal == groupId) {
+        // Community-authored comment (admin "as community" or bot output):
+        // anti-loop skip, but visible at debug level.
+        ALOG_DEBUG("vk", "wall comment from the community itself (from_id="
+                  << fromId << ") — skipping");
+        return;
+    }
 
     int64_t replyIdInt = GetInt(obj, "id");
     if (!rt->RememberEvent(replyIdInt)) return;
@@ -347,7 +363,8 @@ bool VkAdapter::FetchLongPollServer() {
 
 std::string VkAdapter::BuildLongPollUrl() const {
     auto* rt = m_runtime.get();
-    return rt->lp_server + "?act=a_check&key=" + rt->lp_key + "&ts=" + rt->lp_ts;
+    return rt->lp_server + "?act=a_check&key=" + rt->lp_key + "&ts=" + rt->lp_ts
+         + "&version=3";
 }
 
 std::unordered_map<std::string, std::string>
