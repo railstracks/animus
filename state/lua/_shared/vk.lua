@@ -17,7 +17,7 @@
 --
 -- Available actions:
 --   post         — wall.post (community wall)
---   reply        — wall.createComment (comment on wall post)
+--   reply        — universal: wall.createComment (wall) or messages.send (chat)
 --   like         — likes.add
 --   delete       — wall.delete (own community posts)
 --   send_message — messages.send (community → user)
@@ -170,9 +170,42 @@ local function do_post(args)
     }
 end
 
---- Reply (comment) on a wall post.
+--- Reply — universal (Aug 31): routes by target shape. Wall comment when
+--- post_id is present (optionally answering reply_to_comment); chat message
+--- when peer_id is present. One action, every arrival type (#42 contract).
 local function do_reply(args)
     local pid = args.platform_id
+    if not args.content or args.content == "" then
+        return { success = false, error = "content is required for reply" }
+    end
+
+    local has_post = args.post_id and args.post_id ~= ""
+    local target = args.peer_id or args.user_id or ""
+    local has_peer = target ~= ""
+
+    if not has_post and not has_peer then
+        return { success = false, error = "post_id (wall) or peer_id (chat) is required for reply" }
+    end
+
+    -- Chat target: community -> user (or group chat, 2000000000+local_id)
+    if has_peer and not has_post then
+        local params = {
+            peer_id = target,
+            message = args.content,
+            random_id = tostring(math.random(1, 2147483647))
+        }
+        local resp = vk_api_post(pid, "messages.send", params)
+        local result, err = parse_vk_response(resp)
+        if not result then
+            return { success = false, error = err }
+        end
+        return {
+            success = true,
+            output = json.encode({ message_id = result, to = target })
+        }
+    end
+
+    -- Wall target: comment on the post, optionally answering a comment
     if not args.post_id or args.post_id == "" then
         return { success = false, error = "post_id is required for reply" }
     end
@@ -188,6 +221,9 @@ local function do_reply(args)
     if args.owner_id then
         params.owner_id = args.owner_id
     end
+    if args.reply_to_comment and args.reply_to_comment ~= "" then
+        params.reply_to_comment = args.reply_to_comment
+    end
 
     local resp = vk_api_post(pid, "wall.createComment", params)
     local result, err = parse_vk_response(resp)
@@ -199,7 +235,8 @@ local function do_reply(args)
         success = true,
         output = json.encode({
             comment_id = result.comment_id,
-            parent_post = args.post_id
+            parent_post = args.post_id,
+            reply_to_comment = args.reply_to_comment or ""
         })
     }
 end
@@ -427,7 +464,9 @@ animus.register_channel({
             { name = "content", type = "string", required = true, description = "Post text for the community wall" }
         },
         reply = {
-            { name = "post_id", type = "string", required = true, description = "Wall post ID to comment on" },
+            { name = "post_id", type = "string", required = false, description = "Wall post ID to comment on (wall replies)" },
+            { name = "peer_id", type = "string", required = false, description = "Chat target: user ID or chat ID like 2000000001 (chat replies)" },
+            { name = "reply_to_comment", type = "string", required = false, description = "Comment ID being answered (wall comment threads)" },
             { name = "content", type = "string", required = true, description = "Comment text" },
             { name = "owner_id", type = "string", required = false, description = "Wall owner ID (negative for communities)" }
         },

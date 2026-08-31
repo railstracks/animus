@@ -144,24 +144,39 @@ void VkAdapter::ProcessMessageNew(const std::string& objectJson) {
     auto names = ResolveUsers({fromId});
     std::string displayName = names.count(fromId) ? names[fromId] : fromId;
 
-    std::string formattedMsg = displayName + " (" + fromId + "): " + text;
     std::string history = FetchChatHistory(peerId, 10);
 
-    std::string replyHint = "\n\nYou are responding via VK chat. Respond naturally — "
-        "your reply will be sent automatically. Do NOT use the social tool to reply.";
-    std::string prompt;
-    if (history.empty()) {
-        prompt = "New message in your VK community chat (channel: " +
-                 rt->channel_name + ", peer_id: " + peerId + "):\n\n" +
-                 formattedMsg + replyHint;
-    } else {
-        prompt = "New message in your VK community chat (channel: " +
-                 rt->channel_name + ", peer_id: " + peerId + "):\n\n"
-                 "--- Recent conversation ---\n" + history +
-                 "\n--- End history ---\n\nNew message:\n" + formattedMsg + replyHint;
-    }
+    // Body: attribution header only — ids and delivery semantics live in
+    // the context card (#15). Tool-only delivery (Aug 31): community chats
+    // can be multi-user, silence must be first-class.
+    std::string prompt = "VK chat message from " + displayName + ":\n";
+    if (!history.empty())
+        prompt += "\n--- Recent conversation ---\n" + history +
+                  "\n--- End history ---\n\n";
+    prompt += text;
 
-    Dispatch("peer:" + peerId, prompt, "chat");
+    Json::Value meta;
+    meta["message_type"] = "chat";
+    meta["delivery"] = "tool";
+    Json::Value origin;
+    origin["user"] = displayName;
+    origin["user_id"] = fromId; // stable VK id (#42 person-graph key)
+    meta["origin"] = origin;
+    if (messageId > 0)
+        meta["source_message_id"] = std::to_string(messageId);
+    meta["reply_instructions"] =
+        "Reply using the channels tool with action=reply; peer_id is provided "
+        "by the reply target and filled automatically. Text replies are NOT "
+        "delivered. If the message is not addressed to you, staying silent "
+        "is correct.";
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    std::string metadata = Json::writeString(wb, meta);
+
+    ALOG_INFO("vk", "dispatching chat message from " << displayName
+              << " for " << rt->channel_name);
+
+    Dispatch("peer:" + peerId, prompt, "chat", metadata);
 }
 
 void VkAdapter::ProcessWallPostNew(const std::string& objectJson) {
@@ -184,11 +199,32 @@ void VkAdapter::ProcessWallPostNew(const std::string& objectJson) {
     auto names = ResolveUsers({fromId});
     std::string displayName = names.count(fromId) ? names[fromId] : fromId;
 
-    std::string prompt = "New post on your VK community wall:\n\n" +
-        displayName + " (" + fromId + ") posted:\n" + text +
-        "\n\nYou are responding via VK wall. Respond naturally — your reply will be posted as a comment automatically. Do NOT use the social tool to reply.";
+    // Body: attribution header + content only (ids in the card).
+    std::string prompt = "VK wall post from " + displayName + ":\n" + text;
 
-    Dispatch("post:" + postId, prompt, "wall");
+    Json::Value meta;
+    meta["message_type"] = "wall";
+    Json::Value origin;
+    origin["user"] = displayName;
+    origin["user_id"] = fromId;
+    origin["channel"] = "wall";
+    meta["origin"] = origin;
+    meta["post_id"] = postId;
+    meta["source_message_id"] = postId;
+    meta["reply_instructions"] =
+        "Reply using the channels tool with action=reply; post_id is provided "
+        "by the reply target and filled automatically. Text replies are NOT "
+        "posted. Not every post needs a comment.";
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    std::string metadata = Json::writeString(wb, meta);
+
+    ALOG_INFO("vk", "dispatching wall post from " << displayName
+              << " for " << rt->channel_name);
+
+    // Session = the post conversation (routing key == session key here).
+    Dispatch("post:" + postId, prompt, "wall", metadata,
+             "wall:" + rt->channel_name + ":post:" + postId);
 }
 
 void VkAdapter::ProcessWallReplyNew(const std::string& objectJson) {
@@ -212,17 +248,68 @@ void VkAdapter::ProcessWallReplyNew(const std::string& objectJson) {
     auto names = ResolveUsers({fromId});
     std::string displayName = names.count(fromId) ? names[fromId] : fromId;
 
-    std::string prompt = "New comment on your VK community wall post (post_id=" +
-        postId + "):\n\n" +
-        displayName + " (" + fromId + "): " + text +
-        "\n\nYou are responding via VK wall. Respond naturally — your reply will be posted as a comment automatically. Do NOT use the social tool to reply.";
+    // Fetch the post text for conversational context — mini-hydration so
+    // the session opens knowing what thread it answers (#47-flavored).
+    // Non-fatal: best effort.
+    std::string postText;
+    {
+        std::string token = GetString(rt->config, "access_token");
+        if (!token.empty() && !rt->group_id.empty()) {
+            HttpClient::Request pr;
+            pr.url = "https://api.vk.ru/method/wall.getById?"
+                     "posts=-" + rt->group_id + "_" + postId +
+                     "&access_token=" + token + "&v=5.131";
+            pr.timeout_seconds = 10;
+            auto pres = m_ctx.httpClient.Execute(pr);
+            if (pres.status_code == 200) {
+                auto pd = ParseJson(pres.body);
+                if (pd.isMember("response") && pd["response"].isArray()
+                    && pd["response"].size() > 0) {
+                    postText = GetString(pd["response"][0], "text");
+                }
+            }
+        }
+        if (postText.size() > 400)
+            postText = postText.substr(0, 400) + "…";
+    }
 
+    std::string prompt = "VK comment from " + displayName + " in thread:\n" + text;
+    if (!postText.empty())
+        prompt += "\n\n--- On post ---\n" + postText;
+
+    Json::Value meta;
+    meta["message_type"] = "wall";
+    Json::Value origin;
+    origin["user"] = displayName;
+    origin["user_id"] = fromId;
+    origin["channel"] = "thread";
+    meta["origin"] = origin;
+    meta["post_id"] = postId;
+    if (!replyToComment.empty() && replyToComment != "0")
+        meta["reply_parent_id"] = replyToComment; // comment being answered
+    meta["source_message_id"] = std::to_string(replyIdInt);
+    meta["reply_instructions"] =
+        "Reply using the channels tool with action=reply; post_id (and the "
+        "comment being answered) are provided by the reply target and filled "
+        "automatically. Text replies are NOT posted. Not every comment needs "
+        "a reply.";
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    std::string metadata = Json::writeString(wb, meta);
+
+    ALOG_INFO("vk", "dispatching wall comment from " << displayName
+              << " on post " << postId << " for " << rt->channel_name);
+
+    // Routing key keeps the comment target (the reply answers a specific
+    // comment); the SESSION is post-rooted — one session per wall-post
+    // conversation; comments and sub-threads all meet there (Aug 31).
     std::string routingKey = "post:" + postId;
     if (!replyToComment.empty() && replyToComment != "0") {
         routingKey = "post:" + postId + ":comment:" + replyToComment;
     }
 
-    Dispatch(routingKey, prompt, "wall");
+    Dispatch(routingKey, prompt, "wall", metadata,
+             "wall:" + rt->channel_name + ":post:" + postId);
 }
 
 bool VkAdapter::FetchLongPollServer() {

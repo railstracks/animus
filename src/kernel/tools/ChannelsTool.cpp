@@ -289,6 +289,13 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
                     fillIfMissing("chat_id", latest->peer_id);
                 }
 
+                // VK: wall comments answer a specific post (post_id, from
+                // the generic fill above) and optionally a comment —
+                // reply_to_comment from the arrival's reply_parent_id.
+                if (latest->channel_type == "vk") {
+                    fillIfMissing("reply_to_comment", latest->reply_parent_id);
+                }
+
                 if (modified) {
                     Json::StreamWriterBuilder wb;
                     wb.settings_["indentation"] = "";

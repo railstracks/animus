@@ -41,10 +41,13 @@ protected:
     /// Subclass implements the polling loop entry point.
     virtual void RunLoop() = 0;
 
-    /// Dispatch helper — routes message to agent session
+    /// Dispatch helper — routes message to agent session. Metadata and
+    /// explicitSessionKey pass through to ChannelDispatch (Aug 31).
     void Dispatch(const std::string& routingKey,
                   const std::string& message,
-                  const std::string& sessionType);
+                  const std::string& sessionType,
+                  const std::string& metadata = "{}",
+                  const std::string& explicitSessionKey = "");
 
     /// Log helper — records message without triggering chain
     void Log(const std::string& routingKey,
