@@ -387,6 +387,7 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
     struct PendingMessage {
         std::string routingKey;
         std::string displayText;
+        std::string metadata; // context card (#15) — attached on flush
     };
     std::vector<PendingMessage> pendingOffline;
     std::mutex pendingOfflineMutex;
@@ -1100,8 +1101,11 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                                           << " pending offline messages" << std::endl;
                                 // Group by routing key and dispatch each group as one prompt
                                 std::map<std::string, std::vector<std::string>> bySession;
+                                std::map<std::string, std::string> lastCard; // per-session card (#15)
                                 for (const auto& pm : pendingOffline) {
                                     bySession[pm.routingKey].push_back(pm.displayText);
+                                    if (!pm.metadata.empty())
+                                        lastCard[pm.routingKey] = pm.metadata;
                                 }
                                 for (const auto& [rk, messages] : bySession) {
                                     std::string batched;
@@ -1109,7 +1113,9 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                                         if (i > 0) batched += "\n";
                                         batched += messages[i];
                                     }
-                                    DispatchToSession(state, rk, batched, "chat");
+                                    // Card of the LAST buffered message — matches the
+                                    // message the agent is about to answer.
+                                    DispatchToSession(state, rk, batched, "chat", lastCard[rk]);
                                 }
                                 pendingOffline.clear();
                             }
@@ -1249,6 +1255,31 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                 std::string displayText =
                     "WhatsApp message from " + who + ":\n" + decrypted.text;
 
+                // Context card (#15/#42) — built once, used by both the live
+                // dispatch and the offline-buffer flush. Delivery is tool-only:
+                // chats may be groups, so silence must be a first-class outcome.
+                // DM chat == sender (device-stripped); group chat == group jid
+                std::string chatJid = decrypted.isGroup ? decrypted.from : baseSender;
+                Json::Value meta;
+                meta["message_type"] = "chat";
+                meta["delivery"] = "tool";
+                Json::Value origin;
+                if (!decrypted.senderName.empty())
+                    origin["user_display"] = decrypted.senderName;
+                origin["user_id"] = baseSender; // stable per-sender jid
+                meta["origin"] = origin;
+                meta["chat_id"] = chatJid;
+                meta["chat_type"] = decrypted.isGroup ? "group" : "dm";
+                meta["source_message_id"] = decrypted.messageId;
+                meta["reply_instructions"] =
+                    "Reply using the channels tool with action=reply; chat_id is "
+                    "provided by the arrival and filled automatically. Text "
+                    "replies are NOT delivered. If the message is not addressed "
+                    "to you, staying silent is correct.";
+                Json::StreamWriterBuilder wb;
+                wb["indentation"] = "";
+                std::string metadata = Json::writeString(wb, meta);
+
                 // Extract message timestamp from the node
                 int64_t msgTs = 0;
                 std::string tsAttr = getAttr(node, "t");
@@ -1287,7 +1318,7 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                     // New message but post-login not yet complete — buffer it
                     std::cerr << "[whatsapp] New offline message (ts=" << msgTs << "): " << displayText << std::endl;
                     std::lock_guard<std::mutex> lock(pendingOfflineMutex);
-                    pendingOffline.push_back({routingKey, displayText});
+                    pendingOffline.push_back({routingKey, displayText, metadata});
                     // Update timestamp so we don't replay it next restart either
                     if (msgTs > 0) {
                         auth.lastMessageTs[decrypted.from] = msgTs;
@@ -1298,27 +1329,6 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                     // (#15/#42 pattern). Delivery is tool-only: chats may be
                     // groups, so silence must be a first-class outcome.
                     std::cerr << "[whatsapp] Message: " << displayText << std::endl;
-
-                    std::string chatJid = decrypted.isGroup ? decrypted.from : baseFrom;
-                    Json::Value meta;
-                    meta["message_type"] = "chat";
-                    meta["delivery"] = "tool";
-                    Json::Value origin;
-                    if (!decrypted.senderName.empty())
-                        origin["user_display"] = decrypted.senderName;
-                    origin["user_id"] = baseSender; // stable per-sender jid
-                    meta["origin"] = origin;
-                    meta["chat_id"] = chatJid;
-                    meta["chat_type"] = decrypted.isGroup ? "group" : "dm";
-                    meta["source_message_id"] = decrypted.messageId;
-                    meta["reply_instructions"] =
-                        "Reply using the channels tool with action=reply; chat_id is "
-                        "provided by the arrival and filled automatically. Text "
-                        "replies are NOT delivered. If the message is not addressed "
-                        "to you, staying silent is correct.";
-                    Json::StreamWriterBuilder wb;
-                    wb["indentation"] = "";
-                    std::string metadata = Json::writeString(wb, meta);
 
                     DispatchToSession(state, routingKey, displayText, "chat", metadata);
                     // Update timestamp
