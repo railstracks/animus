@@ -29,9 +29,14 @@ end
 -- ===========================================================================
 
 local function api_call(token, method, params)
+    -- animus.http_post(url, options) — options = { headers={}, body="", timeout=N }
+    -- (the pre-fix call passed (url, body, headers); ParseHttpOptions ignored the
+    --  string arg and every POST went out bodyless — Telegram 400 "message text
+    --  is empty". Survived since Jun 30 because the tool path was never live.)
     local url = "https://api.telegram.org/bot" .. token .. "/" .. method
-    local resp = animus.http_post(url, json.encode(params), {
-        ["Content-Type"] = "application/json"
+    local resp = animus.http_post(url, {
+        headers = { ["Content-Type"] = "application/json" },
+        body = json.encode(params),
     })
     if not resp then
         return nil, "HTTP request failed"
