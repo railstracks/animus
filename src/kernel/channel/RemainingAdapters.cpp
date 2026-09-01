@@ -625,9 +625,11 @@ void SlackAdapter::SocketModeLoop() {
                         instructions += threaded
                             ? " Replies are posted as threaded replies to the "
                               "original message."
-                            : " Replies are posted as top-level responses in "
-                              "the channel; when the arrival is in a thread, "
-                              "reply in that thread.";
+                            : " Replies are posted as TOP-LEVEL responses in "
+                              "the channel: send the reply WITHOUT a thread_ts "
+                              "parameter and never set thread_ts yourself "
+                              "(unless the arrival is itself inside a thread, "
+                              "in which case reply in that thread).";
                     }
                     meta["reply_instructions"] = instructions;
                     Json::StreamWriterBuilder wb;
