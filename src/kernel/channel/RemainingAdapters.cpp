@@ -1,4 +1,5 @@
 #include "animus_kernel/Log.h"
+#include <unordered_map>
 #include "animus_kernel/ChannelAdapters.h"
 #include "animus_kernel/ChannelContext.h"
 #include "animus_kernel/ChannelHelpers.h"
@@ -385,6 +386,53 @@ void SlackAdapter::SocketModeLoop() {
         }
     }
 
+    // Display-name resolution (#42): Slack ids are stable but unreadable.
+    // Resolve once per connection and cache (Discord GUILD_CREATE precedent).
+    std::unordered_map<std::string, std::string> userNameCache;
+    std::unordered_map<std::string, std::string> channelNameCache;
+    auto apiFormPost = [this, botToken](const std::string& method,
+                                        const std::string& body) -> Json::Value {
+        HttpClient::Request req;
+        req.method = "POST";
+        req.url = "https://slack.com/api/" + method;
+        req.headers["Authorization"] = "Bearer " + botToken;
+        req.headers["Content-Type"] = "application/x-www-form-urlencoded";
+        req.body = body;
+        req.follow_redirects = false;
+        auto resp = m_ctx.httpClient.Execute(req);
+        if (resp.status_code != 200) return Json::Value();
+        return ParseJson(resp.body);
+    };
+    auto resolveUser = [&](const std::string& uid) -> std::string {
+        auto it = userNameCache.find(uid);
+        if (it != userNameCache.end()) return it->second;
+        std::string name = uid;
+        auto data = apiFormPost("users.info", "user=" + uid);
+        if (data.isObject() && data.get("ok", false).asBool()
+            && data["user"].isObject()) {
+            const auto& prof = data["user"]["profile"];
+            name = GetString(prof, "display_name");
+            if (name.empty()) name = GetString(prof, "real_name");
+            if (name.empty()) name = GetString(data["user"], "name");
+            if (name.empty()) name = uid;
+        }
+        userNameCache[uid] = name;
+        return name;
+    };
+    auto resolveChannel = [&](const std::string& cid) -> std::string {
+        auto it = channelNameCache.find(cid);
+        if (it != channelNameCache.end()) return it->second;
+        std::string name = cid;
+        auto data = apiFormPost("conversations.info", "channel=" + cid);
+        if (data.isObject() && data.get("ok", false).asBool()
+            && data["channel"].isObject()) {
+            name = GetString(data["channel"], "name");
+            if (name.empty()) name = cid;
+        }
+        channelNameCache[cid] = name;
+        return name;
+    };
+
     while (rt->active && !m_stopRequested) {
         // Step 1: Get WebSocket URL
         HttpClient::Request connReq;
@@ -438,7 +486,7 @@ void SlackAdapter::SocketModeLoop() {
         auto wsPtr = drogon::WebSocketClient::newWebSocketClient(wsConnectUrl, &loop);
 
         wsPtr->setMessageHandler(
-            [this, rt, &botUserId, wsPtr](std::string&& message,
+            [this, rt, &botUserId, wsPtr, &resolveUser, &resolveChannel](std::string&& message,
                         const drogon::WebSocketClientPtr&,
                         const drogon::WebSocketMessageType& type) {
                 if (type == drogon::WebSocketMessageType::Ping ||
@@ -524,11 +572,50 @@ void SlackAdapter::SocketModeLoop() {
                         routingKey = "chat:slack:" + ts;
                     }
 
-                    std::string prompt = "[Slack message from <" + userId + ">";
-                    prompt += " in channel " + channel;
-                    if (!threadTs.empty() && threadTs != ts)
-                        prompt += " (thread " + threadTs + ")";
-                    prompt += "]\n" + cleanText;
+                    // Context card (#15/#42) — tool-only delivery: channels
+                    // may be busy, so silence must be a first-class outcome.
+                    const bool isDm = !channel.empty() && channel[0] == 'D';
+                    const bool inThread = !threadTs.empty() && threadTs != ts;
+                    const std::string userName = resolveUser(userId);
+                    const std::string channelName = resolveChannel(channel);
+
+                    std::string displayText;
+                    if (isDm) {
+                        displayText = "private message from " + userName
+                            + " (user:" + userId + "):\n" + cleanText;
+                    } else {
+                        displayText = "Slack message from " + userName
+                            + " (user:" + userId + ") in #" + channelName;
+                        if (inThread) displayText += " (in thread)";
+                        displayText += ":\n" + cleanText;
+                    }
+
+                    Json::Value meta;
+                    meta["message_type"] = "chat";
+                    meta["delivery"] = "tool";
+                    Json::Value origin;
+                    origin["user_display"] = userName;
+                    origin["user_id"] = userId;
+                    if (!isDm) {
+                        origin["channel"] = channelName;
+                        origin["channel_id"] = channel;
+                    }
+                    meta["origin"] = origin;
+                    meta["channel_id"] = channel;
+                    meta["source_message_id"] = ts;
+                    if (inThread) {
+                        meta["reply_parent_id"] = threadTs;
+                        meta["thread_root_id"] = threadTs;
+                    }
+                    meta["reply_instructions"] =
+                        "Reply using the channels tool with action=reply; "
+                        "channel_id and thread_ts are provided by the arrival "
+                        "and filled automatically. Text replies are NOT "
+                        "delivered. In channels, if the message is not "
+                        "addressed to you, staying silent is correct.";
+                    Json::StreamWriterBuilder wb;
+                    wb["indentation"] = "";
+                    std::string metadata = Json::writeString(wb, meta);
 
                     ChannelReplyTarget replyTarget;
                     replyTarget.channel_name = rt->channel_name;
@@ -541,7 +628,7 @@ void SlackAdapter::SocketModeLoop() {
                         replyTarget.reply_to_comment = ts;
                     }
 
-                    m_ctx.dispatch(rt->agent_id, routingKey, prompt, "slack", replyTarget, "{}");
+                    m_ctx.dispatch(rt->agent_id, routingKey, displayText, "slack", replyTarget, metadata);
 
                     ALOG_DEBUG("slack-socket", "Dispatched from " << userId
                               << " in " << channel << " ts=" << ts);

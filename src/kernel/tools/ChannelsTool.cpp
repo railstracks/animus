@@ -316,6 +316,17 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
                                              : latest->peer_id);
                 }
 
+                // Slack: channel + thread target (replies thread on the
+                // source message ts; in-thread arrivals thread on parent)
+                if (latest->channel_type == "slack") {
+                    fillIfMissing("channel_id", latest->peer_id.empty()
+                                                 ? latest->post_id
+                                                 : latest->peer_id);
+                    fillIfMissing("thread_ts", latest->reply_parent_id.empty()
+                                               ? latest->source_message_id
+                                               : latest->reply_parent_id);
+                }
+
                 // VK: wall comments answer a specific post (post_id, from
                 // the generic fill above) and optionally a comment —
                 // reply_to_comment from the arrival's reply_parent_id.
