@@ -316,15 +316,15 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
                                              : latest->peer_id);
                 }
 
-                // Slack: channel + thread target (replies thread on the
-                // source message ts; in-thread arrivals thread on parent)
+                // Slack: channel + thread target. thread_ts is filled ONLY
+                // when the adapter declared one (in-thread arrival, or
+                // threaded_replies=true threading on the source ts) — the
+                // adapter's flag is authoritative, not the fill's default.
                 if (latest->channel_type == "slack") {
                     fillIfMissing("channel_id", latest->peer_id.empty()
                                                  ? latest->post_id
                                                  : latest->peer_id);
-                    fillIfMissing("thread_ts", latest->reply_parent_id.empty()
-                                               ? latest->source_message_id
-                                               : latest->reply_parent_id);
+                    fillIfMissing("thread_ts", latest->reply_parent_id);
                 }
 
                 // VK: wall comments answer a specific post (post_id, from

@@ -603,16 +603,33 @@ void SlackAdapter::SocketModeLoop() {
                     meta["origin"] = origin;
                     meta["channel_id"] = channel;
                     meta["source_message_id"] = ts;
+                    // Thread targeting is flag-authoritative
+                    // (threaded_replies): in-thread arrivals always reply in
+                    // their thread; top-level arrivals thread ONLY when the
+                    // adapter is configured for threaded replies — otherwise
+                    // the reply is a top-level channel response.
                     if (inThread) {
                         meta["reply_parent_id"] = threadTs;
                         meta["thread_root_id"] = threadTs;
+                    } else if (threaded) {
+                        meta["reply_parent_id"] = ts;
+                        meta["thread_root_id"] = ts;
                     }
-                    meta["reply_instructions"] =
+                    std::string instructions =
                         "Reply using the channels tool with action=reply; "
                         "channel_id and thread_ts are provided by the arrival "
                         "and filled automatically. Text replies are NOT "
                         "delivered. In channels, if the message is not "
                         "addressed to you, staying silent is correct.";
+                    if (!isDm) {
+                        instructions += threaded
+                            ? " Replies are posted as threaded replies to the "
+                              "original message."
+                            : " Replies are posted as top-level responses in "
+                              "the channel; when the arrival is in a thread, "
+                              "reply in that thread.";
+                    }
+                    meta["reply_instructions"] = instructions;
                     Json::StreamWriterBuilder wb;
                     wb["indentation"] = "";
                     std::string metadata = Json::writeString(wb, meta);
