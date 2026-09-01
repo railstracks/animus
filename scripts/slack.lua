@@ -99,6 +99,11 @@ end
 --- Get the bot token for this instance.
 local function get_token(platform_id)
     local token = config.get(cfg_key(platform_id, "bot_token"))
+    if (not token or token == "") and not platform_id:find(":") then
+        -- bare type form ("slack") -> instance form ("slack:slack") retry;
+        -- config rows live under channels.<type>:<instance>
+        token = config.get(cfg_key(platform_id .. ":" .. platform_id, "bot_token"))
+    end
     if not token or token == "" then
         return nil, "no bot_token configured for " .. platform_id
     end
