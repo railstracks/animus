@@ -79,32 +79,55 @@ local function do_reply(args)
         return { success = false, error = "reply requires content" }
     end
 
-    -- AgentMail send REQUIRES to/cc/bcc even with thread_id (400 otherwise,
-    -- "to, cc, or bcc must be specified"). If the arrival card didn't
-    -- pre-fill the recipient, resolve it from the thread's senders.
+    -- AgentMail send REQUIRES to/cc/bcc (400 otherwise, "to, cc, or bcc
+    -- must be specified"). The send API has NO thread_id request field — it
+    -- exists only in the response; a thread_id in the body is silently
+    -- ignored (verified: replies landed as standalone empty-subject mail,
+    -- thread bbf685b6). Threading rides on real RFC 5322 headers via the
+    -- `headers` map: In-Reply-To/References referencing the thread's last
+    -- message id, plus a "Re: <subject>" subject (also what makes Gmail
+    -- group it visually).
+    --
+    -- Always fetch the thread: it yields the recipient (when the card
+    -- didn't pre-fill it), the subject, and the last message id.
     local to = args.to or args.recipient or ""
-    if to == "" then
-        local tresp = animus.http_get(api_base(pid) .. "/v0/inboxes/" .. inbox
-            .. "/threads/" .. thread_id, {
-            headers = { ["Authorization"] = "Bearer " .. key },
-        })
-        local tdata = tresp and json_decode_safe(tresp.body) or nil
-        if tdata and type(tdata.senders) == "table" and #tdata.senders > 0 then
+    local tsubject, tlastmid = "", ""
+    local tresp = animus.http_get(api_base(pid) .. "/v0/inboxes/" .. inbox
+        .. "/threads/" .. thread_id, {
+        headers = { ["Authorization"] = "Bearer " .. key },
+    })
+    local tdata = tresp and select(1, json_decode_safe(tresp.body)) or nil
+    if tdata then
+        tsubject = tostring(tdata.subject or "")
+        tlastmid = tostring(tdata.last_message_id or "")
+        if to == "" and type(tdata.senders) == "table" and #tdata.senders > 0 then
             to = tdata.senders[1]
-        else
-            return { success = false,
-                     error = "reply requires to (arrival did not pre-fill it and thread sender lookup failed)" }
         end
+    end
+    if to == "" then
+        return { success = false,
+                 error = "reply requires to (arrival did not pre-fill it and thread sender lookup failed)" }
     end
     -- senders carry display form "Name <addr>"; the send API wants the bare address
     local addr = tostring(to):match("<([^>]+)>") or to
+
+    local payload = { text = content, to = addr }
+    if tsubject ~= "" then
+        payload.subject = "Re: " .. tsubject:gsub("^[Rr][Ee]:%s*", "")
+    end
+    if tlastmid ~= "" then
+        payload.headers = {
+            ["In-Reply-To"] = tlastmid,
+            ["References"] = tlastmid,
+        }
+    end
 
     local resp = animus.http_post(api_base(pid) .. "/v0/inboxes/" .. inbox .. "/messages/send", {
         headers = {
             ["Authorization"] = "Bearer " .. key,
             ["Content-Type"] = "application/json",
         },
-        body = json.encode({ text = content, thread_id = thread_id, to = addr }),
+        body = json.encode(payload),
     })
     if not resp then
         return { success = false, error = "HTTP request failed" }
@@ -127,10 +150,15 @@ local function do_reply(args)
     end
 
     local sent_id = data.id or data.message_id or ""
+    -- The response thread_id is server-assigned: if threading worked it
+    -- equals the requested thread; if it differs the reply landed in a new
+    -- thread — surface both so the mismatch is visible to the agent.
+    local landed_thread = data.thread_id or ""
     return {
         success = true,
-        output = "Reply sent to email thread " .. thread_id,
-        thread_id = thread_id,
+        output = "Reply sent" .. (landed_thread ~= "" and (" (thread " .. landed_thread .. (landed_thread == thread_id and ", threaded correctly)" or ", NEW THREAD — threading failed)")) or ""),
+        thread_id = landed_thread ~= "" and landed_thread or thread_id,
+        threaded = landed_thread == thread_id,
         message_id = sent_id,
     }
 end
