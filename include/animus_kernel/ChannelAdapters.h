@@ -137,11 +137,7 @@ protected:
 private:
     void WebSocketLoop();
     void PollLoop();
-    void ProcessMessage(const std::string& threadId,
-                        const std::string& messageId,
-                        const std::string& sender,
-                        const std::string& subject,
-                        const std::string& bodyText);
+    void ProcessMessage(const Json::Value& msg);
 };
 
 // ============================================================================

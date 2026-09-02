@@ -94,7 +94,7 @@ void EmailAdapter::WebSocketLoop() {
                 rt->last_ws_event = std::chrono::steady_clock::now();
 
                 if (eventType == "message.received") {
-                    ProcessMessage(threadId, messageId, sender, subject, bodyText);
+                    ProcessMessage(msgObj);
                 }
             }
         });
@@ -164,6 +164,8 @@ void EmailAdapter::PollLoop() {
     auto* rt = m_runtime.get();
     ALOG_INFO("email", "Poll loop started for " << rt->channel_name);
 
+    std::string ownAddress;  // resolved lazily for the self-send guard
+
     while (rt->active) {
         auto now = std::chrono::steady_clock::now();
         if (now < rt->next_attempt) {
@@ -200,8 +202,24 @@ void EmailAdapter::PollLoop() {
                     if (!htmlBody.empty()) bodyText = StripHtmlSimple(htmlBody);
                 }
 
-                ProcessMessage(GetString(msg, "thread_id"), messageId,
-                               GetString(msg, "from"), GetString(msg, "subject"), bodyText);
+                // Self-send guard: the messages list includes mail we sent
+                // (from == own inbox address). The WS path never sees these
+                // (label=sent fires no message.received); the poll path would
+                // loop on them. Address resolved lazily, once.
+                if (ownAddress.empty()) {
+                    HttpClient::Request ar;
+                    ar.method = "GET";
+                    ar.url = std::string("https://api.agentmail.to/v0/inboxes/") + inboxId;
+                    ar.headers["Authorization"] = "Bearer " + apiKey;
+                    auto aresp = m_ctx.httpClient.Execute(ar);
+                    if (aresp.status_code == 200) {
+                        auto aj = ParseJson(aresp.body);
+                        ownAddress = GetString(aj["inbox"], "address");
+                    }
+                }
+                if (!ownAddress.empty() && GetString(msg, "from") == ownAddress) continue;
+
+                ProcessMessage(msg);
             }
         }
 
@@ -210,25 +228,84 @@ void EmailAdapter::PollLoop() {
     }
 }
 
-void EmailAdapter::ProcessMessage(const std::string& threadId,
-                                   const std::string& messageId,
-                                   const std::string& sender,
-                                   const std::string& subject,
-                                   const std::string& bodyText) {
+void EmailAdapter::ProcessMessage(const Json::Value& msg) {
+    std::string threadId  = GetString(msg, "thread_id");
+    std::string messageId = GetString(msg, "message_id");
+    std::string sender    = GetString(msg, "from");
+    std::string subject   = GetString(msg, "subject");
+
+    std::string bodyText = GetString(msg, "text");
+    if (bodyText.empty()) bodyText = GetString(msg, "extracted_text");
+    if (bodyText.empty()) {
+        std::string htmlBody = GetString(msg, "html");
+        if (!htmlBody.empty()) bodyText = StripHtmlSimple(htmlBody);
+    }
+
     std::string routingKey = "thread:" + threadId;
     std::string sessionType = "email:chat";
 
-    std::string prompt;
-    if (!subject.empty()) {
-        prompt = "New email from " + sender + " with subject '" + subject + "':\n\n" + bodyText;
-    } else {
-        prompt = "New email from " + sender + ":\n\n" + bodyText;
-    }
-    prompt += "\n\nMessage-ID: " + messageId;
-    prompt += "\nThread-ID: " + threadId;
-    prompt += "\n\nYou are responding via email. Use the email tool with action=reply and the message_id above to respond.";
+    // ------------------------------------------------------------------
+    // #15/#42 context-card migration (#59): attribution line + verbatim
+    // human-facing header preamble in the turn; routing ids as card
+    // targets; explicit reply instructions; no inline hints.
+    // ------------------------------------------------------------------
+    auto renderAddressList = [](const Json::Value& v) -> std::string {
+        if (v.isString()) return v.asString();
+        if (!v.isArray()) return "";
+        std::string out;
+        for (const auto& a : v) {
+            std::string addr = a.isString()
+                ? a.asString()
+                : (a.isObject() ? a.get("email", "").asString() : "");
+            if (addr.empty()) continue;
+            if (!out.empty()) out += ", ";
+            out += addr;
+        }
+        return out;
+    };
+    std::string toLine   = renderAddressList(msg.get("to", Json::Value()));
+    std::string ccLine   = renderAddressList(msg.get("cc", Json::Value()));
+    std::string dateLine = GetString(msg, "created_at");
 
-    Dispatch(routingKey, prompt, sessionType);
+    std::string displayText;
+    if (!subject.empty()) {
+        displayText = "Email message from " + sender + " in thread \"" + subject + "\":\n";
+    } else {
+        displayText = "Email message from " + sender + ":\n";
+    }
+    displayText += "From: " + sender + "\n";
+    if (!toLine.empty())    displayText += "To: " + toLine + "\n";
+    if (!ccLine.empty())    displayText += "Cc: " + ccLine + "\n";
+    if (!dateLine.empty())  displayText += "Date: " + dateLine + "\n";
+    if (!subject.empty())   displayText += "Subject: " + subject + "\n";
+    displayText += "\n" + bodyText;
+
+    // Context card (#15/#42) — tool-only delivery: a text reply is never
+    // an email send.
+    Json::Value meta;
+    meta["message_type"] = "email";
+    meta["delivery"] = "tool";
+    Json::Value origin;
+    if (!sender.empty()) {
+        origin["user_display"] = sender;
+        origin["user_id"] = sender;            // address = stable-ish id
+    }
+    if (!subject.empty()) origin["channel"] = subject;  // display-only
+    meta["origin"] = origin;
+    meta["email_thread_id"] = threadId;
+    if (!messageId.empty()) meta["source_message_id"] = messageId;
+    meta["reply_instructions"] =
+        "Reply using the channels tool with action=reply; thread_id is "
+        "provided by the arrival and filled automatically. The reply is "
+        "sent to the email thread — all thread participants see it. Quote "
+        "sparingly; the thread carries its own history. Text replies are "
+        "NOT delivered.";
+
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    std::string metadata = Json::writeString(wb, meta);
+
+    Dispatch(routingKey, displayText, sessionType, metadata);
 }
 
 void EmailAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {

@@ -218,8 +218,17 @@ local function do_reply(args)
         message = args.content
     }
 
-    if args.owner_id then
+    -- owner_id is REQUIRED by wall.createComment — post_id alone is
+    -- ambiguous across walls; VK answers code 15 ("could not access to
+    -- this community") without it. Default: the community's own wall,
+    -- same convention as do_post.
+    if args.owner_id and args.owner_id ~= "" then
         params.owner_id = args.owner_id
+    else
+        local gid = get_group_id(pid)
+        if gid then
+            params.owner_id = "-" .. gid
+        end
     end
     if args.reply_to_comment and args.reply_to_comment ~= "" then
         params.reply_to_comment = args.reply_to_comment
