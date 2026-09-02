@@ -10,7 +10,7 @@
 -- IMPORTANT: Always use www.moltbook.com — bare domain redirects and strips auth headers.
 -- ============================================================================
 
-local API_BASE = "https://www.moltbook.com/api/v1"
+local DEFAULT_API_BASE = "https://www.moltbook.com/api/v1"
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -25,6 +25,14 @@ end
 
 local function cfg_key(platform_id, key)
     return "channels." .. platform_id .. "." .. key
+end
+
+--- Per-instance API base: config channels.<platform_id>.api_base_url
+-- overrides the default (test/mock harnesses point this at a local server).
+local function api_base(platform_id)
+    local base = config.get(cfg_key(platform_id, "api_base_url"))
+    if base and base ~= "" then return base end
+    return DEFAULT_API_BASE
 end
 
 local function json_decode_safe(str)
@@ -54,7 +62,7 @@ local function api_get(platform_id, path, params)
     local key, err = get_api_key(platform_id)
     if err then return { success = false, error = err } end
 
-    local url = API_BASE .. path
+    local url = api_base(platform_id) .. path
     if params and next(params) then
         local parts = {}
         for k, v in pairs(params) do
@@ -92,10 +100,13 @@ local function api_post(platform_id, path, body)
     local key, err = get_api_key(platform_id)
     if err then return { success = false, error = err } end
 
-    local resp = animus.http_post(API_BASE .. path, json.encode(body), {
-        ["Authorization"] = "Bearer " .. key,
-        ["Content-Type"] = "application/json",
-        ["Accept"] = "application/json"
+    local resp = animus.http_post(api_base(platform_id) .. path, {
+        headers = {
+            ["Authorization"] = "Bearer " .. key,
+            ["Content-Type"] = "application/json",
+            ["Accept"] = "application/json"
+        },
+        body = json.encode(body)
     })
 
     local data, decode_err = json_decode_safe(resp.body)
@@ -121,11 +132,14 @@ local function api_delete(platform_id, path)
     -- Unfortunately animus Lua sandbox only exposes http_get and http_post
     -- For DELETE operations, we'll use http_post with empty body and hope for the best
     -- or include _method=DELETE parameter
-    local resp = animus.http_post(API_BASE .. path, json.encode({}), {
-        ["Authorization"] = "Bearer " .. key,
-        ["Content-Type"] = "application/json",
-        ["Accept"] = "application/json",
-        ["X-HTTP-Method-Override"] = "DELETE"
+    local resp = animus.http_post(api_base(platform_id) .. path, {
+        headers = {
+            ["Authorization"] = "Bearer " .. key,
+            ["Content-Type"] = "application/json",
+            ["Accept"] = "application/json",
+            ["X-HTTP-Method-Override"] = "DELETE"
+        },
+        body = json.encode({})
     })
 
     local data, decode_err = json_decode_safe(resp.body)
