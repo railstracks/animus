@@ -485,10 +485,18 @@ void SlackAdapter::SocketModeLoop() {
         trantor::EventLoop loop;
         auto wsPtr = drogon::WebSocketClient::newWebSocketClient(wsConnectUrl, &loop);
 
+        // Liveness bookkeeping: Slack silently drops Socket Mode connections
+        // after hours; without a watchdog we sit on a dead socket forever
+        // (Sep 2 incident: socket deaf for 7.5h, zero errors logged).
+        auto lastFrame = std::chrono::steady_clock::now();
+        const auto attemptStart = lastFrame;
+
         wsPtr->setMessageHandler(
-            [this, rt, &botUserId, wsPtr, &resolveUser, &resolveChannel](std::string&& message,
+            [this, rt, &botUserId, wsPtr, &resolveUser, &resolveChannel,
+             &loop, &lastFrame](std::string&& message,
                         const drogon::WebSocketClientPtr&,
                         const drogon::WebSocketMessageType& type) {
+                lastFrame = std::chrono::steady_clock::now();
                 if (type == drogon::WebSocketMessageType::Ping ||
                     type == drogon::WebSocketMessageType::Pong) return;
 
@@ -510,6 +518,7 @@ void SlackAdapter::SocketModeLoop() {
                     ALOG_DEBUG("slack-socket", "Disconnect: " << GetString(envelope, "reason"));
                     rt->ws_connected = false;
                     wsPtr->stop();
+                    loop.quit();
                     return;
                 }
 
@@ -655,25 +664,46 @@ void SlackAdapter::SocketModeLoop() {
             });
 
         wsPtr->setConnectionClosedHandler(
-            [rt](const drogon::WebSocketClientPtr&) {
+            [rt, &loop](const drogon::WebSocketClientPtr&) {
                 ALOG_DEBUG("slack-socket", "WebSocket closed for " << rt->channel_name);
                 rt->ws_connected = false;
+                loop.quit();
             });
 
         auto req = drogon::HttpRequest::newHttpRequest();
         req->setPath(wsPath);
 
         wsPtr->connectToServer(req,
-            [rt](drogon::ReqResult r, const drogon::HttpResponsePtr&,
+            [rt, &loop](drogon::ReqResult r, const drogon::HttpResponsePtr&,
                  const drogon::WebSocketClientPtr&) {
                 if (r != drogon::ReqResult::Ok) {
                     rt->ws_connected = false;
                     rt->consecutive_errors++;
+                    loop.quit();
                 }
             });
 
-        loop.runEvery(5.0, [rt, &loop, wsPtr]() {
-            if (!rt->active) { wsPtr->stop(); loop.quit(); }
+        loop.runEvery(10.0, [rt, &loop, wsPtr, &lastFrame, &attemptStart]() {
+            if (!rt->active) { wsPtr->stop(); loop.quit(); return; }
+            auto now = std::chrono::steady_clock::now();
+            auto idleS = std::chrono::duration_cast<std::chrono::seconds>(
+                now - lastFrame).count();
+            auto attemptS = std::chrono::duration_cast<std::chrono::seconds>(
+                now - attemptStart).count();
+            // Connected but silent past Slack's ping cadence: dead socket.
+            if (rt->ws_connected && idleS > 180) {
+                ALOG_WARNING("slack-socket", "Connection silent for "
+                             << idleS << "s - forcing reconnect");
+                rt->ws_connected = false;
+                wsPtr->stop();
+                loop.quit();
+            } else if (!rt->ws_connected && attemptS > 60) {
+                // Handshake never completed: retry the whole cycle.
+                ALOG_WARNING("slack-socket", "Handshake stalled for "
+                             << attemptS << "s - retrying");
+                wsPtr->stop();
+                loop.quit();
+            }
         });
 
         loop.loop();
