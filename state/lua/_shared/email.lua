@@ -40,7 +40,10 @@ local function do_reply(args)
         return { success = false, error = inbox }
     end
 
-    local thread_id = args.thread_id or ""
+    -- The card displays the reply target with a routing discriminator
+    -- prefix ("d:"); strip it — AgentMail wants the raw thread id. The
+    -- auto-fill path already provides the raw form.
+    local thread_id = (args.thread_id or ""):gsub("^d:", "")
     local content = args.content or args.text or ""
     if thread_id == "" then
         return { success = false,
@@ -89,7 +92,7 @@ local function do_thread_messages(args)
         return { success = false, error = inbox }
     end
 
-    local thread_id = args.thread_id or ""
+    local thread_id = (args.thread_id or ""):gsub("^d:", "")
     if thread_id == "" then
         return { success = false, error = "thread_messages requires thread_id" }
     end
@@ -125,8 +128,13 @@ local function do_thread_messages(args)
     }
 end
 
-local function handler(action, args)
+local function handler(args)
+    -- Bridge contract (LuaToolHandler.cpp): handler receives ONE argument,
+    -- the args table; action lives at args.action. (A handler(action, args)
+    -- signature receives the table as `action` — the "Unknown action:
+    -- table: 0x..." failure mode.)
     args = args or {}
+    local action = args.action
     if action == "reply" then return do_reply(args) end
     if action == "thread_messages" then return do_thread_messages(args) end
     return { success = false, error = "Unknown action: " .. tostring(action) }
