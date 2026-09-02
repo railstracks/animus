@@ -101,7 +101,7 @@ static void print_help(const char* argv0) {
     << "Paths:\n"
     << "  --config-dir <path>              Directory for configuration files\n"
     << "  --data-dir <path>                Directory for runtime state\n"
-    << "  --prompt-log-level <level>       Prompt logging: none, default, full (default: default)\n"\n"
+    << "  --prompt-log-level <level>       Prompt logging: none, default, full (default: default)\n"
     << "  --allow-private-addresses        Allow HTTP to private/loopback (dev/testing only)\n"
     << "  --log-file <path>                Redirect stderr+stdout to file (also: ANIMUS_LOG_FILE env)\n"
     << "\n"
