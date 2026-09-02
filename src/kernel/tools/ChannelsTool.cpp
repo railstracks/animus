@@ -334,6 +334,13 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
                     fillIfMissing("reply_to_comment", latest->reply_parent_id);
                 }
 
+                // Moltbook: comments answer a post (post_id); nested
+                // replies carry parent_id = source comment id.
+                if (latest->channel_type == "moltbook") {
+                    fillIfMissing("post_id", latest->post_id);
+                    fillIfMissing("parent_id", latest->reply_parent_id);
+                }
+
                 if (modified) {
                     Json::StreamWriterBuilder wb;
                     wb.settings_["indentation"] = "";

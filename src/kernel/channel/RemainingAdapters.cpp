@@ -1174,4 +1174,149 @@ void NextcloudAdapter::SendReply(const ChannelReplyTarget& target, const std::st
     }
 }
 
+
+// ============================================================================
+// MoltbookAdapter — notification poller (#15 card path, day one)
+// ============================================================================
+
+void MoltbookAdapter::SendReply(const ChannelReplyTarget&, const std::string&) {
+    // delivery=tool: replies flow exclusively through the channels tool
+    // (the Lua adapter owns the write path incl. challenge/verification).
+    ALOG_WARNING("moltbook", "SendReply called - arrivals are delivery=tool; "
+                              "ignoring auto-reply");
+}
+
+void MoltbookAdapter::RunLoop() {
+    auto* rt = m_runtime.get();
+
+    const std::string apiKey = GetString(rt->config, "api_key");
+    if (apiKey.empty()) {
+        ALOG_WARNING("moltbook", "No api_key for " << rt->channel_name);
+        rt->active = false;
+        return;
+    }
+    const std::string base = GetString(rt->config, "api_base_url",
+                                       "https://www.moltbook.com/api/v1");
+    int interval = 60;
+    try {
+        interval = std::stoi(GetString(rt->config, "poll_interval", "60"));
+    } catch (...) {}
+    if (interval < 15) interval = 15;
+
+    long long lastNotifId = 0;
+    if (m_ctx.configStore) {
+        const std::string stored = m_ctx.configStore->Get("",
+            "channel." + rt->channel_name + ".polling.last_notif_id");
+        if (!stored.empty()) {
+            try { lastNotifId = std::stoll(stored); } catch (...) {}
+        }
+    }
+
+    ALOG_INFO("moltbook", "Notification poller started for " << rt->channel_name
+              << " (interval " << interval << "s, base " << base << ")");
+
+    while (rt->active && !m_stopRequested) {
+        for (int i = 0; i < interval && rt->active && !m_stopRequested; ++i)
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (!rt->active || m_stopRequested) break;
+
+        HttpClient::Request req;
+        req.method = "GET";
+        req.url = base + "/notifications?limit=50";
+        req.headers["Authorization"] = "Bearer " + apiKey;
+        req.headers["Accept"] = "application/json";
+        req.follow_redirects = false;
+        auto resp = m_ctx.httpClient.Execute(req);
+        if (resp.status_code != 200) {
+            ALOG_WARNING("moltbook", "notifications poll failed (HTTP "
+                        << resp.status_code << ")");
+            continue;
+        }
+        auto data = ParseJson(resp.body);
+        if (!data.isObject()) continue;
+        const Json::Value notifs = data["notifications"];
+        if (!notifs.isArray()) continue;
+
+        long long maxId = lastNotifId;
+        for (const auto& n : notifs) {
+            long long id = 0;
+            bool numeric = false;
+            if (n["id"].isNumeric()) {
+                id = n["id"].asInt64();
+                numeric = true;
+            } else if (n["id"].isString()) {
+                try { id = std::stoll(n["id"].asString()); numeric = true; }
+                catch (...) {}
+            }
+            if (numeric && id <= lastNotifId) continue;
+            if (numeric && id > maxId) maxId = id;
+            ProcessNotification(n);
+        }
+        if (maxId != lastNotifId) {
+            lastNotifId = maxId;
+            if (m_ctx.configStore)
+                m_ctx.configStore->Set("", "channel." + rt->channel_name +
+                    ".polling.last_notif_id", std::to_string(lastNotifId));
+        }
+    }
+    ALOG_INFO("moltbook", "Notification poller stopped for " << rt->channel_name);
+}
+
+void MoltbookAdapter::ProcessNotification(const Json::Value& n) {
+    auto* rt = m_runtime.get();
+    const std::string type = GetString(n, "type");
+    const std::string from = n["from_agent"].isObject()
+        ? GetString(n["from_agent"], "name") : GetString(n, "from");
+    const std::string postId = GetString(n, "post_id");
+    const std::string commentId = GetString(n, "comment_id");
+    const std::string content = GetString(n, "content");
+
+    // Interactive types dispatch as cards; votes/follows are ambient noise.
+    if (type != "comment" && type != "reply" && type != "mention") {
+        ALOG_DEBUG("moltbook", "skip notification type=" << type);
+        return;
+    }
+    if (content.empty() || postId.empty()) return;
+
+    std::string displayText = "Moltbook " + type + " from " + from +
+        " on post " + postId;
+    if (!commentId.empty()) displayText += " (in reply to a comment)";
+    displayText += ":\n" + content;
+
+    Json::Value meta;
+    meta["message_type"] = "wall";
+    meta["delivery"] = "tool";
+    Json::Value origin;
+    origin["user_display"] = from.empty() ? "unknown" : from;
+    if (n["from_agent"].isObject() && n["from_agent"].isMember("id"))
+        origin["user_id"] = n["from_agent"]["id"].asString();
+    meta["origin"] = origin;
+    meta["post_id"] = postId;
+    meta["thread_root_id"] = postId;
+    if (!commentId.empty()) meta["reply_parent_id"] = commentId;
+    meta["source_message_id"] = commentId.empty() ? postId : commentId;
+    meta["reply_instructions"] =
+        "Reply using the channels tool with action=comment or action=reply; "
+        "post_id is provided by the arrival and filled automatically. "
+        "Include parent_id (also filled) when the reply targets a comment. "
+        "Text replies are NOT delivered.";
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    const std::string metadata = Json::writeString(wb, meta);
+
+    ChannelReplyTarget replyTarget;
+    replyTarget.channel_name = rt->channel_name;
+    replyTarget.channel_type = rt->channel_type;
+    replyTarget.type = ChannelReplyTarget::Wall;
+    replyTarget.post_id = postId;
+    if (!commentId.empty()) replyTarget.reply_to_comment = commentId;
+
+    const std::string routingKey = "wall:moltbook:post:" + postId;
+    m_ctx.dispatch(rt->agent_id, routingKey, displayText, "moltbook",
+                   replyTarget, metadata);
+
+    ALOG_DEBUG("moltbook", "Dispatched " << type << " notification on post "
+              << postId);
+}
+
 } // namespace animus::kernel

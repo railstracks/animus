@@ -781,7 +781,8 @@ void ChannelManager::StartChannel(const ChannelState& state) {
     // These use IChannelAdapter implementations with their own loop threads.
     // Discord and WhatsApp still use the legacy poller path (deep coupling).
     if (state.type == "irc" || state.type == "telegram" || state.type == "vk" ||
-        state.type == "email" || state.type == "slack" || state.type == "nextcloud") {
+        state.type == "email" || state.type == "slack" ||
+        state.type == "nextcloud" || state.type == "moltbook") {
 
         // Ensure channel context is initialized
         if (!m_channelCtx) {
@@ -807,6 +808,8 @@ void ChannelManager::StartChannel(const ChannelState& state) {
             adapter = std::make_unique<SlackAdapter>(*m_channelCtx);
         } else if (state.type == "nextcloud") {
             adapter = std::make_unique<NextcloudAdapter>(*m_channelCtx);
+        } else if (state.type == "moltbook") {
+            adapter = std::make_unique<MoltbookAdapter>(*m_channelCtx);
         }
 
         if (adapter && adapter->Start(state, &err)) {

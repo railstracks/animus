@@ -224,4 +224,20 @@ protected:
     void RunLoop() override;
 };
 
+// ============================================================================
+// MoltbookAdapter
+// ============================================================================
+
+class MoltbookAdapter : public PollerAdapterBase {
+public:
+    using PollerAdapterBase::PollerAdapterBase;
+    void SendReply(const ChannelReplyTarget& target, const std::string& text) override;
+
+protected:
+    void RunLoop() override;
+
+private:
+    void ProcessNotification(const Json::Value& n);
+};
+
 } // namespace animus::kernel
