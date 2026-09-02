@@ -101,7 +101,8 @@ static void print_help(const char* argv0) {
     << "Paths:\n"
     << "  --config-dir <path>              Directory for configuration files\n"
     << "  --data-dir <path>                Directory for runtime state\n"
-    << "  --prompt-log-level <level>       Prompt logging: none, default, full (default: default)\n"
+    << "  --prompt-log-level <level>       Prompt logging: none, default, full (default: default)\n"\n"
+    << "  --allow-private-addresses        Allow HTTP to private/loopback (dev/testing only)\n"
     << "  --log-file <path>                Redirect stderr+stdout to file (also: ANIMUS_LOG_FILE env)\n"
     << "\n"
     << "Node mode:\n"
@@ -334,6 +335,13 @@ static bool ParseArg(int argc, char** argv, int& i,
   if (arg == "--daemon") {
     daemonMode = true;
     wantsKernel = true;
+    return true;
+  }
+
+  if (arg == "--allow-private-addresses") {
+    // Dev/testing only: allow adapter + Lua HTTP to reach private/loopback
+    // addresses (local mock harnesses). Default stays blocked (SSRF guard).
+    cfg.web.allowPrivateAddresses = true;
     return true;
   }
 
