@@ -268,6 +268,9 @@ local function solve_challenge(challenge_text)
         elseif op == "/" then result = b ~= 0 and a / b or 0
         end
         if result then
+            if result == math.floor(result) then
+                return tostring(math.floor(result))
+            end
             return string.format("%.2f", result)
         end
     end
