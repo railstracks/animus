@@ -17,8 +17,34 @@ local function cfg_key(platform_id, field)
     return "channels." .. platform_id .. "." .. field
 end
 
+-- Safe JSON decode (moltbook.lua idiom, ported): bare json.decode turns a
+-- bad/empty body into a raw handler error; in Lua "" is truthy, so
+-- `resp.body or "{}"` does NOT guard the empty case.
+local function json_decode_safe(str)
+    if not str or str == "" then return nil, "empty body" end
+    local ok, data = pcall(json.decode, str)
+    if ok then return data end
+    return nil, "json decode failed: " .. tostring(data)
+end
+
+local function body_excerpt(body, max_len)
+    max_len = max_len or 120
+    local s = tostring(body or "")
+    if #s <= max_len then return s end
+    return s:sub(1, max_len) .. "..."
+end
+
 local function api_base(platform_id)
-    return config.get(cfg_key(platform_id, "api_base_url")) or "https://api.agentmail.to"
+    -- config.get returns "" (never nil) for missing keys, and "" is TRUTHY in
+    -- Lua — `config.get(k) or default` silently returns "". Guard explicitly.
+    -- (Sep 2 incident: unguarded default made every URL relative; curl failed
+    -- instantly with status=0 + empty body and the real error lived in
+    -- resp.error, which was never surfaced.)
+    local base = config.get(cfg_key(platform_id, "api_base_url"))
+    if not base or base == "" then
+        return "https://api.agentmail.to"
+    end
+    return base:gsub("/+$", "") -- tolerate trailing slash
 end
 
 local function get_creds(platform_id)
@@ -64,9 +90,13 @@ local function do_reply(args)
         return { success = false, error = "HTTP request failed" }
     end
 
-    local data = json.decode(resp.body or "{}")
+    local data, decode_err = json_decode_safe(resp.body)
     if not data then
-        return { success = false, error = "Invalid response from AgentMail" }
+        return { success = false, error = "AgentMail reply failed: " .. (decode_err or "unknown")
+                 .. " (http_status=" .. tostring(resp.status or "?")
+                 .. ", curl_error=" .. tostring(resp.error or "none")
+                 .. ", body_type=" .. type(resp.body)
+                 .. ", body=" .. body_excerpt(resp.body) .. ")" }
     end
     if resp.status and resp.status >= 400 then
         local err_msg = "HTTP " .. tostring(resp.status)
@@ -98,8 +128,9 @@ local function do_thread_messages(args)
     end
 
     local limit = tonumber(args.limit) or 10
+    -- Correct route: GET /v0/inboxes/{inbox}/threads/{tid} (no /messages
+    -- suffix — that path 404s). The thread object embeds messages[].
     local url = api_base(pid) .. "/v0/inboxes/" .. inbox .. "/threads/" .. thread_id
-        .. "/messages?limit=" .. tostring(limit)
     local resp = animus.http_get(url, {
         headers = { ["Authorization"] = "Bearer " .. key },
     })
@@ -107,15 +138,24 @@ local function do_thread_messages(args)
         return { success = false, error = "HTTP request failed" }
     end
 
-    local data = json.decode(resp.body or "{}")
+    local data, decode_err = json_decode_safe(resp.body)
     if not data then
-        return { success = false, error = "Invalid response from AgentMail" }
+        return { success = false, error = "AgentMail read failed: " .. (decode_err or "unknown")
+                 .. " (http_status=" .. tostring(resp.status or "?")
+                 .. ", curl_error=" .. tostring(resp.error or "none")
+                 .. ", body_type=" .. type(resp.body)
+                 .. ", body=" .. body_excerpt(resp.body) .. ")" }
     end
     if resp.status and resp.status >= 400 then
         return { success = false, error = "HTTP " .. tostring(resp.status) .. ": " .. tostring(data.error or "") }
     end
 
     local msgs = data.messages or {}
+    if limit > 0 and #msgs > limit then
+        local trimmed, first = {}, #msgs - limit + 1
+        for i = first, #msgs do trimmed[#trimmed + 1] = msgs[i] end
+        msgs = trimmed
+    end
     local lines = {}
     for i = #msgs, 1, -1 do
         local m = msgs[i]
