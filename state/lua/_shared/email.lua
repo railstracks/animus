@@ -79,12 +79,32 @@ local function do_reply(args)
         return { success = false, error = "reply requires content" }
     end
 
+    -- AgentMail send REQUIRES to/cc/bcc even with thread_id (400 otherwise,
+    -- "to, cc, or bcc must be specified"). If the arrival card didn't
+    -- pre-fill the recipient, resolve it from the thread's senders.
+    local to = args.to or args.recipient or ""
+    if to == "" then
+        local tresp = animus.http_get(api_base(pid) .. "/v0/inboxes/" .. inbox
+            .. "/threads/" .. thread_id, {
+            headers = { ["Authorization"] = "Bearer " .. key },
+        })
+        local tdata = tresp and json_decode_safe(tresp.body) or nil
+        if tdata and type(tdata.senders) == "table" and #tdata.senders > 0 then
+            to = tdata.senders[1]
+        else
+            return { success = false,
+                     error = "reply requires to (arrival did not pre-fill it and thread sender lookup failed)" }
+        end
+    end
+    -- senders carry display form "Name <addr>"; the send API wants the bare address
+    local addr = tostring(to):match("<([^>]+)>") or to
+
     local resp = animus.http_post(api_base(pid) .. "/v0/inboxes/" .. inbox .. "/messages/send", {
         headers = {
             ["Authorization"] = "Bearer " .. key,
             ["Content-Type"] = "application/json",
         },
-        body = json.encode({ text = content, thread_id = thread_id }),
+        body = json.encode({ text = content, thread_id = thread_id, to = addr }),
     })
     if not resp then
         return { success = false, error = "HTTP request failed" }
@@ -99,9 +119,11 @@ local function do_reply(args)
                  .. ", body=" .. body_excerpt(resp.body) .. ")" }
     end
     if resp.status and resp.status >= 400 then
-        local err_msg = "HTTP " .. tostring(resp.status)
-        if data.error then err_msg = err_msg .. ": " .. tostring(data.error) end
-        return { success = false, error = err_msg }
+        local why = data.message or data.error or ""
+        if type(data.errors) == "table" and #data.errors > 0 and data.errors[1].message then
+            why = why .. " [" .. tostring(data.errors[1].message) .. "]"
+        end
+        return { success = false, error = "HTTP " .. tostring(resp.status) .. ": " .. why }
     end
 
     local sent_id = data.id or data.message_id or ""
