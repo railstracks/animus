@@ -1010,6 +1010,9 @@ void ChannelManager::SyncChannelCredentialsToConfigStore(
         // Common
         "api_key", "access_token", "bot_token", "app_token", "app_password",
         "client_id", "client_secret", "refresh_token",
+        // Base-URL overrides read by Lua adapters (moltbook mock harness;
+        // any adapter whose api_base can be overridden needs it mirrored)
+        "api_base_url",
         // Bluesky
         "handle", "pds", "access_jwt", "refresh_jwt", "did",
         // VK
