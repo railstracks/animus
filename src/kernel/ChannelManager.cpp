@@ -44,6 +44,18 @@ std::string GetString(const Json::Value& v, const std::string& key,
     return def;
 }
 
+// Default-true config bool: only explicit negative forms disable. The old
+// `GetString(...) != "false"` idiom silently enabled on every near-miss
+// ("False", "NO", "0", trailing space); this accepts the obvious negatives,
+// case-insensitively. Unset ("") stays enabled — default-on is intended.
+bool GetBoolDefaultTrue(const Json::Value& v, const std::string& key) {
+    std::string s = GetString(v, key);
+    for (auto& c : s) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return !(s == "false" || s == "0" || s == "no" || s == "off");
+}
+
 int64_t GetInt(const Json::Value& v, const std::string& key, int64_t def = 0) {
     if (v.isMember(key) && v[key].isInt64()) return v[key].asInt64();
     if (v.isMember(key) && v[key].isInt()) return v[key].asInt();
@@ -1355,7 +1367,7 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
         if (pds.empty()) pds = "https://bsky.social";
 
         // --- Notification (posts) polling ---
-        bool enablePosts = GetString(state->config, "enable_posts") != "false";
+        bool enablePosts = GetBoolDefaultTrue(state->config, "enable_posts");
         if (enablePosts) {
             HttpClient::Request req;
             req.method = "GET";
@@ -1454,8 +1466,8 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                 }
 
                 // --- Auto-reply filtering ---
-                bool autoReply = GetString(state->config, "auto_reply") != "false";
-                bool replyToAll = GetString(state->config, "reply_to_all") != "false";
+                bool autoReply = GetBoolDefaultTrue(state->config, "auto_reply");
+                bool replyToAll = GetBoolDefaultTrue(state->config, "reply_to_all");
 
                 if (!autoReply) {
                     ALOG_DEBUG("bluesky", "auto_reply disabled, skipping " << reason
@@ -1615,7 +1627,7 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
         }
 
         // --- Chat (DM) polling ---
-        bool enableDm = GetString(state->config, "enable_dm") != "false";
+        bool enableDm = GetBoolDefaultTrue(state->config, "enable_dm");
         if (enableDm && now >= state->bsky_chat_next_poll) {
             BlueskyChatPollLoop(state);
             state->bsky_chat_next_poll = now + std::chrono::seconds(60);
@@ -1751,8 +1763,8 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
                   << " stored_revs=" << seenRevs.size());
 
         // Auto-reply filter config
-        bool autoReply = GetString(state->config, "auto_reply") != "false";
-        bool replyToAll = GetString(state->config, "reply_to_all") != "false";
+        bool autoReply = GetBoolDefaultTrue(state->config, "auto_reply");
+        bool replyToAll = GetBoolDefaultTrue(state->config, "reply_to_all");
 
         // Process messages oldest-first (API returns newest-first, so reverse)
         const auto& messages = msgData["messages"];
