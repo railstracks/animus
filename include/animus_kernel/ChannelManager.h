@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <map>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -206,6 +207,8 @@ private:
 
         // Discord Gateway state
         std::string discord_bot_user_id;
+        std::string discord_guild_name;                            // #42: GUILD_CREATE
+        std::map<std::string, std::string> discord_channel_names;  // #42: id -> name
 
         // WhatsApp state
         std::string whatsapp_qr_url;
@@ -248,7 +251,13 @@ private:
                            const std::string& routingKey,
                            const std::string& message,
                            const std::string& sessionType,
-                           const std::string& metadata = "{}");
+                           const std::string& metadata = "{}",
+                           // Optional adapter-stated session key: lets the
+                           // routing key (reply target) and the session key
+                           // (conversation identity) diverge — Bluesky threads
+                           // key sessions by thread ROOT while each post keeps
+                           // its own reply target (Aug 31).
+                           const std::string& explicitSessionKey = "");
 
     // Log message to session history without triggering an agent chain.
     // Used for channel tracking — messages are stored as context for later mentions.

@@ -34,7 +34,6 @@ private:
     ToolResult HandleList(const std::string& agentId, const std::string& rawArgs);
     ToolResult HandleSearch(const std::string& agentId, const std::string& rawArgs);
     ToolResult HandleHistory(const std::string& agentId, const std::string& rawArgs);
-    ToolResult HandleReply(const std::string& agentId, const std::string& rawArgs);
 
     // Notes sub-actions
     ToolResult HandleNotesList(const std::string& agentId, const std::string& rawArgs);

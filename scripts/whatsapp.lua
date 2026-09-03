@@ -34,11 +34,13 @@ function actions.send_message(args)
         return { success = false, error = "Missing content parameter" }
     end
 
+    -- NOTE (Aug 31): reply/send_message are intercepted by the C++ ChannelsTool
+    -- bridge (gateway outbox) before this Lua runs. If reached anyway, tell the
+    -- truth: text output is NOT delivered on WhatsApp — tool calls only.
     return {
         success = false,
-        output = "Proactive WhatsApp send not yet available via tool. " ..
-                 "Use the standard reply mechanism — your text output will be " ..
-                 "routed to the WhatsApp conversation automatically.",
+        error = "Use action=reply with chat_id and content — the C++ bridge " ..
+                "delivers via the gateway outbox. Text output is NOT delivered.",
         jid = jid,
     }
 end
@@ -90,7 +92,7 @@ animus.register_channel({
     id = "whatsapp",
     name = "WhatsApp",
     capabilities = {"write"},
-    actions = {"send_message", "get_conversations", "get_messages"},
+    actions = {"reply", "send_message", "get_conversations", "get_messages"},
     schema = {
         send_message = {
             { name = "jid", type = "string", required = true, description = "WhatsApp JID (e.g. 31612345678@s.whatsapp.net)" },

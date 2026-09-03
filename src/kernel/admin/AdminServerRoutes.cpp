@@ -20,6 +20,7 @@
 #include "animus_kernel/tools/ChannelsTool.h"
 #include "animus_kernel/tools/WebSearchTool.h"
 #include "animus_kernel/SessionNotesStore.h"
+#include "animus_kernel/ChannelContextStore.h"
 #include "animus_kernel/SessionReportStore.h"
 #include "animus_kernel/tools/HttpClient.h"
 #include "animus_kernel/tools/WebSearchTool.h"

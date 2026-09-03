@@ -99,6 +99,11 @@ end
 --- Get the bot token for this instance.
 local function get_token(platform_id)
     local token = config.get(cfg_key(platform_id, "bot_token"))
+    if (not token or token == "") and not platform_id:find(":") then
+        -- bare type form ("slack") -> instance form ("slack:slack") retry;
+        -- config rows live under channels.<type>:<instance>
+        token = config.get(cfg_key(platform_id .. ":" .. platform_id, "bot_token"))
+    end
     if not token or token == "" then
         return nil, "no bot_token configured for " .. platform_id
     end
@@ -351,18 +356,19 @@ local function do_reply(args)
     if not channel or channel == "" then
         return { success = false, error = "channel_id is required" }
     end
-    if not thread_ts or thread_ts == "" then
-        return { success = false, error = "thread_ts (or message_id) is required for reply" }
-    end
     if not content or content == "" then
         return { success = false, error = "content is required" }
     end
 
+    -- thread_ts optional: absent = top-level response in the channel
+    -- (threaded_replies=false); present = reply inside that thread.
     local body = {
         channel = channel,
-        text = content,
-        thread_ts = thread_ts
+        text = content
     }
+    if thread_ts and thread_ts ~= "" then
+        body.thread_ts = thread_ts
+    end
 
     -- Broadcast to channel (not just thread) if requested
     if args.broadcast then
@@ -384,7 +390,8 @@ local function do_reply(args)
         success = true,
         message_id = data.ts,
         channel_id = data.channel,
-        output = "Reply sent in thread " .. thread_ts
+        output = thread_ts and ("Reply sent in thread " .. thread_ts)
+                 or "Reply sent to channel"
     }
 end
 
@@ -781,7 +788,7 @@ animus.register_channel({
         },
         reply = {
             { name = "channel_id", type = "string", required = true, description = "Channel ID" },
-            { name = "thread_ts", type = "string", required = true, description = "Timestamp of the message to reply to" },
+            { name = "thread_ts", type = "string", required = false, description = "Timestamp of the message to reply to (thread reply); omit for a top-level response" },
             { name = "content", type = "string", required = true, description = "Reply text" },
             { name = "broadcast", type = "boolean", required = false, description = "Show reply in channel (not just thread)" }
         },

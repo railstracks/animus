@@ -239,6 +239,18 @@ The admin UI is embedded in the binary when `ANIMUS_ADMIN_UI_EMBED=ON` (default 
 | `ANIMUS_ADMIN_PORT` | Admin server port. | `8080` |
 | `ANIMUS_ADMIN_ENABLED` | Set to `0` to disable the admin server entirely. | `1` |
 
+### CLI Flags
+
+| Flag | Purpose | Default |
+|------|---------|---------|
+| `--prompt-log-level <level>` | Prompt logging verbosity: `none`, `default`, `full`. `none` disables logging. `default` logs token usage metadata. `full` logs the complete prompt (system message, user message, tool results). | `default` |
+| `--config <path>` | Config directory path. | `./config` |
+| `--data <path>` | Data directory path. | `./data` |
+| `--pg-host <host>` | PostgreSQL host. When set, uses PostgreSQL instead of SQLite. | unset (SQLite) |
+| `--pg-database <name>` | PostgreSQL database name. | `animus` |
+| `--pg-user <user>` | PostgreSQL username. | — |
+| `--pg-password <pass>` | PostgreSQL password. | — |
+
 ### Authentication Setup
 
 ```bash

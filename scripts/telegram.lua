@@ -16,7 +16,12 @@ local function cfg_key(platform_id, field)
 end
 
 local function get_token(platform_id)
-    return config.get(cfg_key(platform_id, "bot_token"))
+    local tok = config.get(cfg_key(platform_id, "bot_token"))
+    if tok and tok ~= "" then return tok end
+    -- Hybrid-adapter fallback: the C++ TelegramAdapter keeps the Bot API
+    -- token in its channel config row; an empty string here means the URL
+    -- would become /bot/<method> and every call 404s — fail loud instead.
+    return nil
 end
 
 -- ===========================================================================
@@ -24,9 +29,14 @@ end
 -- ===========================================================================
 
 local function api_call(token, method, params)
+    -- animus.http_post(url, options) — options = { headers={}, body="", timeout=N }
+    -- (the pre-fix call passed (url, body, headers); ParseHttpOptions ignored the
+    --  string arg and every POST went out bodyless — Telegram 400 "message text
+    --  is empty". Survived since Jun 30 because the tool path was never live.)
     local url = "https://api.telegram.org/bot" .. token .. "/" .. method
-    local resp = animus.http_post(url, json.encode(params), {
-        ["Content-Type"] = "application/json"
+    local resp = animus.http_post(url, {
+        headers = { ["Content-Type"] = "application/json" },
+        body = json.encode(params),
     })
     if not resp then
         return nil, "HTTP request failed"
@@ -65,6 +75,27 @@ end
 -- ===========================================================================
 
 local actions = {}
+
+function actions.reply(args)
+    local token = get_token(args.platform_id)
+    if not token then return { success = false, error = "No bot token configured" } end
+
+    local params = {
+        chat_id = args.chat_id,
+        text = args.content,
+    }
+    if args.reply_to_message_id then params.reply_to_message_id = tonumber(args.reply_to_message_id) end
+
+    local result, err = api_call(token, "sendMessage", params)
+    if err then return { success = false, error = "Telegram sendMessage failed: " .. err } end
+
+    return {
+        success = true,
+        output = "Reply sent to " .. args.chat_id,
+        message_id = tostring(result.message_id),
+        chat_id = tostring(result.chat.id),
+    }
+end
 
 function actions.send_message(args)
     local token = get_token(args.platform_id)
@@ -190,8 +221,13 @@ animus.register_channel({
     id = "telegram",
     name = "Telegram",
     capabilities = {"read", "write"},
-    actions = {"send_message", "get_messages", "get_conversations", "get_me", "get_chat"},
+    actions = {"reply", "send_message", "get_messages", "get_conversations", "get_me", "get_chat"},
     schema = {
+        reply = {
+            { name = "chat_id", type = "string", required = true, description = "Chat ID to reply to (from the arrival)" },
+            { name = "content", type = "string", required = true, description = "Message text" },
+            { name = "reply_to_message_id", type = "string", required = false, description = "Source message ID to quote (from the arrival)" },
+        },
         send_message = {
             { name = "chat_id", type = "string", required = true, description = "Chat ID to send to" },
             { name = "content", type = "string", required = true, description = "Message text" },

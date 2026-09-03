@@ -41,10 +41,13 @@ protected:
     /// Subclass implements the polling loop entry point.
     virtual void RunLoop() = 0;
 
-    /// Dispatch helper — routes message to agent session
+    /// Dispatch helper — routes message to agent session. Metadata and
+    /// explicitSessionKey pass through to ChannelDispatch (Aug 31).
     void Dispatch(const std::string& routingKey,
                   const std::string& message,
-                  const std::string& sessionType);
+                  const std::string& sessionType,
+                  const std::string& metadata = "{}",
+                  const std::string& explicitSessionKey = "");
 
     /// Log helper — records message without triggering chain
     void Log(const std::string& routingKey,
@@ -134,11 +137,7 @@ protected:
 private:
     void WebSocketLoop();
     void PollLoop();
-    void ProcessMessage(const std::string& threadId,
-                        const std::string& messageId,
-                        const std::string& sender,
-                        const std::string& subject,
-                        const std::string& bodyText);
+    void ProcessMessage(const Json::Value& msg);
 };
 
 // ============================================================================
@@ -219,6 +218,22 @@ public:
 
 protected:
     void RunLoop() override;
+};
+
+// ============================================================================
+// MoltbookAdapter
+// ============================================================================
+
+class MoltbookAdapter : public PollerAdapterBase {
+public:
+    using PollerAdapterBase::PollerAdapterBase;
+    void SendReply(const ChannelReplyTarget& target, const std::string& text) override;
+
+protected:
+    void RunLoop() override;
+
+private:
+    void ProcessNotification(const Json::Value& n);
 };
 
 } // namespace animus::kernel

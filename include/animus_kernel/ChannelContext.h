@@ -101,7 +101,15 @@ struct ChannelDispatch {
                          PollerRuntime* state,
                          const std::string& routingKey,
                          const std::string& message,
-                         const std::string& sessionType);
+                         const std::string& sessionType,
+                         // Dispatch metadata -> channel-context card (#15/#42)
+                         const std::string& metadata = "{}",
+                         // Optional adapter-stated session key: lets the
+                         // routing key (reply target) and session key
+                         // (conversation identity) diverge — VK comment
+                         // threads key sessions by POST root while each
+                         // comment keeps its own reply target (Aug 31).
+                         const std::string& explicitSessionKey = "");
 
     /// Log a message to session history without triggering a chain.
     static void Log(ChannelContext& ctx,

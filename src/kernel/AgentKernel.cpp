@@ -74,6 +74,7 @@
 #include "animus_kernel/scheduler/Scheduler.h"
 #include "animus_kernel/admin/DiaryManager.h"
 #include "animus_kernel/SessionNotesStore.h"
+#include "animus_kernel/ChannelContextStore.h"
 #include "animus_kernel/AgendaStore.h"
 #include "animus_kernel/SessionReportStore.h"
 #include "animus_kernel/SessionTagsStore.h"
@@ -81,9 +82,9 @@
 #include "animus_kernel/ContextProviderRegistry.h"
 #include "animus_kernel/context/IdentityProvider.h"
 #include "animus_kernel/context/SessionNotesProvider.h"
+#include "animus_kernel/context/ChannelContextProvider.h"
 #include "animus_kernel/context/SessionReportProvider.h"
 #include "animus_kernel/context/ActiveMemoryProvider.h"
-#include "animus_kernel/context/ChannelContextProvider.h"
 #include "animus_kernel/context/RuntimeEnvironmentProvider.h"
 #include "animus_kernel/context/TemporalContextProvider.h"
 
@@ -157,6 +158,7 @@ AgentKernel::~AgentKernel() {
     delete m_providerThrottle; m_providerThrottle = nullptr;
     delete m_scheduler; m_scheduler = nullptr;
     delete m_sessionNotesStore; m_sessionNotesStore = nullptr;
+    delete m_channelContextStore; m_channelContextStore = nullptr;
     delete m_agendaStore; m_agendaStore = nullptr;
     delete m_sessionReportStore; m_sessionReportStore = nullptr;
     delete m_contextRegistry; m_contextRegistry = nullptr;
@@ -384,6 +386,12 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         m_sessionNotesStore = new SessionNotesStore(m_dataStore);
         m_adminServer->SetSessionNotesStore(m_sessionNotesStore);
 
+        // --- Channel Context Store (trusted channel arrivals, #14) ---
+        // Written by ExecuteChannelDispatch (both direct and queue-flush paths
+        // funnel through it); read by the ChannelContextProvider (#15).
+        m_channelContextStore = new ChannelContextStore(m_dataStore);
+        m_adminServer->SetChannelContextStore(m_channelContextStore);
+
         // --- Agenda Store (per-agent calendar/agenda events) ---
         m_agendaStore = new AgendaStore(m_dataStore);
 
@@ -407,6 +415,14 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         m_contextRegistry->Register(std::make_unique<TemporalContextProvider>(m_agendaStore));
         m_contextRegistry->Register(
             std::make_unique<SessionNotesProvider>(m_sessionNotesStore));
+
+        // Channel Context Provider (#15) — renders trusted channel arrivals
+        // as a system-message context block. Reads from ChannelContextStore
+        // (#14), written by ExecuteChannelDispatch before the chain runs.
+        if (m_channelContextStore) {
+            m_contextRegistry->Register(
+                std::make_unique<ChannelContextProvider>(m_channelContextStore));
+        }
         m_contextRegistry->Register(
             std::make_unique<SessionReportProvider>(
                 m_sessionReportStore, m_embeddingService));
@@ -414,8 +430,6 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             std::make_unique<ActiveMemoryProvider>(
                 m_memoryStore, m_diaryStore, m_ontologyStore, m_memoryFileStore,
                 m_sessionTagsStore, m_sessionManager, m_scheduler, m_embeddingService));
-        m_contextRegistry->Register(
-            std::make_unique<ChannelContextProvider>());
         m_chainRunner->SetContextRegistry(m_contextRegistry);
         m_adminServer->SetContextRegistry(m_contextRegistry);
 
@@ -541,6 +555,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // so adapters can register into it during Phase 2
         m_channelsTool = new ChannelsTool();
         m_channelsTool->SetConfigStore(m_configStore);
+        m_channelsTool->SetChannelContextStore(m_channelContextStore);
         // Note: m_channelManager is null here — wired in Initialize()
         m_tools.Register(std::unique_ptr<IToolHandler>(m_channelsTool));
         m_adminServer->SetChannelsTool(m_channelsTool);
@@ -1467,9 +1482,13 @@ void AgentKernel::ExecuteChannelDispatch(
     auto session = m_sessionManager->GetOrCreate(key);
     if (!session) return;
 
-    // Ensure the session has the correct agent_id
-    if (!agentId.empty() && session->AgentId().empty()) {
-        session->SetAgentId(agentId);
+    // Ensure the session has the correct agent_id. Unbound adapters pass
+    // empty — 'default' is the canonical unbound id and the store's partition
+    // key. Live-verified failure (Aug 28, DM session 298): fresh sessions
+    // stayed empty → arrival.agent_id='' → provider bails on the empty check
+    // → no Channel Context card → model fell back to tool-posting its reply.
+    if (session->AgentId().empty()) {
+        session->SetAgentId(agentId.empty() ? "default" : agentId);
     }
 
     // Resolve provider
@@ -1527,17 +1546,97 @@ void AgentKernel::ExecuteChannelDispatch(
         m_messageQueue->NotifyChainStart("channel:" + sessionKey);
     }
 
+    // Record the trusted arrival (#14) BEFORE the chain runs — single write
+    // point covering both direct dispatch and queue-flush (both funnel here).
+    // The provider (#15) renders pending arrivals as the channel-context card.
+    if (m_channelContextStore) {
+        ChannelArrival arrival;
+        arrival.session_key = "channel:" + sessionKey;
+        arrival.agent_id = session->AgentId();
+        arrival.channel_type = replyTarget.channel_type;
+        arrival.channel_name = replyTarget.channel_name;
+        arrival.platform_id = replyTarget.channel_type + ":" + replyTarget.channel_name;
+        arrival.delivery = (replyTarget.type == ChannelManager::ReplyTarget::Chat)
+                               ? "auto" : "tool";
+        arrival.peer_id = replyTarget.peer_id;
+        arrival.post_id = replyTarget.post_id;
+        arrival.group_id = replyTarget.group_id;
+        arrival.email_thread_id = replyTarget.email_thread_id;
+        // message_type / author_* / source_message_id: adapters will supply
+        // via metadata as #15 firms the schema up; parse what's there now.
+        {
+            Json::Value meta;
+            Json::CharReaderBuilder rb;
+            std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+            std::string errs;
+            if (reader->parse(metadata.data(), metadata.data() + metadata.size(),
+                              &meta, &errs) && meta.isObject()) {
+                arrival.message_type = meta.get("message_type", "").asString();
+                arrival.author_id = meta.get("author_id", "").asString();
+                arrival.author_handle = meta.get("author_handle",
+                                                 meta.get("author", "").asString()).asString();
+                arrival.source_message_id = meta.get("source_message_id",
+                                                     meta.get("message_id", "").asString()).asString();
+                arrival.reply_parent_id = meta.get("reply_parent_id", "").asString();
+                arrival.thread_root_id = meta.get("thread_root_id",
+                                                  meta.get("root_id", "").asString()).asString();
+                arrival.reply_instructions = meta.get("reply_instructions", "").asString();
+                // Adapter-declared delivery override (#42: adapters state their
+                // channel's semantics): "tool" suppresses Chat-target
+                // auto-delivery — Bluesky chats are tool-only (groups exist,
+                // silence must be first-class).
+                arrival.delivery = meta.get("delivery", arrival.delivery).asString();
+                if (meta.isMember("origin") && meta["origin"].isObject()) {
+                    Json::StreamWriterBuilder wb;
+                    wb["indentation"] = "";
+                    arrival.origin = Json::writeString(wb, meta["origin"]);
+                    // Conventional origin keys map into typed fields when the
+                    // adapter doesn't set them explicitly.
+                    if (arrival.author_handle.empty())
+                        arrival.author_handle =
+                            meta["origin"].get("user", "").asString();
+                    if (arrival.author_id.empty())
+                        arrival.author_id =
+                            meta["origin"].get("user_id", "").asString();
+                }
+            }
+        }
+        if (arrival.message_type.empty()) {
+            arrival.message_type = (replyTarget.type == ChannelManager::ReplyTarget::Chat)
+                                       ? "chat" : "wall";
+        }
+        m_channelContextStore->AddArrival(arrival);
+        m_channelContextStore->Prune(arrival.session_key, arrival.agent_id);
+    }
+
+    // Auto-delivery decision: Chat targets default to auto, but adapters may
+    // declare "tool" delivery in dispatch metadata (see arrival override above).
+    bool autoDeliver = (replyTarget.type == ChannelManager::ReplyTarget::Chat);
+    {
+        Json::Value meta;
+        Json::CharReaderBuilder rb;
+        std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+        std::string errs;
+        if (reader->parse(metadata.data(), metadata.data() + metadata.size(),
+                          &meta, &errs)
+            && meta.isObject()
+            && meta.get("delivery", "").asString() == "tool") {
+            autoDeliver = false;
+        }
+    }
+
     m_jobs.EnqueueInLane(
         ::animus::jobs::JobLane::Cognition,
-        [this, session, sessionKey, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval, metadata]() {
+        [this, session, sessionKey, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval, metadata, autoDeliver]() {
             // Per-message callback: send each assistant message to the channel
             // immediately rather than only the final response.
             // Only for Chat (DM) targets — Wall (post reply/mention) targets
             // require the agent to reply explicitly via the channels tool with
             // post_id/root_id; auto-posting the final text caused duplicate
             // and low-quality replies (agent narration leaking to the feed).
+            // Adapters may opt out of auto-delivery entirely (delivery:"tool").
             ChainAssistantMessageCallback assistantCb;
-            if (replyTarget.type == ChannelManager::ReplyTarget::Chat) {
+            if (autoDeliver) {
                 assistantCb = [this, replyTarget](const std::string& text) {
                     SendAutoReply(replyTarget, text);
                 };
@@ -1582,6 +1681,12 @@ void AgentKernel::ExecuteChannelDispatch(
             // already sent each message during the chain.
             // result.response holds the last message text, but it was already
             // delivered via the callback.
+
+            // Chain saw the pending arrivals — mark them consumed (#14).
+            if (m_channelContextStore) {
+                m_channelContextStore->MarkAllConsumed("channel:" + sessionKey,
+                                                       session->AgentId());
+            }
 
             // Notify queue that the chain has ended — starts cooldown if interval > 0
             if (m_messageQueue && interval > 0) {

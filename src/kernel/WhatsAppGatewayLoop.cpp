@@ -59,7 +59,9 @@ using animus::whatsapp::ADV_HOSTED_ACCOUNT_SIG_PREFIX;
 using animus::whatsapp::ADV_HOSTED_DEVICE_SIG_PREFIX;
 using animus::whatsapp::KEY_BUNDLE_TYPE;
 using animus::whatsapp::handleEncryptedMessage;
+#include "animus_kernel/signal/FileSignalStore.h"
 using animus::signal::create_in_memory_manager;
+using animus::signal::create_file_manager;
 using animus::signal::SignalAddress;
 using animus::signal::SignalMessageType;
 using animus::signal::EncryptedMessage;
@@ -227,7 +229,9 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
     } else {
         authIdKey = animus::signal::SignalIdentityKey::generate(1);
     }
-    auto signalMgr = animus::signal::create_in_memory_manager(std::move(authIdKey));
+    // #53: file-backed stores — peer sessions/identities survive restarts.
+    // Own pre-keys are still populated from auth state below (auth.json).
+    auto signalMgr = create_file_manager(authDir + "/signal", std::move(authIdKey));
     animus::signal::SignalSessionManager* rawSignalMgr = signalMgr.get();
 
     // Populate Signal stores from auth state so we can decrypt inbound messages.
@@ -265,6 +269,19 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
     // Map from base JID → last-seen device JID for outgoing encryption
     // e.g., "199930794737855@lid" → "199930794737855:26@lid"
     std::unordered_map<std::string, std::string> lastDeviceJid;
+    // #53: device routing map persists across restarts (baseJid -> device jid)
+    {
+        std::ifstream ldF(authDir + "/last-device.json", std::ios::binary);
+        if (ldF.is_open()) {
+            Json::Value ldRoot;
+            std::string ldErrs;
+            Json::CharReaderBuilder ldRb;
+            if (Json::parseFromStream(ldRb, ldF, &ldRoot, &ldErrs)) {
+                for (auto it = ldRoot.begin(); it != ldRoot.end(); ++it)
+                    lastDeviceJid[it.name()] = it->asString();
+            }
+        }
+    }
     std::mutex lastDeviceMutex;
 
     state->config["_wa_outbox_mutex"] = reinterpret_cast<Json::UInt64>(&outboxMutex);
@@ -387,12 +404,13 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
     struct PendingMessage {
         std::string routingKey;
         std::string displayText;
+        std::string metadata; // context card (#15) — attached on flush
     };
     std::vector<PendingMessage> pendingOffline;
     std::mutex pendingOfflineMutex;
 
     // --- Frame callback (runs on transport's background thread) ---
-    transport.onFrame([this, state, &noise, &auth, &authFile, &handshakeComplete,
+    transport.onFrame([this, state, &noise, &auth, &authFile, &authDir, &handshakeComplete,
                        &connMutex, &connCV, &transport, rawSignalMgr,
                        &outbox, &outboxMutex, &sendNode, &postLoginStep,
                        &pendingOffline, &pendingOfflineMutex,
@@ -1100,8 +1118,11 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                                           << " pending offline messages" << std::endl;
                                 // Group by routing key and dispatch each group as one prompt
                                 std::map<std::string, std::vector<std::string>> bySession;
+                                std::map<std::string, std::string> lastCard; // per-session card (#15)
                                 for (const auto& pm : pendingOffline) {
                                     bySession[pm.routingKey].push_back(pm.displayText);
+                                    if (!pm.metadata.empty())
+                                        lastCard[pm.routingKey] = pm.metadata;
                                 }
                                 for (const auto& [rk, messages] : bySession) {
                                     std::string batched;
@@ -1109,7 +1130,9 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                                         if (i > 0) batched += "\n";
                                         batched += messages[i];
                                     }
-                                    DispatchToSession(state, rk, batched, "chat");
+                                    // Card of the LAST buffered message — matches the
+                                    // message the agent is about to answer.
+                                    DispatchToSession(state, rk, batched, "chat", lastCard[rk]);
                                 }
                                 pendingOffline.clear();
                             }
@@ -1230,7 +1253,49 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                     &rawSignalMgr->signed_pre_keys(),
                     &rawSignalMgr->identity());
 
-                std::string displayText = "[WA] " + decrypted.sender + ": " + decrypted.text;
+                // Attribution header (#15/#42 pattern): per-message origin —
+                // push name when the node carries it, bare JID otherwise.
+                // Device suffix stripped for display. No channel tag: the
+                // context card declares the channel.
+                std::string baseSender = decrypted.sender;
+                {
+                    auto colonPos = baseSender.find(':');
+                    if (colonPos != std::string::npos) {
+                        auto atPos = baseSender.find('@');
+                        if (atPos != std::string::npos && atPos > colonPos)
+                            baseSender = baseSender.substr(0, colonPos) + baseSender.substr(atPos);
+                    }
+                }
+                std::string who = decrypted.senderName.empty()
+                    ? baseSender
+                    : decrypted.senderName + " (user:" + baseSender + ")";
+                std::string displayText =
+                    "WhatsApp message from " + who + ":\n" + decrypted.text;
+
+                // Context card (#15/#42) — built once, used by both the live
+                // dispatch and the offline-buffer flush. Delivery is tool-only:
+                // chats may be groups, so silence must be a first-class outcome.
+                // DM chat == sender (device-stripped); group chat == group jid
+                std::string chatJid = decrypted.isGroup ? decrypted.from : baseSender;
+                Json::Value meta;
+                meta["message_type"] = "chat";
+                meta["delivery"] = "tool";
+                Json::Value origin;
+                if (!decrypted.senderName.empty())
+                    origin["user_display"] = decrypted.senderName;
+                origin["user_id"] = baseSender; // stable per-sender jid
+                meta["origin"] = origin;
+                meta["chat_id"] = chatJid;
+                meta["chat_type"] = decrypted.isGroup ? "group" : "dm";
+                meta["source_message_id"] = decrypted.messageId;
+                meta["reply_instructions"] =
+                    "Reply using the channels tool with action=reply; chat_id is "
+                    "provided by the arrival and filled automatically. Text "
+                    "replies are NOT delivered. If the message is not addressed "
+                    "to you, staying silent is correct.";
+                Json::StreamWriterBuilder wb;
+                wb["indentation"] = "";
+                std::string metadata = Json::writeString(wb, meta);
 
                 // Extract message timestamp from the node
                 int64_t msgTs = 0;
@@ -1248,10 +1313,23 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                     if (colonPos != std::string::npos) {
                         auto atPos = baseFrom.find('@');
                         if (atPos != std::string::npos && atPos > colonPos) {
-                            // Store device JID → base JID mapping for outgoing replies
+                            // Store device JID → base JID mapping for outgoing replies (#53: persisted)
                             {
                                 std::lock_guard<std::mutex> lk(lastDeviceMutex);
                                 lastDeviceJid[baseFrom.substr(0, colonPos) + baseFrom.substr(atPos)] = decrypted.from;
+                                Json::Value ldRoot(Json::objectValue);
+                                for (const auto& [k, v] : lastDeviceJid) ldRoot[k] = v;
+                                Json::StreamWriterBuilder ldWb;
+                                ldWb["indentation"] = "";
+                                std::string ldData = Json::writeString(ldWb, ldRoot);
+                                std::string ldTmp = authDir + "/last-device.json.tmp";
+                                {
+                                    std::ofstream ldF(ldTmp, std::ios::binary | std::ios::trunc);
+                                    if (ldF.is_open()) {
+                                        ldF.write(ldData.data(), (std::streamsize)ldData.size());
+                                    }
+                                }
+                                std::rename(ldTmp.c_str(), (authDir + "/last-device.json").c_str());
                             }
                             baseFrom = baseFrom.substr(0, colonPos) + baseFrom.substr(atPos);
                         }
@@ -1270,16 +1348,19 @@ void ChannelManager::WhatsAppGatewayLoopInner(PollerState* state) {
                     // New message but post-login not yet complete — buffer it
                     std::cerr << "[whatsapp] New offline message (ts=" << msgTs << "): " << displayText << std::endl;
                     std::lock_guard<std::mutex> lock(pendingOfflineMutex);
-                    pendingOffline.push_back({routingKey, displayText});
+                    pendingOffline.push_back({routingKey, displayText, metadata});
                     // Update timestamp so we don't replay it next restart either
                     if (msgTs > 0) {
                         auth.lastMessageTs[decrypted.from] = msgTs;
                         auth.save(authFile);
                     }
                 } else {
-                    // Live message — dispatch immediately
+                    // Live message — dispatch immediately, with context card
+                    // (#15/#42 pattern). Delivery is tool-only: chats may be
+                    // groups, so silence must be a first-class outcome.
                     std::cerr << "[whatsapp] Message: " << displayText << std::endl;
-                    DispatchToSession(state, routingKey, displayText, "chat");
+
+                    DispatchToSession(state, routingKey, displayText, "chat", metadata);
                     // Update timestamp
                     if (msgTs > 0) {
                         auth.lastMessageTs[decrypted.from] = msgTs;

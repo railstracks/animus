@@ -299,6 +299,32 @@ ToolResult CompositeTool::Execute(const ToolCall& call) {
         return result;
     }
 
+    // Normalize a bare platform_id ("slack") to the resolved plugin id
+    // ("slack:slack"): routing resolves the plugin from session context, but
+    // the Lua adapters read config keys via args.platform_id — a bare form
+    // looked up channels.slack.bot_token and failed with "no bot_token
+    // configured" despite the row existing (Sep 1, Slack probe). Agents guess
+    // bare type names; the tool layer should forgive that.
+    {
+        std::string argPid = GetStringField(args, "platform_id", "");
+        if (!argPid.empty() && argPid != pluginId
+            && pluginId.rfind(argPid + ":", 0) == 0) {
+            Json::Value fixed = args;
+            fixed["platform_id"] = pluginId;
+            Json::StreamWriterBuilder wb;
+            wb["indentation"] = "";
+            ToolCall normalized = call;
+            normalized.arguments = Json::writeString(wb, fixed);
+            try {
+                return it->second.handler(normalized);
+            } catch (const std::exception& e) {
+                result.success = false;
+                result.error = std::string("plugin error: ") + e.what();
+                return result;
+            }
+        }
+    }
+
     // Delegate to the plugin's handler
     try {
         return it->second.handler(call);
