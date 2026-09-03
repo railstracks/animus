@@ -1633,6 +1633,25 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
     // on bsky.social PDS. The chat service accepts the same JWT directly.
     const std::string chatHost = "https://api.bsky.chat";
 
+    // Hydrate persisted chat watermarks once (PR #34 review follow-up).
+    // The in-memory map is same-run dedup only; without this, every restart
+    // refetched and re-filtered the whole visible window. Durable dedup of
+    // record remains session metadata (bluesky_revs) + store dedup URIs —
+    // this layer avoids the redundant work, it is not a correctness boundary.
+    if (state->bsky_chat_watermarks.empty() && m_configStore) {
+        std::string storedWm = m_configStore->Get("",
+            "social." + state->channel_name + ".chat_watermarks");
+        if (!storedWm.empty()) {
+            Json::Value stored = ParseJson(storedWm);
+            if (stored.isObject()) {
+                for (auto memberIt = stored.begin(); memberIt != stored.end(); ++memberIt)
+                    state->bsky_chat_watermarks[memberIt.name()] = memberIt->asString();
+                ALOG_DEBUG("bluesky", "restored " << state->bsky_chat_watermarks.size()
+                          << " chat watermarks for " << state->channel_name);
+            }
+        }
+    }
+
     // Fetch conversation list
     HttpClient::Request listReq;
     listReq.method = "GET";
@@ -1872,6 +1891,17 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
         // Update in-memory watermark (same-run dedup only)
         if (!maxRev.empty()) {
             state->bsky_chat_watermarks[convoId] = maxRev;
+            // Persist across restarts (mirror of notification last_seen)
+            if (m_configStore) {
+                Json::Value wmOut(Json::objectValue);
+                for (const auto& kv : state->bsky_chat_watermarks)
+                    wmOut[kv.first] = kv.second;
+                Json::StreamWriterBuilder wmb;
+                wmb["indentation"] = "";
+                m_configStore->Set("", "social." + state->channel_name
+                                       + ".chat_watermarks",
+                                   Json::writeString(wmb, wmOut));
+            }
             ALOG_DEBUG("bluesky", "convo " << convoId << " watermark=\""
                       << maxRev << "\" dispatched=" << dispatchCount);
 
