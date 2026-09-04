@@ -434,7 +434,12 @@ target_link_libraries(animus_kernel PUBLIC animus_sdk jsoncpp_lib)
 target_link_libraries(animus_kernel PRIVATE ${ANIMUS_DROGON_TARGET})
 
 if(NOT ANIMUS_USE_SYSTEM_DROGON)
-  target_link_libraries(animus_kernel PRIVATE lua54)
+  # Whole-archive: a static archive linked into a shared library only pulls
+  # objects referenced at .so link time, leaving partial-coverage undefined
+  # symbols that executables (which get no lua54 via PRIVATE) cannot resolve.
+  # Force every object in so the .so is self-contained.
+  target_link_libraries(animus_kernel PRIVATE
+    -Wl,--whole-archive lua54 -Wl,--no-whole-archive)
 endif()
 
 if(UNIX AND NOT APPLE)
