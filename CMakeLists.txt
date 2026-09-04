@@ -661,7 +661,8 @@ if(ANIMUS_BUILD_TESTS)
       src/kernel/channel/ConnectionSupervisor.cpp
     )
     find_package(OpenSSL REQUIRED)
-    target_link_libraries(animus_connection_supervisor_tests PRIVATE animus_kernel jsoncpp_lib OpenSSL::Crypto)
+    target_link_libraries(animus_connection_supervisor_tests PRIVATE
+      animus_kernel jsoncpp_lib OpenSSL::Crypto ${ANIMUS_DROGON_TARGET})
     target_include_directories(animus_connection_supervisor_tests PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src
       ${JSONCPP_INCLUDE_DIRS}

@@ -28,6 +28,7 @@
 #include <vector>
 
 using namespace animus::kernel;
+using namespace animus::kernel::channel_detail;  // Base64EncodeStr
 using namespace std::chrono_literals;
 
 namespace {
