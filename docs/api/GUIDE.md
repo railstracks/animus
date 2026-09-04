@@ -81,6 +81,37 @@ function run(ctx)
 end
 ```
 
+## Bulk payloads: files, not strings
+
+Anything binary or big goes to the filespace and travels as a path. A diffusion-style action
+(NovelAI: POST, decode, store, yield the path):
+
+```lua
+-- command: generate   (parameters: prompt, seed)
+-- request: {method: "POST", url: "{{state.base_url}}/ai/generate", ...}
+function run(ctx)
+  if ctx.request.error then
+    return {success = false, error = ctx.request.error}
+  end
+  local j = ctx.request.json
+  if not j or not j.image then
+    return {success = false, error = "no image in response"}
+  end
+  local ok, png = pcall(b64.decode, j.image)
+  if not ok then return {success = false, error = "b64 decode failed"} end
+  local path = ctx.fs.write("gen-" .. tostring(ctx.args.seed or os.time()) .. ".png", png)
+  if not path then
+    return {success = false, error = "filespace: quota exceeded or name rejected"}
+  end
+  return {output = "Image generated",
+          files = {{name = "gen.png", path = path, content_type = "image/png"}}}
+end
+```
+
+The framework verifies `files` entries exist under the package root and surfaces them in the
+tool result (or on the card, for hooks). Strings over ~16 KB in returns/results/logs are
+truncated with a marker by design — the file is the only sanctioned route for bulk data.
+
 ## Writing hooks (passive)
 
 Hooks belong to connections. `on_connect` returns subscribe frames and **fires on every
@@ -143,3 +174,4 @@ explicitly; SCHEMAS.md).
 4. `json.decode_safe`, never `json.decode`.
 5. Idempotent `on_connect`; assume drops.
 6. Secrets: typed in schema, masked everywhere, written only via `set_state`.
+7. Bulk payloads go to `ctx.fs` and travel as `files` paths — yield the path, not the pixels.

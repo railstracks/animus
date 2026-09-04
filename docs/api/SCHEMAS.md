@@ -22,6 +22,7 @@ CREATE TABLE api_packages (
   locally_modified   BOOLEAN NOT NULL DEFAULT FALSE,
   enabled            BOOLEAN NOT NULL DEFAULT FALSE,
   dispatch_cooldown_ms INTEGER NOT NULL DEFAULT 10000,
+  files_quota_mb      INTEGER NOT NULL DEFAULT 256,   -- ctx.fs quota (D12)
   state_schema       JSONB NOT NULL DEFAULT '{}',
   state              JSONB NOT NULL DEFAULT '{}',
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -35,6 +36,24 @@ CREATE TABLE api_packages (
   see README open questions) but **masked at every egress surface**: tool results, prompt_logs,
   export/upload. Interpolation happens C++-side at transport time.
 - `name` is validated against the reserved words (TOOL.md) at create and at registry download.
+
+### `api_package_agents` (per-agent enablement overlay — D13)
+
+```sql
+CREATE TABLE api_package_agents (
+  id          UUID PRIMARY KEY,
+  package_id  UUID NOT NULL REFERENCES api_packages(id) ON DELETE CASCADE,
+  agent_id    UUID NOT NULL,
+  enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+  UNIQUE (package_id, agent_id)
+);
+```
+
+- Absent row → inherits the package default (visible/usable by all agents); an agent toggling
+  creates or updates its row (`api <package> enable|disable` scoped to the calling agent).
+- Effective enablement for agent A = `api_packages.enabled AND (no row OR row.enabled)`.
+- The framework still owns aggregate limits independent of this overlay: how much tool schema is
+  exposed per agent, which passive connections actually establish, agent-scoped state stores.
 
 ### `api_package_commands`
 
@@ -101,6 +120,7 @@ authored fields only — never state values, never ids.
   "description": "Alpaca paper + live trading API",
   "keywords": ["trading", "stocks", "market"],
   "dispatch_cooldown_ms": 10000,
+  "files_quota_mb": 256,
   "state_schema": {
     "token":     {"type": "string", "secret": true},
     "base_url":  {"type": "string", "default": "https://api.alpaca.markets"}
@@ -167,6 +187,11 @@ keys or `args`.
   - installed, not modified → upgrade to target version;
   - installed, `locally_modified` → **refuse** with a conflict error (the agent must resolve:
     force-overwrite, or fork the local copy under a new name).
+- **Integrity verification:** after fetch, the daemon recomputes the content hash over the
+  canonicalized manifest — same function as the registry pipeline — and compares it with the
+  registry's stored digest for that version. Mismatch refuses the install with a loud error.
+  Trust model: the configured registry is trusted; the hash catches corruption, tampering in
+  transit, and stale mirrors. Full signing arrives later, with agent transfer.
 - Registry versions are immutable (content-hash addressed).
 - Semver obligations: breaking changes to `parameters`, `state_schema`, or hook contracts = major;
   new commands/connections/fields = minor; description/script fixes = patch.

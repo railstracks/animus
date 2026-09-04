@@ -27,6 +27,8 @@ websocket threshold connection.
   holds sockets, only frame-level affordances.
 - **State** — package-local key/value store (typed by `state_schema`), e.g. an API token set once
   by a command and interpolated into outgoing headers everywhere else.
+- **Filespace** — package-scoped scratch storage (`ctx.fs`) for bulk payloads: binary artifacts
+  are written to disk and travel as `files` paths, never as megabyte strings.
 
 ## Architecture
 
@@ -94,6 +96,28 @@ The ratified decisions, one line of rationale each. Changing any of these means 
 - **D10 — Three tables.** `api_packages`, `api_package_commands`, `api_package_connections`
   (schemas in SCHEMAS.md). Hooks are commands (`kind: "hook"` + `event`), referenced by
   connections — uniform authoring, one place for logic.
+- **D11 — Dispatch is a commit, not a call.** Effects within a causal step may be imperative
+  (`ctx.http`, `ctx.conn.send`); a dispatch creates a *new* causal step (turn → tools → events →
+  hooks), so it commits atomically via the return value. A hook that throws or is terminated by
+  the instruction limit never dispatches — fail-closed. Multi-dispatch, if ever needed, extends
+  the contract declaratively (`dispatches = {…}`), never an imperative chain-start API.
+  *Rationale: cascade triggers are the one effect worth making atomic — partial execution must
+  not leave prompts in flight with no provenance. (Ratified Sept 4 after Melvin challenged the
+  imperative alternative; his framing: "once the agent is dispatched, this function is done
+  running — everything should have been staged beforehand.")*
+- **D12 — Bulk payloads go to disk.** `ctx.fs`: package-scoped filespace (root
+  `<state>/api-files/<package>/`, slug names, quota `files_quota_mb` default 256, survives
+  restarts, dies with the package). Return contract gains `files = [{name, path, bytes,
+  content_type?}]` — framework-verified, surfaced in tool results and cards. Corollary egress
+  rule: strings over ~16 KB in any return / tool result / `prompt_logs` are truncated with a
+  size marker; files are the only route for bulk data. `b64.encode/decode` join the whitelist.
+  *Rationale: base64 through the prompt path = megabytes into prompt_logs (the token-leak
+  family) and nothing the agent can act on — the agent wants the path, not the pixels.*
+- **D13 — Per-agent enablement overlay.** `api_package_agents` (agent_id × package_id ×
+  enabled); absent row inherits package default (on); an agent toggling writes its row;
+  effective enablement = package.enabled AND (no row OR row.enabled). The framework still owns
+  aggregate limits — tool-schema exposure, which passive connections establish, agent-scoped
+  state stores. *Rationale: resolves daemon-global vs agent-scoped with data, not two systems.*
 
 ## Build order
 
@@ -106,16 +130,23 @@ The ratified decisions, one line of rationale each. Changing any of these means 
 - **(e)** Agent-side CRUD (`api` tool verbs) + GUIDE.md published on GitHub, linked from the tool
   description.
 
-## Open questions
+## Resolutions & remaining open questions
 
-- Secret encryption at rest (v1: plaintext in PG, egress-masked everywhere — same posture as
-  channel config rows; revisit deliberately).
-- `ctx.http` budgets: v1 caps secondary calls at 5 per invocation; real token-bucket rate limiting
-  is open.
-- Agent scoping: packages are daemon-global in v1; channels are agent-scoped — reconcile before
-  multi-agent daemons.
-- Webhook ingress (#61): schema anticipated (`api_package_connections` stays authored-only; webhook
-  endpoints would be a v2 connection type).
-- Channel migration onto packages: deliberate future, not v1. Email *is* conceptually "the
+*(Sept 4 pass with Melvin — the live set is now small.)*
+
+- **Secret encryption at rest — omitted by decision.** v1 keeps plaintext-in-PG,
+  egress-masked everywhere — identical posture to channel config rows; the only place it would
+  really matter is package state, and the scope cost outweighs the gain for now. Revisit
+  deliberately, together with channel configs.
+- **`ctx.http` budgets — settled for v1.** Cap 5 secondary calls per invocation; token-bucket
+  rate limiting only if real packages demand it.
+- **Agent scoping — RESOLVED (D13).** Per-agent enablement overlay; framework-owned aggregate
+  limits.
+- **Registry trust — RESOLVED minimal.** `api download` recomputes the canonicalized content
+  hash and refuses on mismatch with the registry's stored digest for that version (trust model:
+  the configured registry is trusted; the hash catches corruption, tampering in transit, stale
+  mirrors). Full signing later, with agent transfer.
+- **Webhook ingress (#61)** — parked; schema anticipated (`api_package_connections` stays
+  authored-only; webhook endpoints would be a v2 connection type).
+- **Channel migration onto packages** — deliberate future, not v1. Email *is* conceptually "the
   AgentMail package" — design stays compatible, migration unhurried.
-- Package signing/trust on the registry: later, with agent transfer.

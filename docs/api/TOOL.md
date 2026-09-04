@@ -5,7 +5,7 @@ affordance summary and points to GUIDE.md on GitHub (schema beats context block 
 
 ## Reserved first-words
 
-`package, command, connection, download, upload, enable, disable, status`
+`package, command, connection, files, download, upload, enable, disable, status`
 
 Package names are validated against this set at create and at registry download; package
 invocations can therefore never shadow management verbs.
@@ -18,6 +18,8 @@ invocations can therefore never shadow management verbs.
   SCHEMAS.md; scripts validated: must define `run`).
 - `api connection create|update|delete|read <package> <connection>` — connection CRUD. Changes
   apply at runtime if enabled (teardown + restart of that worker).
+- `api files <package> list|purge` — inspect the package filespace (name, size, mtime, quota
+  usage) or clear it. Filespace survives restarts; `api package delete` removes it entirely.
 - `api download <name>[@version]` — install/upgrade from the registry. Refuses to clobber a
   `locally_modified` package (conflict error with resolution options).
 - `api upload <name>` — publish to the registry (lint → canonicalize → hash → listing). Requires

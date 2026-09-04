@@ -58,6 +58,8 @@ A dispatching `on_message` becomes a channel arrival — the same pipeline every
 - Card fields: package name, connection name, hook `card` fields, `reply_instructions` pointing at
   the package's action commands ("respond via `api <package> <command>`; text replies are not
   delivered")
+- Dispatch returns may carry `files` (fs artifacts, D12); they surface on the card — the prompt
+  references paths, never payload strings
 - Dedup: arrival event ids (where the transport provides them) + hook `dedup_key`
 - The agent's reply path is ordinary tool invocation — active commands are always allowed from a
   chain turn (SANDBOX.md, re-entrancy).
