@@ -249,7 +249,9 @@ Json::Value LuaToJson(lua_State* L, int idx) {
         case LUA_TSTRING: return Json::Value(std::string(lua_tostring(L, idx)));
         case LUA_TTABLE: {
             Json::Value out;
-            const bool asArray = (lua_getmetatable(L, idx) == 0) && [&] {
+            const bool hasMeta = (lua_getmetatable(L, idx) != 0);
+            if (hasMeta) lua_pop(L, 1);  // metatable (or nil) must not leak
+            const bool asArray = !hasMeta && [&] {
                 // heuristic: table with only 1..n integer keys -> array
                 int maxKey = 0, count = 0, nonInteger = 0;
                 lua_pushnil(L);
@@ -263,7 +265,6 @@ Json::Value LuaToJson(lua_State* L, int idx) {
                     count++;
                     lua_pop(L, 1);
                 }
-                lua_pop(L, 1);  // nothing pushed by loop end
                 (void)count;
                 return nonInteger == 0 && maxKey > 0;
             }();
@@ -842,7 +843,7 @@ Json::Value ApiRuntime::RunHook(const std::string& packageName, const std::strin
 
 Json::Value ApiRuntime::ExecuteInternal(const std::string& packageName,
                                         const std::string& commandName,
-                                        const std::string& agentId, const Json::Value& args,
+                                        const std::string& agentId, Json::Value args,
                                         bool isHook, const Json::Value& eventJson) {
     Json::Value fail(Json::objectValue);
     fail["success"] = false;
@@ -882,8 +883,16 @@ Json::Value ApiRuntime::ExecuteInternal(const std::string& packageName,
         std::string e;
         ParseJsonText(pkg->state_schema.empty() ? "{}" : pkg->state_schema, stateSchema, e);
         ParseJsonText(pkg->state.empty() ? "{}" : pkg->state, liveState, e);
+        // Overlay schema defaults for unset keys (values win over defaults).
+        if (stateSchema.isObject()) {
+            for (const std::string& k : stateSchema.getMemberNames()) {
+                if (stateSchema[k].isMember("default") && !liveState.isMember(k))
+                    liveState[k] = stateSchema[k]["default"];
+            }
+        }
     }
 
+    if (args.isNull()) args = Json::Value(Json::objectValue);
     std::vector<std::string> secretArgNames;
     if (!isHook) {
         Json::Value params;
