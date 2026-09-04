@@ -48,6 +48,7 @@ class SopStore;
 class GallivantingStore;
 class SessionNotesStore;
 class ChannelContextStore;
+class ApiPackageStore;
 class AgendaStore;
 class SessionReportStore;
 class ScriptStore;
