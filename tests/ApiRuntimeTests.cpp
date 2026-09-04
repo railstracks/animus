@@ -121,13 +121,13 @@ struct Fixture {
     SqliteDataStore db{dbPath};
     ApiPackageStore store{&db};
     HttpClient http;
-    bool allowPrivate = true; http.SetAllowPrivateAddresses(allow);
     HttpServer server;
     uint16_t port{0};
     std::string filesRoot;
     std::unique_ptr<ApiRuntime> runtime;
 
     Fixture() {
+        http.SetAllowPrivateAddresses(true);  // fixture servers are loopback
         port = server.Start();
         filesRoot = dbPath + ".files";
         ApiRuntime::Config cfg;
