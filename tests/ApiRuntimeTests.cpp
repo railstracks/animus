@@ -43,6 +43,7 @@ struct HttpServer {
     std::atomic<int> hits{0};
     std::string lastPath;
     std::string lastBody;
+    std::string lastAuth;
     std::mutex mutex;
     std::atomic<bool> running{false};
 
