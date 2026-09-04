@@ -58,27 +58,75 @@ std::string ReadFixture() {
 
 // The alpaca fixture manifest, shuffled: same content, keys in different
 // insertion order. Key-order independence is the portability contract.
-const char* kShuffledAlpaca = R"JSON({
+const char* kShuffledAlpaca = R"JSON(
+{
+  "dispatch_cooldown_ms": 10000,
   "commands": [
-    {"kind": "action", "name": "get_account", "description": "Fetch the trading account",
-     "request": {"url": "{{state.base_url}}/v2/account", "method": "GET"},
-     "script": "function run(ctx) return {output = 'ok'} end"},
-    {"kind": "action", "name": "list_positions", "description": "List open positions",
-     "request": {"url": "{{state.base_url}}/v2/positions", "method": "GET"},
-     "script": "function run(ctx) return {output = 'ok'} end"}
+    {
+      "name": "token set",
+      "script": "function run(ctx) ctx.package.set_state('token', ctx.args.token) return {output='Token stored.'} end",
+      "description": "Store the Alpaca API token (kept secret, used for all requests)",
+      "kind": "action",
+      "parameters": {
+        "token": {
+          "secret": true,
+          "type": "string",
+          "required": true
+        }
+      }
+    },
+    {
+      "script": "function run(ctx) local rows = ctx.request.json or {} local out = {} for _,p in ipairs(rows) do table.insert(out, p.symbol..' '..p.qty..' @ '..tostring(p.avg_entry_price)) end return {output=#out..' positions', data=rows} end",
+      "name": "portfolio list",
+      "request": {
+        "url": "{{state.base_url}}/v2/positions",
+        "headers": {
+          "Authorization": "Bearer {{state.token}}"
+        },
+        "method": "GET"
+      },
+      "description": "List current positions",
+      "kind": "action"
+    },
+    {
+      "name": "on ticker",
+      "kind": "hook",
+      "event": "on_message",
+      "script": "function run(ctx) return {output='tick', data=ctx.event} end"
+    }
   ],
-  "keywords": ["trading", "stocks", "market"],
+  "files_quota_mb": 256,
   "state_schema": {
-    "base_url": {"type": "string", "default": "https://paper-api.alpaca.markets"},
-    "token": {"type": "string", "secret": true}
+    "token": {
+      "type": "string",
+      "secret": true
+    },
+    "base_url": {
+      "default": "https://api.alpaca.markets",
+      "type": "string"
+    }
   },
-  "description": "Alpaca paper + live trading API",
   "version": "0.1.0",
   "name": "alpaca",
+  "keywords": [
+    "trading",
+    "stocks",
+    "market"
+  ],
   "kind": "api_package",
-  "dispatch_cooldown_ms": 10000,
-  "files_quota_mb": 256
-})JSON";
+  "description": "Alpaca paper + live trading API",
+  "connections": [
+    {
+      "url_template": "wss://stream.data.alpaca.markets/v2/iex",
+      "hooks": {
+        "on_message": "on ticker"
+      },
+      "name": "stream",
+      "type": "websocket"
+    }
+  ]
+}
+)JSON";
 
 void TestFixtureHash() {
     std::cerr << "  fixture alpaca.json hash agreement...\n";
