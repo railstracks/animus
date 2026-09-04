@@ -292,6 +292,8 @@ int TestPrimaryTransport() {
     args["qty"] = 10.5;
     int hitsBefore = fx.server.hits.load();
     auto r = fx.runtime->ExecuteAction("testpkg", "post order", "agent", args);
+    { Json::StreamWriterBuilder b; b["indentation"] = "";
+      std::cerr << "    POST-RESULT: " << Json::writeString(b, r) << "\n"; }
     Assert(r["success"].asBool() && r["output"].asString() == "sent 200", "post executed");
     Assert(fx.server.hits.load() == hitsBefore + 1, "one transport call");
     {

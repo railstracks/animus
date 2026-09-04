@@ -302,6 +302,8 @@ void PushJson(lua_State* L, const Json::Value& v) {
         case Json::booleanValue: lua_pushboolean(L, v.asBool()); break;
         case Json::intValue:
         case Json::uintValue:
+            lua_pushinteger(L, static_cast<lua_Integer>(v.asInt64()));
+            break;
         case Json::realValue: lua_pushnumber(L, v.asDouble()); break;
         case Json::stringValue: lua_pushstring(L, v.asCString()); break;
         case Json::arrayValue: {
