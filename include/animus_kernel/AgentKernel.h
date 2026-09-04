@@ -49,6 +49,7 @@ class GallivantingStore;
 class SessionNotesStore;
 class ChannelContextStore;
 class ApiPackageStore;
+class ApiRuntime;
 class AgendaStore;
 class SessionReportStore;
 class ScriptStore;
@@ -148,6 +149,7 @@ private:
     SessionNotesStore* m_sessionNotesStore{nullptr}; // per-session persistent notes
     ChannelContextStore* m_channelContextStore{nullptr}; // trusted channel arrivals (#14)
     ApiPackageStore* m_apiPackageStore{nullptr}; // api package persistence (#26 b)
+    ApiRuntime* m_apiRuntime{nullptr};               // api package runtime (#26 c)
     AgendaStore* m_agendaStore{nullptr}; // per-agent calendar/agenda
     SessionReportStore* m_sessionReportStore{nullptr}; // per-session temporal reports
     ContextProviderRegistry* m_contextRegistry{nullptr}; // prompt assembly providers

@@ -129,6 +129,10 @@ public:
     // Throws std::runtime_error with a descriptive message on any violation.
     ApiPackage InstallFromManifest(const std::string& manifestJson);
 
+    // Validates a package name (slug + reserved words). Throws with a
+    // descriptive message. Used by CreatePackage and the api tool.
+    static void ValidateName(const std::string& name);
+
 private:
     static int64_t NowUnixMs();
     std::string GenerateId() const;

@@ -230,6 +230,7 @@ const char* kConnectionColumns =
 }  // namespace
 
 ApiPackage ApiPackageStore::CreatePackage(const ApiPackage& pkg) {
+    ValidateName(pkg.name);
     if (GetPackageByName(pkg.name))
         throw std::runtime_error("api package '" + pkg.name + "' already exists");
 
@@ -621,6 +622,16 @@ bool IsHookEvent(const std::string& e) {
 
 }  // namespace
 
+void ApiPackageStore::ValidateName(const std::string& name) {
+    if (!IsValidSlug(name))
+        throw std::runtime_error("package name must be a lowercase slug [a-z0-9-], 1-63 chars (got '" +
+                                 name + "')");
+    if (IsReservedFirstWord(name))
+        throw std::runtime_error("package name '" + name +
+                                 "' is a reserved management word (package, command, connection, "
+                                 "files, download, upload, enable, disable, status)");
+}
+
 ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson) {
     Json::Value m;
     std::string err;
@@ -638,6 +649,8 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson)
         lint.Add("name must be a lowercase slug [a-z0-9-], 1-63 chars (got '" + name + "')");
     else if (IsReservedFirstWord(name))
         lint.Add("name '" + name + "' is a reserved management word");
+
+    // (ValidateName path for direct API/tool creates)
 
     const std::string version = m.get("version", Json::Value("")).asString();
     if (version.empty()) lint.Add("version is required");

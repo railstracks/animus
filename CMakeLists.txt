@@ -324,6 +324,7 @@ add_library(animus_kernel
   src/kernel/channel/VkAdapter.cpp
   src/kernel/channel/RemainingAdapters.cpp
   src/kernel/api/ApiPackageStore.cpp
+  src/kernel/api/ApiRuntime.cpp
   src/kernel/PromptLogStore.cpp
   src/kernel/auth/AuthStore.cpp
  src/kernel/auth/AuthManager.cpp
@@ -343,6 +344,7 @@ add_library(animus_kernel
   src/kernel/tools/FileTool.cpp
   src/kernel/tools/ShellExecTool.cpp
   src/kernel/tools/HttpTool.cpp
+  src/kernel/tools/ApiTool.cpp
   src/kernel/tools/WebFetchTool.cpp
   src/kernel/tools/StoredLinksTool.cpp
   src/kernel/tools/RssTool.cpp
@@ -685,6 +687,20 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME ApiPackageStoreTests COMMAND animus_api_package_store_tests)
+
+    add_executable(animus_api_runtime_tests
+      tests/ApiRuntimeTests.cpp
+    )
+    target_link_libraries(animus_api_runtime_tests PRIVATE
+      animus_kernel jsoncpp_lib ${ANIMUS_DROGON_TARGET})
+    target_include_directories(animus_api_runtime_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_api_runtime_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME ApiRuntimeTests COMMAND animus_api_runtime_tests)
 
     add_executable(animus_memory_file_store_tests
       tests/MemoryFileStoreTests.cpp

@@ -76,6 +76,8 @@
 #include "animus_kernel/SessionNotesStore.h"
 #include "animus_kernel/ChannelContextStore.h"
 #include "animus_kernel/ApiPackageStore.h"
+#include "animus_kernel/api/ApiRuntime.h"
+#include "animus_kernel/tools/ApiTool.h"
 #include "animus_kernel/AgendaStore.h"
 #include "animus_kernel/SessionReportStore.h"
 #include "animus_kernel/SessionTagsStore.h"
@@ -160,6 +162,7 @@ AgentKernel::~AgentKernel() {
     delete m_scheduler; m_scheduler = nullptr;
     delete m_sessionNotesStore; m_sessionNotesStore = nullptr;
     delete m_channelContextStore; m_channelContextStore = nullptr;
+    delete m_apiRuntime; m_apiRuntime = nullptr;
     delete m_apiPackageStore; m_apiPackageStore = nullptr;
     delete m_agendaStore; m_agendaStore = nullptr;
     delete m_sessionReportStore; m_sessionReportStore = nullptr;
@@ -1748,6 +1751,14 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
 
     // Web tools — share the kernel's HttpClient
     m_tools.Register(std::make_unique<HttpTool>(m_httpClient));
+
+    // API packages (#26 c): runtime + agent-facing `api` tool
+    if (m_apiPackageStore) {
+        ApiRuntime::Config apiCfg;
+        apiCfg.filesRoot = (m_config.dataDir / "api-files").string();
+        m_apiRuntime = new ApiRuntime(m_apiPackageStore, &m_httpClient, apiCfg);
+        m_tools.Register(std::make_unique<ApiTool>(m_apiRuntime));
+    }
     m_tools.Register(std::make_unique<WebFetchTool>(m_httpClient));
 
     // Stored links tool — pre-configured HTTP endpoints (ticket 127)

@@ -9,6 +9,7 @@
 #include <json/writer.h>
 
 #include "animus_kernel/tools/ChannelsTool.h"
+#include "animus_kernel/tools/ApiTool.h"
 
 namespace animus::kernel {
 
@@ -85,12 +86,19 @@ std::vector<llm::LLMToolDef> ToolSchemaService::GetForAgent(const std::string& a
         return GetAll();
     }
 
-    // Set agent context on ChannelsTool for per-agent schema filtering
+    // Set agent context on ChannelsTool/ApiTool for per-agent filtering
     auto* channelsHandler = m_tools.Find("channels");
     if (channelsHandler) {
         auto* channelsTool = dynamic_cast<ChannelsTool*>(channelsHandler);
         if (channelsTool) {
             channelsTool->SetCurrentAgentId(agentId);
+        }
+    }
+    auto* apiHandler = m_tools.Find("api");
+    if (apiHandler) {
+        auto* apiTool = dynamic_cast<ApiTool*>(apiHandler);
+        if (apiTool) {
+            apiTool->SetCurrentAgentId(agentId);
         }
     }
 
@@ -107,6 +115,12 @@ std::vector<llm::LLMToolDef> ToolSchemaService::GetForAgent(const std::string& a
         auto* channelsTool = dynamic_cast<ChannelsTool*>(channelsHandler);
         if (channelsTool) {
             channelsTool->SetCurrentAgentId("");
+        }
+    }
+    if (apiHandler) {
+        auto* apiTool = dynamic_cast<ApiTool*>(apiHandler);
+        if (apiTool) {
+            apiTool->SetCurrentAgentId("");
         }
     }
 
