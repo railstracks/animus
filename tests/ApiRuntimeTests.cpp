@@ -361,7 +361,7 @@ int TestSandboxStateAndSecrets() {
     // masked display state vs real get_state
     Fixture fx3;
     std::string extra3 = R"({"name": "peek", "kind": "action", "description": "d",
-        "script": "function run(ctx) if ctx.package.state.token ~= '***' then return {output='real'} end local tok = ctx.package.get_state('token') ctx.http.get('{{state.base_url}}/authcheck', {headers={Authorization='Bearer '..tok}}) return {output='masked'} end"})";
+        "script": "function run(ctx) if ctx.package.state.token ~= '***' then return {output='real'} end local tok = ctx.package.get_state('token') local base = ctx.package.get_state('base_url') ctx.http.get(base..'/authcheck', {headers={Authorization='Bearer '..tok}}) return {output='masked'} end"})";
     auto pkg3 = InstallFixturePkg(fx3, extra3);
     auto r3 = fx3.runtime->ExecuteAction("testpkg", "peek", "agent", Json::Value());
     Assert(r3["output"].asString() == "masked", "ctx.package.state is masked copy");
