@@ -23,6 +23,7 @@ import LoginView from '../views/LoginView.vue';
 import UsersView from '../views/UsersView.vue';
 import DiffusionView from '../views/DiffusionView.vue';
 import SopsView from '../views/SopsView.vue';
+import PackagesView from '../views/PackagesView.vue';
 import ThemeView from '../views/ThemeView.vue';
 
 const router = createRouter({
@@ -51,6 +52,7 @@ const router = createRouter({
    { path: '/users', name: 'users', component: UsersView },
     { path: '/diffusion', name: 'diffusion', component: DiffusionView },
     { path: '/sops', name: 'sops', component: SopsView },
+    { path: '/packages', name: 'packages', component: PackagesView },
    { path: '/theme', name: 'theme', component: ThemeView },
  ]
 });
