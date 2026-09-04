@@ -494,6 +494,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // --- Lua scripting subsystem (per-agent VM, script persistence) ---
         m_scriptStore = new ScriptStore(m_dataStore);
         m_adminServer->SetScriptStore(m_scriptStore);
+        m_adminServer->SetApiPackageStore(m_apiPackageStore);
         m_adminServer->SetLuaScriptDir(m_config.lua_script_dir);
         m_configStore = new AgentConfigStore(m_dataStore);
 
@@ -1757,6 +1758,7 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
         ApiRuntime::Config apiCfg;
         apiCfg.filesRoot = (m_config.dataDir / "api-files").string();
         m_apiRuntime = new ApiRuntime(m_apiPackageStore, &m_httpClient, apiCfg);
+        if (m_adminServer) m_adminServer->SetApiRuntime(m_apiRuntime);
         m_tools.Register(std::make_unique<ApiTool>(m_apiRuntime));
     }
     m_tools.Register(std::make_unique<WebFetchTool>(m_httpClient));

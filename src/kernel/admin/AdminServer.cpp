@@ -1481,6 +1481,7 @@ void AdminServer::RegisterHandlersOnce() {
         RegisterRoutesDiary();
         RegisterRoutesGallivanting();
         RegisterRoutesLua();
+        RegisterRoutesApiPackages();
         RegisterRoutesChannels();
         RegisterRoutesNodes();
         RegisterRoutesSearch();

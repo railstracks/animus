@@ -63,6 +63,10 @@ void AdminServer::RegisterRoutesLua() {
 #include "kernel/admin/internal/AdminServerRoutesLua.inc"
 }
 
+void AdminServer::RegisterRoutesApiPackages() {
+#include "kernel/admin/internal/AdminServerRoutesApiPackages.inc"
+}
+
 void AdminServer::RegisterRoutesChannels() {
 #include "kernel/admin/internal/AdminServerRoutesChannels.inc"
 }

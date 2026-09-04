@@ -70,6 +70,9 @@ class ContextProviderRegistry;
 class SessionTagsStore;
 class PromptLogStore;
 
+class ApiPackageStore;
+class ApiRuntime;
+
 class AdminServer {
 public:
     AdminServer();
@@ -204,6 +207,8 @@ public:
     void SetGallivantingStore(GallivantingStore* store) { m_gallivantingStore = store; }
     void SetPromptLogStore(PromptLogStore* store) { m_promptLogStore = store; }
     void SetScriptStore(ScriptStore* store) { m_scriptStore = store; }
+    void SetApiPackageStore(ApiPackageStore* store) { m_apiPackageStore = store; }
+    void SetApiRuntime(ApiRuntime* runtime) { m_apiRuntime = runtime; }
     void SetLuaScriptDir(const std::string& dir) { m_luaScriptDir = dir; }
     void SetChannelsTool(ChannelsTool* tool) { m_channelsTool = tool; }
     void SetChannelManager(ChannelManager* mgr) { m_channelManager = mgr; }
@@ -254,6 +259,8 @@ public:
     GallivantingStore* m_gallivantingStore{nullptr};
     PromptLogStore* m_promptLogStore{nullptr};
     ScriptStore* m_scriptStore{nullptr};
+    ApiPackageStore* m_apiPackageStore{nullptr};
+    ApiRuntime* m_apiRuntime{nullptr};
     std::string m_luaScriptDir{"state/lua"};
     ChannelsTool* m_channelsTool{nullptr};
     AgentConfigStore* m_configStore{nullptr};
@@ -282,6 +289,7 @@ private:
     void RegisterRoutesDiary();
     void RegisterRoutesGallivanting();
     void RegisterRoutesLua();
+    void RegisterRoutesApiPackages();
     void RegisterRoutesSocial();
     void RegisterRoutesChannels();
     void RegisterRoutesNodes();
