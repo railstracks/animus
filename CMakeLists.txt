@@ -318,6 +318,7 @@ add_library(animus_kernel
   src/kernel/ChannelAdapterFactory.cpp
   src/kernel/ChannelDispatch.cpp
   src/kernel/channel/PollerAdapterBase.cpp
+  src/kernel/channel/ConnectionSupervisor.cpp
   src/kernel/channel/IrcAdapter.cpp
   src/kernel/channel/TelegramAdapter.cpp
   src/kernel/channel/VkAdapter.cpp
@@ -654,6 +655,21 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME ReplyResolutionTests COMMAND animus_reply_resolution_tests)
+
+    add_executable(animus_connection_supervisor_tests
+      tests/ConnectionSupervisorTests.cpp
+      src/kernel/channel/ConnectionSupervisor.cpp
+    )
+    find_package(OpenSSL REQUIRED)
+    target_link_libraries(animus_connection_supervisor_tests PRIVATE animus_kernel jsoncpp_lib OpenSSL::Crypto)
+    target_include_directories(animus_connection_supervisor_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_connection_supervisor_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME ConnectionSupervisorTests COMMAND animus_connection_supervisor_tests)
 
     add_executable(animus_memory_file_store_tests
       tests/MemoryFileStoreTests.cpp

@@ -3,6 +3,7 @@
 #include "animus_kernel/IChannelAdapter.h"
 #include "animus_kernel/ChannelContext.h"
 #include "animus_kernel/ChannelHelpers.h"
+#include "animus_kernel/ConnectionSupervisor.h"
 
 #include <atomic>
 #include <memory>
@@ -130,13 +131,18 @@ class EmailAdapter : public PollerAdapterBase {
 public:
     using PollerAdapterBase::PollerAdapterBase;
     void SendReply(const ChannelReplyTarget& target, const std::string& text) override;
+    void Stop() override;
+    bool IsConnected() const override;
 
 protected:
     void RunLoop() override;
 
 private:
-    void WebSocketLoop();
-    void PollLoop();
+    // Supervisor-managed websocket (reconnect + loud transitions — #60 fix).
+    // Null before RunLoop starts and after Stop.
+    std::unique_ptr<ConnectionSupervisor> m_supervisor;
+
+    void PollLoop();  // explicit degraded mode (config transport=poll)
     void ProcessMessage(const Json::Value& msg);
 };
 
