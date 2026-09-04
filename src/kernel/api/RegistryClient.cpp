@@ -36,10 +36,12 @@ RegistryInstallResult InstallFromRegistry(ApiPackageStore& store,
                                            HttpClient& http,
                                            const std::string& registryBase,
                                            const std::string& name,
-                                           const std::string& version) {
+                                           const std::string& version,
+                                           bool allowPrivate) {
     RegistryInstallResult result;
 
     // 1. Fetch
+    if (allowPrivate) http.SetAllowPrivateAddresses(true);
     HttpClient::Response resp = FetchPackageManifest(http, registryBase, name, version);
     if (resp.status_code == 0) {
         result.err = "registry unreachable: " + resp.error;

@@ -318,7 +318,8 @@
                 auto result = registry::InstallFromRegistry(
                     *server->m_apiPackageStore, http,
                     body["registry"].asString(), body["name"].asString(),
-                    body.get("version", "").asString());
+                    body.get("version", "").asString(),
+                    body.get("allow_private", false).asBool());
                 if (!result.ok) {
                     SendJsonError(callback, result.err, drogon::k502BadGateway);
                     return;

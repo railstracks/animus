@@ -30,11 +30,14 @@ struct RegistryInstallResult {
 };
 
 // Fetch + verify + install. Blocking (bounded by the HTTP timeout, ~10s).
+// allowPrivate: opt-in for localhost/LAN registries (operator-configured target,
+// admin-authenticated call — not reachable from model-controlled surfaces).
 RegistryInstallResult InstallFromRegistry(ApiPackageStore& store,
                                            HttpClient& http,
                                            const std::string& registryBase,
                                            const std::string& name,
-                                           const std::string& version = "" /* latest */);
+                                           const std::string& version = "" /* latest */,
+                                           bool allowPrivate = false);
 
 // Fetch only (list/detail probes, UI "what's available"): returns raw body.
 HttpClient::Response FetchPackageManifest(HttpClient& http,
