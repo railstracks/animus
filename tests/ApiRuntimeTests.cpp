@@ -263,6 +263,8 @@ int TestArgsValidation() {
     // happy
     args.removeMember("bogus");
     r = fx.runtime->ExecuteAction("testpkg", "echo", "agent", args);
+    { Json::StreamWriterBuilder b; b["indentation"] = "";
+      std::cerr << "    ECHO-RESULT: " << Json::writeString(b, r) << "\n"; }
     Assert(r["success"].asBool(), "valid args execute");
     Assert(r["output"].asString() == "hi x3", "sandbox sees args");
 
