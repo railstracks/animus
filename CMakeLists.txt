@@ -325,6 +325,7 @@ add_library(animus_kernel
   src/kernel/channel/RemainingAdapters.cpp
   src/kernel/api/ApiPackageStore.cpp
   src/kernel/api/ApiRuntime.cpp
+  src/kernel/api/ManifestV1.cpp
   src/kernel/PromptLogStore.cpp
   src/kernel/auth/AuthStore.cpp
  src/kernel/auth/AuthManager.cpp
@@ -692,6 +693,22 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME ApiPackageStoreTests COMMAND animus_api_package_store_tests)
+
+    add_executable(animus_manifest_v1_tests
+      tests/ManifestV1Tests.cpp
+    )
+    target_link_libraries(animus_manifest_v1_tests PRIVATE
+      animus_kernel jsoncpp_lib OpenSSL::Crypto)
+    target_include_directories(animus_manifest_v1_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    target_compile_definitions(animus_manifest_v1_tests PRIVATE
+      ANIMUS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    set_target_properties(animus_manifest_v1_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME ManifestV1Tests COMMAND animus_manifest_v1_tests)
 
     add_executable(animus_api_runtime_tests
       tests/ApiRuntimeTests.cpp
