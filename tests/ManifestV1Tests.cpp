@@ -32,6 +32,30 @@ std::string ReadFile(const std::string& path) {
     return ss.str();
 }
 
+#include <unistd.h>
+#include <vector>
+
+std::string ReadFixture() {
+    // Resolve relative to the executable (dist/bin -> repo root), then cwd fallbacks.
+    char exe[4096];
+    ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    std::vector<std::string> candidates;
+    if (n > 0) {
+        exe[n] = '\0';
+        std::string exeDir(exe);
+        auto slash = exeDir.rfind('/');
+        if (slash != std::string::npos) exeDir = exeDir.substr(0, slash);
+        candidates.push_back(exeDir + "/../../tests/fixtures/manifests/alpaca.json");
+    }
+    candidates.push_back("tests/fixtures/manifests/alpaca.json");
+    candidates.push_back("../../tests/fixtures/manifests/alpaca.json");
+    for (const auto& c : candidates) {
+        std::string s = ReadFile(c);
+        if (!s.empty()) return s;
+    }
+    return {};
+}
+
 // The alpaca fixture manifest, shuffled: same content, keys in different
 // insertion order. Key-order independence is the portability contract.
 const char* kShuffledAlpaca = R"JSON({
@@ -58,7 +82,7 @@ const char* kShuffledAlpaca = R"JSON({
 
 void TestFixtureHash() {
     std::cerr << "  fixture alpaca.json hash agreement...\n";
-    std::string raw = ReadFile("tests/fixtures/manifests/alpaca.json");
+    std::string raw = ReadFixture();
     Assert(!raw.empty(), "fixture readable");
     Processed p;
     std::string err;
@@ -71,7 +95,7 @@ void TestKeyOrderIndependence() {
     std::cerr << "  key-order independence (shuffled manifest, same hash)...\n";
     Processed a, b;
     std::string err;
-    std::string raw = ReadFile("tests/fixtures/manifests/alpaca.json");
+    std::string raw = ReadFixture();
     Assert(manifest_v1::Process(raw, a, err), "original processes");
     Assert(manifest_v1::Process(kShuffledAlpaca, b, err), "shuffled processes: " + err);
     Assert(a.canonical == b.canonical, "canonical bytes identical");
@@ -103,7 +127,7 @@ void TestCompactAndSorted() {
 void TestUtf8PassThrough() {
     std::cerr << "  UTF-8 pass-through (emitUTF8)...\n";
     // é (U+00E9, C3 A9) and 🪶 (U+1F9B0? kestrel feather U+1F986, F0 9F A6 86)
-    const char* utf8 = "{\"desc\":\"caf\\u00e9 \\u1F986\"}";
+    const char* utf8 = "{\"desc\":\"caf\\u00e9 \\ud83e\\udd86\"}";
     Json::CharReaderBuilder rb;
     Json::Value v;
     std::istringstream ss(utf8);
