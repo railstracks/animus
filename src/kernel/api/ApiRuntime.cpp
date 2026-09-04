@@ -644,17 +644,13 @@ void BuildCtx(lua_State* L, BridgeContext* bc, const Json::Value& request, bool 
               const Json::Value& eventJson) {
     lua_newtable(L);  // ctx
 
-    // ctx.package
-    lua_createtable(L, 0, 3);
-    lua_pushstring(L, bc->packageName.c_str());
-    lua_setfield(L, -2, "name");
-    // masked state copy
+    // masked state copy (display/branching only; get_state returns real values)
     Json::Value masked = bc->state;
     for (const std::string& k : bc->state.getMemberNames()) {
         if (bc->secretKeys.count("state." + k) && masked[k].isString()) masked[k] = "***";
     }
-    PushJson(L, masked);
-    lua_setfield(L, -2, "state");
+
+    // ctx.package (single build: name, masked state, get_state, set_state)
     lua_createtable(L, 0, 4);
     lua_pushstring(L, bc->packageName.c_str());
     lua_setfield(L, -2, "name");
@@ -996,13 +992,11 @@ Json::Value ApiRuntime::ExecuteInternal(const std::string& packageName,
         return result;
     }
     lua_getglobal(L, "run");
-    fprintf(stderr, "[dbg] after getglobal: type=%s top=%d\n", lua_typename(L, lua_type(L, -1)), lua_gettop(L));
     if (!lua_isfunction(L, -1)) {
         lua_close(L);
         return err("script must define run(ctx)");
     }
     BuildCtx(L, &bc, request, isHook, eventJson);
-    fprintf(stderr, "[dbg] before pcall: top=%d (expect 2: fn + ctx)\n", lua_gettop(L));
     if (lua_pcall(L, 1, 1, 0)) {
         const char* msg = lua_tostring(L, -1);
         result["success"] = false;
