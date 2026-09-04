@@ -140,7 +140,8 @@ int TestCommandsAndConnections() {
         Assert(store.ReplaceCommands(p.id, {c, h}) == 2, "replace 2");
         Assert(store.GetCommand(p.id, "portfolio list")->script.find("'z'") != std::string::npos,
                "replace persisted");
-        Assert(store.DeleteCommand(cmds[1].id), "delete command");
+        auto fresh = store.ListCommands(p.id);   // replace generated new ids
+        Assert(store.DeleteCommand(fresh[1].id), "delete command");
 
         ApiPackageConnection conn;
         conn.package_id = p.id;
@@ -326,8 +327,10 @@ int TestManifestInstall() {
                 "string 'type'", "state_schema entry without type rejected");
 
         // Failed installs must leave no package behind.
-        for (const auto& name : std::vector<std::string>{"bad kind", "download", "UPPER",
-                                                        "nohook", "badconn"})
+        for (const auto& name : std::vector<std::string>{"wrongkind", "download", "UPPER",
+                                                        "nohook", "hookparams", "badparam",
+                                                        "badconn", "nourl", "nopoll",
+                                                        "statchema"})
             Assert(!store.GetPackageByName(name).has_value(), "no residue: " + name);
         Assert(store.ListPackages().size() == 1, "only the good install persisted");
     }

@@ -407,7 +407,7 @@ std::vector<ApiPackageCommand> ApiPackageStore::ListCommands(const std::string& 
     std::vector<ApiPackageCommand> out;
     auto stmt = m_store->Prepare(std::string("SELECT ") + kCommandColumns +
                                  " FROM api_package_commands WHERE package_id = ? "
-                                 "ORDER BY kind DESC, name ASC");  // actions first, then hooks
+                                 "ORDER BY kind ASC, name ASC");  // actions before hooks
     if (!stmt) return out;
     stmt->BindText(1, packageId);
     while (stmt->Step()) out.push_back(RowToCommand(stmt));
@@ -667,7 +667,7 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson)
     } else {
         for (const std::string& key : stateSchema.getMemberNames()) {
             const Json::Value& def = stateSchema[key];
-            if (!def.isObject() || !def.get("type", Json::Value("")).isString()) {
+            if (!def.isObject() || !def.get("type", Json::Value::nullSingleton()).isString()) {
                 lint.Add("state_schema." + key + " must be an object with a string 'type'");
             } else if (def.isMember("secret") && !def["secret"].isBool()) {
                 lint.Add("state_schema." + key + ".secret must be a boolean");
@@ -720,7 +720,7 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson)
                     bool pOk = true;
                     for (const std::string& pn : params.getMemberNames()) {
                         const Json::Value& pd = params[pn];
-                        if (!pd.isObject() || !pd.get("type", Json::Value("")).isString()) {
+                        if (!pd.isObject() || !pd.get("type", Json::Value::nullSingleton()).isString()) {
                             lint.Add("action '" + cmd.name + "': parameter '" + pn + "' must be an object with a string 'type'");
                             pOk = false;
                         }
