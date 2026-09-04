@@ -91,6 +91,12 @@ struct HttpServer {
                 size_t sp = req.find(' ');
                 lastPath = req.substr(sp + 1, req.find(' ', sp + 1) - sp - 1);
                 if (contentLen) lastBody = req.substr(headerEnd, contentLen);
+                size_t au = req.find("Authorization:");
+                if (au == std::string::npos) au = req.find("authorization:");
+                if (au != std::string::npos) {
+                    size_t eol = req.find("\r\n", au);
+                    lastAuth = req.substr(au, eol - au);
+                }
             }
             hits++;
             std::string body = "{\"ok\":true,\"path\":\"" + lastPath + "\"}";
@@ -354,12 +360,17 @@ int TestSandboxStateAndSecrets() {
     // masked display state vs real get_state
     Fixture fx3;
     std::string extra3 = R"({"name": "peek", "kind": "action", "description": "d",
-        "script": "function run(ctx) if ctx.package.state.token ~= '***' then return {output='real'} end return {output='masked', real=ctx.package.get_state('token')} end"})";
+        "script": "function run(ctx) if ctx.package.state.token ~= '***' then return {output='real'} end local tok = ctx.package.get_state('token') ctx.http.request({method='GET', url='{{state.base_url}}/authcheck', headers={Authorization='Bearer '..tok}}) return {output='masked'} end"})";
     auto pkg3 = InstallFixturePkg(fx3, extra3);
     auto r3 = fx3.runtime->ExecuteAction("testpkg", "peek", "agent", Json::Value());
     Assert(r3["output"].asString() == "masked", "ctx.package.state is masked copy");
-    Assert(r3["real"].asString().find("SECRET-TOKEN-1234") != std::string::npos,
+    Assert(fx3.server.lastAuth.find("Bearer SECRET-TOKEN-1234") != std::string::npos,
            "get_state returns real value (transport-grade)");
+    // spec: secret masked in tool results too
+    Json::StreamWriterBuilder wb;
+    std::string r3s = Json::writeString(wb, r3);
+    Assert(r3s.find("SECRET-TOKEN-1234") == std::string::npos,
+           "secret never appears in tool result");
     Assert(r3["real"].asString().find("***") != std::string::npos, "and it gets masked on egress");
 
     // set_state schema violations
