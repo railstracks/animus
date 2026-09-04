@@ -121,6 +121,7 @@ struct Fixture {
     SqliteDataStore db{dbPath};
     ApiPackageStore store{&db};
     HttpClient http;
+    bool allowPrivate = true; http.SetAllowPrivateAddresses(allow);
     HttpServer server;
     uint16_t port{0};
     std::string filesRoot;
@@ -263,8 +264,6 @@ int TestArgsValidation() {
     // happy
     args.removeMember("bogus");
     r = fx.runtime->ExecuteAction("testpkg", "echo", "agent", args);
-    { Json::StreamWriterBuilder b; b["indentation"] = "";
-      std::cerr << "    ECHO-RESULT: " << Json::writeString(b, r) << "\n"; }
     Assert(r["success"].asBool(), "valid args execute");
     Assert(r["output"].asString() == "hi x3", "sandbox sees args");
 
@@ -290,17 +289,8 @@ int TestPrimaryTransport() {
     Json::Value args;
     args["symbol"] = "NVDA";
     args["qty"] = 10.5;
-    {  // direct HttpClient probe against the fixture server
-        HttpClient::Request probe;
-        probe.url = "http://127.0.0.1:" + std::to_string(fx.port) + "/probe";
-        auto resp = fx.http.Execute(probe);
-        std::cerr << "    HTTP-PROBE: status=" << resp.status_code
-                  << " err=" << resp.error << " body=" << resp.body.substr(0, 40) << "\n";
-    }
     int hitsBefore = fx.server.hits.load();
     auto r = fx.runtime->ExecuteAction("testpkg", "post order", "agent", args);
-    { Json::StreamWriterBuilder b; b["indentation"] = "";
-      std::cerr << "    POST-RESULT: " << Json::writeString(b, r) << "\n"; }
     Assert(r["success"].asBool() && r["output"].asString() == "sent 200", "post executed");
     Assert(fx.server.hits.load() == hitsBefore + 1, "one transport call");
     {
