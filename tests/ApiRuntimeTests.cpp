@@ -364,6 +364,8 @@ int TestSandboxStateAndSecrets() {
         "script": "function run(ctx) if ctx.package.state.token ~= '***' then return {output='real'} end local tok = ctx.package.get_state('token') ctx.http.request({method='GET', url='{{state.base_url}}/authcheck', headers={Authorization='Bearer '..tok}}) return {output='masked'} end"})";
     auto pkg3 = InstallFixturePkg(fx3, extra3);
     auto r3 = fx3.runtime->ExecuteAction("testpkg", "peek", "agent", Json::Value());
+    { Json::StreamWriterBuilder b; b["indentation"] = "";
+      std::cerr << "    PEEK-RESULT: " << Json::writeString(b, r3) << "\n"; }
     Assert(r3["output"].asString() == "masked", "ctx.package.state is masked copy");
     Assert(fx3.server.lastAuth.find("Bearer SECRET-TOKEN-1234") != std::string::npos,
            "get_state returns real value (transport-grade)");
