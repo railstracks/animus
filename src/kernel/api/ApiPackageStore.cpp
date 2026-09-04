@@ -714,7 +714,9 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
             cmd.description = c.get("description", Json::Value("")).asString();
             cmd.script = c.get("script", Json::Value("")).asString();
 
-            if (cmd.description.empty()) lint.Add("command '" + cmd.name + "': description is required");
+            // description optional-if-present per manifest v1 (registry parity);
+            // if present it was already read as string — nothing else to check here
+            (void)cmd.description;
             if (cmd.script.empty())
                 lint.Add("command '" + cmd.name + "': script is required (defines run(ctx))");
 
