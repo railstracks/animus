@@ -6,10 +6,12 @@
 
 #include <lua.h>
 #include <lauxlib.h>
+#include <lualib.h>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 #include <functional>
@@ -44,21 +46,26 @@ bool ParseJsonText(const std::string& text, Json::Value& out, std::string& err) 
     return Json::parseFromStream(b, iss, &out, &err);
 }
 
-std::string Base64DecodeStr(const std::string& in, bool& ok) {
-    static const signed char table[256] = [] {
+signed char B64Table(unsigned char c) {
+    static const std::array<signed char, 256> table = [] {
         std::array<signed char, 256> t{};
         t.fill(-1);
         const char* alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        for (int i = 0; i < 64; ++i) t[static_cast<unsigned char>(alpha[i])] = static_cast<signed char>(i);
+        for (int i = 0; i < 64; ++i)
+            t[static_cast<unsigned char>(alpha[i])] = static_cast<signed char>(i);
         return t;
     }();
+    return table[c];
+}
+
+std::string Base64DecodeStr(const std::string& in, bool& ok) {
     ok = false;
     std::string out;
     out.reserve(in.size() / 4 * 3);
     int val = 0, valb = -8;
     for (unsigned char c : in) {
         if (c == '=') break;
-        signed char d = table[c];
+        signed char d = B64Table(c);
         if (d < 0) return {};
         val = (val << 6) + d;
         valb += 6;
