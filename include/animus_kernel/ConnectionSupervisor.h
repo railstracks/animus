@@ -7,9 +7,8 @@
 #include <mutex>
 #include <string>
 
-#include <trantor/net/EventLoop.h>  // TimerId
-
 namespace drogon { class WebSocketClient; class HttpRequest; }
+namespace trantor { class EventLoop; }
 
 namespace animus::kernel {
 
@@ -92,7 +91,9 @@ private:
     drogon::WebSocketClient* m_ws{nullptr};  // owned by its loop via intrusive ptr
     std::atomic<bool> m_stopRequested{false};
     std::atomic<bool> m_fatal{false};
-    trantor::TimerId m_reconnectTimer{0};
+    // This trantor has no timer cancellation — pending reconnects carry the
+    // generation they were scheduled in and no-op when it has moved on.
+    std::atomic<uint64_t> m_generation{0};
 };
 
 }  // namespace animus::kernel

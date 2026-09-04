@@ -16,9 +16,12 @@ std::string ReqResultReason(drogon::ReqResult r) {
     switch (r) {
         case drogon::ReqResult::Ok: return "ok";
         case drogon::ReqResult::BadResponse: return "bad response";
-        case drogon::ReqResult::NetworkError: return "network error";
+        case drogon::ReqResult::NetworkFailure: return "network failure";
         case drogon::ReqResult::BadServerAddress: return "bad server address";
         case drogon::ReqResult::Timeout: return "timeout";
+        case drogon::ReqResult::HandshakeError: return "handshake error";
+        case drogon::ReqResult::InvalidCertificate: return "invalid certificate";
+        case drogon::ReqResult::EncryptionFailure: return "encryption failure";
         default: return "unknown";
     }
 }
@@ -28,7 +31,7 @@ std::string ReqResultReason(drogon::ReqResult r) {
 ConnectionSupervisor::ConnectionSupervisor() = default;
 ConnectionSupervisor::~ConnectionSupervisor() { RequestStop(); }
 
-const char* ConnectionSupervisor::StateName(State s) {
+const char* ConnectionSupervisor::StateName(ConnectionSupervisor::State s) {
     switch (s) {
         case State::Disabled: return "disabled";
         case State::Connecting: return "connecting";
@@ -39,7 +42,7 @@ const char* ConnectionSupervisor::StateName(State s) {
     return "?";
 }
 
-State ConnectionSupervisor::state() const {
+ConnectionSupervisor::State ConnectionSupervisor::state() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_state;
 }
@@ -85,6 +88,7 @@ void ConnectionSupervisor::Run(const Config& cfg, Callbacks cbs) {
         m_lastError.clear();
         m_stopRequested = false;
         m_fatal = false;
+        m_generation = 0;
     }
 
     if (cfg.host.empty() || cfg.name.empty()) {
@@ -211,8 +215,10 @@ void ConnectionSupervisor::ScheduleReconnect(const std::string& reason) {
               "[" << m_cfg.name << "] reconnect #" << n << " (" << reason
                   << ") in " << static_cast<int>(delaySec * 1000) << " ms");
 
-    m_reconnectTimer = m_loop->runAfter(delaySec, [this] {
+    const uint64_t gen = m_generation.load();
+    m_loop->runAfter(delaySec, [this, gen] {
         if (m_stopRequested.load() || m_fatal.load()) return;
+        if (gen != m_generation.load()) return;  // superseded
         Connect();
     });
 }
@@ -237,10 +243,11 @@ void ConnectionSupervisor::StartWatchdog() {
 
 void ConnectionSupervisor::ForceReconnect(const std::string& reason) {
     ALOG_INFO("conn-supervisor", "[" << m_cfg.name << "] forcing reconnect: " << reason);
-    // Cancel pending reconnect (if any) and drop the connection; the
-    // closed-handler + ScheduleReconnect path drives the retry. We never
-    // exit the loop from here — the watchdog heals, it does not kill.
-    m_loop->cancelTimer(m_reconnectTimer);
+    // Invalidate any pending reconnect (generation bump), then drop the
+    // connection; the closed-handler + ScheduleReconnect path drives the
+    // retry. We never exit the loop from here — the watchdog heals, it
+    // does not kill (#60's watchdog killed the thread).
+    m_generation.fetch_add(1);
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_lastEvent = std::chrono::steady_clock::now();  // reset so we do not loop instantly
@@ -250,11 +257,10 @@ void ConnectionSupervisor::ForceReconnect(const std::string& reason) {
 
 void ConnectionSupervisor::RequestStop() {
     if (m_stopRequested.exchange(true)) return;
+    m_generation.fetch_add(1);  // pending reconnects no-op
     trantor::EventLoop* loop = m_loop;
     if (!loop) return;
     loop->queueInLoop([this, loop] {
-        // Cancel any pending reconnect so the loop can drain and quit.
-        loop->cancelTimer(m_reconnectTimer);
         if (m_ws) m_ws->stop();
         loop->quit();
     });
@@ -263,10 +269,10 @@ void ConnectionSupervisor::RequestStop() {
 void ConnectionSupervisor::FatalError(const std::string& reason) {
     if (m_fatal.exchange(true)) return;
     Transition(State::Error, reason);
+    m_generation.fetch_add(1);  // pending reconnects no-op
     trantor::EventLoop* loop = m_loop;
     if (!loop) return;
     loop->queueInLoop([this, loop] {
-        loop->cancelTimer(m_reconnectTimer);
         if (m_ws) m_ws->stop();
         loop->quit();
     });
