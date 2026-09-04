@@ -365,7 +365,6 @@ int TestSandboxStateAndSecrets() {
     auto pkg3 = InstallFixturePkg(fx3, extra3);
     auto r3 = fx3.runtime->ExecuteAction("testpkg", "peek", "agent", Json::Value());
     Assert(r3["output"].asString() == "masked", "ctx.package.state is masked copy");
-    std::cerr << "    LASTAUTH=[" << fx3.server.lastAuth << "] PATH=" << fx3.server.lastPath << "\n";
     Assert(fx3.server.lastAuth.find("Bearer SECRET-TOKEN-1234") != std::string::npos,
            "get_state returns real value (transport-grade)");
     // spec: secret masked in tool results too
@@ -477,32 +476,10 @@ int TestHookContext() {
 }
 
 
-int TestSandboxProbe() {
-    std::cerr << "  [runtime] sandbox probe: minimal scripts...\n";
-    Fixture fx;
-    std::string extra = R"({"name": "p1", "kind": "action", "description": "d",
-        "script": "function run(ctx) return {output='static'} end"},)"
-        R"({"name": "p2", "kind": "action", "description": "d",
-        "script": "function run(ctx) return {output=tostring(1+1)} end"},)"
-        R"({"name": "p3", "kind": "action", "description": "d",
-        "script": "function run(ctx) return {output=type(ctx.args)} end"},)"
-        R"({"name": "p4", "kind": "action", "description": "d",
-        "script": "function run(ctx) return {output=tostring(ctx.args.msg)} end"})";
-    InstallFixturePkg(fx, extra);
-    Json::Value none;
-    for (const char* probe : {"p1", "p2", "p3", "p4"}) {
-        auto r = fx.runtime->ExecuteAction("testpkg", probe, "agent", none);
-        Json::StreamWriterBuilder b; b["indentation"] = "";
-        std::cerr << "    PROBE " << probe << ": " << Json::writeString(b, r) << "\n";
-    }
-    return 0;
-}
-
 }  // namespace
 
 int main() {
     std::cerr << "ApiRuntime tests:\n";
-    TestSandboxProbe();
     TestInterpolation();
     TestArgsValidation();
     TestPrimaryTransport();
