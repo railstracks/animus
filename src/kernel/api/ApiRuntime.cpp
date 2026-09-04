@@ -996,11 +996,13 @@ Json::Value ApiRuntime::ExecuteInternal(const std::string& packageName,
         return result;
     }
     lua_getglobal(L, "run");
+    fprintf(stderr, "[dbg] after getglobal: type=%s top=%d\n", lua_typename(L, lua_type(L, -1)), lua_gettop(L));
     if (!lua_isfunction(L, -1)) {
         lua_close(L);
         return err("script must define run(ctx)");
     }
     BuildCtx(L, &bc, request, isHook, eventJson);
+    fprintf(stderr, "[dbg] before pcall: top=%d (expect 2: fn + ctx)\n", lua_gettop(L));
     if (lua_pcall(L, 1, 1, 0)) {
         const char* msg = lua_tostring(L, -1);
         result["success"] = false;
