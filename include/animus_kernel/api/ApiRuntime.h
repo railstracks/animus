@@ -71,7 +71,7 @@ public:
     // masked template) and returns "". secretKeys are masked in errors.
     static std::string Interpolate(const std::string& tmpl,
                                    const Json::Value& state,
-                                   const Json::Value& args,
+                                   Json::Value args,
                                    const std::set<std::string>& secretStateKeys,
                                    std::string& error);
 
@@ -88,7 +88,7 @@ private:
     Json::Value ExecuteInternal(const std::string& packageName,
                                 const std::string& commandName,
                                 const std::string& agentId,
-                                const Json::Value& args,
+                                Json::Value args,
                                 bool isHook,
                                 const Json::Value& eventJson);
 
