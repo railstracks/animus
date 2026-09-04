@@ -71,7 +71,7 @@ public:
     // masked template) and returns "". secretKeys are masked in errors.
     static std::string Interpolate(const std::string& tmpl,
                                    const Json::Value& state,
-                                   Json::Value args,
+                                   const Json::Value& args,
                                    const std::set<std::string>& secretStateKeys,
                                    std::string& error);
 
