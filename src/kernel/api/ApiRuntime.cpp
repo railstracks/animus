@@ -4,9 +4,11 @@
 #include "animus_kernel/Log.h"
 #include "animus_kernel/tools/HttpClient.h"
 
+extern "C" {
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
+}
 
 #include <algorithm>
 #include <array>
