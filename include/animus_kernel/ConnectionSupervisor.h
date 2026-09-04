@@ -7,8 +7,9 @@
 #include <mutex>
 #include <string>
 
+#include <trantor/net/EventLoop.h>  // TimerId
+
 namespace drogon { class WebSocketClient; class HttpRequest; }
-namespace trantor { class EventLoop; }
 
 namespace animus::kernel {
 
