@@ -290,6 +290,13 @@ int TestPrimaryTransport() {
     Json::Value args;
     args["symbol"] = "NVDA";
     args["qty"] = 10.5;
+    {  // direct HttpClient probe against the fixture server
+        HttpClient::Request probe;
+        probe.url = "http://127.0.0.1:" + std::to_string(fx.port) + "/probe";
+        auto resp = fx.http.Execute(probe);
+        std::cerr << "    HTTP-PROBE: status=" << resp.status_code
+                  << " err=" << resp.error << " body=" << resp.body.substr(0, 40) << "\n";
+    }
     int hitsBefore = fx.server.hits.load();
     auto r = fx.runtime->ExecuteAction("testpkg", "post order", "agent", args);
     { Json::StreamWriterBuilder b; b["indentation"] = "";
