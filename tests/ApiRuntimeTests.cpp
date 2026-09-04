@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cassert>
 #include <cstring>
 #include <iostream>
 #include <mutex>
@@ -177,10 +178,9 @@ ApiPackage InstallFixturePkg(Fixture& fx, const std::string& extra = "") {
     (void)url;
     // insert extra commands before the closing "]"
     if (!extra.empty()) {
-        p = manifest.rfind("]},");
-        manifest.insert(p, (p > 0 && manifest[p-1] == '{') ? "" : "");
-        // simpler: append after last command object — find the commands array end
-        size_t cend = manifest.find("],\n      \"connections\"");
+        size_t cend = manifest.find(
+            "],\n      \"connections\"");
+        assert(cend != std::string::npos);
         manifest.insert(cend, "," + extra);
     }
     ApiPackage pkg = fx.store.InstallFromManifest(manifest);
