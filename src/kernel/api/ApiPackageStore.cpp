@@ -632,7 +632,9 @@ void ApiPackageStore::ValidateName(const std::string& name) {
                                  "files, download, upload, enable, disable, status)");
 }
 
-ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson) {
+ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
+                                               const std::string& registrySource,
+                                               const std::string& registryVersion) {
     Json::Value m;
     std::string err;
     if (!ParseJson(manifestJson, m, err) || !m.isObject())
@@ -838,8 +840,8 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson)
     pkg.description = description;
     pkg.keywords = JsonCompact(keywords);
     pkg.version = version;
-    pkg.registry_source = "";
-    pkg.registry_version = "";
+    pkg.registry_source = registrySource;
+    pkg.registry_version = registryVersion;
     pkg.locally_modified = false;
     pkg.enabled = false;  // install != enable
     pkg.dispatch_cooldown_ms = cooldown;

@@ -326,6 +326,7 @@ add_library(animus_kernel
   src/kernel/api/ApiPackageStore.cpp
   src/kernel/api/ApiRuntime.cpp
   src/kernel/api/ManifestV1.cpp
+  src/kernel/api/RegistryClient.cpp
   src/kernel/PromptLogStore.cpp
   src/kernel/auth/AuthStore.cpp
  src/kernel/auth/AuthManager.cpp

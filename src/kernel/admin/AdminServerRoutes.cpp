@@ -1,6 +1,7 @@
 #include "animus_kernel/AdminServer.h"
 #include "animus_kernel/ApiPackageStore.h"
 #include "animus_kernel/api/ApiRuntime.h"
+#include "animus_kernel/api/RegistryClient.h"
 #include "animus_kernel/ChainRunner.h"
 #include "animus_kernel/CompactionService.h"
 #include "animus_kernel/SessionManager.h"

@@ -291,3 +291,42 @@
                 SendJsonResponse(callback, result);
             },
             {drogon::Post});
+
+        // POST /api/v1/api/packages/install-from-registry
+        // body: {registry: str, name: str, version?: str}
+        // Blocking (HTTP timeout ~10s). Verifies content hash before install.
+        drogon::app().registerHandler(
+            "/api/v1/api/packages/install-from-registry",
+            [pkgSummary](const drogon::HttpRequestPtr& req,
+               std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+                AdminServer* server = g_activeAdminServer.load();
+                if (!server) { SendServerNotActive(callback); return; }
+                if (!server->m_apiPackageStore) {
+                    SendJsonError(callback, "api package store not available",
+                        drogon::k503ServiceUnavailable);
+                    return;
+                }
+                Json::Value body;
+                std::string parseError;
+                if (!ParseJsonPayload(std::string(req->body()), &body, &parseError) ||
+                    !body.isObject() || !body.isMember("registry") || !body.isMember("name")) {
+                    SendJsonError(callback, "body must be {\"registry\": str, \"name\": str, \"version\"?: str}",
+                        drogon::k400BadRequest);
+                    return;
+                }
+                HttpClient http;  // fresh instance: public URLs only (SSRF defaults)
+                auto result = registry::InstallFromRegistry(
+                    *server->m_apiPackageStore, http,
+                    body["registry"].asString(), body["name"].asString(),
+                    body.get("version", "").asString());
+                if (!result.ok) {
+                    SendJsonError(callback, result.err, drogon::k502BadGateway);
+                    return;
+                }
+                Json::Value out = pkgSummary(result.pkg);
+                out["content_hash"] = result.content_hash;
+                out["semantic_version"] = result.semantic_version;
+                out["hash_verified"] = true;
+                SendJsonResponse(callback, out);
+            },
+            {drogon::Post});

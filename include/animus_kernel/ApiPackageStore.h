@@ -127,7 +127,9 @@ public:
     // transaction. Installs disabled (enabling is a separate explicit act).
     // Lua static checks are NOT part of this lint (that is the sandbox layer).
     // Throws std::runtime_error with a descriptive message on any violation.
-    ApiPackage InstallFromManifest(const std::string& manifestJson);
+    ApiPackage InstallFromManifest(const std::string& manifestJson,
+                                   const std::string& registrySource = "",
+                                   const std::string& registryVersion = "");
 
     // Validates a package name (slug + reserved words). Throws with a
     // descriptive message. Used by CreatePackage and the api tool.

@@ -14,6 +14,9 @@
             <v-btn size="small" variant="text" prepend-icon="mdi-package-down" @click="installDialog = true">
               {{ t('packages.installFromManifest') }}
             </v-btn>
+            <v-btn size="small" variant="text" prepend-icon="mdi-cloud-download-outline" @click="registryDialog = true">
+              {{ t('packages.installFromRegistry') }}
+            </v-btn>
           </div>
         </div>
       </v-card-item>
@@ -222,6 +225,45 @@
       </v-card>
     </v-dialog>
 
+    <!-- Install from registry dialog -->
+    <v-dialog v-model="registryDialog" max-width="560">
+      <v-card rounded="lg">
+        <v-card-item>
+          <v-card-title class="text-subtitle-1">{{ t('packages.installFromRegistry') }}</v-card-title>
+        </v-card-item>
+        <v-card-text>
+          <v-text-field
+            v-model="registryUrl"
+            :label="t('packages.registryLabel')"
+            density="comfortable"
+            :hint="t('packages.registryHint')"
+            persistent-hint
+            class="mb-2"
+          />
+          <v-text-field
+            v-model="registryName"
+            :label="t('packages.nameLabel')"
+            density="comfortable"
+            class="mb-2"
+          />
+          <v-text-field
+            v-model="registryVersion"
+            :label="t('packages.versionLabel')"
+            density="comfortable"
+            :hint="t('packages.versionHint')"
+            persistent-hint
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="registryDialog = false">{{ t('packages.cancel') }}</v-btn>
+          <v-btn color="primary" :loading="registryInstalling" :disabled="!registryUrl.trim() || !registryName.trim()" @click="installFromRegistry">
+            {{ t('packages.install') }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="4000">
       {{ snackbar.text }}
     </v-snackbar>
@@ -290,6 +332,11 @@ const installDialog = ref(false);
 const manifestText = ref('');
 const manifestError = ref('');
 const installing = ref(false);
+const registryDialog = ref(false);
+const registryUrl = ref('https://animus-registry.steadyfort.com');
+const registryName = ref('');
+const registryVersion = ref('');
+const registryInstalling = ref(false);
 const savingState = ref(false);
 const uninstalling = ref(false);
 const executing = ref(false);
@@ -435,6 +482,38 @@ async function install() {
     toast(e.message || t('packages.installFailed'), 'error');
   } finally {
     installing.value = false;
+  }
+}
+
+async function installFromRegistry() {
+  registryInstalling.value = true;
+  try {
+    const resp = await fetch('/api/v1/api/packages/install-from-registry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        registry: registryUrl.value,
+        name: registryName.value,
+        version: registryVersion.value || undefined,
+      }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || 'install failed');
+    }
+    const data = await resp.json();
+    toast(t('packages.registryInstallSuccess', {
+      name: data.name,
+      hash: (data.content_hash || '').slice(0, 12),
+    }));
+    registryDialog.value = false;
+    registryName.value = '';
+    registryVersion.value = '';
+    await loadPackages();
+  } catch (e: any) {
+    toast(e.message || t('packages.installFailed'), 'error');
+  } finally {
+    registryInstalling.value = false;
   }
 }
 
