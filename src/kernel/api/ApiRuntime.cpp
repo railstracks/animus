@@ -237,6 +237,7 @@ BridgeContext* GetBridge(lua_State* L, int upvalueIndex) {
 void PushJson(lua_State* L, const Json::Value& v);
 
 Json::Value LuaToJson(lua_State* L, int idx) {
+    idx = lua_absindex(L, idx);  // pushes below shift relative indices
     switch (lua_type(L, idx)) {
         case LUA_TNIL: return Json::Value();
         case LUA_TBOOLEAN: return Json::Value(lua_toboolean(L, idx) != 0);
