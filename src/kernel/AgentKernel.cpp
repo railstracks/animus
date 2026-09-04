@@ -75,6 +75,7 @@
 #include "animus_kernel/admin/DiaryManager.h"
 #include "animus_kernel/SessionNotesStore.h"
 #include "animus_kernel/ChannelContextStore.h"
+#include "animus_kernel/ApiPackageStore.h"
 #include "animus_kernel/AgendaStore.h"
 #include "animus_kernel/SessionReportStore.h"
 #include "animus_kernel/SessionTagsStore.h"
@@ -159,6 +160,7 @@ AgentKernel::~AgentKernel() {
     delete m_scheduler; m_scheduler = nullptr;
     delete m_sessionNotesStore; m_sessionNotesStore = nullptr;
     delete m_channelContextStore; m_channelContextStore = nullptr;
+    delete m_apiPackageStore; m_apiPackageStore = nullptr;
     delete m_agendaStore; m_agendaStore = nullptr;
     delete m_sessionReportStore; m_sessionReportStore = nullptr;
     delete m_contextRegistry; m_contextRegistry = nullptr;
@@ -391,6 +393,10 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // funnel through it); read by the ChannelContextProvider (#15).
         m_channelContextStore = new ChannelContextStore(m_dataStore);
         m_adminServer->SetChannelContextStore(m_channelContextStore);
+
+        // --- API Package Store (#26 data layer, build order b) ---
+        // Installs disabled by default; tool/sandbox layers (c/d) consume it.
+        m_apiPackageStore = new ApiPackageStore(m_dataStore);
 
         // --- Agenda Store (per-agent calendar/agenda events) ---
         m_agendaStore = new AgendaStore(m_dataStore);

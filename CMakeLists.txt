@@ -323,6 +323,7 @@ add_library(animus_kernel
   src/kernel/channel/TelegramAdapter.cpp
   src/kernel/channel/VkAdapter.cpp
   src/kernel/channel/RemainingAdapters.cpp
+  src/kernel/api/ApiPackageStore.cpp
   src/kernel/PromptLogStore.cpp
   src/kernel/auth/AuthStore.cpp
  src/kernel/auth/AuthManager.cpp
@@ -671,6 +672,19 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME ConnectionSupervisorTests COMMAND animus_connection_supervisor_tests)
+
+    add_executable(animus_api_package_store_tests
+      tests/ApiPackageStoreTests.cpp
+    )
+    target_link_libraries(animus_api_package_store_tests PRIVATE animus_kernel)
+    target_include_directories(animus_api_package_store_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_api_package_store_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME ApiPackageStoreTests COMMAND animus_api_package_store_tests)
 
     add_executable(animus_memory_file_store_tests
       tests/MemoryFileStoreTests.cpp

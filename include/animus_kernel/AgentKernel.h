@@ -146,6 +146,7 @@ private:
     GallivantingStore* m_gallivantingStore{nullptr}; // gallivanting thread/session store
     SessionNotesStore* m_sessionNotesStore{nullptr}; // per-session persistent notes
     ChannelContextStore* m_channelContextStore{nullptr}; // trusted channel arrivals (#14)
+    ApiPackageStore* m_apiPackageStore{nullptr}; // api package persistence (#26 b)
     AgendaStore* m_agendaStore{nullptr}; // per-agent calendar/agenda
     SessionReportStore* m_sessionReportStore{nullptr}; // per-session temporal reports
     ContextProviderRegistry* m_contextRegistry{nullptr}; // prompt assembly providers
