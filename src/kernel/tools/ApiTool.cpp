@@ -94,7 +94,7 @@ ToolResult ApiTool::Execute(const ToolCall& call) {
 
     static const std::set<std::string> kReserved = {
         "package", "command", "connection", "files", "download", "upload",
-        "enable", "disable", "status"};
+        "enable", "disable", "status", "state"};
 
     try {
         std::string out;
@@ -102,6 +102,7 @@ ToolResult ApiTool::Execute(const ToolCall& call) {
         if (first == "status") out = HandleStatus(tokens);
         else if (first == "package") out = HandlePackage(tokens);
         else if (first == "command") out = HandleCommand(tokens);
+        else if (first == "state") out = HandleState(tokens, input);
         else if (first == "files") out = HandleFiles(tokens);
         else if (first == "enable") out = HandleEnable(tokens.size() > 1 ? tokens[1] : "", true);
         else if (first == "disable") out = HandleEnable(tokens.size() > 1 ? tokens[1] : "", false);
@@ -281,6 +282,62 @@ std::string ApiTool::HandleEnable(const std::string& name, bool enable) {
     return std::string("package '") + name + (enable ? "' enabled" : "' disabled") +
            (enable ? " — commands are now invocable. Passive connections start when the "
                      "connection runtime lands (d)." : ".");
+}
+
+// state set <package> {"key": "value"} — non-secret fields only.
+// Secret fields stay operator-side (admin API / UI state editor): a model
+// surface that could overwrite secrets could also exfiltrate them.
+std::string ApiTool::HandleState(const std::vector<std::string>& tokens,
+                                 const std::string& input) {
+    if (tokens.size() < 3 || tokens[1] != "set")
+        return "usage: api state set <package> {\"key\": \"value\", ...} (non-secret fields only)";
+    auto pkg = m_runtime->store()->GetPackageByName(tokens[2]);
+    if (!pkg) return "unknown package '" + tokens[2] + "'. " + AvailablePackagesLine();
+
+    // JSON object comes after the package name in the raw input.
+    size_t pos = input.find(tokens[2]);
+    std::string rest = pos == std::string::npos ? "" : input.substr(pos + tokens[2].size());
+    while (!rest.empty() && (rest.front() == ' ')) rest.erase(0, 1);
+    Json::Value updates;
+    std::string parseErr;
+    {
+        Json::CharReaderBuilder b;
+        std::istringstream iss(rest);
+        if (!Json::parseFromStream(b, iss, &updates, &parseErr) || !updates.isObject()) {
+            return "arguments must be a JSON object after the package name (got: '" +
+                   rest + "')";
+        }
+    }
+
+    // Schema check: reject secret keys outright.
+    Json::Value schema;
+    {
+        Json::CharReaderBuilder b;
+        std::istringstream iss(pkg->state_schema.empty() ? "{}" : pkg->state_schema);
+        std::string e;
+        if (!Json::parseFromStream(b, iss, &schema, &e)) schema = Json::Value(Json::objectValue);
+    }
+    Json::Value state;
+    {
+        Json::CharReaderBuilder b;
+        std::istringstream iss(pkg->state.empty() ? "{}" : pkg->state);
+        std::string e;
+        if (!Json::parseFromStream(b, iss, &state, &e)) state = Json::Value(Json::objectValue);
+    }
+    for (const auto& key : updates.getMemberNames()) {
+        const Json::Value& def = schema.get(key, Json::Value());
+        if (def.get("secret", Json::Value(false)).asBool())
+            return "refused: '" + key + "' is a secret field — secrets are set "
+                   "operator-side (admin UI state editor), not via the api tool";
+        if (def.isNull())
+            return "refused: '" + key + "' is not in the package state schema "
+                   "(fields: " + JsonWrite(schema) + ")";
+    }
+    for (const auto& key : updates.getMemberNames()) state[key] = updates[key];
+    m_runtime->store()->SetPackageState(pkg->id, JsonWrite(state));
+    ALOG_INFO("api", "[api] state set on '" << pkg->name << "': "
+              << updates.getMemberNames().size() << " field(s)");
+    return "state updated: " + JsonWrite(updates);
 }
 
 // Invocation: `api <pkg> <rest>` where rest starts with the (possibly

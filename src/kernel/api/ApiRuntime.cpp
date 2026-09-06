@@ -1018,7 +1018,24 @@ Json::Value ApiRuntime::ExecuteInternal(const std::string& packageName,
         return result;
     }
     result = returned;
-    if (!result.isMember("success")) result["success"] = true;
+    // Transport status mapping: an HTTP >=400 with no explicit script verdict
+    // is a failure. Scripts can still override (e.g. deliberate probes that
+    // expect 4xx) by returning their own success/error.
+    if (!result.isMember("success")) {
+        const bool httpFailed = request.isObject() &&
+                               request.get("status", 0).asInt() >= 400;
+        if (httpFailed) {
+            result["success"] = false;
+            result["http_status"] = request["status"];
+            if (!result.isMember("error")) {
+                result["error"] = "HTTP " +
+                    request.get("status", Json::Value(0)).asString() + " from " +
+                    MaskSecrets(pkg->name + ":" + cmd->name, secretValues);
+            }
+        } else {
+            result["success"] = true;
+        }
+    }
 
     // --- files verification + truncation --------------------------------------
     if (result.isMember("files") && result["files"].isArray()) {

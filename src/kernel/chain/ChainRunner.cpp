@@ -1,7 +1,9 @@
 #include "animus_kernel/ChainRunner.h"
 #include "animus_kernel/Log.h"
 #include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <functional>
 #include <iostream>
 #include <sstream>
 #include <json/json.h>
@@ -1077,6 +1079,48 @@ std::unique_ptr<llm::ILLMProvider> ChainRunner::CreateProvider(
 // Prompt logging helper
 // ============================================================================
 
+// Mask credential-shaped arguments in serialized tool calls. Keyed on
+// secret-ish names (token, secret, key, password, credential, auth) — applied
+// per nested string value so '{"token": "AB..."}' and '{"args": {"secret_key":
+// "..."}}' both mask. Non-matching keys pass through unchanged.
+static std::string MaskSecretishArgs(const std::string& toolName,
+                                     const std::string& argumentsJson) {
+    static const std::vector<std::string> kSecretish = {
+        "token", "secret", "key", "password", "credential", "auth", "apikey",
+    };
+    bool isSecretish = [](const std::string& k) {
+        std::string lower;
+        lower.reserve(k.size());
+        for (char c : k) lower.push_back(static_cast<char>(std::tolower(c)));
+        for (const auto& s : kSecretish)
+            if (lower.find(s) != std::string::npos) return true;
+        return false;
+    };
+    Json::Value parsed;
+    Json::CharReaderBuilder rb;
+    std::istringstream iss(argumentsJson);
+    std::string err;
+    if (!Json::parseFromStream(rb, iss, &parsed, &err)) return argumentsJson;
+
+    std::function<void(Json::Value&)> mask = [&](Json::Value& v) {
+        if (v.isObject()) {
+            for (const auto& k : v.getMemberNames()) {
+                if (isSecretish(k) && v[k].isString() && v[k].asString().size() >= 4) {
+                    v[k] = "***";
+                } else {
+                    mask(v[k]);
+                }
+            }
+        } else if (v.isArray()) {
+            for (auto& e : v) mask(e);
+        }
+    };
+    mask(parsed);
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    return Json::writeString(wb, parsed);
+}
+
 void ChainRunner::LogPromptCall(
     const std::string& agent_id,
     int64_t session_id,
@@ -1113,7 +1157,12 @@ void ChainRunner::LogPromptCall(
                 Json::Value call(Json::objectValue);
                 call["id"] = tc.id;
                 call["name"] = tc.name;
-                call["arguments"] = tc.arguments;
+                // Secret-argument masking at the logging boundary (2026-09-06):
+                // api-tool parameters may be declared secret:true per command,
+                // but the chain layer doesn't see command schemas. Mask values
+                // whose key looks like a credential — over-masking is safe;
+                // prompt_logs must never persist verbatim secrets.
+                call["arguments"] = MaskSecretishArgs(tc.name, tc.arguments);
                 calls.append(call);
             }
             Json::StreamWriterBuilder wb;

@@ -33,6 +33,8 @@ private:
     std::string HandleStatus(const std::vector<std::string>& tokens);
     std::string HandlePackage(const std::vector<std::string>& tokens);
     std::string HandleCommand(const std::vector<std::string>& tokens);
+    std::string HandleState(const std::vector<std::string>& tokens,
+                            const std::string& input);
     std::string HandleFiles(const std::vector<std::string>& tokens);
     std::string HandleEnable(const std::string& name, bool enable);
     std::string HandleInvocation(const std::vector<std::string>& tokens,
