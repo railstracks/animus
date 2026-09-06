@@ -920,7 +920,20 @@ bool ChainRunner::ProcessResponse(
 
         // Delegate execution to ToolExecutionService
         ToolRouteResult routeResult = ToolRouteResult::deliver_to_model;
+        const auto toolStart = std::chrono::steady_clock::now();
         ToolResult toolResult = m_execService->Execute(call, execCtx, &routeResult);
+        const auto toolMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - toolStart).count();
+        if (toolMs > 30000) {
+            // 2026-09-05 post-mortem: a PG row-lock deadlock parked a chain
+            // for 4+ hours with zero log output. Any tool (or its session
+            // flush) exceeding 30s gets a loud marker so wedges are visible
+            // in logs, not just in missing responses.
+            ALOG_WARNING("chain", "SLOW TOOL: " << call.name
+                      << " id=" << call.id
+                      << " took " << toolMs << " ms (>30s) — possible DB lock "
+                      << "wait or external hang; investigate if this repeats");
+        }
 
         toolCallsExecuted++;
 
@@ -955,7 +968,21 @@ bool ChainRunner::ProcessResponse(
         toolResultTurn.tool_name = call.name;
         toolResultTurn.unix_ms = NowUnixMs();
         session.AddTurn(std::move(toolResultTurn));
-        m_sessions.FlushSession(session.Id());
+        {
+            const auto flushStart = std::chrono::steady_clock::now();
+            m_sessions.FlushSession(session.Id());
+            const auto flushMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - flushStart).count();
+            if (flushMs > 10000) {
+                // 2026-09-05 post-mortem: FlushSession blocked 4+ hours on a
+                // leaked idle-in-transaction PG connection holding session_turns
+                // row locks — no timeout, no log line, chain silently parked.
+                ALOG_WARNING("chain", "SLOW FLUSH: session " << session.Id()
+                          << " flush took " << flushMs
+                          << " ms (>10s) — likely DB row-lock contention; "
+                          << "check pg_stat_activity for idle-in-transaction");
+            }
+        }
 
         if (toolEventCallback) {
             toolEventCallback(tcNotif, toolResult);

@@ -20,14 +20,17 @@ namespace animus::kernel {
 class PgStatement final : public IStatement {
 public:
     PgStatement(PgDataStore* owner, PgDataStore::PooledConnection* pc,
-                const std::string& sql)
-        : m_owner(owner), m_pc(pc), m_sql(sql),
+                const std::string& sql, bool ownsConn = true)
+        : m_owner(owner), m_pc(pc), m_sql(sql), m_ownsConn(ownsConn),
           m_currentRow(0), m_result(nullptr), m_hasResult(false), m_done(false),
           m_rowsAffected(0) {}
 
     ~PgStatement() override {
         Clear();
-        if (m_pc) m_owner->Release(m_pc);
+        // Non-owning statements (bound to the thread's open transaction's
+        // pinned connection) leave the connection pinned; Commit/Rollback
+        // owns the release. Owning statements return theirs to the pool.
+        if (m_pc && m_ownsConn) m_owner->Release(m_pc);
     }
 
     bool BindInt(int idx, int val) override {
@@ -273,6 +276,7 @@ private:
     PgDataStore* m_owner;
     PgDataStore::PooledConnection* m_pc;
     std::string m_sql;
+    bool m_ownsConn{true};
     std::vector<std::string> m_params;
     std::vector<int> m_paramFormats;
     std::vector<int> m_nullFlags;
@@ -295,6 +299,26 @@ static std::unique_ptr<PgDataStore::PooledConnection> CreatePooledConnection(con
                   << (conn ? PQerrorMessage(conn) : "null"));
         if (conn) PQfinish(conn);
         return nullptr;
+    }
+    // Connection-level safety net (2026-09-05 deadlock post-mortem):
+    //  - lock_timeout: any single lock wait longer than 10s fails the
+    //    statement instead of parking a worker forever.
+    //  - idle_in_transaction_session_timeout: a connection sitting inside
+    //    an open transaction without executing anything for 60s is killed
+    //    server-side — a leaked transaction can no longer wedge flushes
+    //    and starve the pool indefinitely.
+    //  - statement_timeout caps runaway queries (e.g. LIKE scans).
+    for (const char* setting : {
+             "SET lock_timeout = '10s'",
+             "SET idle_in_transaction_session_timeout = '60s'",
+             "SET statement_timeout = '60s'",
+         }) {
+        PGresult* r = PQexec(conn, setting);
+        if (!r || PQresultStatus(r) != PGRES_COMMAND_OK) {
+            ALOG_WARNING("datastore", "Connection " << id
+                      << " could not apply '" << setting << "'");
+        }
+        if (r) PQclear(r);
     }
     auto pc = std::make_unique<PgDataStore::PooledConnection>();
     pc->conn = conn;
@@ -380,6 +404,14 @@ PgDataStore::PooledConnection* PgDataStore::Acquire() {
             ALOG_WARNING("datastore", "Connection " << pc->id << " reconnection failed");
         } else {
             pc->healthy = true;
+            for (const char* setting : {
+                     "SET lock_timeout = '10s'",
+                     "SET idle_in_transaction_session_timeout = '60s'",
+                     "SET statement_timeout = '60s'",
+                 }) {
+                PGresult* r = PQexec(pc->conn, setting);
+                if (r) PQclear(r);  // settings are best-effort on reconnect
+            }
         }
     }
 
@@ -410,7 +442,85 @@ void PgDataStore::SetConnLastInsertId(PooledConnection* pc, int64_t id) {
     }
 }
 
+// static
+PgDataStore::PooledConnection*& PgDataStore::TlsTxnConnection() {
+    static thread_local PooledConnection* tls_txnConn = nullptr;
+    return tls_txnConn;
+}
+
+void PgDataStore::UnpinTxn(PooledConnection* pc) {
+    PooledConnection*& pinned = TlsTxnConnection();
+    if (pinned == pc) pinned = nullptr;
+}
+
+bool PgDataStore::BeginTransaction() {
+    if (TlsTxnConnection()) {
+        // Nested BEGIN on the same thread — treat as no-op (SQLite parity:
+        // the naive BEGIN would error; callers rely on nesting being benign).
+        return true;
+    }
+    PooledConnection* pc = Acquire();
+    if (!pc || !pc->conn) {
+        if (pc) Release(pc);
+        return false;
+    }
+    PGresult* r = PQexec(pc->conn, "BEGIN");
+    bool ok = r && PQresultStatus(r) == PGRES_COMMAND_OK;
+    if (r) PQclear(r);
+    if (ok) {
+        TlsTxnConnection() = pc;  // pinned until Commit/Rollback
+    } else {
+        m_lastError = pc->conn ? PQerrorMessage(pc->conn) : "no connection";
+        Release(pc);
+    }
+    return ok;
+}
+
+bool PgDataStore::Commit() {
+    PooledConnection*& pinned = TlsTxnConnection();
+    if (!pinned) return true;  // nothing open — benign (SQLite parity)
+    PGresult* r = PQexec(pinned->conn, "COMMIT");
+    bool ok = r && PQresultStatus(r) == PGRES_COMMAND_OK;
+    if (!ok) m_lastError = PQerrorMessage(pinned->conn);
+    if (r) PQclear(r);
+    Release(pinned);
+    pinned = nullptr;
+    return ok;
+}
+
+bool PgDataStore::Rollback() {
+    PooledConnection*& pinned = TlsTxnConnection();
+    if (!pinned) return true;
+    PGresult* r = PQexec(pinned->conn, "ROLLBACK");
+    bool ok = r && PQresultStatus(r) == PGRES_COMMAND_OK;
+    if (!ok) m_lastError = PQerrorMessage(pinned->conn);
+    if (r) PQclear(r);
+    Release(pinned);
+    pinned = nullptr;
+    return ok;
+}
+
 bool PgDataStore::Exec(const std::string& sql) {
+    PooledConnection*& pinned = TlsTxnConnection();
+    if (pinned) {
+        // Inside a transaction: run on the pinned connection so BEGIN/COMMIT
+        // and every statement in between share one session.
+        PGresult* result = PQexec(pinned->conn, sql.c_str());
+        if (!result) {
+            m_lastError = PQerrorMessage(pinned->conn);
+            pinned->healthy = false;
+            return false;
+        }
+        ExecStatusType status = PQresultStatus(result);
+        bool ok = (status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK);
+        if (!ok) m_lastError = PQresultErrorMessage(result);
+        if (status == PGRES_COMMAND_OK) {
+            char* tuples = PQcmdTuples(result);
+            m_lastChanges.store(tuples ? std::atoll(tuples) : 0);
+        }
+        PQclear(result);
+        return ok;
+    }
     auto* pc = Acquire();
     if (!pc || !pc->conn) {
         if (pc) Release(pc);
@@ -445,6 +555,14 @@ bool PgDataStore::Exec(const std::string& sql) {
 }
 
 std::unique_ptr<IStatement> PgDataStore::Prepare(const std::string& sql) {
+    if (PooledConnection* pinned = TlsTxnConnection()) {
+        // Inside a transaction: statements bind to the pinned connection so
+        // they participate in it. They do NOT own the connection — the
+        // transaction owner (Commit/Rollback) releases it.
+        std::string translated = TranslatePlaceholders(sql);
+        return std::make_unique<PgStatement>(this, pinned, translated,
+                                             /*ownsConn=*/false);
+    }
     auto* pc = Acquire();
     if (!pc || !pc->conn) {
         if (pc) Release(pc);
