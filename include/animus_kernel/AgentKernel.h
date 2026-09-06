@@ -50,6 +50,7 @@ class SessionNotesStore;
 class ChannelContextStore;
 class ApiPackageStore;
 class ApiRuntime;
+class ApiConnectionManager;
 class AgendaStore;
 class SessionReportStore;
 class ScriptStore;
@@ -150,6 +151,7 @@ private:
     ChannelContextStore* m_channelContextStore{nullptr}; // trusted channel arrivals (#14)
     ApiPackageStore* m_apiPackageStore{nullptr}; // api package persistence (#26 b)
     ApiRuntime* m_apiRuntime{nullptr};               // api package runtime (#26 c)
+    ApiConnectionManager* m_apiConnManager{nullptr};  // connection driver + dispatch bridge (#26 d)
     AgendaStore* m_agendaStore{nullptr}; // per-agent calendar/agenda
     SessionReportStore* m_sessionReportStore{nullptr}; // per-session temporal reports
     ContextProviderRegistry* m_contextRegistry{nullptr}; // prompt assembly providers
