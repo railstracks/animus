@@ -75,7 +75,15 @@ ToolResult ApiTool::Execute(const ToolCall& call) {
             return result;
         }
     }
-    const std::string input = args["input"].asString();
+    std::string input = args["input"].asString();
+    // The tool description teaches the 'api <verb> ...' form; strip a leading
+    // 'api' token so both forms work. 'api' is also a reserved package name.
+    {
+        static const std::string kSelf = "api ";
+        bool hadSelf = false;
+        while (input.rfind(kSelf, 0) == 0) { input.erase(0, kSelf.size()); hadSelf = true; }
+        if (hadSelf) ALOG_INFO("api", "[api] stripped 'api' prefix");
+    }
     const auto tokens = Tokenize(input);
     if (tokens.empty()) {
         result.success = false;
@@ -209,12 +217,16 @@ std::string ApiTool::HandleCommand(const std::vector<std::string>& tokens) {
                "'api command read' to inspect";
     auto pkg = m_runtime->store()->GetPackageByName(tokens[2]);
     if (!pkg) return "unknown package '" + tokens[2] + "'. " + AvailablePackagesLine();
-    auto cmd = m_runtime->store()->GetCommand(pkg->id, tokens[3]);
+    // Command names may contain spaces ('portfolio list') — join the rest.
+    std::string cmdName = tokens[3];
+    for (size_t i = 4; i < tokens.size(); ++i) cmdName += " " + tokens[i];
+    auto cmd = m_runtime->store()->GetCommand(pkg->id, cmdName);
     if (!cmd) {
         std::string avail;
         for (const auto& c : m_runtime->store()->ListCommands(pkg->id))
-            avail += (avail.empty() ? "" : ", ") + c.name;
-        return "unknown command '" + tokens[3] + "' (available: " + (avail.empty() ? "none" : avail) + ")";
+            avail += (avail.empty() ? "" : ", ") + c.name +
+                     (c.kind == "hook" ? " (hook:" + c.event + ")" : "");
+        return "unknown command '" + cmdName + "' (available: " + (avail.empty() ? "none" : avail) + ")";
     }
     Json::Value out(Json::objectValue);
     out["package"] = pkg->name;
@@ -228,9 +240,14 @@ std::string ApiTool::HandleCommand(const std::vector<std::string>& tokens) {
 }
 
 std::string ApiTool::HandleFiles(const std::vector<std::string>& tokens) {
-    if (tokens.size() < 3 || tokens[1] != "list")
-        return "usage: api files <package> list";
-    auto pkg = m_runtime->store()->GetPackageByName(tokens[2]);
+    // Two accepted forms (usage message teaches the second):
+    //   api files list <package>    (parser's original order)
+    //   api files <package> list    (documented order)
+    std::string pkgName;
+    if (tokens.size() >= 3 && tokens[1] == "list") pkgName = tokens[2];
+    else if (tokens.size() >= 4 && tokens[2] == "list") pkgName = tokens[1];
+    else return "usage: api files <package> list";
+    auto pkg = m_runtime->store()->GetPackageByName(pkgName);
     if (!pkg) return "unknown package '" + tokens[2] + "'. " + AvailablePackagesLine();
     Json::Value out(Json::objectValue);
     out["package"] = pkg->name;
