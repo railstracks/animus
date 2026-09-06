@@ -236,24 +236,27 @@ private:
             m_owner->SetLastChanges(changes);
 
             // Track last insert ID for this connection via SELECT lastval()
-            // Only meaningful after an actual INSERT (not ON CONFLICT DO UPDATE).
-            // lastval() returns the most recent sequence value for this session.
-            // Guard against lastval() failing (e.g. after ON CONFLICT DO UPDATE
-            // where no sequence was consumed) — the error is harmless and should
-            // not pollute the connection state.
+            // Only meaningful after an actual INSERT that consumed a sequence.
+            // lastval() FAILS when no sequence was used this session (TEXT-id
+            // tables, ON CONFLICT DO UPDATE). In autocommit that error was
+            // harmless; inside an explicit transaction it ABORTS the whole
+            // transaction (2026-09-06: registry installs silently rolled back).
+            // Savepoint-wrap the probe so failure is recoverable in both modes.
             if (changes > 0) {
+                PQclear(PQexec(m_pc->conn, "SAVEPOINT _lastval_probe"));
                 PGresult* idResult = PQexec(m_pc->conn, "SELECT lastval()");
                 if (idResult) {
                     if (PQresultStatus(idResult) == PGRES_TUPLES_OK && PQntuples(idResult) > 0) {
                         int64_t id = std::atoll(PQgetvalue(idResult, 0, 0));
                         m_owner->SetConnLastInsertId(m_pc, id);
+                        PQclear(PQexec(m_pc->conn, "RELEASE SAVEPOINT _lastval_probe"));
+                    } else {
+                        // No sequence consumed — recover and release.
+                        PQclear(PQexec(m_pc->conn, "ROLLBACK TO SAVEPOINT _lastval_probe"));
+                        PQclear(PQexec(m_pc->conn, "RELEASE SAVEPOINT _lastval_probe"));
                     }
                     PQclear(idResult);
                 }
-                // Clear any error from lastval() failing (ON CONFLICT path)
-                // Consume the error by running a trivial no-op that succeeds.
-                PGresult* clearResult = PQexec(m_pc->conn, "SELECT 1");
-                if (clearResult) PQclear(clearResult);
             }
             return true;
         }

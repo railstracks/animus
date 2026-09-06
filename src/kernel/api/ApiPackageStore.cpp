@@ -1,5 +1,6 @@
 #include "animus_kernel/ApiPackageStore.h"
 #include "animus_kernel/SchemaHelpers.h"
+#include "animus_kernel/Log.h"
 
 #include <json/json.h>
 
@@ -358,7 +359,11 @@ bool ApiPackageStore::DeletePackage(const std::string& id) {
     m_store->Exec("DELETE FROM api_package_connections WHERE package_id = '" + id + "'");
     m_store->Exec("DELETE FROM api_package_agents WHERE package_id = '" + id + "'");
     m_store->Exec("DELETE FROM api_packages WHERE id = '" + id + "'");
-    m_store->Commit();
+    if (!m_store->Commit()) {
+        ALOG_ERROR("api", "[api-package-store] DeletePackage COMMIT FAILED: "
+                  << m_store->ErrMsg() << " (package '" << id << "' NOT deleted)");
+        return false;
+    }
     return true;
 }
 
@@ -436,7 +441,13 @@ int ApiPackageStore::ReplaceCommands(const std::string& packageId,
             AddCommand(copy);
             inserted++;
         }
-        m_store->Commit();
+        if (!m_store->Commit()) {
+            ALOG_ERROR("api", "[api-package-store] ReplaceCommands COMMIT FAILED: "
+                      << m_store->ErrMsg() << " (commands for '" << packageId
+                      << "' NOT replaced)");
+            m_store->Rollback();
+            throw std::runtime_error("commit failed: " + m_store->ErrMsg());
+        }
         return inserted;
     } catch (...) {
         m_store->Rollback();
@@ -519,7 +530,13 @@ int ApiPackageStore::ReplaceConnections(const std::string& packageId,
             AddConnection(copy);
             inserted++;
         }
-        m_store->Commit();
+        if (!m_store->Commit()) {
+            ALOG_ERROR("api", "[api-package-store] ReplaceCommands COMMIT FAILED: "
+                      << m_store->ErrMsg() << " (commands for '" << packageId
+                      << "' NOT replaced)");
+            m_store->Rollback();
+            throw std::runtime_error("commit failed: " + m_store->ErrMsg());
+        }
         return inserted;
     } catch (...) {
         m_store->Rollback();
@@ -873,7 +890,13 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
         m_store->Rollback();
         throw;
     }
-    m_store->Commit();
+    if (!m_store->Commit()) {
+        ALOG_ERROR("api", "[api-package-store] InstallFromManifest COMMIT FAILED: "
+                  << m_store->ErrMsg() << " (package '" << name
+                  << "' NOT installed)");
+        m_store->Rollback();
+        throw std::runtime_error("commit failed: " + m_store->ErrMsg());
+    }
     return stored;
 }
 
