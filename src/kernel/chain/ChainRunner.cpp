@@ -1088,7 +1088,7 @@ static std::string MaskSecretishArgs(const std::string& toolName,
     static const std::vector<std::string> kSecretish = {
         "token", "secret", "key", "password", "credential", "auth", "apikey",
     };
-    bool isSecretish = [](const std::string& k) {
+    auto matchesSecretish = [](const std::string& k) {
         std::string lower;
         lower.reserve(k.size());
         for (char c : k) lower.push_back(static_cast<char>(std::tolower(c)));
@@ -1105,7 +1105,7 @@ static std::string MaskSecretishArgs(const std::string& toolName,
     std::function<void(Json::Value&)> mask = [&](Json::Value& v) {
         if (v.isObject()) {
             for (const auto& k : v.getMemberNames()) {
-                if (isSecretish(k) && v[k].isString() && v[k].asString().size() >= 4) {
+                if (matchesSecretish(k) && v[k].isString() && v[k].asString().size() >= 4) {
                     v[k] = "***";
                 } else {
                     mask(v[k]);
