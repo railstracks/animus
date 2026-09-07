@@ -2221,7 +2221,7 @@ watch(sessionSearch, () => {
 
 .composer-row {
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 0.75rem;
 }
 
@@ -2232,6 +2232,13 @@ watch(sessionSearch, () => {
 .composer-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: stretch;
+}
+
+/* button fills the textarea's height in the row */
+.composer-actions :deep(.v-btn) {
+  height: auto;
+  min-height: 100%;
 }
 
 /* smallest breakpoint: button wraps to its own full-width row below the input */
