@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: '최신으로 이동',
     composerPlaceholder: '애니머스에게 메시지 보내기...',
-    adminTokenLabel: '관리자 토큰(선택사항)',
     send: '보내기',
     contextTitle: '맥락',
     context: {

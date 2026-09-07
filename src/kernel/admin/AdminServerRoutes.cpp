@@ -1,4 +1,7 @@
 #include "animus_kernel/AdminServer.h"
+#include "animus_kernel/ApiPackageStore.h"
+#include "animus_kernel/api/ApiRuntime.h"
+#include "animus_kernel/api/RegistryClient.h"
 #include "animus_kernel/ChainRunner.h"
 #include "animus_kernel/CompactionService.h"
 #include "animus_kernel/SessionManager.h"
@@ -20,6 +23,7 @@
 #include "animus_kernel/tools/ChannelsTool.h"
 #include "animus_kernel/tools/WebSearchTool.h"
 #include "animus_kernel/SessionNotesStore.h"
+#include "animus_kernel/ChannelContextStore.h"
 #include "animus_kernel/SessionReportStore.h"
 #include "animus_kernel/tools/HttpClient.h"
 #include "animus_kernel/tools/WebSearchTool.h"
@@ -60,6 +64,10 @@ void AdminServer::RegisterRoutesGallivanting() {
 
 void AdminServer::RegisterRoutesLua() {
 #include "kernel/admin/internal/AdminServerRoutesLua.inc"
+}
+
+void AdminServer::RegisterRoutesApiPackages() {
+#include "kernel/admin/internal/AdminServerRoutesApiPackages.inc"
 }
 
 void AdminServer::RegisterRoutesChannels() {

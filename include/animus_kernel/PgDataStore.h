@@ -57,6 +57,17 @@ public:
     void SetLastChanges(int64_t count) { m_lastChanges.store(count); }
     void SetLastError(const std::string& err) { m_lastError = err; }
 
+    // Transaction affinity (IDataStore overrides).
+    // The naive per-call-Exec() defaults are broken on a pooled backend:
+    // BEGIN/COMMIT/tenant statements would each borrow a DIFFERENT pooled
+    // connection, leaving the BEGIN's connection stuck in an open
+    // transaction with whatever locks its later borrowers take —
+    // the 2026-09-05 deadlock (idle-in-transaction conn holding
+    // session_turns row locks wedged a chat chain forever).
+    bool BeginTransaction() override;
+    bool Commit() override;
+    bool Rollback() override;
+
     bool TryReconnect();
 
     // Connection pool internals (used by PgStatement)
@@ -85,6 +96,11 @@ private:
     mutable std::mutex m_poolMutex;
     std::condition_variable m_poolCv;
     int m_poolSize{10};
+
+    // Pinned connection for the calling thread's active transaction.
+    // Pinned while a transaction is open; unpinned on Commit/Rollback.
+    static PooledConnection*& TlsTxnConnection();
+    void UnpinTxn(PooledConnection* pc);
 
     bool m_hasPgvector{false};
     std::atomic<int64_t> m_lastChanges{0};

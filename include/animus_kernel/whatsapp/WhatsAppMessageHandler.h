@@ -28,6 +28,7 @@ struct DecryptedMessage {
     std::string from;           // JID of the chat (group or individual)
     bool isGroup = false;       // Whether this is a group message
     std::string messageId;      // Original message ID for receipts
+    std::string senderName;     // Push name (node 'notify' attr) when present
 };
 
 /// Handle a "message" binary node — decrypt enc children and return result.

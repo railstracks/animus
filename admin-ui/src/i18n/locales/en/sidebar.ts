@@ -23,6 +23,7 @@ export const sidebar = {
       users: 'Users',
       diffusion: 'Diffusion',
       sops: 'SOPs',
+      packages: 'API Packages',
       theme: 'Theme',
     }
   } as const;

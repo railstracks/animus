@@ -1,4 +1,5 @@
 #include "animus_kernel/Log.h"
+#include <unordered_map>
 #include "animus_kernel/ChannelAdapters.h"
 #include "animus_kernel/ChannelContext.h"
 #include "animus_kernel/ChannelHelpers.h"
@@ -26,142 +27,112 @@ using namespace channel_detail;
 // ============================================================================
 
 void EmailAdapter::RunLoop() {
-    WebSocketLoop();
-}
-
-void EmailAdapter::WebSocketLoop() {
     auto* rt = m_runtime.get();
-    ALOG_DEBUG("email", "WebSocket loop starting for " << rt->channel_name);
 
-    std::string apiKey = GetString(rt->config, "api_key");
-    std::string inboxId = GetString(rt->config, "inbox_id");
-
-    if (apiKey.empty() || inboxId.empty()) {
-        ALOG_WARNING("email", "WS: missing api_key or inbox_id — falling back to polling");
+    // Explicit degraded mode: config transport=poll skips the websocket.
+    if (GetString(rt->config, "transport") == "poll") {
         PollLoop();
         return;
     }
 
-    trantor::EventLoop loop;
-    auto wsPtr = drogon::WebSocketClient::newWebSocketClient("wss://ws.agentmail.to", &loop);
+    std::string apiKey = GetString(rt->config, "api_key");
+    std::string inboxId = GetString(rt->config, "inbox_id");
+    if (apiKey.empty() || inboxId.empty()) {
+        // Config error: terminal and loud (supervisor semantics). No poll
+        // fallback — the poller needs the same credentials and would 401-loop.
+        ALOG_ERROR("email", "[" << rt->channel_name << "] config error: "
+                  << (apiKey.empty() ? "api_key" : "inbox_id")
+                  << " missing — adapter not started (set credentials and "
+                     "re-enable the channel)");
+        rt->ws_connected = false;
+        return;
+    }
 
-    wsPtr->setMessageHandler(
-        [this, rt](std::string&& message,
-                   const drogon::WebSocketClientPtr&,
-                   const drogon::WebSocketMessageType& type) {
-            if (type != drogon::WebSocketMessageType::Text) return;
+    ConnectionSupervisor::Config cfg;
+    cfg.name = rt->channel_name;
+    cfg.host = GetString(rt->config, "ws_url", "wss://ws.agentmail.to");
+    cfg.path = "/v0";
+    cfg.query["api_key"] = apiKey;
 
-            auto root = ParseJson(message);
-            std::string eventType = GetString(root, "event_type");
-            std::string msgType = GetString(root, "type");
+    ConnectionSupervisor::Callbacks cbs;
 
-            if (msgType == "subscribed") {
-                ALOG_DEBUG("email", "WS: subscribed");
-                return;
-            }
+    cbs.on_connected = [this, rt, inboxId]() {
+        rt->ws_connected = true;
+        // Subscribe on EVERY (re)connect — idempotent by contract (D3):
+        // connections drop; subscriptions are rebuilt by design.
+        Json::Value subscribe;
+        subscribe["type"] = "subscribe";
+        subscribe["event_types"] = Json::Value(Json::arrayValue);
+        subscribe["event_types"].append("message.received");
+        subscribe["inbox_ids"] = Json::Value(Json::arrayValue);
+        subscribe["inbox_ids"].append(inboxId);
+        m_supervisor->SendText(JsonCompact(subscribe));
+        ALOG_INFO("email", "[" << rt->channel_name << "] WS connected + subscribed (inbox "
+                  << inboxId << ")");
+    };
 
-            if (msgType == "error") {
-                std::string errName = GetString(root, "name");
-                ALOG_ERROR("email", "WS error: " << errName
-                          << ": " << GetString(root, "message"));
-                if (errName == "authentication_error" || errName == "authorization_error" ||
-                    errName == "invalid_api_key") {
-                    rt->ws_connected = false;
-                    rt->active = false;
-                }
-                return;
-            }
+    cbs.on_message = [this, rt](const std::string& message) {
+        auto root = ParseJson(message);
+        std::string eventType = GetString(root, "event_type");
+        std::string msgType = GetString(root, "type");
 
-            if (eventType == "message.received" || eventType == "message.received.spam" ||
-                eventType == "message.received.blocked" || eventType == "message.received.unauthenticated") {
-                std::string eventId = GetString(root, "event_id");
-                if (!eventId.empty() && !rt->RememberEventStr(eventId)) return;
+        if (msgType == "subscribed") {
+            ALOG_DEBUG("email", "WS: subscribed ack");
+            return;
+        }
 
-                Json::Value msgObj = root["message"];
-                std::string threadId = GetString(msgObj, "thread_id");
-                std::string messageId = GetString(msgObj, "message_id");
-                std::string sender = GetString(msgObj, "from");
-                std::string subject = GetString(msgObj, "subject");
-                std::string bodyText = GetString(msgObj, "text");
-
-                if (bodyText.empty()) bodyText = GetString(msgObj, "extracted_text");
-                if (bodyText.empty()) {
-                    std::string htmlBody = GetString(msgObj, "html");
-                    if (!htmlBody.empty()) bodyText = StripHtmlSimple(htmlBody);
-                }
-
-                rt->last_ws_event = std::chrono::steady_clock::now();
-
-                if (eventType == "message.received") {
-                    ProcessMessage(threadId, messageId, sender, subject, bodyText);
-                }
-            }
-        });
-
-    wsPtr->setConnectionClosedHandler(
-        [rt](const drogon::WebSocketClientPtr&) {
-            ALOG_DEBUG("email", "WS: closed for " << rt->channel_name);
-            rt->ws_connected = false;
-        });
-
-    auto req = drogon::HttpRequest::newHttpRequest();
-    req->setPath("/v0");
-    req->setParameter("api_key", apiKey);
-
-    wsPtr->connectToServer(req,
-        [this, rt, wsPtr, &inboxId](drogon::ReqResult r,
-                                    const drogon::HttpResponsePtr&,
-                                    const drogon::WebSocketClientPtr&) {
-            if (r != drogon::ReqResult::Ok) {
+        if (msgType == "error") {
+            std::string errName = GetString(root, "name");
+            std::string errMsg = GetString(root, "message");
+            ALOG_ERROR("email", "WS error: " << errName << ": " << errMsg);
+            if (errName == "authentication_error" || errName == "authorization_error" ||
+                errName == "invalid_api_key") {
                 rt->ws_connected = false;
-                rt->consecutive_errors++;
-                if (rt->consecutive_errors >= 5) { wsPtr->stop(); return; }
-                return;
+                // Terminal: reconnecting would loop the same rejection.
+                m_supervisor->FatalError("agentmail auth rejected: " + errName);
             }
+            return;
+        }
 
-            rt->ws_connected = true;
-            rt->consecutive_errors = 0;
+        if (eventType == "message.received" || eventType == "message.received.spam" ||
+            eventType == "message.received.blocked" || eventType == "message.received.unauthenticated") {
+            std::string eventId = GetString(root, "event_id");
+            if (!eventId.empty() && !rt->RememberEventStr(eventId)) return;
 
-            Json::Value subscribe;
-            subscribe["type"] = "subscribe";
-            subscribe["event_types"] = Json::Value(Json::arrayValue);
-            subscribe["event_types"].append("message.received");
-            subscribe["inbox_ids"] = Json::Value(Json::arrayValue);
-            subscribe["inbox_ids"].append(inboxId);
-            wsPtr->getConnection()->send(JsonCompact(subscribe));
-            wsPtr->getConnection()->setPingMessage("", std::chrono::seconds(30));
-        });
-
-    rt->last_ws_event = std::chrono::steady_clock::now();
-
-    loop.runEvery(5.0, [this, rt, &loop, wsPtr]() {
-        if (!rt->active) { wsPtr->stop(); loop.quit(); return; }
-        if (rt->ws_connected) {
-            auto elapsed = std::chrono::steady_clock::now() - rt->last_ws_event;
-            if (std::chrono::duration_cast<std::chrono::minutes>(elapsed).count() >= 5) {
-                rt->consecutive_errors++;
+            Json::Value msgObj = root["message"];
+            if (eventType == "message.received") {
                 rt->last_ws_event = std::chrono::steady_clock::now();
-                if (rt->consecutive_errors >= 3) {
-                    rt->ws_connected = false;
-                    wsPtr->stop();
-                    rt->consecutive_errors = 0;
-                }
+                ProcessMessage(msgObj);
             }
         }
-    });
+    };
 
-    loop.loop();
+    cbs.on_closed = [rt](const std::string&) {
+        rt->ws_connected = false;  // reconnect + transition logging: supervisor
+    };
 
-    if (rt->active && rt->consecutive_errors >= 5) {
-        rt->ws_connected = false;
-        rt->consecutive_errors = 0;
-        PollLoop();
-    }
+    m_supervisor = std::make_unique<ConnectionSupervisor>();
+    // Blocks until Stop()/FatalError(); every transition logged on the way.
+    m_supervisor->Run(cfg, std::move(cbs));
+    rt->ws_connected = false;
+}
+
+void EmailAdapter::Stop() {
+    if (m_supervisor) m_supervisor->RequestStop();
+    PollerAdapterBase::Stop();
+}
+
+bool EmailAdapter::IsConnected() const {
+    if (m_supervisor)
+        return m_supervisor->state() == ConnectionSupervisor::State::Connected;
+    return PollerAdapterBase::IsConnected();
 }
 
 void EmailAdapter::PollLoop() {
     auto* rt = m_runtime.get();
     ALOG_INFO("email", "Poll loop started for " << rt->channel_name);
+
+    std::string ownAddress;  // resolved lazily for the self-send guard
 
     while (rt->active) {
         auto now = std::chrono::steady_clock::now();
@@ -199,8 +170,24 @@ void EmailAdapter::PollLoop() {
                     if (!htmlBody.empty()) bodyText = StripHtmlSimple(htmlBody);
                 }
 
-                ProcessMessage(GetString(msg, "thread_id"), messageId,
-                               GetString(msg, "from"), GetString(msg, "subject"), bodyText);
+                // Self-send guard: the messages list includes mail we sent
+                // (from == own inbox address). The WS path never sees these
+                // (label=sent fires no message.received); the poll path would
+                // loop on them. Address resolved lazily, once.
+                if (ownAddress.empty()) {
+                    HttpClient::Request ar;
+                    ar.method = "GET";
+                    ar.url = std::string("https://api.agentmail.to/v0/inboxes/") + inboxId;
+                    ar.headers["Authorization"] = "Bearer " + apiKey;
+                    auto aresp = m_ctx.httpClient.Execute(ar);
+                    if (aresp.status_code == 200) {
+                        auto aj = ParseJson(aresp.body);
+                        ownAddress = GetString(aj["inbox"], "address");
+                    }
+                }
+                if (!ownAddress.empty() && GetString(msg, "from") == ownAddress) continue;
+
+                ProcessMessage(msg);
             }
         }
 
@@ -209,25 +196,84 @@ void EmailAdapter::PollLoop() {
     }
 }
 
-void EmailAdapter::ProcessMessage(const std::string& threadId,
-                                   const std::string& messageId,
-                                   const std::string& sender,
-                                   const std::string& subject,
-                                   const std::string& bodyText) {
+void EmailAdapter::ProcessMessage(const Json::Value& msg) {
+    std::string threadId  = GetString(msg, "thread_id");
+    std::string messageId = GetString(msg, "message_id");
+    std::string sender    = GetString(msg, "from");
+    std::string subject   = GetString(msg, "subject");
+
+    std::string bodyText = GetString(msg, "text");
+    if (bodyText.empty()) bodyText = GetString(msg, "extracted_text");
+    if (bodyText.empty()) {
+        std::string htmlBody = GetString(msg, "html");
+        if (!htmlBody.empty()) bodyText = StripHtmlSimple(htmlBody);
+    }
+
     std::string routingKey = "thread:" + threadId;
     std::string sessionType = "email:chat";
 
-    std::string prompt;
-    if (!subject.empty()) {
-        prompt = "New email from " + sender + " with subject '" + subject + "':\n\n" + bodyText;
-    } else {
-        prompt = "New email from " + sender + ":\n\n" + bodyText;
-    }
-    prompt += "\n\nMessage-ID: " + messageId;
-    prompt += "\nThread-ID: " + threadId;
-    prompt += "\n\nYou are responding via email. Use the email tool with action=reply and the message_id above to respond.";
+    // ------------------------------------------------------------------
+    // #15/#42 context-card migration (#59): attribution line + verbatim
+    // human-facing header preamble in the turn; routing ids as card
+    // targets; explicit reply instructions; no inline hints.
+    // ------------------------------------------------------------------
+    auto renderAddressList = [](const Json::Value& v) -> std::string {
+        if (v.isString()) return v.asString();
+        if (!v.isArray()) return "";
+        std::string out;
+        for (const auto& a : v) {
+            std::string addr = a.isString()
+                ? a.asString()
+                : (a.isObject() ? a.get("email", "").asString() : "");
+            if (addr.empty()) continue;
+            if (!out.empty()) out += ", ";
+            out += addr;
+        }
+        return out;
+    };
+    std::string toLine   = renderAddressList(msg.get("to", Json::Value()));
+    std::string ccLine   = renderAddressList(msg.get("cc", Json::Value()));
+    std::string dateLine = GetString(msg, "created_at");
 
-    Dispatch(routingKey, prompt, sessionType);
+    std::string displayText;
+    if (!subject.empty()) {
+        displayText = "Email message from " + sender + " in thread \"" + subject + "\":\n";
+    } else {
+        displayText = "Email message from " + sender + ":\n";
+    }
+    displayText += "From: " + sender + "\n";
+    if (!toLine.empty())    displayText += "To: " + toLine + "\n";
+    if (!ccLine.empty())    displayText += "Cc: " + ccLine + "\n";
+    if (!dateLine.empty())  displayText += "Date: " + dateLine + "\n";
+    if (!subject.empty())   displayText += "Subject: " + subject + "\n";
+    displayText += "\n" + bodyText;
+
+    // Context card (#15/#42) — tool-only delivery: a text reply is never
+    // an email send.
+    Json::Value meta;
+    meta["message_type"] = "email";
+    meta["delivery"] = "tool";
+    Json::Value origin;
+    if (!sender.empty()) {
+        origin["user_display"] = sender;
+        origin["user_id"] = sender;            // address = stable-ish id
+    }
+    if (!subject.empty()) origin["channel"] = subject;  // display-only
+    meta["origin"] = origin;
+    meta["email_thread_id"] = threadId;
+    if (!messageId.empty()) meta["source_message_id"] = messageId;
+    meta["reply_instructions"] =
+        "Reply using the channels tool with action=reply; thread_id is "
+        "provided by the arrival and filled automatically. The reply is "
+        "sent to the email thread — all thread participants see it. Quote "
+        "sparingly; the thread carries its own history. Text replies are "
+        "NOT delivered.";
+
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    std::string metadata = Json::writeString(wb, meta);
+
+    Dispatch(routingKey, displayText, sessionType, metadata);
 }
 
 void EmailAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {
@@ -385,6 +431,53 @@ void SlackAdapter::SocketModeLoop() {
         }
     }
 
+    // Display-name resolution (#42): Slack ids are stable but unreadable.
+    // Resolve once per connection and cache (Discord GUILD_CREATE precedent).
+    std::unordered_map<std::string, std::string> userNameCache;
+    std::unordered_map<std::string, std::string> channelNameCache;
+    auto apiFormPost = [this, botToken](const std::string& method,
+                                        const std::string& body) -> Json::Value {
+        HttpClient::Request req;
+        req.method = "POST";
+        req.url = "https://slack.com/api/" + method;
+        req.headers["Authorization"] = "Bearer " + botToken;
+        req.headers["Content-Type"] = "application/x-www-form-urlencoded";
+        req.body = body;
+        req.follow_redirects = false;
+        auto resp = m_ctx.httpClient.Execute(req);
+        if (resp.status_code != 200) return Json::Value();
+        return ParseJson(resp.body);
+    };
+    auto resolveUser = [&](const std::string& uid) -> std::string {
+        auto it = userNameCache.find(uid);
+        if (it != userNameCache.end()) return it->second;
+        std::string name = uid;
+        auto data = apiFormPost("users.info", "user=" + uid);
+        if (data.isObject() && data.get("ok", false).asBool()
+            && data["user"].isObject()) {
+            const auto& prof = data["user"]["profile"];
+            name = GetString(prof, "display_name");
+            if (name.empty()) name = GetString(prof, "real_name");
+            if (name.empty()) name = GetString(data["user"], "name");
+            if (name.empty()) name = uid;
+        }
+        userNameCache[uid] = name;
+        return name;
+    };
+    auto resolveChannel = [&](const std::string& cid) -> std::string {
+        auto it = channelNameCache.find(cid);
+        if (it != channelNameCache.end()) return it->second;
+        std::string name = cid;
+        auto data = apiFormPost("conversations.info", "channel=" + cid);
+        if (data.isObject() && data.get("ok", false).asBool()
+            && data["channel"].isObject()) {
+            name = GetString(data["channel"], "name");
+            if (name.empty()) name = cid;
+        }
+        channelNameCache[cid] = name;
+        return name;
+    };
+
     while (rt->active && !m_stopRequested) {
         // Step 1: Get WebSocket URL
         HttpClient::Request connReq;
@@ -437,10 +530,18 @@ void SlackAdapter::SocketModeLoop() {
         trantor::EventLoop loop;
         auto wsPtr = drogon::WebSocketClient::newWebSocketClient(wsConnectUrl, &loop);
 
+        // Liveness bookkeeping: Slack silently drops Socket Mode connections
+        // after hours; without a watchdog we sit on a dead socket forever
+        // (Sep 2 incident: socket deaf for 7.5h, zero errors logged).
+        auto lastFrame = std::chrono::steady_clock::now();
+        const auto attemptStart = lastFrame;
+
         wsPtr->setMessageHandler(
-            [this, rt, &botUserId, wsPtr](std::string&& message,
+            [this, rt, &botUserId, wsPtr, &resolveUser, &resolveChannel,
+             &loop, &lastFrame](std::string&& message,
                         const drogon::WebSocketClientPtr&,
                         const drogon::WebSocketMessageType& type) {
+                lastFrame = std::chrono::steady_clock::now();
                 if (type == drogon::WebSocketMessageType::Ping ||
                     type == drogon::WebSocketMessageType::Pong) return;
 
@@ -462,6 +563,7 @@ void SlackAdapter::SocketModeLoop() {
                     ALOG_DEBUG("slack-socket", "Disconnect: " << GetString(envelope, "reason"));
                     rt->ws_connected = false;
                     wsPtr->stop();
+                    loop.quit();
                     return;
                 }
 
@@ -524,11 +626,69 @@ void SlackAdapter::SocketModeLoop() {
                         routingKey = "chat:slack:" + ts;
                     }
 
-                    std::string prompt = "[Slack message from <" + userId + ">";
-                    prompt += " in channel " + channel;
-                    if (!threadTs.empty() && threadTs != ts)
-                        prompt += " (thread " + threadTs + ")";
-                    prompt += "]\n" + cleanText;
+                    // Context card (#15/#42) — tool-only delivery: channels
+                    // may be busy, so silence must be a first-class outcome.
+                    const bool isDm = !channel.empty() && channel[0] == 'D';
+                    const bool inThread = !threadTs.empty() && threadTs != ts;
+                    const std::string userName = resolveUser(userId);
+                    const std::string channelName = resolveChannel(channel);
+
+                    std::string displayText;
+                    if (isDm) {
+                        displayText = "private message from " + userName
+                            + " (user:" + userId + "):\n" + cleanText;
+                    } else {
+                        displayText = "Slack message from " + userName
+                            + " (user:" + userId + ") in #" + channelName;
+                        if (inThread) displayText += " (in thread)";
+                        displayText += ":\n" + cleanText;
+                    }
+
+                    Json::Value meta;
+                    meta["message_type"] = "chat";
+                    meta["delivery"] = "tool";
+                    Json::Value origin;
+                    origin["user_display"] = userName;
+                    origin["user_id"] = userId;
+                    if (!isDm) {
+                        origin["channel"] = channelName;
+                        origin["channel_id"] = channel;
+                    }
+                    meta["origin"] = origin;
+                    meta["channel_id"] = channel;
+                    meta["source_message_id"] = ts;
+                    // Thread targeting is flag-authoritative
+                    // (threaded_replies): in-thread arrivals always reply in
+                    // their thread; top-level arrivals thread ONLY when the
+                    // adapter is configured for threaded replies — otherwise
+                    // the reply is a top-level channel response.
+                    if (inThread) {
+                        meta["reply_parent_id"] = threadTs;
+                        meta["thread_root_id"] = threadTs;
+                    } else if (threaded) {
+                        meta["reply_parent_id"] = ts;
+                        meta["thread_root_id"] = ts;
+                    }
+                    std::string instructions =
+                        "Reply using the channels tool with action=reply; "
+                        "channel_id and thread_ts are provided by the arrival "
+                        "and filled automatically. Text replies are NOT "
+                        "delivered. In channels, if the message is not "
+                        "addressed to you, staying silent is correct.";
+                    if (!isDm) {
+                        instructions += threaded
+                            ? " Replies are posted as threaded replies to the "
+                              "original message."
+                            : " Replies are posted as TOP-LEVEL responses in "
+                              "the channel: send the reply WITHOUT a thread_ts "
+                              "parameter and never set thread_ts yourself "
+                              "(unless the arrival is itself inside a thread, "
+                              "in which case reply in that thread).";
+                    }
+                    meta["reply_instructions"] = instructions;
+                    Json::StreamWriterBuilder wb;
+                    wb["indentation"] = "";
+                    std::string metadata = Json::writeString(wb, meta);
 
                     ChannelReplyTarget replyTarget;
                     replyTarget.channel_name = rt->channel_name;
@@ -541,7 +701,7 @@ void SlackAdapter::SocketModeLoop() {
                         replyTarget.reply_to_comment = ts;
                     }
 
-                    m_ctx.dispatch(rt->agent_id, routingKey, prompt, "slack", replyTarget, "{}");
+                    m_ctx.dispatch(rt->agent_id, routingKey, displayText, "slack", replyTarget, metadata);
 
                     ALOG_DEBUG("slack-socket", "Dispatched from " << userId
                               << " in " << channel << " ts=" << ts);
@@ -549,25 +709,46 @@ void SlackAdapter::SocketModeLoop() {
             });
 
         wsPtr->setConnectionClosedHandler(
-            [rt](const drogon::WebSocketClientPtr&) {
+            [rt, &loop](const drogon::WebSocketClientPtr&) {
                 ALOG_DEBUG("slack-socket", "WebSocket closed for " << rt->channel_name);
                 rt->ws_connected = false;
+                loop.quit();
             });
 
         auto req = drogon::HttpRequest::newHttpRequest();
         req->setPath(wsPath);
 
         wsPtr->connectToServer(req,
-            [rt](drogon::ReqResult r, const drogon::HttpResponsePtr&,
+            [rt, &loop](drogon::ReqResult r, const drogon::HttpResponsePtr&,
                  const drogon::WebSocketClientPtr&) {
                 if (r != drogon::ReqResult::Ok) {
                     rt->ws_connected = false;
                     rt->consecutive_errors++;
+                    loop.quit();
                 }
             });
 
-        loop.runEvery(5.0, [rt, &loop, wsPtr]() {
-            if (!rt->active) { wsPtr->stop(); loop.quit(); }
+        loop.runEvery(10.0, [rt, &loop, wsPtr, &lastFrame, &attemptStart]() {
+            if (!rt->active) { wsPtr->stop(); loop.quit(); return; }
+            auto now = std::chrono::steady_clock::now();
+            auto idleS = std::chrono::duration_cast<std::chrono::seconds>(
+                now - lastFrame).count();
+            auto attemptS = std::chrono::duration_cast<std::chrono::seconds>(
+                now - attemptStart).count();
+            // Connected but silent past Slack's ping cadence: dead socket.
+            if (rt->ws_connected && idleS > 180) {
+                ALOG_WARNING("slack-socket", "Connection silent for "
+                             << idleS << "s - forcing reconnect");
+                rt->ws_connected = false;
+                wsPtr->stop();
+                loop.quit();
+            } else if (!rt->ws_connected && attemptS > 60) {
+                // Handshake never completed: retry the whole cycle.
+                ALOG_WARNING("slack-socket", "Handshake stalled for "
+                             << attemptS << "s - retrying");
+                wsPtr->stop();
+                loop.quit();
+            }
         });
 
         loop.loop();
@@ -1036,6 +1217,151 @@ void NextcloudAdapter::SendReply(const ChannelReplyTarget& target, const std::st
     if (resp.status_code != 200 && resp.status_code != 201) {
         ALOG_WARNING("nextcloud", "SendReply failed (" << resp.status_code << ")");
     }
+}
+
+
+// ============================================================================
+// MoltbookAdapter — notification poller (#15 card path, day one)
+// ============================================================================
+
+void MoltbookAdapter::SendReply(const ChannelReplyTarget&, const std::string&) {
+    // delivery=tool: replies flow exclusively through the channels tool
+    // (the Lua adapter owns the write path incl. challenge/verification).
+    ALOG_WARNING("moltbook", "SendReply called - arrivals are delivery=tool; "
+                              "ignoring auto-reply");
+}
+
+void MoltbookAdapter::RunLoop() {
+    auto* rt = m_runtime.get();
+
+    const std::string apiKey = GetString(rt->config, "api_key");
+    if (apiKey.empty()) {
+        ALOG_WARNING("moltbook", "No api_key for " << rt->channel_name);
+        rt->active = false;
+        return;
+    }
+    const std::string base = GetString(rt->config, "api_base_url",
+                                       "https://www.moltbook.com/api/v1");
+    int interval = 60;
+    try {
+        interval = std::stoi(GetString(rt->config, "poll_interval", "60"));
+    } catch (...) {}
+    if (interval < 15) interval = 15;
+
+    long long lastNotifId = 0;
+    if (m_ctx.configStore) {
+        const std::string stored = m_ctx.configStore->Get("",
+            "channel." + rt->channel_name + ".polling.last_notif_id");
+        if (!stored.empty()) {
+            try { lastNotifId = std::stoll(stored); } catch (...) {}
+        }
+    }
+
+    ALOG_INFO("moltbook", "Notification poller started for " << rt->channel_name
+              << " (interval " << interval << "s, base " << base << ")");
+
+    while (rt->active && !m_stopRequested) {
+        for (int i = 0; i < interval && rt->active && !m_stopRequested; ++i)
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (!rt->active || m_stopRequested) break;
+
+        HttpClient::Request req;
+        req.method = "GET";
+        req.url = base + "/notifications?limit=50";
+        req.headers["Authorization"] = "Bearer " + apiKey;
+        req.headers["Accept"] = "application/json";
+        req.follow_redirects = false;
+        auto resp = m_ctx.httpClient.Execute(req);
+        if (resp.status_code != 200) {
+            ALOG_WARNING("moltbook", "notifications poll failed (HTTP "
+                        << resp.status_code << ")");
+            continue;
+        }
+        auto data = ParseJson(resp.body);
+        if (!data.isObject()) continue;
+        const Json::Value notifs = data["notifications"];
+        if (!notifs.isArray()) continue;
+
+        long long maxId = lastNotifId;
+        for (const auto& n : notifs) {
+            long long id = 0;
+            bool numeric = false;
+            if (n["id"].isNumeric()) {
+                id = n["id"].asInt64();
+                numeric = true;
+            } else if (n["id"].isString()) {
+                try { id = std::stoll(n["id"].asString()); numeric = true; }
+                catch (...) {}
+            }
+            if (numeric && id <= lastNotifId) continue;
+            if (numeric && id > maxId) maxId = id;
+            ProcessNotification(n);
+        }
+        if (maxId != lastNotifId) {
+            lastNotifId = maxId;
+            if (m_ctx.configStore)
+                m_ctx.configStore->Set("", "channel." + rt->channel_name +
+                    ".polling.last_notif_id", std::to_string(lastNotifId));
+        }
+    }
+    ALOG_INFO("moltbook", "Notification poller stopped for " << rt->channel_name);
+}
+
+void MoltbookAdapter::ProcessNotification(const Json::Value& n) {
+    auto* rt = m_runtime.get();
+    const std::string type = GetString(n, "type");
+    const std::string from = n["from_agent"].isObject()
+        ? GetString(n["from_agent"], "name") : GetString(n, "from");
+    const std::string postId = GetString(n, "post_id");
+    const std::string commentId = GetString(n, "comment_id");
+    const std::string content = GetString(n, "content");
+
+    // Interactive types dispatch as cards; votes/follows are ambient noise.
+    if (type != "comment" && type != "reply" && type != "mention") {
+        ALOG_DEBUG("moltbook", "skip notification type=" << type);
+        return;
+    }
+    if (content.empty() || postId.empty()) return;
+
+    std::string displayText = "Moltbook " + type + " from " + from +
+        " on post " + postId;
+    if (!commentId.empty()) displayText += " (in reply to a comment)";
+    displayText += ":\n" + content;
+
+    Json::Value meta;
+    meta["message_type"] = "wall";
+    meta["delivery"] = "tool";
+    Json::Value origin;
+    origin["user_display"] = from.empty() ? "unknown" : from;
+    if (n["from_agent"].isObject() && n["from_agent"].isMember("id"))
+        origin["user_id"] = n["from_agent"]["id"].asString();
+    meta["origin"] = origin;
+    meta["post_id"] = postId;
+    meta["thread_root_id"] = postId;
+    if (!commentId.empty()) meta["reply_parent_id"] = commentId;
+    meta["source_message_id"] = commentId.empty() ? postId : commentId;
+    meta["reply_instructions"] =
+        "Reply using the channels tool with action=comment or action=reply; "
+        "post_id is provided by the arrival and filled automatically. "
+        "Include parent_id (also filled) when the reply targets a comment. "
+        "Text replies are NOT delivered.";
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    const std::string metadata = Json::writeString(wb, meta);
+
+    ChannelReplyTarget replyTarget;
+    replyTarget.channel_name = rt->channel_name;
+    replyTarget.channel_type = rt->channel_type;
+    replyTarget.type = ChannelReplyTarget::Wall;
+    replyTarget.post_id = postId;
+    if (!commentId.empty()) replyTarget.reply_to_comment = commentId;
+
+    const std::string routingKey = "wall:moltbook:post:" + postId;
+    m_ctx.dispatch(rt->agent_id, routingKey, displayText, "moltbook",
+                   replyTarget, metadata);
+
+    ALOG_DEBUG("moltbook", "Dispatched " << type << " notification on post "
+              << postId);
 }
 
 } // namespace animus::kernel

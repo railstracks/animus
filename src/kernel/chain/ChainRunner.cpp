@@ -1,7 +1,9 @@
 #include "animus_kernel/ChainRunner.h"
 #include "animus_kernel/Log.h"
 #include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <functional>
 #include <iostream>
 #include <sstream>
 #include <json/json.h>
@@ -396,7 +398,11 @@ ChainResult ChainRunner::ExecuteOnSession(
 
         if (!userVisibleText.empty()) {
             result.response = userVisibleText;
-            if (assistantMessageCallback) {
+            // Deliver to the channel only when this step made no tool calls:
+            // text alongside a tool call is loop narration ("Let me check…"),
+            // not a user-facing reply. (Aug 28 DM leak: one intent delivered
+            // as four messages — narration shipped per-segment.)
+            if (toolCallsThisStep == 0 && assistantMessageCallback) {
                 assistantMessageCallback(userVisibleText);
             }
         }
@@ -682,7 +688,11 @@ ChainResult ChainRunner::ExecuteStreamingOnSession(
         }
         if (!userVisibleText.empty()) {
             result.response = userVisibleText;
-            if (assistantMessageCallback) {
+            // Deliver to the channel only when this step made no tool calls:
+            // text alongside a tool call is loop narration ("Let me check…"),
+            // not a user-facing reply. (Aug 28 DM leak: one intent delivered
+            // as four messages — narration shipped per-segment.)
+            if (toolCallsThisStep == 0 && assistantMessageCallback) {
                 assistantMessageCallback(userVisibleText);
             }
         }
@@ -912,7 +922,20 @@ bool ChainRunner::ProcessResponse(
 
         // Delegate execution to ToolExecutionService
         ToolRouteResult routeResult = ToolRouteResult::deliver_to_model;
+        const auto toolStart = std::chrono::steady_clock::now();
         ToolResult toolResult = m_execService->Execute(call, execCtx, &routeResult);
+        const auto toolMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - toolStart).count();
+        if (toolMs > 30000) {
+            // 2026-09-05 post-mortem: a PG row-lock deadlock parked a chain
+            // for 4+ hours with zero log output. Any tool (or its session
+            // flush) exceeding 30s gets a loud marker so wedges are visible
+            // in logs, not just in missing responses.
+            ALOG_WARNING("chain", "SLOW TOOL: " << call.name
+                      << " id=" << call.id
+                      << " took " << toolMs << " ms (>30s) — possible DB lock "
+                      << "wait or external hang; investigate if this repeats");
+        }
 
         toolCallsExecuted++;
 
@@ -947,7 +970,21 @@ bool ChainRunner::ProcessResponse(
         toolResultTurn.tool_name = call.name;
         toolResultTurn.unix_ms = NowUnixMs();
         session.AddTurn(std::move(toolResultTurn));
-        m_sessions.FlushSession(session.Id());
+        {
+            const auto flushStart = std::chrono::steady_clock::now();
+            m_sessions.FlushSession(session.Id());
+            const auto flushMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - flushStart).count();
+            if (flushMs > 10000) {
+                // 2026-09-05 post-mortem: FlushSession blocked 4+ hours on a
+                // leaked idle-in-transaction PG connection holding session_turns
+                // row locks — no timeout, no log line, chain silently parked.
+                ALOG_WARNING("chain", "SLOW FLUSH: session " << session.Id()
+                          << " flush took " << flushMs
+                          << " ms (>10s) — likely DB row-lock contention; "
+                          << "check pg_stat_activity for idle-in-transaction");
+            }
+        }
 
         if (toolEventCallback) {
             toolEventCallback(tcNotif, toolResult);
@@ -1042,6 +1079,48 @@ std::unique_ptr<llm::ILLMProvider> ChainRunner::CreateProvider(
 // Prompt logging helper
 // ============================================================================
 
+// Mask credential-shaped arguments in serialized tool calls. Keyed on
+// secret-ish names (token, secret, key, password, credential, auth) — applied
+// per nested string value so '{"token": "AB..."}' and '{"args": {"secret_key":
+// "..."}}' both mask. Non-matching keys pass through unchanged.
+static std::string MaskSecretishArgs(const std::string& toolName,
+                                     const std::string& argumentsJson) {
+    static const std::vector<std::string> kSecretish = {
+        "token", "secret", "key", "password", "credential", "auth", "apikey",
+    };
+    auto matchesSecretish = [](const std::string& k) {
+        std::string lower;
+        lower.reserve(k.size());
+        for (char c : k) lower.push_back(static_cast<char>(std::tolower(c)));
+        for (const auto& s : kSecretish)
+            if (lower.find(s) != std::string::npos) return true;
+        return false;
+    };
+    Json::Value parsed;
+    Json::CharReaderBuilder rb;
+    std::istringstream iss(argumentsJson);
+    std::string err;
+    if (!Json::parseFromStream(rb, iss, &parsed, &err)) return argumentsJson;
+
+    std::function<void(Json::Value&)> mask = [&](Json::Value& v) {
+        if (v.isObject()) {
+            for (const auto& k : v.getMemberNames()) {
+                if (matchesSecretish(k) && v[k].isString() && v[k].asString().size() >= 4) {
+                    v[k] = "***";
+                } else {
+                    mask(v[k]);
+                }
+            }
+        } else if (v.isArray()) {
+            for (auto& e : v) mask(e);
+        }
+    };
+    mask(parsed);
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    return Json::writeString(wb, parsed);
+}
+
 void ChainRunner::LogPromptCall(
     const std::string& agent_id,
     int64_t session_id,
@@ -1078,7 +1157,12 @@ void ChainRunner::LogPromptCall(
                 Json::Value call(Json::objectValue);
                 call["id"] = tc.id;
                 call["name"] = tc.name;
-                call["arguments"] = tc.arguments;
+                // Secret-argument masking at the logging boundary (2026-09-06):
+                // api-tool parameters may be declared secret:true per command,
+                // but the chain layer doesn't see command schemas. Mask values
+                // whose key looks like a credential — over-masking is safe;
+                // prompt_logs must never persist verbatim secrets.
+                call["arguments"] = MaskSecretishArgs(tc.name, tc.arguments);
                 calls.append(call);
             }
             Json::StreamWriterBuilder wb;

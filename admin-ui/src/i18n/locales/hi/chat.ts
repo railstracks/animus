@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: 'नवीनतम पर जाएं',
     composerPlaceholder: 'एनिमस को एक संदेश भेजें...',
-    adminTokenLabel: 'व्यवस्थापक टोकन (वैकल्पिक)',
     send: 'भेजें',
     contextTitle: 'प्रसंग',
     context: {

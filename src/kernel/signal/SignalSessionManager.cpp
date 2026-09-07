@@ -215,8 +215,26 @@ Result<std::vector<uint8_t>> SignalSessionManager::decrypt_whisper(
         state.remote_ratchet = theirRatchetKey;
         state.receiving_count = 0;
 
-        // Generate new self ratchet key
+        // Complete the send-half of the DH ratchet step: derive the new
+        // sending chain from the new root + new keypair, reset the counter.
+        // Without this, the next outbound carries the NEW ratchet key but
+        // the OLD chain + counter — the peer steps to the new chain and
+        // can never decrypt it (WhatsApp 'retry' receipt, undecryptable
+        // placeholder). Mirrors dh_ratchet_step() in DoubleRatchet.cpp.
         state.self_ratchet = DHKeyPair::generate();
+        auto dhSend = dh_compute(state.self_ratchet.private_key, theirRatchetKey);
+        auto derivedSend = hkdf_derive(dhSend.data(), dhSend.size(),
+                                       state.root_key.data(), state.root_key.size(),
+                                       reinterpret_cast<const uint8_t*>("WhisperRatchet"), 14,
+                                       KEY_SIZE * 2);
+        RootKey sendRoot;
+        std::copy(derivedSend.begin(), derivedSend.begin() + KEY_SIZE, sendRoot.begin());
+        ChainKey sendChainNew;
+        std::copy(derivedSend.begin() + KEY_SIZE, derivedSend.end(), sendChainNew.begin());
+        state.root_key = sendRoot;
+        state.sending_chain_key = sendChainNew;
+        state.prev_sending_count = state.sending_count;
+        state.sending_count = 0;
     }
 
     // Advance chain to derive message key for msg.counter

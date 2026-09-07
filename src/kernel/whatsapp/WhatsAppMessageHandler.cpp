@@ -233,6 +233,8 @@ DecryptedMessage handleEncryptedMessage(
     result.isGroup = isJidGroup(result.from);
     if (result.sender.empty()) result.sender = result.from;
     result.messageId = messageNode.getAttr("id");
+    result.senderName = messageNode.getAttr("notify"); // push name for attribution
+
 
     std::string decryptedText;
     auto children = std::get_if<std::vector<WABinaryNode>>(&messageNode.content);

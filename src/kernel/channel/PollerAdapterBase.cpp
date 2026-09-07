@@ -75,8 +75,11 @@ bool PollerAdapterBase::IsConnected() const {
 
 void PollerAdapterBase::Dispatch(const std::string& routingKey,
                                   const std::string& message,
-                                  const std::string& sessionType) {
-    ChannelDispatch::Dispatch(m_ctx, m_runtime.get(), routingKey, message, sessionType);
+                                  const std::string& sessionType,
+                                  const std::string& metadata,
+                                  const std::string& explicitSessionKey) {
+    ChannelDispatch::Dispatch(m_ctx, m_runtime.get(), routingKey, message,
+                              sessionType, metadata, explicitSessionKey);
 }
 
 void PollerAdapterBase::Log(const std::string& routingKey,

@@ -9,6 +9,7 @@ namespace animus::kernel {
 
 class AgentConfigStore;
 class ChannelManager;
+class ChannelContextStore;
 
 // ============================================================================
 // ChannelsTool — composite tool for channel integrations
@@ -32,6 +33,11 @@ public:
 
     /// Set the channel manager for listing C++ connector channels.
     void SetChannelManager(ChannelManager* mgr) { m_channelManager = mgr; }
+
+    /// Set the channel context store for reply-target resolution (#16).
+    /// When set, reply actions with missing target IDs are auto-filled
+    /// from the store's LatestArrival for the current session.
+    void SetChannelContextStore(ChannelContextStore* store) { m_channelContextStore = store; }
 
     /// Set the current agent ID for schema filtering.
     /// When set, GetDefinition() only includes adapters for channels
@@ -81,6 +87,7 @@ protected:
 
     AgentConfigStore* m_configStore{nullptr};
     ChannelManager* m_channelManager{nullptr};
+    ChannelContextStore* m_channelContextStore{nullptr};
     std::string m_currentAgentId;
     PostCreatedCallback m_postCreatedCb;
 };

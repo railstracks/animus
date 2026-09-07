@@ -9,7 +9,9 @@ void ChannelDispatch::Dispatch(ChannelContext& ctx,
                                 PollerRuntime* state,
                                 const std::string& routingKey,
                                 const std::string& message,
-                                const std::string& sessionType) {
+                                const std::string& sessionType,
+                                const std::string& metadata,
+                                const std::string& explicitSessionKey) {
     bool isPeer = (routingKey.size() > 5 && routingKey.substr(0, 5) == "peer:");
     bool isPost = (routingKey.size() > 5 && routingKey.substr(0, 5) == "post:");
 
@@ -21,7 +23,9 @@ void ChannelDispatch::Dispatch(ChannelContext& ctx,
     if (entry) {
         sessionKey = entry->session_key;
     } else {
-        sessionKey = sessionType + ":" + state->channel_name + ":" + routingValue;
+        sessionKey = !explicitSessionKey.empty()
+                         ? explicitSessionKey
+                         : sessionType + ":" + state->channel_name + ":" + routingValue;
         ctx.router.Register(state->channel_name, routingKey, sessionKey, state->agent_id);
     }
 
@@ -52,7 +56,7 @@ void ChannelDispatch::Dispatch(ChannelContext& ctx,
             replyTarget.email_inbox_id = cfg["inbox_id"].asString();
     }
 
-    ctx.dispatch(state->agent_id, sessionKey, message, sessionType, replyTarget, "{}");
+    ctx.dispatch(state->agent_id, sessionKey, message, sessionType, replyTarget, metadata);
 }
 
 void ChannelDispatch::Log(ChannelContext& ctx,

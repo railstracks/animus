@@ -12,6 +12,8 @@
 #include "animus_kernel/social/TelegramTypes.h"
 #include "animus_kernel/social/TelegramBotApi.h"
 
+#include <json/json.h>
+
 namespace animus::kernel {
 
 using namespace channel_detail;
@@ -106,22 +108,57 @@ void TelegramAdapter::ProcessMessage(const telegram::Message& msg) {
         routingKey += ":" + std::to_string(msg.message_thread_id);
     }
 
+    // Body attribution (#15/#42 pattern): per-message origin header, no
+    // inline delivery hints — the context card carries reply semantics.
+    // DMs minimal; groups carry sender + chat. Channel posts may be
+    // anonymous (empty `from`) — the chat name carries attribution then.
     std::string senderName = msg.from.DisplayName();
     std::string chatName = msg.chat.DisplayName();
-    std::string prompt;
-    const std::string replyHint = "\n\nYou are responding via Telegram. Respond naturally — "
-        "your reply will be sent automatically. Do NOT use the social tool to reply.";
+    bool isPrivate = msg.chat.IsPrivate();
 
-    if (msg.chat.IsPrivate()) {
-        prompt = "New Telegram message from " + senderName + ":\n" + msg.text + replyHint;
+    std::string displayText;
+    if (isPrivate) {
+        displayText = "private message from " + senderName
+            + " (user:" + std::to_string(msg.from.id) + "):\n" + msg.text;
     } else {
-        prompt = "Telegram message from " + senderName + " in " + chatName;
-        if (msg.message_thread_id > 0) prompt += " (topic thread)";
-        prompt += ":\n" + msg.text + replyHint;
+        std::string who = senderName.empty()
+            ? chatName + " (channel post)"
+            : senderName + " (user:" + std::to_string(msg.from.id) + ")";
+        displayText = "Telegram message from " + who + " in " + chatName;
+        if (msg.message_thread_id > 0) displayText += " (topic thread)";
+        displayText += ":\n" + msg.text;
     }
 
-    std::string sessionType = msg.chat.IsPrivate() ? "telegram:private" : "telegram:group";
-    Dispatch(routingKey, prompt, sessionType);
+    // Context card (#15/#42) — tool-only delivery: chats may be groups,
+    // so silence must be a first-class outcome.
+    Json::Value meta;
+    meta["message_type"] = "chat";
+    meta["delivery"] = "tool";
+    Json::Value origin;
+    if (!senderName.empty()) origin["user_display"] = senderName;
+    if (msg.from.id != 0) origin["user_id"] = std::to_string(msg.from.id);
+    if (!isPrivate) {
+        origin["channel"] = chatName;
+        origin["channel_id"] = std::to_string(msg.chat.id);
+    }
+    meta["origin"] = origin;
+    meta["chat_id"] = std::to_string(msg.chat.id);
+    meta["chat_type"] = isPrivate ? "dm" : "group";
+    if (msg.message_thread_id > 0)
+        meta["topic_thread_id"] = std::to_string(msg.message_thread_id);
+    if (msg.message_id > 0)
+        meta["source_message_id"] = std::to_string(msg.message_id);
+    meta["reply_instructions"] =
+        "Reply using the channels tool with action=reply; chat_id is "
+        "provided by the arrival and filled automatically. Text replies "
+        "are NOT delivered. In group chats, if the message is not "
+        "addressed to you, staying silent is correct.";
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    std::string metadata = Json::writeString(wb, meta);
+
+    std::string sessionType = isPrivate ? "telegram:private" : "telegram:group";
+    Dispatch(routingKey, displayText, sessionType, metadata);
 }
 
 void TelegramAdapter::ProcessChatMemberUpdate(const telegram::Update& update) {
@@ -200,8 +237,20 @@ void TelegramAdapter::SendReply(const ChannelReplyTarget& target, const std::str
     }
 
     telegram::TelegramBotApi api(m_ctx.httpClient);
+    // peer_id is "chat_id" or "chat_id:thread_id" (forum topics route the
+    // latter; the thread id must ride sendMessage or the reply lands in
+    // General / fails in topics-only supergroups).
     int64_t chatId = 0;
-    try { chatId = std::stoll(target.peer_id); } catch (...) {
+    int64_t threadId = 0;
+    auto colon = target.peer_id.find(':');
+    try {
+        if (colon != std::string::npos) {
+            chatId = std::stoll(target.peer_id.substr(0, colon));
+            threadId = std::stoll(target.peer_id.substr(colon + 1));
+        } else {
+            chatId = std::stoll(target.peer_id);
+        }
+    } catch (...) {
         ALOG_WARNING("telegram", "Reply: invalid chat_id: " << target.peer_id);
         return;
     }
@@ -210,6 +259,7 @@ void TelegramAdapter::SendReply(const ChannelReplyTarget& target, const std::str
     for (size_t i = 0; i < chunks.size(); ++i) {
         telegram::TelegramBotApi::SendMessageOptions opts;
         opts.chat_id = chatId;
+        opts.message_thread_id = threadId;
         opts.text = chunks[i];
 
         auto msgId = api.SendMessage(token, opts);

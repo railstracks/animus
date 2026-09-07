@@ -3,6 +3,7 @@
 #include "animus_kernel/IChannelAdapter.h"
 #include "animus_kernel/ChannelContext.h"
 #include "animus_kernel/ChannelHelpers.h"
+#include "animus_kernel/ConnectionSupervisor.h"
 
 #include <atomic>
 #include <memory>
@@ -41,10 +42,13 @@ protected:
     /// Subclass implements the polling loop entry point.
     virtual void RunLoop() = 0;
 
-    /// Dispatch helper — routes message to agent session
+    /// Dispatch helper — routes message to agent session. Metadata and
+    /// explicitSessionKey pass through to ChannelDispatch (Aug 31).
     void Dispatch(const std::string& routingKey,
                   const std::string& message,
-                  const std::string& sessionType);
+                  const std::string& sessionType,
+                  const std::string& metadata = "{}",
+                  const std::string& explicitSessionKey = "");
 
     /// Log helper — records message without triggering chain
     void Log(const std::string& routingKey,
@@ -127,18 +131,19 @@ class EmailAdapter : public PollerAdapterBase {
 public:
     using PollerAdapterBase::PollerAdapterBase;
     void SendReply(const ChannelReplyTarget& target, const std::string& text) override;
+    void Stop() override;
+    bool IsConnected() const override;
 
 protected:
     void RunLoop() override;
 
 private:
-    void WebSocketLoop();
-    void PollLoop();
-    void ProcessMessage(const std::string& threadId,
-                        const std::string& messageId,
-                        const std::string& sender,
-                        const std::string& subject,
-                        const std::string& bodyText);
+    // Supervisor-managed websocket (reconnect + loud transitions — #60 fix).
+    // Null before RunLoop starts and after Stop.
+    std::unique_ptr<ConnectionSupervisor> m_supervisor;
+
+    void PollLoop();  // explicit degraded mode (config transport=poll)
+    void ProcessMessage(const Json::Value& msg);
 };
 
 // ============================================================================
@@ -219,6 +224,22 @@ public:
 
 protected:
     void RunLoop() override;
+};
+
+// ============================================================================
+// MoltbookAdapter
+// ============================================================================
+
+class MoltbookAdapter : public PollerAdapterBase {
+public:
+    using PollerAdapterBase::PollerAdapterBase;
+    void SendReply(const ChannelReplyTarget& target, const std::string& text) override;
+
+protected:
+    void RunLoop() override;
+
+private:
+    void ProcessNotification(const Json::Value& n);
 };
 
 } // namespace animus::kernel

@@ -44,6 +44,18 @@ std::string GetString(const Json::Value& v, const std::string& key,
     return def;
 }
 
+// Default-true config bool: only explicit negative forms disable. The old
+// `GetString(...) != "false"` idiom silently enabled on every near-miss
+// ("False", "NO", "0", trailing space); this accepts the obvious negatives,
+// case-insensitively. Unset ("") stays enabled — default-on is intended.
+bool GetBoolDefaultTrue(const Json::Value& v, const std::string& key) {
+    std::string s = GetString(v, key);
+    for (auto& c : s) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return !(s == "false" || s == "0" || s == "no" || s == "off");
+}
+
 int64_t GetInt(const Json::Value& v, const std::string& key, int64_t def = 0) {
     if (v.isMember(key) && v[key].isInt64()) return v[key].asInt64();
     if (v.isMember(key) && v[key].isInt()) return v[key].asInt();
@@ -536,12 +548,20 @@ void ChannelManager::SendReply(const ReplyTarget& target, const std::string& tex
         if (!outboxMutex || !outbox) return;
 
         {
+            // Chat target: peer_id. Group arrivals build Wall targets
+            // (post_id = group jid) — accept both so group replies work.
+            std::string chatJid = target.peer_id.empty() ? target.post_id : target.peer_id;
+            if (chatJid.empty()) {
+                ALOG_WARNING("channels", "WhatsApp SendReply: no chat target "
+                          << "(peer_id/post_id both empty) — dropping");
+                return;
+            }
             std::lock_guard<std::mutex> olk(*outboxMutex);
             OutboundMessage msg;
-            msg.baseJid = target.peer_id;
-            msg.jid = target.peer_id;
+            msg.baseJid = chatJid;
+            msg.jid = chatJid;
             msg.text = text;
-            msg.is_group = animus::whatsapp::isJidGroup(target.peer_id);
+            msg.is_group = animus::whatsapp::isJidGroup(chatJid);
             outbox->push_back(std::move(msg));
         }
         return;
@@ -773,7 +793,8 @@ void ChannelManager::StartChannel(const ChannelState& state) {
     // These use IChannelAdapter implementations with their own loop threads.
     // Discord and WhatsApp still use the legacy poller path (deep coupling).
     if (state.type == "irc" || state.type == "telegram" || state.type == "vk" ||
-        state.type == "email" || state.type == "slack" || state.type == "nextcloud") {
+        state.type == "email" || state.type == "slack" ||
+        state.type == "nextcloud" || state.type == "moltbook") {
 
         // Ensure channel context is initialized
         if (!m_channelCtx) {
@@ -799,6 +820,8 @@ void ChannelManager::StartChannel(const ChannelState& state) {
             adapter = std::make_unique<SlackAdapter>(*m_channelCtx);
         } else if (state.type == "nextcloud") {
             adapter = std::make_unique<NextcloudAdapter>(*m_channelCtx);
+        } else if (state.type == "moltbook") {
+            adapter = std::make_unique<MoltbookAdapter>(*m_channelCtx);
         }
 
         if (adapter && adapter->Start(state, &err)) {
@@ -999,6 +1022,9 @@ void ChannelManager::SyncChannelCredentialsToConfigStore(
         // Common
         "api_key", "access_token", "bot_token", "app_token", "app_password",
         "client_id", "client_secret", "refresh_token",
+        // Base-URL overrides read by Lua adapters (moltbook mock harness;
+        // any adapter whose api_base can be overridden needs it mirrored)
+        "api_base_url",
         // Bluesky
         "handle", "pds", "access_jwt", "refresh_jwt", "did",
         // VK
@@ -1341,7 +1367,7 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
         if (pds.empty()) pds = "https://bsky.social";
 
         // --- Notification (posts) polling ---
-        bool enablePosts = GetString(state->config, "enable_posts") != "false";
+        bool enablePosts = GetBoolDefaultTrue(state->config, "enable_posts");
         if (enablePosts) {
             HttpClient::Request req;
             req.method = "GET";
@@ -1393,10 +1419,11 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                 if (reason != "mention" && reason != "reply" && reason != "quote")
                     continue;
 
-                std::string authorHandle, authorDisplayName;
+                std::string authorHandle, authorDisplayName, authorDid;
                 if (n.isMember("author")) {
                     authorHandle = GetString(n["author"], "handle");
                     authorDisplayName = GetString(n["author"], "displayName");
+                    authorDid = GetString(n["author"], "did");
                     if (authorDisplayName.empty()) authorDisplayName = authorHandle;
                 }
 
@@ -1414,8 +1441,16 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                 // reset, notification re-index) are skipped. Mirrors the DM
                 // rev-ID dedup in BlueskyChatPollLoop.
                 if (m_sessionQuery && !postUri.empty()) {
-                    std::string postSessionKey = "chat:" + state->channel_name
-                        + ":post:" + postUri;
+                    // Session keys are thread-scoped as of Aug 31: probe the
+                    // wall-typed, root-keyed session this post will route to.
+                    std::string probeRoot = postUri;
+                    if (n.isMember("record") && n["record"].isMember("reply")
+                        && n["record"]["reply"].isMember("root")) {
+                        std::string r0 = GetString(n["record"]["reply"]["root"], "uri");
+                        if (!r0.empty()) probeRoot = r0;
+                    }
+                    std::string postSessionKey = "wall:" + state->channel_name
+                        + ":" + probeRoot;
                     auto stored = m_sessionQuery(postSessionKey, "bluesky_post_uris");
                     bool alreadyProcessed = false;
                     for (const auto& u : stored) {
@@ -1431,8 +1466,8 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                 }
 
                 // --- Auto-reply filtering ---
-                bool autoReply = GetString(state->config, "auto_reply") != "false";
-                bool replyToAll = GetString(state->config, "reply_to_all") != "false";
+                bool autoReply = GetBoolDefaultTrue(state->config, "auto_reply");
+                bool replyToAll = GetBoolDefaultTrue(state->config, "reply_to_all");
 
                 if (!autoReply) {
                     ALOG_DEBUG("bluesky", "auto_reply disabled, skipping " << reason
@@ -1470,28 +1505,94 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                     if (!r.empty()) rootUri = r;
                 }
 
-                std::string message = "[Bluesky " + reason + " from " + authorDisplayName
-                    + " (@" + authorHandle + ")]\n"
-                    + "post_id: " + postUri + "\n"
-                    + "root_id: " + rootUri + "\n"
-                    + postText + "\n\n"
-                    + "[This is a post " + reason + ", not a DM. Reply using the channels "
-                    + "tool: action=\"reply\", platform_id=\"" + state->channel_type
-                    + ":" + state->channel_name
-                    + "\", post_id and root_id above, content=your reply. "
-                    + "Your final text response will NOT be posted automatically.]";
+                // Parent / root context for replies — mini-hydration so the
+                // session opens with the conversation it is answering (#47-
+                // flavored: platform as source of truth). Non-fatal on failure.
+                std::string parentUri, parentAuthor, parentText, rootAuthor, rootText;
+                if (reason == "reply" && n.isMember("record")
+                    && n["record"].isMember("reply")) {
+                    parentUri = GetString(n["record"]["reply"]["parent"], "uri");
+                    std::string pds = GetString(state->config, "pds");
+                    if (pds.empty()) pds = "https://bsky.social";
+                    auto fetchPost = [&](const std::string& uri,
+                                         std::string& author, std::string& text) {
+                        if (uri.empty() || state->bsky_access_jwt.empty()) return;
+                        HttpClient::Request pr;
+                        pr.method = "GET";
+                        pr.url = pds + "/xrpc/app.bsky.feed.getPostThread?uri="
+                                 + UrlEncode(uri) + "&depth=0";
+                        pr.headers["Authorization"] = "Bearer " + state->bsky_access_jwt;
+                        auto pres = m_httpClient.Execute(pr);
+                        if (pres.status_code != 200) return;
+                        auto pd = ParseJson(pres.body);
+                        if (!pd.isMember("thread") || !pd["thread"].isMember("post")) return;
+                        const auto& ppost = pd["thread"]["post"];
+                        if (ppost.isMember("record")) text = GetString(ppost["record"], "text");
+                        if (ppost.isMember("author")) author = GetString(ppost["author"], "handle");
+                    };
+                    fetchPost(parentUri, parentAuthor, parentText);
+                    if (rootUri != parentUri)
+                        fetchPost(rootUri, rootAuthor, rootText);
+                }
+
+                // Body: attribution header only — ids and delivery semantics
+                // live in the context card (#15), never inline in the body.
+                std::string message;
+                if (reason == "reply") {
+                    message = "Bluesky post from " + authorDisplayName + " (@" + authorHandle
+                            + ") in thread:\n" + postText;
+                    if (!parentText.empty())
+                        message += "\n\n--- In reply to ---\n@" + parentAuthor
+                                 + ": " + parentText;
+                    if (!rootText.empty())
+                        message += "\n\n--- Thread root ---\n@" + rootAuthor
+                                 + ": " + rootText;
+                } else {
+                    // mention / quote: top-level post addressing us
+                    message = "Bluesky post from " + authorDisplayName + " (@" + authorHandle
+                            + "):\n" + postText;
+                }
 
                 ALOG_INFO("bluesky", "dispatching " << reason << " from @"
                           << authorHandle << " for " << state->channel_name);
 
-                // Metadata carries the post URI for the session-level dedup above
+                // Dispatch metadata → context card fields (#15/#42):
+                // origin map (user = handle, user_id = DID), typed reply-target
+                // fields (post_id = the post to answer, thread_root_id = root),
+                // explicit reply_instructions. Delivery is tool-only (wall).
+                Json::Value meta;
+                meta["message_type"] = "wall";
+                Json::Value origin;
+                origin["user"] = "@" + authorHandle;
+                if (authorDisplayName != authorHandle)
+                    origin["user_display"] = authorDisplayName;
+                if (!authorDid.empty())
+                    origin["user_id"] = authorDid; // did:plc — stable id (#42)
+                if (reason == "reply")
+                    origin["channel"] = "thread";
+                meta["origin"] = origin;
+                meta["post_id"] = postUri;
+                meta["thread_root_id"] = rootUri;
+                if (!parentUri.empty())
+                    meta["reply_parent_id"] = parentUri;
+                meta["source_message_id"] = postUri;
+                meta["reply_instructions"] =
+                    "Reply using the channels tool with action=reply; post_id and "
+                    "root_id are provided by the reply target and filled "
+                    "automatically. Text replies are NOT posted. Not every "
+                    "mention needs a reply.";
                 Json::Value uris(Json::arrayValue);
                 uris.append(postUri);
+                meta["bluesky_post_uris"] = uris; // session-level dedup
                 Json::StreamWriterBuilder wb;
                 wb["indentation"] = "";
-                std::string metadata = "{\"bluesky_post_uris\":" + Json::writeString(wb, uris) + "}";
+                std::string metadata = Json::writeString(wb, meta);
 
-                DispatchToSession(state, "post:" + postUri, message, "chat", metadata);
+                // Sessions are thread-scoped: routing key stays per-post (so the
+                // reply target is the specific post) while the session key is
+                // the thread root — one session per conversation, not per post.
+                DispatchToSession(state, "post:" + postUri, message, "wall", metadata,
+                                  "wall:" + state->channel_name + ":" + rootUri);
 
                 processed++;
                 if (latestSeen.empty() || indexedAt > latestSeen)
@@ -1526,7 +1627,7 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
         }
 
         // --- Chat (DM) polling ---
-        bool enableDm = GetString(state->config, "enable_dm") != "false";
+        bool enableDm = GetBoolDefaultTrue(state->config, "enable_dm");
         if (enableDm && now >= state->bsky_chat_next_poll) {
             BlueskyChatPollLoop(state);
             state->bsky_chat_next_poll = now + std::chrono::seconds(60);
@@ -1543,6 +1644,25 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
     // PDS proxying via atproto-proxy header returns 501 MethodNotImplemented
     // on bsky.social PDS. The chat service accepts the same JWT directly.
     const std::string chatHost = "https://api.bsky.chat";
+
+    // Hydrate persisted chat watermarks once (PR #34 review follow-up).
+    // The in-memory map is same-run dedup only; without this, every restart
+    // refetched and re-filtered the whole visible window. Durable dedup of
+    // record remains session metadata (bluesky_revs) + store dedup URIs —
+    // this layer avoids the redundant work, it is not a correctness boundary.
+    if (state->bsky_chat_watermarks.empty() && m_configStore) {
+        std::string storedWm = m_configStore->Get("",
+            "social." + state->channel_name + ".chat_watermarks");
+        if (!storedWm.empty()) {
+            Json::Value stored = ParseJson(storedWm);
+            if (stored.isObject()) {
+                for (auto memberIt = stored.begin(); memberIt != stored.end(); ++memberIt)
+                    state->bsky_chat_watermarks[memberIt.name()] = memberIt->asString();
+                ALOG_DEBUG("bluesky", "restored " << state->bsky_chat_watermarks.size()
+                          << " chat watermarks for " << state->channel_name);
+            }
+        }
+    }
 
     // Fetch conversation list
     HttpClient::Request listReq;
@@ -1575,14 +1695,29 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
         ALOG_DEBUG("bluesky", "convo " << convoId << " unread=" << unreadCount);
         if (unreadCount == 0) continue;
 
-        // Build DID→handle map from convo members for sender display
+        // Build DID→handle/display maps from convo members. Membership also
+        // drives the 1-1 vs group distinction (Aug 31): Bluesky chats can be
+        // group conversations, so chats get channel-style attribution and
+        // tool-based replies rather than DM-minimal + auto-delivery.
         std::map<std::string, std::string> didToHandle;
+        std::map<std::string, std::string> didToDisplay;
         if (convo.isMember("members") && convo["members"].isArray()) {
             for (const auto& m : convo["members"]) {
                 std::string memberDid = GetString(m, "did");
                 std::string handle = GetString(m, "handle");
                 if (!memberDid.empty() && !handle.empty())
                     didToHandle[memberDid] = handle;
+                std::string display = GetString(m, "displayName");
+                if (!memberDid.empty() && !display.empty())
+                    didToDisplay[memberDid] = display;
+            }
+        }
+        const bool isGroupConvo = (didToHandle.size() > 2);
+        std::string groupOthersLabel;
+        if (isGroupConvo) {
+            for (const auto& [memberDid, handle] : didToHandle) {
+                if (memberDid == state->bsky_did) continue; // us
+                groupOthersLabel += (groupOthersLabel.empty() ? "@" : ", @") + handle;
             }
         }
 
@@ -1628,13 +1763,16 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
                   << " stored_revs=" << seenRevs.size());
 
         // Auto-reply filter config
-        bool autoReply = GetString(state->config, "auto_reply") != "false";
-        bool replyToAll = GetString(state->config, "reply_to_all") != "false";
+        bool autoReply = GetBoolDefaultTrue(state->config, "auto_reply");
+        bool replyToAll = GetBoolDefaultTrue(state->config, "reply_to_all");
 
         // Process messages oldest-first (API returns newest-first, so reverse)
         const auto& messages = msgData["messages"];
         std::vector<std::string> newMessages;
         std::vector<std::string> newRevs;
+        std::vector<std::string> newSenders;   // sender DIDs
+        std::vector<std::string> newHandles;   // sender handles
+        std::vector<std::string> newDisplays;  // sender display names
 
         for (int i = static_cast<int>(messages.size()) - 1; i >= 0; --i) {
             const auto& msg = messages[i];
@@ -1663,18 +1801,22 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             if (msg.isMember("text")) text = GetString(msg, "text");
             if (text.empty()) continue;
 
-            // Build display name
-            std::string senderName = senderDid;
+            // Resolve sender identity: members map first (getMessages
+            // senders carry only a DID), sender fields as fallback.
+            std::string senderHandle, senderDisplay;
             auto it = didToHandle.find(senderDid);
             if (it != didToHandle.end()) {
-                senderName = "@" + it->second;
+                senderHandle = it->second;
+                auto dt = didToDisplay.find(senderDid);
+                if (dt != didToDisplay.end()) senderDisplay = dt->second;
             } else if (msg.isMember("sender")) {
-                std::string handle = GetString(msg["sender"], "handle");
-                std::string displayName = GetString(msg["sender"], "displayName");
-                if (!displayName.empty() && !handle.empty())
-                    senderName = displayName + " (@" + handle + ")";
-                else if (!handle.empty()) senderName = "@" + handle;
+                senderHandle = GetString(msg["sender"], "handle");
+                senderDisplay = GetString(msg["sender"], "displayName");
             }
+            if (senderDisplay.empty()) senderDisplay = senderHandle;
+            std::string senderName = senderHandle.empty()
+                ? senderDid
+                : ("@" + senderHandle); // allowlist matching, unchanged shape
 
             // Apply auto-reply filter
             bool shouldDispatch = false;
@@ -1692,38 +1834,86 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             }
 
             if (shouldDispatch) {
-                newMessages.push_back("[Bluesky DM from " + senderName + "]\n" + text
-                    + "\n\n[Your final text response will be delivered to this DM automatically.]");
+                newMessages.push_back(text);
                 newRevs.push_back(rev);
+                newSenders.push_back(senderDid);
+                newHandles.push_back(senderHandle);
+                newDisplays.push_back(senderDisplay);
             }
         }
 
-        // Batch dispatch: send all new messages as a single dispatch
-        if (!newMessages.empty()) {
-            std::string combined;
-            for (std::size_t i = 0; i < newMessages.size(); ++i) {
-                if (i > 0) combined += "\n";
-                combined += newMessages[i];
+        // Per-message dispatch (Aug 31): every message gets its own arrival
+        // row + card, so history attribution is per-sender and the latest
+        // arrival's origin always matches the message being answered.
+        // Delivery is tool-only everywhere on Bluesky (delivery:"tool"):
+        // chats can be groups, so "not addressed to me" must be a real
+        // outcome — silence is first-class.
+        for (std::size_t i = 0; i < newMessages.size(); ++i) {
+            const std::string& text = newMessages[i];
+            const std::string& rev = newRevs[i];
+            const std::string& senderDid = newSenders[i];
+            const std::string& handle = newHandles[i];
+            const std::string& display = newDisplays.empty()
+                ? std::string() : newDisplays[i];
+
+            // Body: attribution header only (1-1 vs group form), content, no
+            // delivery hints — those live in the card.
+            std::string header = "Bluesky chat message from " + display;
+            if (!handle.empty()) header += " (@" + handle + ")";
+            if (isGroupConvo && !groupOthersLabel.empty())
+                header += " in group chat with " + groupOthersLabel;
+            header += ":";
+            std::string message = header + "\n" + text;
+
+            Json::Value meta;
+            meta["message_type"] = "chat";
+            meta["delivery"] = "tool";
+            Json::Value origin;
+            if (!handle.empty()) origin["user"] = "@" + handle;
+            if (!display.empty() && display != handle && !handle.empty())
+                origin["user_display"] = display;
+            if (!senderDid.empty())
+                origin["user_id"] = senderDid; // did:plc — stable id (#42)
+            if (isGroupConvo && !groupOthersLabel.empty())
+                origin["channel"] = "group chat with " + groupOthersLabel;
+            meta["origin"] = origin;
+            if (!rev.empty()) {
+                meta["source_message_id"] = rev;
+                Json::Value revs(Json::arrayValue);
+                revs.append(rev);
+                meta["bluesky_revs"] = revs; // session-level dedup
             }
-            // Build metadata JSON with all rev IDs for this batch
-            Json::Value revs(Json::arrayValue);
-            for (const auto& r : newRevs) {
-                if (!r.empty()) revs.append(r);
-            }
+            meta["reply_instructions"] =
+                "Reply using the channels tool with action=chat_send; convo_id is "
+                "provided by the reply target and filled automatically. Text "
+                "replies are NOT delivered. If the message is not addressed to "
+                "you, staying silent is correct.";
             Json::StreamWriterBuilder wb;
             wb["indentation"] = "";
-            std::string metadata = "{\"bluesky_revs\":" + Json::writeString(wb, revs) + "}";
+            std::string metadata = Json::writeString(wb, meta);
 
-            ALOG_INFO("bluesky", "dispatching " << newMessages.size()
-                      << " DM(s) for convo " << convoId
-                      << " (" << state->channel_name << ")");
-            DispatchToSession(state, "peer:" + convoId, combined, "chat", metadata);
-            dispatchCount = static_cast<int>(newMessages.size());
+            ALOG_INFO("bluesky", "dispatching chat message from @"
+                      << handle << " for convo " << convoId
+                      << " (" << state->channel_name
+                      << (isGroupConvo ? ", group" : ", 1-1") << ")");
+            DispatchToSession(state, "peer:" + convoId, message, "chat", metadata);
+            dispatchCount++;
         }
 
         // Update in-memory watermark (same-run dedup only)
         if (!maxRev.empty()) {
             state->bsky_chat_watermarks[convoId] = maxRev;
+            // Persist across restarts (mirror of notification last_seen)
+            if (m_configStore) {
+                Json::Value wmOut(Json::objectValue);
+                for (const auto& kv : state->bsky_chat_watermarks)
+                    wmOut[kv.first] = kv.second;
+                Json::StreamWriterBuilder wmb;
+                wmb["indentation"] = "";
+                m_configStore->Set("", "social." + state->channel_name
+                                       + ".chat_watermarks",
+                                   Json::writeString(wmb, wmOut));
+            }
             ALOG_DEBUG("bluesky", "convo " << convoId << " watermark=\""
                       << maxRev << "\" dispatched=" << dispatchCount);
 
@@ -1747,7 +1937,8 @@ void ChannelManager::DispatchToSession(PollerState* state,
                                          const std::string& routingKey,
                                          const std::string& message,
                                          const std::string& sessionType,
-                                         const std::string& metadata) {
+                                         const std::string& metadata,
+                                         const std::string& explicitSessionKey) {
     bool isPeer = (routingKey.size() > 5 && routingKey.substr(0, 5) == "peer:");
     bool isPost = (routingKey.size() > 5 && routingKey.substr(0, 5) == "post:");
 
@@ -1760,7 +1951,9 @@ void ChannelManager::DispatchToSession(PollerState* state,
     if (entry) {
         sessionKey = entry->session_key;
     } else {
-        sessionKey = sessionType + ":" + state->channel_name + ":" + routingValue;
+        sessionKey = !explicitSessionKey.empty()
+                         ? explicitSessionKey
+                         : sessionType + ":" + state->channel_name + ":" + routingValue;
         m_router.Register(state->channel_name, routingKey, sessionKey, state->agent_id);
     }
 

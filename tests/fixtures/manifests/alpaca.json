@@ -1,0 +1,42 @@
+{
+  "kind": "api_package",
+  "name": "alpaca",
+  "version": "0.1.0",
+  "description": "Alpaca paper + live trading API",
+  "keywords": ["trading", "stocks", "market"],
+  "dispatch_cooldown_ms": 10000,
+  "files_quota_mb": 256,
+  "state_schema": {
+    "token":     {"type": "string", "secret": true},
+    "base_url":  {"type": "string", "default": "https://api.alpaca.markets"}
+  },
+  "commands": [
+    {
+      "name": "token set", "kind": "action",
+      "description": "Store the Alpaca API token (kept secret, used for all requests)",
+      "parameters": {"token": {"type": "string", "required": true, "secret": true}},
+      "script": "function run(ctx) ctx.package.set_state('token', ctx.args.token) return {output='Token stored.'} end"
+    },
+    {
+      "name": "portfolio list", "kind": "action",
+      "description": "List current positions",
+      "request": {
+        "method": "GET",
+        "url": "{{state.base_url}}/v2/positions",
+        "headers": {"Authorization": "Bearer {{state.token}}"}
+      },
+      "script": "function run(ctx) local rows = ctx.request.json or {} local out = {} for _,p in ipairs(rows) do table.insert(out, p.symbol..' '..p.qty..' @ '..tostring(p.avg_entry_price)) end return {output=#out..' positions', data=rows} end"
+    },
+    {
+      "name": "on ticker", "kind": "hook", "event": "on_message",
+      "script": "function run(ctx) return {output='tick', data=ctx.event} end"
+    }
+  ],
+  "connections": [
+    {
+      "name": "stream", "type": "websocket",
+      "url_template": "wss://stream.data.alpaca.markets/v2/iex",
+      "hooks": {"on_message": "on ticker"}
+    }
+  ]
+}
