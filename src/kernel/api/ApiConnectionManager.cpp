@@ -88,19 +88,35 @@ void ApiConnectionManager::Stop() {
 }
 
 int ApiConnectionManager::PollOnce() {
-    // One synchronous pass (admin/debug surface). Serialized like a tick so a
-    // manual poll cannot interleave with the poll thread on one connection.
+    // One synchronous pass (admin/debug surface). Claims each connection
+    // under the mutex (in-flight guard), polls with the mutex free.
     int n = 0;
     for (const auto& pkg : m_store->ListPackages()) {
         if (!pkg.enabled) continue;
         for (const auto& conn : m_store->ListConnections(pkg.id)) {
             if (!conn.enabled) continue;
-            std::lock_guard<std::mutex> lock(m_stateMutex);
-            auto& cs = m_connStates[pkg.id + ":" + conn.name];
-            cs.lastPollMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                std::chrono::system_clock::now().time_since_epoch())
-                                .count();
-            PollConnection(pkg, conn);
+            std::string key = pkg.id + ":" + conn.name;
+            std::string lastCursor;
+            int prevErrors = 0;
+            {
+                std::lock_guard<std::mutex> lock(m_stateMutex);
+                auto& cs = m_connStates[key];
+                if (cs.polling) continue;  // poll thread owns it right now
+                cs.polling = true;
+                cs.lastPollMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+                lastCursor = cs.lastCursor;
+                prevErrors = cs.consecutiveErrors;
+            }
+            PollOutcome o = PollConnection(pkg, conn, lastCursor, prevErrors);
+            {
+                std::lock_guard<std::mutex> lock(m_stateMutex);
+                auto& cs = m_connStates[key];
+                cs.polling = false;
+                cs.consecutiveErrors = o.consecutiveErrors;
+                cs.lastCursor = o.newCursor;
+            }
             ++n;
         }
     }
@@ -120,6 +136,14 @@ void ApiConnectionManager::Tick() {
                             std::chrono::system_clock::now().time_since_epoch())
                             .count();
 
+    struct DuePoll {
+        ApiPackage pkg;
+        ApiPackageConnection conn;
+        std::string lastCursor;
+        int prevErrors;
+    };
+    std::vector<DuePoll> due;
+
     for (const auto& pkg : m_store->ListPackages()) {
         if (!pkg.enabled) continue;
         for (const auto& conn : m_store->ListConnections(pkg.id)) {
@@ -129,20 +153,34 @@ void ApiConnectionManager::Tick() {
             int intervalS = poll.get("interval_s", 60).asInt();
             if (intervalS <= 0) intervalS = 60;
 
-            // Decide + claim under the same lock the poll runs in.
+            // Claim under the mutex; poll with it FREE.
             std::string key = pkg.id + ":" + conn.name;
-            std::lock_guard<std::mutex> lock(m_stateMutex);
-            auto& cs = m_connStates[key];
-            if (now - cs.lastPollMs < static_cast<int64_t>(intervalS) * 1000) continue;
-            cs.lastPollMs = now;
-            PollConnection(pkg, conn);
+            {
+                std::lock_guard<std::mutex> lock(m_stateMutex);
+                auto& cs = m_connStates[key];
+                if (now - cs.lastPollMs < static_cast<int64_t>(intervalS) * 1000) continue;
+                if (cs.polling) continue;  // manual PollOnce owns it
+                cs.lastPollMs = now;
+                cs.polling = true;
+                due.push_back({pkg, conn, cs.lastCursor, cs.consecutiveErrors});
+            }
         }
+    }
+
+    for (const auto& d : due) {
+        PollOutcome o = PollConnection(d.pkg, d.conn, d.lastCursor, d.prevErrors);
+        std::string key = d.pkg.id + ":" + d.conn.name;
+        std::lock_guard<std::mutex> lock(m_stateMutex);
+        auto& cs = m_connStates[key];
+        cs.polling = false;
+        cs.consecutiveErrors = o.consecutiveErrors;
+        cs.lastCursor = o.newCursor;
     }
 }
 
 Json::Value ApiConnectionManager::BuildPollContext(const ApiPackage& pkg,
                                                    const ApiPackageConnection& conn,
-                                                   ConnState& cs) {
+                                                   const std::string& lastCursor) {
     (void)conn;
     Json::Value state = ParseJsonOr(pkg.state, Json::Value(Json::objectValue));
     Json::Value schema = ParseJsonOr(pkg.state_schema, Json::Value(Json::objectValue));
@@ -154,25 +192,27 @@ Json::Value ApiConnectionManager::BuildPollContext(const ApiPackage& pkg,
     }
     // Request-side cursor: {{state._cursor.value}} — first tick empty.
     Json::Value cursor(Json::objectValue);
-    cursor["value"] = cs.lastCursor;
+    cursor["value"] = lastCursor;
     state["_cursor"] = cursor;
     return state;
 }
 
-void ApiConnectionManager::PollConnection(const ApiPackage& pkg,
-                                          const ApiPackageConnection& conn) {
+ApiConnectionManager::PollOutcome ApiConnectionManager::PollConnection(
+    const ApiPackage& pkg, const ApiPackageConnection& conn,
+    const std::string& lastCursor, int prevErrors) {
     // longpoll only in this build
     if (conn.type != "longpoll") {
         ALOG_INFO("api-conn", "[" << pkg.name << ":" << conn.name << "] type '" << conn.type
                                   << "' not driven yet (longpoll only)");
-        return;
+        return PollOutcome{};  // no-op outcome: state unchanged
     }
 
-    std::string key = pkg.id + ":" + conn.name;
-    ConnState& cs = m_connStates[key];  // caller holds the mutex
+    PollOutcome o;
+    o.consecutiveErrors = prevErrors;  // carry through unless changed below
+    o.newCursor = lastCursor;
 
     Json::Value poll = ParseJsonOr(conn.poll, Json::Value(Json::objectValue));
-    Json::Value stateCtx = BuildPollContext(pkg, conn, cs);
+    Json::Value stateCtx = BuildPollContext(pkg, conn, lastCursor);
     Json::Value schema = ParseJsonOr(pkg.state_schema, Json::Value(Json::objectValue));
 
     // URL interpolation (secrets flow into the request; masking at logs).
@@ -182,7 +222,7 @@ void ApiConnectionManager::PollConnection(const ApiPackage& pkg,
     if (!ierr.empty()) {
         ALOG_WARNING("api-conn", "[" << pkg.name << ":" << conn.name << "] url interpolation: "
                                      << ierr);
-        return;
+        return o;
     }
 
     HttpClient::Request req;
@@ -210,7 +250,7 @@ void ApiConnectionManager::PollConnection(const ApiPackage& pkg,
             if (!ierr.empty()) {
                 ALOG_WARNING("api-conn", "[" << pkg.name << ":" << conn.name << "] header '"
                                              << h << "' interpolation: " << ierr);
-                return;
+                return o;
             }
             req.headers[h] = hv;
             collectSecret(headers[h].asString());
@@ -238,20 +278,20 @@ void ApiConnectionManager::PollConnection(const ApiPackage& pkg,
 
     HttpClient::Response resp = m_http->Execute(req);
     if (resp.status_code != 200) {
-        cs.consecutiveErrors++;
+        o.consecutiveErrors = prevErrors + 1;
         ALOG_WARNING("api-conn", "[" << pkg.name << ":" << conn.name << "] poll status "
                                       << resp.status_code << " (consecutive: "
-                                      << cs.consecutiveErrors << ")");
-        return;
+                                      << o.consecutiveErrors << ")");
+        return o;
     }
-    cs.consecutiveErrors = 0;
+    o.consecutiveErrors = 0;
 
     Json::Value body = ParseJsonOr(resp.body, Json::Value(Json::nullValue));
     if (body.isNull()) {
         ALOG_WARNING("api-conn", "[" << pkg.name << ":" << conn.name
                                      << "] poll body is not JSON ("
                                      << resp.body.size() << " B)");
-        return;
+        return o;
     }
 
     // Cursor extraction (dot path into the response body)
@@ -260,8 +300,9 @@ void ApiConnectionManager::PollConnection(const ApiPackage& pkg,
         const Json::Value* v = ResolvePath(body, cursorPath);
         if (v && !v->isNull()) {
             std::string newCursor = v->isString() ? v->asString() : JsonWriteCompact(*v);
-            if (newCursor != cs.lastCursor) {
-                cs.lastCursor = newCursor;
+            if (newCursor != lastCursor) {
+                o.newCursor = newCursor;
+                o.cursorChanged = true;
                 ALOG_INFO("api-conn", "[" << pkg.name << ":" << conn.name << "] cursor -> "
                                           << newCursor.substr(0, 40));
             }
@@ -271,18 +312,18 @@ void ApiConnectionManager::PollConnection(const ApiPackage& pkg,
     // on_message hook
     Json::Value hooks = ParseJsonOr(conn.hooks, Json::Value(Json::objectValue));
     std::string onMessage = hooks.get("on_message", "").asString();
-    if (onMessage.empty()) return;
+    if (onMessage.empty()) return o;
 
     ALOG_INFO("api-conn", "[" << pkg.name << ":" << conn.name << "] on_message -> '"
                               << onMessage << "'");
     Json::Value result = m_runtime->RunHook(pkg.name, onMessage, "", body);
-    HandleHookResult(pkg, conn, cs, result);
+    HandleHookResult(pkg, conn, result);
+    return o;
 }
 
 void ApiConnectionManager::HandleHookResult(const ApiPackage& pkg,
                                             const ApiPackageConnection& conn,
-                                            ConnState& cs, const Json::Value& result) {
-    (void)cs;
+                                            const Json::Value& result) {
     if (!result.get("success", Json::Value(false)).asBool()) {
         std::string err = result.get("error", "").asString();
         ALOG_WARNING("api-conn", "[" << pkg.name << ":" << conn.name

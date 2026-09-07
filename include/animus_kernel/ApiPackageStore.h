@@ -136,6 +136,10 @@ public:
     static void ValidateName(const std::string& name);
 
 private:
+    // Bound-parameter DELETE (table/column are call-site literals; id bound).
+    // Replaces string-concatenated SQL (Copilot audit #3) — safe against
+    // quote-bearing ids, and routes to the TLS-pinned txn connection.
+    bool DeleteRows(const char* table, const char* column, const std::string& id);
     static int64_t NowUnixMs();
     std::string GenerateId() const;
     bool TouchPackage(const std::string& id);  // bumps updated_at; false = missing

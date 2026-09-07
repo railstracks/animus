@@ -352,13 +352,29 @@ bool ApiPackageStore::SetPackageState(const std::string& id, const std::string& 
     return true;
 }
 
+bool ApiPackageStore::DeleteRows(const char* table, const char* column,
+                                const std::string& id) {
+    auto stmt = m_store->Prepare(std::string("DELETE FROM ") + table +
+                                 " WHERE " + column + " = ?");
+    if (!stmt) return false;
+    if (!stmt->BindText(1, id)) return false;
+    if (!stmt->ExecDML()) return false;
+    stmt->Finalize();
+    return true;
+}
+
 bool ApiPackageStore::DeletePackage(const std::string& id) {
     if (!GetPackage(id)) return false;
     m_store->BeginTransaction();
-    m_store->Exec("DELETE FROM api_package_commands WHERE package_id = '" + id + "'");
-    m_store->Exec("DELETE FROM api_package_connections WHERE package_id = '" + id + "'");
-    m_store->Exec("DELETE FROM api_package_agents WHERE package_id = '" + id + "'");
-    m_store->Exec("DELETE FROM api_packages WHERE id = '" + id + "'");
+    if (!DeleteRows("api_package_commands", "package_id", id) ||
+        !DeleteRows("api_package_connections", "package_id", id) ||
+        !DeleteRows("api_package_agents", "package_id", id) ||
+        !DeleteRows("api_packages", "id", id)) {
+        ALOG_ERROR("api", "[api-package-store] DeletePackage DELETE FAILED: "
+                  << m_store->ErrMsg() << " (package '" << id << "')");
+        m_store->Rollback();
+        return false;
+    }
     if (!m_store->Commit()) {
         ALOG_ERROR("api", "[api-package-store] DeletePackage COMMIT FAILED: "
                   << m_store->ErrMsg() << " (package '" << id << "' NOT deleted)");
@@ -433,7 +449,8 @@ int ApiPackageStore::ReplaceCommands(const std::string& packageId,
                                      const std::vector<ApiPackageCommand>& cmds) {
     m_store->BeginTransaction();
     try {
-        m_store->Exec("DELETE FROM api_package_commands WHERE package_id = '" + packageId + "'");
+        if (!DeleteRows("api_package_commands", "package_id", packageId))
+            throw std::runtime_error("delete commands failed: " + m_store->ErrMsg());
         int inserted = 0;
         for (const auto& c : cmds) {
             ApiPackageCommand copy = c;
@@ -522,7 +539,8 @@ int ApiPackageStore::ReplaceConnections(const std::string& packageId,
                                         const std::vector<ApiPackageConnection>& conns) {
     m_store->BeginTransaction();
     try {
-        m_store->Exec("DELETE FROM api_package_connections WHERE package_id = '" + packageId + "'");
+        if (!DeleteRows("api_package_connections", "package_id", packageId))
+            throw std::runtime_error("delete connections failed: " + m_store->ErrMsg());
         int inserted = 0;
         for (const auto& c : conns) {
             ApiPackageConnection copy = c;
@@ -874,13 +892,15 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
         stored = CreatePackage(pkg);
         // Inline replaces (no nested transactions — Begin inside Begin is a
         // no-op returning false and the inner Commit would end the outer tx).
-        m_store->Exec("DELETE FROM api_package_commands WHERE package_id = '" + stored.id + "'");
+        if (!DeleteRows("api_package_commands", "package_id", stored.id))
+            throw std::runtime_error("delete commands failed: " + m_store->ErrMsg());
         for (const auto& c : cmds) {
             ApiPackageCommand copy = c;
             copy.package_id = stored.id;
             AddCommand(copy);
         }
-        m_store->Exec("DELETE FROM api_package_connections WHERE package_id = '" + stored.id + "'");
+        if (!DeleteRows("api_package_connections", "package_id", stored.id))
+            throw std::runtime_error("delete connections failed: " + m_store->ErrMsg());
         for (const auto& c : conns) {
             ApiPackageConnection copy = c;
             copy.package_id = stored.id;

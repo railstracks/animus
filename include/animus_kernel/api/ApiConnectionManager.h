@@ -76,15 +76,25 @@ private:
         std::string lastCursor;
         int64_t lastPollMs{0};
         int consecutiveErrors{0};
+        bool polling{false};  // in-flight guard: I/O runs OUTSIDE the mutex
+    };
+
+    // Result of one poll; applied to ConnState under the mutex afterwards.
+    // (Copilot audit #2: network + Lua execution must not hold m_stateMutex.)
+    struct PollOutcome {
+        int consecutiveErrors{0};
+        std::string newCursor;
+        bool cursorChanged{false};
     };
 
     void Run();
     void Tick();
-    void PollConnection(const ApiPackage& pkg, const ApiPackageConnection& conn);
+    PollOutcome PollConnection(const ApiPackage& pkg, const ApiPackageConnection& conn,
+                               const std::string& lastCursor, int prevErrors);
     Json::Value BuildPollContext(const ApiPackage& pkg, const ApiPackageConnection& conn,
-                                 ConnState& cs);
+                                 const std::string& lastCursor);
     void HandleHookResult(const ApiPackage& pkg, const ApiPackageConnection& conn,
-                         ConnState& cs, const Json::Value& result);
+                         const Json::Value& result);
 
     ApiPackageStore* m_store;
     ApiRuntime* m_runtime;
