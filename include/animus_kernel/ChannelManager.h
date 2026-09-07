@@ -209,6 +209,7 @@ private:
         std::string discord_bot_user_id;
         std::string discord_guild_name;                            // #42: GUILD_CREATE
         std::map<std::string, std::string> discord_channel_names;  // #42: id -> name
+        std::map<std::string, std::string> discord_thread_parents;  // thread id -> parent channel id
 
         // WhatsApp state
         std::string whatsapp_qr_url;
