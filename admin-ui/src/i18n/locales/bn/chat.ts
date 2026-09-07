@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: 'সর্বশেষে ঝাঁপ দাও',
     composerPlaceholder: 'অ্যানিমাসকে একটি বার্তা পাঠান...',
-    adminTokenLabel: 'অ্যাডমিন টোকেন (ঐচ্ছিক)',
     send: 'পাঠান',
     contextTitle: 'প্রসঙ্গ',
     context: {

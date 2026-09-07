@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: 'קפוץ לגרסה האחרונה',
     composerPlaceholder: 'שלח הודעה לאנימוס...',
-    adminTokenLabel: 'אסימון מנהל מערכת (אופציונלי)',
     send: 'שלח',
     contextTitle: 'הקשר',
     context: {

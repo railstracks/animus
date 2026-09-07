@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: '跳转到最新内容',
     composerPlaceholder: '给 Animus 发送消息...',
-    adminTokenLabel: '管理员令牌（可选）',
     send: '发送',
     contextTitle: '背景',
     context: {

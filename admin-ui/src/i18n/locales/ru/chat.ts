@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: 'Перейти к последней версии',
     composerPlaceholder: 'Отправить сообщение Анимусу...',
-    adminTokenLabel: 'Токен администратора (необязательно)',
     send: 'Отправить',
     contextTitle: 'Контекст',
     context: {

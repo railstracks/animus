@@ -3,7 +3,7 @@ import MarkdownIt from 'markdown-it';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
-import { apiGet, apiRequest, readAdminToken, writeAdminToken } from '../lib/api';
+import { apiGet, apiRequest, readAdminToken } from '../lib/api';
 import { connectJsonWebSocket } from '../lib/ws';
 import AttachmentMessage from '../components/chat/AttachmentMessage.vue';
 
@@ -1341,12 +1341,6 @@ async function sendMessage(): Promise<void> {
   maybeAutoScroll(true);
 }
 
-function saveToken(): void {
-  writeAdminToken(adminToken.value);
-  closeSocket();
-  connectSocket();
-}
-
 async function fetchReasoningState(): Promise<void> {
   try {
     const payload = await apiGet<{reasoning?: {enabled?: boolean; effort?: string; instruction?: string}}>(
@@ -1801,16 +1795,6 @@ watch(sessionSearch, () => {
             @keydown.enter.exact.prevent="sendMessage"
           />
           <div class="composer-actions">
-            <v-text-field
-              v-model="adminToken"
-              type="password"
-              variant="underlined"
-              density="compact"
-              hide-details
-              :label="t('chat.adminTokenLabel')"
-              class="token-input"
-              @change="saveToken"
-            />
             <v-btn color="primary" :disabled="isGenerating || draft.trim().length === 0" @click="sendMessage">
               {{ t('chat.send') }}
             </v-btn>
@@ -2239,10 +2223,6 @@ watch(sessionSearch, () => {
   justify-content: space-between;
   align-items: center;
   gap: 0.75rem;
-}
-
-.token-input {
-  flex: 1;
 }
 
 .ws-error {

@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: 'Tsallaka Zuwa Bugawa',
     composerPlaceholder: 'Aika sako zuwa Animus...',
-    adminTokenLabel: 'Admin Token (na zaɓi)',
     send: 'Aika',
     contextTitle: 'Magana',
     context: {

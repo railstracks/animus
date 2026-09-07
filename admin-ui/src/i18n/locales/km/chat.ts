@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: 'លោតទៅចុងក្រោយ',
     composerPlaceholder: 'ផ្ញើសារទៅកាន់ Animus...',
-    adminTokenLabel: 'និមិត្តសញ្ញាគ្រប់គ្រង (ជាជម្រើស)',
     send: 'ផ្ញើ',
     contextTitle: 'បរិបទ',
     context: {

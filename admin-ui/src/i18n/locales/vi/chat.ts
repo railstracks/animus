@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: 'Chuyển tới phần mới nhất',
     composerPlaceholder: 'Gửi tin nhắn tới Animus...',
-    adminTokenLabel: 'Mã thông báo quản trị (tùy chọn)',
     send: 'Gửi',
     contextTitle: 'Bối cảnh',
     context: {

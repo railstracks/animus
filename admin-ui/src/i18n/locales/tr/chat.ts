@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: 'En Yeniye Atla',
     composerPlaceholder: 'Animus\'a bir mesaj gönder...',
-    adminTokenLabel: 'Yönetici Jetonu (isteğe bağlı)',
     send: 'Gönder',
     contextTitle: 'Bağlam',
     context: {

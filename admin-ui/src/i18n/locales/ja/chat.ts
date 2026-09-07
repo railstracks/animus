@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: '最新にジャンプ',
     composerPlaceholder: 'アニムスにメッセージを送る...',
-    adminTokenLabel: '管理者トークン (オプション)',
     send: '送信',
     contextTitle: 'コンテキスト',
     context: {
