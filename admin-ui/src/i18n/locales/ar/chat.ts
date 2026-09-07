@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: 'انتقل إلى الأحدث',
     composerPlaceholder: 'أرسل رسالة إلى أنيموس...',
-    adminTokenLabel: 'رمز المشرف (اختياري)',
     send: 'أرسل',
     contextTitle: 'السياق',
     context: {

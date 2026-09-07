@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: 'پرش به آخرین',
     composerPlaceholder: 'ارسال پیام به انیموس...',
-    adminTokenLabel: 'رمز مدیریت (اختیاری)',
     send: 'ارسال کنید',
     contextTitle: 'زمینه',
     context: {

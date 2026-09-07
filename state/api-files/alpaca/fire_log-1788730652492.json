@@ -1,0 +1,1 @@
+{"condition":"below","fired_at":1788730652492,"price":79909.214500000002,"prompt":"BTC is below 80000. Check current positions with the api tool and write a two-sentence market note.","symbol":"BTC/USD","threshold":80000,"trigger_id":"trg-1788730633602-2"}

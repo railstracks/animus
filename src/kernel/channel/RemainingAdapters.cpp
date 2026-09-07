@@ -27,137 +27,105 @@ using namespace channel_detail;
 // ============================================================================
 
 void EmailAdapter::RunLoop() {
-    WebSocketLoop();
-}
-
-void EmailAdapter::WebSocketLoop() {
     auto* rt = m_runtime.get();
-    ALOG_DEBUG("email", "WebSocket loop starting for " << rt->channel_name);
 
-    std::string apiKey = GetString(rt->config, "api_key");
-    std::string inboxId = GetString(rt->config, "inbox_id");
-
-    if (apiKey.empty() || inboxId.empty()) {
-        ALOG_WARNING("email", "WS: missing api_key or inbox_id — falling back to polling");
+    // Explicit degraded mode: config transport=poll skips the websocket.
+    if (GetString(rt->config, "transport") == "poll") {
         PollLoop();
         return;
     }
 
-    trantor::EventLoop loop;
-    auto wsPtr = drogon::WebSocketClient::newWebSocketClient("wss://ws.agentmail.to", &loop);
+    std::string apiKey = GetString(rt->config, "api_key");
+    std::string inboxId = GetString(rt->config, "inbox_id");
+    if (apiKey.empty() || inboxId.empty()) {
+        // Config error: terminal and loud (supervisor semantics). No poll
+        // fallback — the poller needs the same credentials and would 401-loop.
+        ALOG_ERROR("email", "[" << rt->channel_name << "] config error: "
+                  << (apiKey.empty() ? "api_key" : "inbox_id")
+                  << " missing — adapter not started (set credentials and "
+                     "re-enable the channel)");
+        rt->ws_connected = false;
+        return;
+    }
 
-    wsPtr->setMessageHandler(
-        [this, rt](std::string&& message,
-                   const drogon::WebSocketClientPtr&,
-                   const drogon::WebSocketMessageType& type) {
-            if (type != drogon::WebSocketMessageType::Text) return;
+    ConnectionSupervisor::Config cfg;
+    cfg.name = rt->channel_name;
+    cfg.host = GetString(rt->config, "ws_url", "wss://ws.agentmail.to");
+    cfg.path = "/v0";
+    cfg.query["api_key"] = apiKey;
 
-            auto root = ParseJson(message);
-            std::string eventType = GetString(root, "event_type");
-            std::string msgType = GetString(root, "type");
+    ConnectionSupervisor::Callbacks cbs;
 
-            if (msgType == "subscribed") {
-                ALOG_DEBUG("email", "WS: subscribed");
-                return;
-            }
+    cbs.on_connected = [this, rt, inboxId]() {
+        rt->ws_connected = true;
+        // Subscribe on EVERY (re)connect — idempotent by contract (D3):
+        // connections drop; subscriptions are rebuilt by design.
+        Json::Value subscribe;
+        subscribe["type"] = "subscribe";
+        subscribe["event_types"] = Json::Value(Json::arrayValue);
+        subscribe["event_types"].append("message.received");
+        subscribe["inbox_ids"] = Json::Value(Json::arrayValue);
+        subscribe["inbox_ids"].append(inboxId);
+        m_supervisor->SendText(JsonCompact(subscribe));
+        ALOG_INFO("email", "[" << rt->channel_name << "] WS connected + subscribed (inbox "
+                  << inboxId << ")");
+    };
 
-            if (msgType == "error") {
-                std::string errName = GetString(root, "name");
-                ALOG_ERROR("email", "WS error: " << errName
-                          << ": " << GetString(root, "message"));
-                if (errName == "authentication_error" || errName == "authorization_error" ||
-                    errName == "invalid_api_key") {
-                    rt->ws_connected = false;
-                    rt->active = false;
-                }
-                return;
-            }
+    cbs.on_message = [this, rt](const std::string& message) {
+        auto root = ParseJson(message);
+        std::string eventType = GetString(root, "event_type");
+        std::string msgType = GetString(root, "type");
 
-            if (eventType == "message.received" || eventType == "message.received.spam" ||
-                eventType == "message.received.blocked" || eventType == "message.received.unauthenticated") {
-                std::string eventId = GetString(root, "event_id");
-                if (!eventId.empty() && !rt->RememberEventStr(eventId)) return;
+        if (msgType == "subscribed") {
+            ALOG_DEBUG("email", "WS: subscribed ack");
+            return;
+        }
 
-                Json::Value msgObj = root["message"];
-                std::string threadId = GetString(msgObj, "thread_id");
-                std::string messageId = GetString(msgObj, "message_id");
-                std::string sender = GetString(msgObj, "from");
-                std::string subject = GetString(msgObj, "subject");
-                std::string bodyText = GetString(msgObj, "text");
-
-                if (bodyText.empty()) bodyText = GetString(msgObj, "extracted_text");
-                if (bodyText.empty()) {
-                    std::string htmlBody = GetString(msgObj, "html");
-                    if (!htmlBody.empty()) bodyText = StripHtmlSimple(htmlBody);
-                }
-
-                rt->last_ws_event = std::chrono::steady_clock::now();
-
-                if (eventType == "message.received") {
-                    ProcessMessage(msgObj);
-                }
-            }
-        });
-
-    wsPtr->setConnectionClosedHandler(
-        [rt](const drogon::WebSocketClientPtr&) {
-            ALOG_DEBUG("email", "WS: closed for " << rt->channel_name);
-            rt->ws_connected = false;
-        });
-
-    auto req = drogon::HttpRequest::newHttpRequest();
-    req->setPath("/v0");
-    req->setParameter("api_key", apiKey);
-
-    wsPtr->connectToServer(req,
-        [this, rt, wsPtr, &inboxId](drogon::ReqResult r,
-                                    const drogon::HttpResponsePtr&,
-                                    const drogon::WebSocketClientPtr&) {
-            if (r != drogon::ReqResult::Ok) {
+        if (msgType == "error") {
+            std::string errName = GetString(root, "name");
+            std::string errMsg = GetString(root, "message");
+            ALOG_ERROR("email", "WS error: " << errName << ": " << errMsg);
+            if (errName == "authentication_error" || errName == "authorization_error" ||
+                errName == "invalid_api_key") {
                 rt->ws_connected = false;
-                rt->consecutive_errors++;
-                if (rt->consecutive_errors >= 5) { wsPtr->stop(); return; }
-                return;
+                // Terminal: reconnecting would loop the same rejection.
+                m_supervisor->FatalError("agentmail auth rejected: " + errName);
             }
+            return;
+        }
 
-            rt->ws_connected = true;
-            rt->consecutive_errors = 0;
+        if (eventType == "message.received" || eventType == "message.received.spam" ||
+            eventType == "message.received.blocked" || eventType == "message.received.unauthenticated") {
+            std::string eventId = GetString(root, "event_id");
+            if (!eventId.empty() && !rt->RememberEventStr(eventId)) return;
 
-            Json::Value subscribe;
-            subscribe["type"] = "subscribe";
-            subscribe["event_types"] = Json::Value(Json::arrayValue);
-            subscribe["event_types"].append("message.received");
-            subscribe["inbox_ids"] = Json::Value(Json::arrayValue);
-            subscribe["inbox_ids"].append(inboxId);
-            wsPtr->getConnection()->send(JsonCompact(subscribe));
-            wsPtr->getConnection()->setPingMessage("", std::chrono::seconds(30));
-        });
-
-    rt->last_ws_event = std::chrono::steady_clock::now();
-
-    loop.runEvery(5.0, [this, rt, &loop, wsPtr]() {
-        if (!rt->active) { wsPtr->stop(); loop.quit(); return; }
-        if (rt->ws_connected) {
-            auto elapsed = std::chrono::steady_clock::now() - rt->last_ws_event;
-            if (std::chrono::duration_cast<std::chrono::minutes>(elapsed).count() >= 5) {
-                rt->consecutive_errors++;
+            Json::Value msgObj = root["message"];
+            if (eventType == "message.received") {
                 rt->last_ws_event = std::chrono::steady_clock::now();
-                if (rt->consecutive_errors >= 3) {
-                    rt->ws_connected = false;
-                    wsPtr->stop();
-                    rt->consecutive_errors = 0;
-                }
+                ProcessMessage(msgObj);
             }
         }
-    });
+    };
 
-    loop.loop();
+    cbs.on_closed = [rt](const std::string&) {
+        rt->ws_connected = false;  // reconnect + transition logging: supervisor
+    };
 
-    if (rt->active && rt->consecutive_errors >= 5) {
-        rt->ws_connected = false;
-        rt->consecutive_errors = 0;
-        PollLoop();
-    }
+    m_supervisor = std::make_unique<ConnectionSupervisor>();
+    // Blocks until Stop()/FatalError(); every transition logged on the way.
+    m_supervisor->Run(cfg, std::move(cbs));
+    rt->ws_connected = false;
+}
+
+void EmailAdapter::Stop() {
+    if (m_supervisor) m_supervisor->RequestStop();
+    PollerAdapterBase::Stop();
+}
+
+bool EmailAdapter::IsConnected() const {
+    if (m_supervisor)
+        return m_supervisor->state() == ConnectionSupervisor::State::Connected;
+    return PollerAdapterBase::IsConnected();
 }
 
 void EmailAdapter::PollLoop() {

@@ -11,7 +11,6 @@ export const chat = {
     },
     jumpToLatest: 'Jump To Latest',
     composerPlaceholder: 'Send a message to Animus...',
-    adminTokenLabel: 'Admin Token (optional)',
     send: 'Send',
     contextTitle: 'Context',
     context: {

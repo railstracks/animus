@@ -140,7 +140,7 @@ struct KernelConfig {
         std::vector<std::string> urlDenylist;
 
         // Maximum response body size in bytes (default 1MB).
-        std::size_t maxResponseBytes{1024 * 1024};
+        std::size_t maxResponseBytes{32 * 1024 * 1024};  // 32MB — data API responses (assets ~7MB, bar history larger)
 
         // Web fetch response cache TTL in seconds (default 300 = 5 min).
         int cacheTtlSeconds{300};

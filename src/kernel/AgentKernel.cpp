@@ -75,6 +75,10 @@
 #include "animus_kernel/admin/DiaryManager.h"
 #include "animus_kernel/SessionNotesStore.h"
 #include "animus_kernel/ChannelContextStore.h"
+#include "animus_kernel/ApiPackageStore.h"
+#include "animus_kernel/api/ApiRuntime.h"
+#include "animus_kernel/api/ApiConnectionManager.h"
+#include "animus_kernel/tools/ApiTool.h"
 #include "animus_kernel/AgendaStore.h"
 #include "animus_kernel/SessionReportStore.h"
 #include "animus_kernel/SessionTagsStore.h"
@@ -159,6 +163,9 @@ AgentKernel::~AgentKernel() {
     delete m_scheduler; m_scheduler = nullptr;
     delete m_sessionNotesStore; m_sessionNotesStore = nullptr;
     delete m_channelContextStore; m_channelContextStore = nullptr;
+    if (m_apiConnManager) { m_apiConnManager->Stop(); delete m_apiConnManager; m_apiConnManager = nullptr; }
+    delete m_apiRuntime; m_apiRuntime = nullptr;
+    delete m_apiPackageStore; m_apiPackageStore = nullptr;
     delete m_agendaStore; m_agendaStore = nullptr;
     delete m_sessionReportStore; m_sessionReportStore = nullptr;
     delete m_contextRegistry; m_contextRegistry = nullptr;
@@ -392,6 +399,10 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         m_channelContextStore = new ChannelContextStore(m_dataStore);
         m_adminServer->SetChannelContextStore(m_channelContextStore);
 
+        // --- API Package Store (#26 data layer, build order b) ---
+        // Installs disabled by default; tool/sandbox layers (c/d) consume it.
+        m_apiPackageStore = new ApiPackageStore(m_dataStore);
+
         // --- Agenda Store (per-agent calendar/agenda events) ---
         m_agendaStore = new AgendaStore(m_dataStore);
 
@@ -485,6 +496,7 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // --- Lua scripting subsystem (per-agent VM, script persistence) ---
         m_scriptStore = new ScriptStore(m_dataStore);
         m_adminServer->SetScriptStore(m_scriptStore);
+        m_adminServer->SetApiPackageStore(m_apiPackageStore);
         m_adminServer->SetLuaScriptDir(m_config.lua_script_dir);
         m_configStore = new AgentConfigStore(m_dataStore);
 
@@ -1742,6 +1754,88 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
 
     // Web tools — share the kernel's HttpClient
     m_tools.Register(std::make_unique<HttpTool>(m_httpClient));
+
+    // API packages (#26 c): runtime + agent-facing `api` tool
+    if (m_apiPackageStore) {
+        ApiRuntime::Config apiCfg;
+        apiCfg.filesRoot = (m_config.dataDir / "api-files").string();
+        m_apiRuntime = new ApiRuntime(m_apiPackageStore, &m_httpClient, apiCfg);
+        if (m_adminServer) m_adminServer->SetApiRuntime(m_apiRuntime);
+        m_tools.Register(std::make_unique<ApiTool>(m_apiRuntime));
+
+        // Connection driver (#26 d): polls longpoll connections, runs
+        // on_message hooks, routes dispatches to the owning agent.
+        m_apiConnManager = new ApiConnectionManager(m_apiPackageStore, m_apiRuntime,
+                                                    &m_httpClient);
+        m_apiConnManager->SetDispatchCallback(
+            [this](const ApiConnectionManager::Dispatch& d) {
+                // Bridge: fresh session per dispatch (scheduler fire-callback
+                // pattern — no context accumulation across fires).
+                const std::string connector =
+                    "api-trigger:" + d.packageName + ":" + std::to_string(
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count());
+                SessionKey key{connector, ""};
+                auto session = m_sessionManager->GetOrCreate(key);
+                if (!session) return;
+                if (session->AgentId().empty() && m_agentStore) {
+                    auto agents = m_agentStore->List();
+                    if (!agents.empty()) session->SetAgentId(agents.front().id);
+                }
+
+                std::string providerId = session->ProviderId();
+                if (providerId.empty() && m_agentStore) {
+                    auto agent = m_agentStore->GetById(session->AgentId());
+                    if (agent && !agent->default_provider.empty())
+                        providerId = agent->default_provider;
+                }
+                if (providerId.empty() && m_adminServer)
+                    providerId = m_adminServer->GetDefaultProviderId();
+                std::string registryKey = providerId;
+                if (!providerId.empty() && m_adminServer) {
+                    auto ps = m_adminServer->GetProvider(providerId);
+                    if (ps) registryKey = ps->providerType.empty() ? ps->providerId
+                                                                   : ps->providerType;
+                }
+                std::string model;
+                if (m_agentStore) {
+                    auto agent = m_agentStore->GetById(session->AgentId());
+                    if (agent && !agent->default_model.empty()) model = agent->default_model;
+                }
+                const std::size_t contextWindow =
+                    ResolveContextWindow(session->AgentId(), providerId, model);
+
+                const std::string prompt =
+                    "Package '" + d.packageName + "' fired a trigger (connection '" +
+                    d.connectionName + "', reason: " + d.reason + ").\n\n" +
+                    "Dispatch payload:\n" + d.payloadJson + "\n\n" +
+                    "Prompt from the trigger:\n" + d.prompt + "\n\n" +
+                    "Use the `api` tool to inspect current state (e.g. `api " +
+                    d.packageName + "` for available commands) and act on the trigger.";
+
+                m_jobs.EnqueueInLane(
+                    ::animus::jobs::JobLane::Cognition,
+                    [this, session, prompt, providerId, registryKey, model, contextWindow]() {
+                        auto sessionAccess = SessionAccess(session, SessionAccessMode::ReadWrite);
+                        auto result = m_chainRunner->ExecuteOnSession(
+                            sessionAccess, prompt, m_config.agent.identity, registryKey,
+                            providerId, model, contextWindow);
+                        if (!result.success && !result.error.empty()) {
+                            ALOG_WARNING("api-conn", "[" << session->Key().conversation_id
+                                        << "] chain failed: " << result.error);
+                        }
+                        if (m_sessionManager) {
+                            m_sessionManager->FlushSession(session->Id());
+                            if (result.triggered_compaction && m_compactionService) {
+                                m_compactionService->CompactIfNeeded(
+                                    session->Id(), m_config.agent.identity, registryKey,
+                                    model, contextWindow);
+                            }
+                        }
+                    });
+            });
+        m_apiConnManager->Start();
+    }
     m_tools.Register(std::make_unique<WebFetchTool>(m_httpClient));
 
     // Stored links tool — pre-configured HTTP endpoints (ticket 127)

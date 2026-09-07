@@ -351,15 +351,22 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 std::cerr << "[discord] GUILD_CREATE: " << state->discord_guild_name
                           << " (" << state->discord_channel_names.size()
                           << " channels cached)" << std::endl;
-                // #threads diagnostic (Aug 30): dump thread sync info from GUILD_CREATE
+                // #threads: cache thread sync from GUILD_CREATE (names + parentage)
                 {
                     const Json::Value& threads = data["threads"];
                     int nthreads = threads.size();
                     std::cerr << "[discord] GUILD_CREATE threads[] count=" << nthreads;
                     for (const auto& th : threads) {
-                        std::cerr << " id=" << GetString(th, "id")
+                        std::string tid = GetString(th, "id");
+                        std::cerr << " id=" << tid
                                   << " type=" << th["type"].asInt()
                                   << " name=" << GetString(th, "name");
+                        if (!tid.empty()) {
+                            state->discord_channel_names[tid] = GetString(th, "name");
+                            std::string parentId = GetString(th, "parent_id");
+                            if (!parentId.empty())
+                                state->discord_thread_parents[tid] = parentId;
+                        }
                     }
                     std::cerr << " | thread_members count="
                               << data["thread_members"].size() << std::endl;
@@ -369,6 +376,28 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                 std::string cuName = GetString(data, "name");
                 if (!cuId.empty() && !cuName.empty())
                     state->discord_channel_names[cuId] = cuName;
+            } else if (eventType == "THREAD_CREATE" || eventType == "THREAD_UPDATE") {
+                // #threads: live thread lifecycle — keep cache + parentage current
+                std::string tid = GetString(data, "id");
+                std::string tname = GetString(data, "name");
+                if (!tid.empty()) {
+                    if (!tname.empty())
+                        state->discord_channel_names[tid] = tname;
+                    std::string parentId = GetString(data, "parent_id");
+                    if (!parentId.empty()) {
+                        state->discord_thread_parents[tid] = parentId;
+                        auto pit = state->discord_channel_names.find(parentId);
+                        std::cerr << "[discord] " << eventType << ": thread '" << tname
+                                  << "' under #" << (pit != state->discord_channel_names.end() ? pit->second : parentId)
+                                  << std::endl;
+                    }
+                }
+            } else if (eventType == "THREAD_DELETE") {
+                std::string tid = GetString(data, "id");
+                if (!tid.empty()) {
+                    state->discord_channel_names.erase(tid);
+                    state->discord_thread_parents.erase(tid);
+                }
             } else if (eventType == "RESUMED") {
                 std::cerr << "[discord] RESUMED — replayed missed events" << std::endl;
             } else if (eventType == "MESSAGE_CREATE") {
@@ -433,15 +462,24 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                         monitorAllChannels = state->config["monitor_all_channels"].asBool();
                 }
 
-                // Determine if this channel is tracked
+                // Determine if this channel is tracked.
+                // Threads inherit tracking from their parent channel (agreed policy):
+                // a message inside a thread matches on the thread's parent id.
                 bool isTracked = false;
                 if (!isDm) {
+                    std::string effectiveChannelId = channelId;
+                    bool inThread = false;
+                    auto tp = state->discord_thread_parents.find(channelId);
+                    if (tp != state->discord_thread_parents.end()) {
+                        effectiveChannelId = tp->second;
+                        inThread = true;
+                    }
                     if (monitorAllChannels) {
                         isTracked = true;
                     } else if (state->config.isMember("monitored_channels") &&
                                state->config["monitored_channels"].isArray()) {
                         for (const auto& ch : state->config["monitored_channels"]) {
-                            if (ch.asString() == channelId) {
+                            if (ch.asString() == effectiveChannelId) {
                                 isTracked = true;
                                 break;
                             }
@@ -509,6 +547,15 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                                            !it->second.empty())
                                               ? "#" + it->second
                                               : channelId; // cache miss: id fallback
+                    auto tp = state->discord_thread_parents.find(channelId);
+                    if (tp != state->discord_thread_parents.end()) {
+                        auto pit = state->discord_channel_names.find(tp->second);
+                        std::string parentLabel = (pit != state->discord_channel_names.end() &&
+                                                   !pit->second.empty())
+                                                      ? pit->second
+                                                      : tp->second;
+                        chLabel = parentLabel + " > " + it->second; // "#parent > thread"
+                    }
                     displayText = "[" + chLabel + "] " + authorUsername + ": " + content;
                 }
 
