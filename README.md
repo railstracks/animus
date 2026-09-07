@@ -23,7 +23,7 @@ Animus is a **C++ agent framework** — a modular, efficient runtime for AI agen
 
 ## Current Status
 
-**v0.3.10** — Active development. Core kernel, admin server, LLM pipeline, tool system, multi-tenant architecture, channel system, Lua scripting, memory system, social adapters, authentication, scheduled tasks, external nodes, agent export/import, and diffusion are all operational.
+**v0.4.0** — Active development. Core kernel, admin server, LLM pipeline, tool system, **API packages**, multi-tenant architecture, channel system, Lua scripting, memory system, social adapters, authentication, scheduled tasks, external nodes, agent export/import, and diffusion are all operational.
 
 | Area | Status |
 |------|--------|
@@ -31,6 +31,8 @@ Animus is a **C++ agent framework** — a modular, efficient runtime for AI agen
 | LLM providers (11) | ✅ Live |
 | Chain execution (streaming) | ✅ Live |
 | Tool system (26 tools) | ✅ Live |
+| API packages (manifest v1: Lua actions, connections, state, egress allowlist) | ✅ Live |
+| Animus Registry integration (fetch, re-hash, loud-reject on mismatch) | ✅ Live |
 | Multi-tenant (agent CRUD, per-agent config) | ✅ Complete |
 | Channel architecture (12 adapters) | ✅ Live |
 | Lua scripting (sandboxed runtime, tool bridge, admin CRUD) | ✅ Live |
@@ -162,6 +164,21 @@ OpenAI, OpenAI-Codex (OAuth), Z.ai, Z.ai Coder, Alibaba (Qwen), Ollama (local + 
 | **dice** | Dice rolling (RPG-style notation) |
 | **Lua tools** | User-defined via embedded Lua 5.4 runtime |
 | **tools** | Tool introspection and management |
+
+### API Packages
+
+Turn third-party services into agent tools as **configuration, not code**. A package is a declarative manifest (v1) plus Lua scripts: typed commands, polling connections with event hooks, a typed state store with secret marking, and an explicit egress allowlist. The kernel's `api` tool interprets installed packages — agents get per-command tool schemas and call them like any other tool. No C++ required.
+
+The lifecycle runs through the **Animus Registry**:
+
+- **Author** a package per the [manifest v1 spec](docs/api-packages.md) and build a single-file publishable manifest (Lua scripts inlined)
+- **Publish** it to a registry server — the registry lints, canonicalizes, and records a SHA-256 content hash; versions are immutable and semantic version must increase
+- **Install** on any daemon — fetched from the registry, re-canonicalized, and loudly rejected on any hash mismatch
+- **Browse** what's out there — a live registry is running at [animus-registry.steadyfort.com/packages](https://animus-registry.steadyfort.com/packages)
+
+**Reference implementation:** [animus-package-alpaca](https://github.com/railstracks/animus-package-alpaca) — 24 commands (market data, orders, positions, one-shot price triggers, watchlists) plus two live-polling connections; field-tested by a trading agent running against a paper account.
+
+Adding a service you use? The [standing contributor lane](https://github.com/railstracks/animus/issues/29) is open.
 
 ### Reasoning
 Unified reasoning model: `thinking_content` on the same SessionTurn as the assistant reply (not a separate turn). Effort levels (low/medium/high/xhigh) with provider-native mapping. Streaming thinking deltas alongside content in the chat UI.
@@ -466,6 +483,7 @@ docs/                    # Provider API references, platform docs
 | `AGENTS.orm.md` | Database schema, ORM patterns, and persistence layer guide |
 | `tickets/` | Ticket specs (0xx-name.md) and completion reports (0xx-name.report.md) |
 | `docs/` | LLM provider API references, platform adapter docs |
+| `docs/api-packages.md` | API package manifest specification (v1) |
 
 ## Website
 
