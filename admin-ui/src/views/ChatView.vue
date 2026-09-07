@@ -1783,6 +1783,7 @@ watch(sessionSearch, () => {
         </v-btn>
 
         <div class="composer">
+          <div class="composer-row">
           <v-textarea
             v-model="draft"
             auto-grow
@@ -1798,6 +1799,7 @@ watch(sessionSearch, () => {
             <v-btn color="primary" :disabled="isGenerating || draft.trim().length === 0" @click="sendMessage">
               {{ t('chat.send') }}
             </v-btn>
+          </div>
           </div>
           <p v-if="lastWsError" class="ws-error">{{ lastWsError }}</p>
         </div>
@@ -2217,12 +2219,35 @@ watch(sessionSearch, () => {
   background: rgba(var(--v-theme-on-surface), 0.18);
 }
 
-.composer-actions {
-  margin-top: 0.5rem;
+.composer-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  align-items: flex-end;
   gap: 0.75rem;
+}
+
+.composer-row :deep(.v-textarea) {
+  flex: 1;
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* smallest breakpoint: button wraps to its own full-width row below the input */
+@media (max-width: 599.98px) {
+  .composer-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .composer-actions {
+    margin-top: 0.5rem;
+  }
+
+  .composer-actions :deep(.v-btn) {
+    width: 100%;
+  }
 }
 
 .ws-error {
