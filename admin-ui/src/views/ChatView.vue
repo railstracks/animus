@@ -61,6 +61,9 @@ interface SessionTurn {
 
 interface SessionHistoryResponse {
   items?: SessionTurn[];
+  page?: number;
+  total_pages?: number;
+  total?: number;
 }
 
 interface SessionContextResponse {
@@ -161,6 +164,9 @@ const messagesBySession = ref<Record<string, UiMessage[]>>({
 const streamingMessageIdBySession = ref<Record<string, string>>({});
 const streamingReplyIdBySession = ref<Record<string, string>>({});
 const historyLoadedBySession = ref<Record<string, boolean>>({});
+const historyPageBySession = ref<Record<string, number>>({});
+const historyTotalPagesBySession = ref<Record<string, number>>({});
+const loadingOlderBySession = ref<Record<string, boolean>>({});
 const contextBySession = ref<Record<string, SessionContextState>>({});
 
 // Reasoning mode state
@@ -629,6 +635,14 @@ function onMessagesScroll(): void {
   }
   const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
   autoScroll.value = distanceFromBottom < 96;
+
+  // Lazy-load older history when scrolled near the top (#64).
+  if (el.scrollTop <= 64) {
+    const sid = currentSessionId.value;
+    if (sid) {
+      void loadOlderMessages(sid);
+    }
+  }
 }
 
 function scrollToBottom(): void {
@@ -757,9 +771,57 @@ async function loadSessionHistory(sessionId: string): Promise<void> {
   );
 
   const items = Array.isArray(payload.items) ? payload.items : [];
-  const typedChronological = (items as SessionTurn[]).slice().reverse();
+  const uiMessages = turnsToUiMessages(sessionId, (items as SessionTurn[]).slice().reverse());
+  messagesBySession.value[sessionId] = uiMessages;
+  historyLoadedBySession.value[sessionId] = true;
+  historyPageBySession.value[sessionId] = 1;
+  historyTotalPagesBySession.value[sessionId] = payload.total_pages ?? 1;
+}
+
+// Older-page lazy loading (#64): triggered when the messages container is
+// scrolled near the top. Prepends the previous page; preserves scroll anchor.
+async function loadOlderMessages(sessionId: string): Promise<void> {
+  const totalPages = historyTotalPagesBySession.value[sessionId] ?? 1;
+  const current = historyPageBySession.value[sessionId] ?? 1;
+  if (loadingOlderBySession.value[sessionId] || current >= totalPages) {
+    return;
+  }
+  loadingOlderBySession.value[sessionId] = true;
+  try {
+    const el = messagesContainer.value;
+    const prevHeight = el ? el.scrollHeight : 0;
+    const payload = await apiGet<SessionHistoryResponse>(
+      `/api/v1/sessions/${sessionId}/history?page=${current + 1}&limit=200`,
+      adminToken.value
+    );
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    historyPageBySession.value[sessionId] = current + 1;
+    historyTotalPagesBySession.value[sessionId] = payload.total_pages ?? totalPages;
+    const older = turnsToUiMessages(sessionId, (items as SessionTurn[]).slice().reverse());
+    if (older.length > 0) {
+      // Dedupe against live-appended turns (session may have grown since page 1).
+      const bucket = ensureMessageBucket(sessionId);
+      const existing = new Set(bucket.map((m) => m.id));
+      const fresh = older.filter((m) => !existing.has(m.id));
+      if (fresh.length > 0) {
+        bucket.unshift(...fresh);
+        nextTick(() => {
+          if (el && prevHeight > 0) {
+            el.scrollTop = el.scrollHeight - prevHeight;
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[chat] failed to load older messages', err);
+  } finally {
+    loadingOlderBySession.value[sessionId] = false;
+  }
+}
+
+function turnsToUiMessages(sessionId: string, turns: SessionTurn[]): UiMessage[] {
   const uiMessages: UiMessage[] = [];
-  for (const turn of typedChronological) {
+  for (const turn of turns) {
     const role: UiMessage['role'] =
       turn.role === 'assistant'
         ? 'assistant'
@@ -845,8 +907,7 @@ async function loadSessionHistory(sessionId: string): Promise<void> {
       });
   }
   }
-  messagesBySession.value[sessionId] = uiMessages;
-  historyLoadedBySession.value[sessionId] = true;
+  return uiMessages;
 }
 
 async function loadSessionContext(sessionId: string): Promise<void> {

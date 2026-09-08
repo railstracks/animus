@@ -25,6 +25,10 @@ public:
     std::shared_ptr<Session> GetOrCreate(const SessionKey& key);
     std::shared_ptr<Session> GetById(SessionId id);
     std::vector<std::shared_ptr<Session>> ListSessions();
+    // Paged turns without Session hydration — chat history browsing (#64).
+    ISessionStore::SessionTurnPage GetSessionTurnsPage(SessionId id,
+                                                       std::size_t page,
+                                                       std::size_t limit);
 
     // Paginated session list with optional content search.
     ISessionStore::ListPage ListSessionsPaginated(

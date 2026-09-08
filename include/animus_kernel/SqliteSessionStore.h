@@ -35,6 +35,11 @@ public:
     // Returns matching sessions for the page + total match count.
     ISessionStore::ListPage ListPaginated(std::size_t offset, std::size_t limit,
                                            const std::string& search = "") override;
+    // SQL-backed paged turn fetch (no Session hydration).
+    ISessionStore::SessionTurnPage GetSessionTurnsPage(SessionId id,
+                                                       std::size_t page,
+                                                       std::size_t limit) override;
+
 
     bool DeleteById(SessionId id) override;
     void FlushSession(SessionId id) override;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -38,6 +39,41 @@ public:
             page.sessions.assign(all.begin() + offset, all.begin() + end);
         }
         return page;
+    }
+
+    // Paginated turn fetch WITHOUT hydrating the full Session object.
+    // For chat history browsing: open cost scales with page size, not
+    // session length. Items are newest-first (turn_id DESC).
+    // Default: hydrate + slice (correct for in-memory stores).
+    struct SessionTurnPage {
+        bool found{false};
+        SessionKey key{};
+        std::uint64_t total{0};
+        std::vector<SessionTurn> items;
+    };
+    virtual SessionTurnPage GetSessionTurnsPage(SessionId id,
+                                                std::size_t page,
+                                                std::size_t limit) {
+        SessionTurnPage out;
+        auto session = GetById(id);
+        if (!session) {
+            return out;
+        }
+        out.found = true;
+        out.key = session->Key();
+        const auto& turns = session->Turns();
+        out.total = static_cast<std::uint64_t>(turns.size());
+        if (page == 0) {
+            page = 1;
+        }
+        const std::size_t offset = (page - 1) * limit;
+        if (offset < turns.size()) {
+            const std::size_t count = std::min(limit, turns.size() - offset);
+            for (std::size_t i = 0; i < count; ++i) {
+                out.items.push_back(turns[turns.size() - 1 - (offset + i)]);
+            }
+        }
+        return out;
     }
 
     virtual bool DeleteById(SessionId id) = 0;

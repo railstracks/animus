@@ -43,6 +43,11 @@ std::shared_ptr<Session> SessionManager::GetById(SessionId id) {
 std::vector<std::shared_ptr<Session>> SessionManager::ListSessions() {
     return m_store->List();
 }
+ISessionStore::SessionTurnPage SessionManager::GetSessionTurnsPage(
+    SessionId id, std::size_t page, std::size_t limit) {
+    return m_store->GetSessionTurnsPage(id, page, limit);
+}
+
 
 ISessionStore::ListPage SessionManager::ListSessionsPaginated(
         std::size_t offset, std::size_t limit, const std::string& search) {

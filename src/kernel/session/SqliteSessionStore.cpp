@@ -73,6 +73,66 @@ static void WriteTurns(IDataStore& store, SessionId sessionId, const std::vector
     }
 }
 
+// Shared row -> SessionTurn hydration (used by LoadTurns and the
+// paginated history path). Template: statement wrapper type varies by store.
+template <typename StmtPtr>
+static SessionTurn HydrateTurnRow(const StmtPtr& stmt) {
+    SessionTurn turn;
+    turn.turn_id  = stmt->ColumnInt64(0);
+    turn.role     = stmt->ColumnText(1);
+    turn.content  = stmt->ColumnText(2);
+    turn.unix_ms  = stmt->ColumnInt64(3);
+    turn.is_summary = stmt->ColumnInt64(4) != 0;
+
+    // Parse compacted_from JSON
+    std::string fromJson = stmt->ColumnText(5);
+    if (!fromJson.empty() && fromJson != "[]") {
+        Json::Value root;
+        Json::CharReaderBuilder builder;
+        std::string err;
+        std::istringstream iss(fromJson);
+        if (Json::parseFromStream(builder, iss, &root, &err) && root.isArray()) {
+            for (const auto& v : root) {
+                turn.compacted_from.push_back(v.asUInt64());
+            }
+        }
+    }
+
+    // New columns (with safe defaults for old rows)
+    turn.thinking_content = stmt->ColumnText(6);
+
+    std::string tcJson = stmt->ColumnText(7);
+    if (!tcJson.empty() && tcJson != "[]") {
+        Json::Value tcRoot;
+        Json::CharReaderBuilder tcBuilder;
+        std::string tcErr;
+        std::istringstream tcIss(tcJson);
+        if (Json::parseFromStream(tcBuilder, tcIss, &tcRoot, &tcErr) && tcRoot.isArray()) {
+            for (const auto& tcv : tcRoot) {
+                ToolCall tc;
+                tc.id = tcv.get("id", "").asString();
+                tc.name = tcv.get("name", "").asString();
+                tc.arguments = tcv.get("arguments", "").asString();
+                turn.tool_calls.push_back(std::move(tc));
+            }
+        }
+    }
+
+    turn.tool_call_id = stmt->ColumnText(8);
+    turn.tool_name    = stmt->ColumnText(9);
+    turn.intake_processed = !stmt->IsColumnNull(10) && stmt->ColumnInt64(10) != 0;
+    turn.intake_processed_at_unix_ms = stmt->IsColumnNull(11)
+        ? 0
+        : static_cast<std::uint64_t>(stmt->ColumnInt64(11));
+    turn.token_count = stmt->IsColumnNull(12)
+        ? 0
+        : static_cast<std::size_t>(stmt->ColumnInt64(12));
+    turn.is_compacted = !stmt->IsColumnNull(13) && stmt->ColumnInt64(13) != 0;
+    turn.metadata = stmt->IsColumnNull(14) ? "{}" : stmt->ColumnText(14);
+
+    return turn;
+}
+
 static void LoadTurns(IDataStore& store, Session& session) {
     auto stmt = store.Prepare(
         "SELECT turn_id, role, content, unix_ms, is_summary, compacted_from, "
@@ -83,60 +143,7 @@ static void LoadTurns(IDataStore& store, Session& session) {
     stmt->BindInt64(1, session.Id());
 
     while (stmt->Step()) {
-        SessionTurn turn;
-        turn.turn_id  = stmt->ColumnInt64(0);
-        turn.role     = stmt->ColumnText(1);
-        turn.content  = stmt->ColumnText(2);
-        turn.unix_ms  = stmt->ColumnInt64(3);
-        turn.is_summary = stmt->ColumnInt64(4) != 0;
-
-        // Parse compacted_from JSON
-        std::string fromJson = stmt->ColumnText(5);
-        if (!fromJson.empty() && fromJson != "[]") {
-            Json::Value root;
-            Json::CharReaderBuilder builder;
-            std::string err;
-            std::istringstream iss(fromJson);
-            if (Json::parseFromStream(builder, iss, &root, &err) && root.isArray()) {
-                for (const auto& v : root) {
-                    turn.compacted_from.push_back(v.asUInt64());
-                }
-            }
-        }
-
-        // New columns (with safe defaults for old rows)
-        turn.thinking_content = stmt->ColumnText(6);
-
-        std::string tcJson = stmt->ColumnText(7);
-        if (!tcJson.empty() && tcJson != "[]") {
-            Json::Value tcRoot;
-            Json::CharReaderBuilder tcBuilder;
-            std::string tcErr;
-            std::istringstream tcIss(tcJson);
-            if (Json::parseFromStream(tcBuilder, tcIss, &tcRoot, &tcErr) && tcRoot.isArray()) {
-                for (const auto& tcv : tcRoot) {
-                    ToolCall tc;
-                    tc.id = tcv.get("id", "").asString();
-                    tc.name = tcv.get("name", "").asString();
-                    tc.arguments = tcv.get("arguments", "").asString();
-                    turn.tool_calls.push_back(std::move(tc));
-                }
-            }
-        }
-
-        turn.tool_call_id = stmt->ColumnText(8);
-        turn.tool_name    = stmt->ColumnText(9);
-        turn.intake_processed = !stmt->IsColumnNull(10) && stmt->ColumnInt64(10) != 0;
-        turn.intake_processed_at_unix_ms = stmt->IsColumnNull(11)
-            ? 0
-            : static_cast<std::uint64_t>(stmt->ColumnInt64(11));
-        turn.token_count = stmt->IsColumnNull(12)
-            ? 0
-            : static_cast<std::size_t>(stmt->ColumnInt64(12));
-        turn.is_compacted = !stmt->IsColumnNull(13) && stmt->ColumnInt64(13) != 0;
-        turn.metadata = stmt->IsColumnNull(14) ? "{}" : stmt->ColumnText(14);
-
-        session.AddTurn(std::move(turn));
+        session.AddTurn(HydrateTurnRow(stmt));
     }
 }
 
@@ -607,6 +614,64 @@ void SqliteSessionStore::PersistSession(const Session& s) {
             csStmt->ExecDML();
         }
     }
+}
+
+ISessionStore::SessionTurnPage SqliteSessionStore::GetSessionTurnsPage(
+    SessionId id, std::size_t page, std::size_t limit) {
+    ISessionStore::SessionTurnPage out;
+
+    // Key + existence without hydrating the Session.
+    {
+        auto stmt = m_store->Prepare(
+            "SELECT connector, conversation_id, thread_id FROM sessions WHERE id=?");
+        if (!stmt) {
+            return out;
+        }
+        stmt->BindInt64(1, id);
+        if (!stmt->Step()) {
+            return out;
+        }
+        out.found = true;
+        out.key.connector = stmt->ColumnText(0);
+        out.key.conversation_id = stmt->ColumnText(1);
+        out.key.thread_id = stmt->ColumnText(2);
+    }
+
+    {
+        auto stmt = m_store->Prepare(
+            "SELECT COUNT(*) FROM session_turns WHERE session_id=?");
+        if (stmt) {
+            stmt->BindInt64(1, id);
+            if (stmt->Step()) {
+                out.total = static_cast<std::uint64_t>(stmt->ColumnInt64(0));
+            }
+        }
+    }
+
+    if (page == 0) {
+        page = 1;
+    }
+    const std::size_t offset = (page - 1) * limit;
+    if (offset >= static_cast<std::size_t>(out.total)) {
+        return out;
+    }
+
+    // Newest-first page straight from SQL (#64): no Session materialization.
+    auto stmt = m_store->Prepare(
+        "SELECT turn_id, role, content, unix_ms, is_summary, compacted_from, "
+        "       thinking_content, tool_calls, tool_call_id, tool_name, "
+        "       intake_processed, intake_processed_at_unix_ms, token_count, is_compacted, metadata "
+        "FROM session_turns WHERE session_id=? ORDER BY turn_id DESC LIMIT ? OFFSET ?");
+    if (!stmt) {
+        return out;
+    }
+    stmt->BindInt64(1, id);
+    stmt->BindInt64(2, static_cast<std::int64_t>(limit));
+    stmt->BindInt64(3, static_cast<std::int64_t>(offset));
+    while (stmt->Step()) {
+        out.items.push_back(HydrateTurnRow(stmt));
+    }
+    return out;
 }
 
 void SqliteSessionStore::RebuildAllTurns(const Session& s) {
