@@ -164,6 +164,9 @@ const messagesBySession = ref<Record<string, UiMessage[]>>({
 const streamingMessageIdBySession = ref<Record<string, string>>({});
 const streamingReplyIdBySession = ref<Record<string, string>>({});
 const historyLoadedBySession = ref<Record<string, boolean>>({});
+// #64: fixed page size for ALL history pages - page numbers are only
+// consistent for a constant limit (mixed limits create permanent gaps).
+const HISTORY_PAGE_SIZE = 30;
 const historyPageBySession = ref<Record<string, number>>({});
 const historyTotalPagesBySession = ref<Record<string, number>>({});
 const loadingOlderBySession = ref<Record<string, boolean>>({});
@@ -766,7 +769,7 @@ async function loadSessionHistory(sessionId: string): Promise<void> {
     return;
   }
   const payload = await apiGet<SessionHistoryResponse>(
-    `/api/v1/sessions/${sessionId}/history?page=1&limit=200`,
+    `/api/v1/sessions/${sessionId}/history?page=1&limit=${HISTORY_PAGE_SIZE}`,
     adminToken.value
   );
 
@@ -776,6 +779,10 @@ async function loadSessionHistory(sessionId: string): Promise<void> {
   historyLoadedBySession.value[sessionId] = true;
   historyPageBySession.value[sessionId] = 1;
   historyTotalPagesBySession.value[sessionId] = payload.total_pages ?? 1;
+
+  // Opening a session lands on the NEWEST messages, not the top of the
+  // loaded window. Also re-arms auto-scroll for live appends.
+  scrollToBottom();
 }
 
 // Older-page lazy loading (#64): triggered when the messages container is
@@ -791,7 +798,7 @@ async function loadOlderMessages(sessionId: string): Promise<void> {
     const el = messagesContainer.value;
     const prevHeight = el ? el.scrollHeight : 0;
     const payload = await apiGet<SessionHistoryResponse>(
-      `/api/v1/sessions/${sessionId}/history?page=${current + 1}&limit=200`,
+      `/api/v1/sessions/${sessionId}/history?page=${current + 1}&limit=${HISTORY_PAGE_SIZE}`,
       adminToken.value
     );
     const items = Array.isArray(payload.items) ? payload.items : [];
