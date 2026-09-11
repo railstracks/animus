@@ -451,6 +451,70 @@ int TestSendText() {
 
 
 // ---------------------------------------------------------------------------
+// PollFallbackGate — #60 degraded-mode bridge decisions (pure logic)
+// ---------------------------------------------------------------------------
+
+int TestPollFallbackGate() {
+    std::cerr << "  [fallback-gate] hysteresis engage/disengage decisions...\n";
+    PollFallbackGate gate(std::chrono::seconds(60));
+    const auto t0 = std::chrono::steady_clock::now();
+
+    // Healthy start: nothing to do
+    Assert(gate.Tick(t0, true) == PollFallbackGate::Decision::None,
+           "healthy: None");
+
+    // Drop: grace counts from the FIRST unhealthy observation
+    const auto t1 = t0 + std::chrono::seconds(1);
+    Assert(gate.Tick(t1, false) == PollFallbackGate::Decision::None,
+           "just-dropped: None (grace starts)");
+    Assert(gate.Tick(t0 + std::chrono::seconds(60), false)
+               == PollFallbackGate::Decision::None,
+           "59s unhealthy: still inside grace");
+    Assert(!gate.engaged(), "not engaged inside grace");
+    Assert(gate.Tick(t0 + std::chrono::seconds(61), false)
+               == PollFallbackGate::Decision::Engage,
+           "exactly 60s unhealthy: Engage");
+    Assert(gate.engaged(), "engaged flag set");
+
+    // Steady degraded: stays engaged, no repeated Engage spam
+    Assert(gate.Tick(t0 + std::chrono::seconds(62), false)
+               == PollFallbackGate::Decision::None,
+           "degraded steady: None");
+    Assert(gate.engaged(), "still engaged");
+
+    // Recovery: immediate disengage (no linger — WS is live again)
+    const auto t5 = t0 + std::chrono::seconds(300);
+    Assert(gate.Tick(t5, true) == PollFallbackGate::Decision::Disengage,
+           "recovery: Disengage");
+    Assert(!gate.engaged(), "disengaged flag clear");
+    Assert(gate.Tick(t5 + std::chrono::seconds(1), true)
+               == PollFallbackGate::Decision::None,
+           "healthy again: None");
+
+    // Re-trip: grace restarts from the NEW drop (history does not count)
+    const auto t6 = t5 + std::chrono::seconds(10);
+    Assert(gate.Tick(t6, false) == PollFallbackGate::Decision::None,
+           "re-drop: fresh grace");
+    Assert(gate.Tick(t6 + std::chrono::seconds(59), false)
+               == PollFallbackGate::Decision::None,
+           "re-drop 59s: still inside grace");
+    Assert(gate.Tick(t6 + std::chrono::seconds(60), false)
+               == PollFallbackGate::Decision::Engage,
+           "re-drop full grace: Engage");
+
+    // Brief blip inside grace: no engage at all
+    PollFallbackGate blipGate(std::chrono::seconds(60));
+    const auto b0 = std::chrono::steady_clock::now();
+    Assert(blipGate.Tick(b0, false) == PollFallbackGate::Decision::None, "blip: start");
+    Assert(blipGate.Tick(b0 + std::chrono::seconds(5), true)
+               == PollFallbackGate::Decision::None, "blip: recovered");
+    Assert(blipGate.Tick(b0 + std::chrono::seconds(40), false)
+               == PollFallbackGate::Decision::None, "blip: 35s unhealthy, no engage");
+    Assert(!blipGate.engaged(), "blip never engaged");
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
 // Storm regression tests (2026-09-10 outage, #60 forensics)
 // ---------------------------------------------------------------------------
 
@@ -570,6 +634,7 @@ int main() {
     TestQuietConnectionHealthy();
     TestPongTimeoutFires();
     TestCircuitBreakCooldown();
+    TestPollFallbackGate();
     if (g_failures == 0) std::cerr << "All supervisor tests passed.\n";
     else std::cerr << g_failures << " failures.\n";
     return g_failures == 0 ? 0 : 1;

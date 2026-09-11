@@ -100,6 +100,13 @@ void EmailAdapter::RunLoop() {
             if (!eventId.empty() && !rt->RememberEventStr(eventId)) return;
 
             Json::Value msgObj = root["message"];
+            // Cross-transport dedup (#60): the poll fallback keys on
+            // message_id. Remember it in the shared set so a message the
+            // WS processed is never re-processed by a poll pass (the
+            // poller re-reads the inbox list every pass), and vice versa.
+            std::string wsMsgId = GetString(msgObj, "message_id");
+            if (!wsMsgId.empty()) rt->RememberEventStr(wsMsgId);
+
             if (eventType == "message.received") {
                 rt->last_ws_event = std::chrono::steady_clock::now();
                 ProcessMessage(msgObj);
@@ -112,8 +119,71 @@ void EmailAdapter::RunLoop() {
     };
 
     m_supervisor = std::make_unique<ConnectionSupervisor>();
-    // Blocks until Stop()/FatalError(); every transition logged on the way.
-    m_supervisor->Run(cfg, std::move(cbs));
+
+    // #60: the supervisor owns the WS on its own thread; this thread runs
+    // the fallback monitor. While the WS is unhealthy beyond the grace
+    // window, bridge to the poll transport (degraded mode) so capture
+    // survives WS storms; the supervisor keeps reconnecting meanwhile and
+    // the bridge disengages the moment it is Connected again. Shared
+    // message_id dedup makes the overlap safe.
+    std::thread wsThread([this, cfg, cbs = std::move(cbs)]() mutable {
+        m_supervisor->Run(cfg, std::move(cbs));
+    });
+
+    const bool fallbackEnabled =
+        GetString(rt->config, "poll_fallback", "auto") != "off";
+    const auto engageAfter = std::chrono::seconds(
+        std::max<int64_t>(1, GetInt(rt->config, "poll_fallback_after", 60)));
+    PollFallbackGate gate(engageAfter);
+
+    bool terminalLogged = false;
+    while (rt->active) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (!rt->active) break;
+
+        const auto st = m_supervisor->state();
+        if (st == ConnectionSupervisor::State::Error) {
+            // Terminal (auth rejection): WS thread is finished. No poll
+            // fallback here — same credentials would 401-loop.
+            if (!terminalLogged) {
+                ALOG_ERROR("email", "[" << rt->channel_name << "] supervisor terminal: "
+                          << m_supervisor->last_error()
+                          << " — email adapter DOWN (poll fallback intentionally "
+                             "withheld; fix credentials and re-enable)");
+                terminalLogged = true;
+            }
+            break;
+        }
+
+        const bool connected = st == ConnectionSupervisor::State::Connected;
+        switch (gate.Tick(std::chrono::steady_clock::now(), connected)) {
+        case PollFallbackGate::Decision::Engage:
+            m_pollFallbackActive = true;
+            rt->next_attempt = std::chrono::steady_clock::now();
+            ALOG_WARNING("email", "[" << rt->channel_name << "] WS unhealthy for "
+                        << engageAfter.count()
+                        << "s (last: " << m_supervisor->last_error()
+                        << ") — poll fallback ENGAGED (degraded: ~25s capture "
+                           "latency; WS keeps reconnecting)");
+            break;
+        case PollFallbackGate::Decision::Disengage:
+            m_pollFallbackActive = false;
+            ALOG_INFO("email", "[" << rt->channel_name << "] WS recovered — "
+                      "poll fallback disengaged");
+            break;
+        case PollFallbackGate::Decision::None:
+            break;
+        }
+
+        if (m_pollFallbackActive &&
+            std::chrono::steady_clock::now() >= rt->next_attempt) {
+            PollOnce();
+        }
+    }
+
+    m_pollFallbackActive = false;
+    m_supervisor->RequestStop();
+    wsThread.join();
     rt->ws_connected = false;
 }
 
@@ -124,7 +194,10 @@ void EmailAdapter::Stop() {
 
 bool EmailAdapter::IsConnected() const {
     if (m_supervisor)
-        return m_supervisor->state() == ConnectionSupervisor::State::Connected;
+        // Functional = WS connected OR degraded poll bridge active (#60).
+        // Degraded detail lives in the log lines, not in this bool.
+        return m_supervisor->state() == ConnectionSupervisor::State::Connected
+               || m_pollFallbackActive.load();
     return PollerAdapterBase::IsConnected();
 }
 
@@ -132,68 +205,71 @@ void EmailAdapter::PollLoop() {
     auto* rt = m_runtime.get();
     ALOG_INFO("email", "Poll loop started for " << rt->channel_name);
 
-    std::string ownAddress;  // resolved lazily for the self-send guard
-
     while (rt->active) {
         auto now = std::chrono::steady_clock::now();
         if (now < rt->next_attempt) {
             std::this_thread::sleep_for(rt->next_attempt - now);
         }
         if (!rt->active) break;
-
-        std::string apiKey = GetString(rt->config, "api_key");
-        std::string inboxId = GetString(rt->config, "inbox_id");
-
-        HttpClient::Request req;
-        req.method = "GET";
-        req.url = std::string("https://api.agentmail.to/v0/inboxes/") + inboxId + "/messages";
-        req.headers["Authorization"] = "Bearer " + apiKey;
-
-        auto resp = m_ctx.httpClient.Execute(req);
-        if (resp.status_code != 200) {
-            rt->consecutive_errors++;
-            rt->next_attempt = now + std::chrono::seconds(30);
-            continue;
-        }
-
-        auto json = ParseJson(resp.body);
-        auto& messages = json["messages"];
-        if (messages.isArray()) {
-            for (const auto& msg : messages) {
-                std::string messageId = GetString(msg, "message_id");
-                if (!rt->RememberEventStr(messageId)) continue;
-
-                std::string bodyText = GetString(msg, "text");
-                if (bodyText.empty()) bodyText = GetString(msg, "extracted_text");
-                if (bodyText.empty()) {
-                    std::string htmlBody = GetString(msg, "html");
-                    if (!htmlBody.empty()) bodyText = StripHtmlSimple(htmlBody);
-                }
-
-                // Self-send guard: the messages list includes mail we sent
-                // (from == own inbox address). The WS path never sees these
-                // (label=sent fires no message.received); the poll path would
-                // loop on them. Address resolved lazily, once.
-                if (ownAddress.empty()) {
-                    HttpClient::Request ar;
-                    ar.method = "GET";
-                    ar.url = std::string("https://api.agentmail.to/v0/inboxes/") + inboxId;
-                    ar.headers["Authorization"] = "Bearer " + apiKey;
-                    auto aresp = m_ctx.httpClient.Execute(ar);
-                    if (aresp.status_code == 200) {
-                        auto aj = ParseJson(aresp.body);
-                        ownAddress = GetString(aj["inbox"], "address");
-                    }
-                }
-                if (!ownAddress.empty() && GetString(msg, "from") == ownAddress) continue;
-
-                ProcessMessage(msg);
-            }
-        }
-
-        rt->consecutive_errors = 0;
-        rt->next_attempt = now + std::chrono::seconds(25);
+        PollOnce();
     }
+}
+
+/// One HTTP poll pass (explicit transport=poll and the #60 degraded-mode
+/// bridge share this). Paces itself via rt->next_attempt: 25s after a
+/// clean pass, 30s after a failed one.
+bool EmailAdapter::PollOnce() {
+    auto* rt = m_runtime.get();
+    auto now = std::chrono::steady_clock::now();
+
+    std::string apiKey = GetString(rt->config, "api_key");
+    std::string inboxId = GetString(rt->config, "inbox_id");
+    std::string apiBase = GetString(rt->config, "api_url", "https://api.agentmail.to");
+
+    HttpClient::Request req;
+    req.method = "GET";
+    req.url = apiBase + "/v0/inboxes/" + inboxId + "/messages";
+    req.headers["Authorization"] = "Bearer " + apiKey;
+
+    auto resp = m_ctx.httpClient.Execute(req);
+    if (resp.status_code != 200) {
+        rt->consecutive_errors++;
+        rt->next_attempt = now + std::chrono::seconds(30);
+        return false;
+    }
+
+    auto json = ParseJson(resp.body);
+    auto& messages = json["messages"];
+    if (messages.isArray()) {
+        for (const auto& msg : messages) {
+            std::string messageId = GetString(msg, "message_id");
+            if (!rt->RememberEventStr(messageId)) continue;
+
+            // Self-send guard: the messages list includes mail we sent
+            // (from == own inbox address). The WS path never sees these
+            // (label=sent fires no message.received); the poll path would
+            // loop on them. Address resolved lazily, once.
+            if (m_pollOwnAddress.empty()) {
+                HttpClient::Request ar;
+                ar.method = "GET";
+                ar.url = apiBase + "/v0/inboxes/" + inboxId;
+                ar.headers["Authorization"] = "Bearer " + apiKey;
+                auto aresp = m_ctx.httpClient.Execute(ar);
+                if (aresp.status_code == 200) {
+                    auto aj = ParseJson(aresp.body);
+                    m_pollOwnAddress = GetString(aj["inbox"], "address");
+                }
+            }
+            if (!m_pollOwnAddress.empty() && GetString(msg, "from") == m_pollOwnAddress)
+                continue;
+
+            ProcessMessage(msg);
+        }
+    }
+
+    rt->consecutive_errors = 0;
+    rt->next_attempt = now + std::chrono::seconds(25);
+    return true;
 }
 
 void EmailAdapter::ProcessMessage(const Json::Value& msg) {
