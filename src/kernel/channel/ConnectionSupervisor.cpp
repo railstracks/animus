@@ -12,6 +12,16 @@ namespace animus::kernel {
 
 namespace {
 
+// -- Reconnect-storm guards (2026-09-10 outage forensics, #60) --
+// The pre-fix supervisor could schedule N concurrent reconnects: a
+// fast-failing client's connect-callback AND close-handler both called
+// ScheduleReconnect, and same-generation timers all passed the staleness
+// check -> exponential fan-out (11,734 attempts in ~6 min on the
+// tradingbot instance; animusd ballooned to 7.3GB RSS and the host OOM'd).
+// The bounds below make that shape structurally impossible.
+constexpr long long kBackoffFloorMs = 250;  // no zero-delay reconnect loops
+// (circuit-break threshold + cooldown are Config: circuitBreakAfter/cooldownCap)
+
 std::string ReqResultReason(drogon::ReqResult r) {
     switch (r) {
         case drogon::ReqResult::Ok: return "ok";
@@ -71,6 +81,7 @@ void ConnectionSupervisor::Transition(State to, const std::string& reason) {
         }
         m_state = to;
         if (to == State::Error) m_lastError = reason;
+        if (to == State::Backoff) m_lastBackoffAt = std::chrono::steady_clock::now();
     }
     // Every transition logs — the negative of #60, where the initial
     // connect failure produced no line at all.
@@ -89,6 +100,12 @@ void ConnectionSupervisor::Run(const Config& cfg, Callbacks cbs) {
         m_stopRequested = false;
         m_fatal = false;
         m_generation = 0;
+        m_connectInFlight = false;
+        m_lastScheduledDelayMs = 0;
+        const auto now = std::chrono::steady_clock::now();
+        m_lastEvent = now;
+        m_lastPong = now;
+        m_lastBackoffAt = {};
     }
 
     if (cfg.host.empty() || cfg.name.empty()) {
@@ -128,27 +145,48 @@ void ConnectionSupervisor::Run(const Config& cfg, Callbacks cbs) {
 void ConnectionSupervisor::Connect() {
     if (m_stopRequested.load() || m_fatal.load()) return;
 
-    auto wsPtr = drogon::WebSocketClient::newWebSocketClient(m_cfg.host, m_loop);
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_ws = wsPtr.get();
+        // Single-flight: one connect attempt outstanding at a time, and
+        // never while already connected. Every historical storm shape
+        // funnels through here, so this gate is the hard bound.
+        if (m_connectInFlight || m_state == State::Connected) return;
+        m_connectInFlight = true;
     }
 
+    auto wsPtr = drogon::WebSocketClient::newWebSocketClient(m_cfg.host, m_loop);
+    drogon::WebSocketClient* stale = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_ws && m_ws != wsPtr.get()) stale = m_ws;
+        m_ws = wsPtr.get();
+    }
+    if (stale) stale->stop();  // release the superseded client's socket (#31 family)
+
     wsPtr->setMessageHandler(
-        [this](std::string&& message,
+        [this, wsPtr](std::string&& message,
                const drogon::WebSocketClientPtr&,
                const drogon::WebSocketMessageType& type) {
-            if (type != drogon::WebSocketMessageType::Text) return;
             {
                 std::lock_guard<std::mutex> lock(m_mutex);
-                m_lastEvent = std::chrono::steady_clock::now();
+                if (m_ws != wsPtr.get()) return;  // stale client — ignore
+                const auto now = std::chrono::steady_clock::now();
+                if (type == drogon::WebSocketMessageType::Pong) m_lastPong = now;
+                if (type == drogon::WebSocketMessageType::Text) m_lastEvent = now;
             }
-            if (m_cbs.on_message) m_cbs.on_message(message);
+            if (type == drogon::WebSocketMessageType::Text && m_cbs.on_message)
+                m_cbs.on_message(message);
         });
 
     wsPtr->setConnectionClosedHandler(
-        [this](const drogon::WebSocketClientPtr&) {
+        [this, wsPtr](const drogon::WebSocketClientPtr&) {
             if (m_stopRequested.load()) return;
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                // A superseded client closing must not schedule anything —
+                // its replacement already owns the reconnect cycle.
+                if (m_ws != wsPtr.get()) return;
+            }
             Transition(State::Backoff, "connection closed");
             if (m_cbs.on_closed) m_cbs.on_closed("connection closed");
             ScheduleReconnect("closed");
@@ -167,8 +205,14 @@ void ConnectionSupervisor::Connect() {
         [this, wsPtr](drogon::ReqResult r,
                       const drogon::HttpResponsePtr&,
                       const drogon::WebSocketClientPtr&) {
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                if (m_ws != wsPtr.get()) return;  // superseded mid-handshake
+                m_connectInFlight = false;
+            }
+            if (m_stopRequested.load() || m_fatal.load()) return;
+
             if (r != drogon::ReqResult::Ok) {
-                if (m_stopRequested.load()) return;
                 Transition(State::Backoff, std::string("connect failed: ") + ReqResultReason(r));
                 ScheduleReconnect(ReqResultReason(r));
                 return;
@@ -181,10 +225,19 @@ void ConnectionSupervisor::Connect() {
                 return;
             }
 
+            int hadFailures;
             {
                 std::lock_guard<std::mutex> lock(m_mutex);
+                hadFailures = m_consecutiveFailures;
                 m_consecutiveFailures = 0;
-                m_lastEvent = std::chrono::steady_clock::now();
+                const auto now = std::chrono::steady_clock::now();
+                m_lastEvent = now;
+                m_lastPong = now;
+            }
+            if (m_cfg.circuitBreakAfter > 0 && hadFailures >= m_cfg.circuitBreakAfter) {
+                ALOG_INFO("conn-supervisor",
+                          "[" << m_cfg.name << "] recovered after "
+                              << hadFailures << " consecutive failures");
             }
             Transition(State::Connected, "handshake ok");
             conn->setPingMessage("",
@@ -196,6 +249,13 @@ void ConnectionSupervisor::Connect() {
 void ConnectionSupervisor::ScheduleReconnect(const std::string& reason) {
     if (m_stopRequested.load() || m_fatal.load()) return;
 
+    // Latest-wins: invalidate every earlier pending reconnect timer. Two
+    // failure sources racing on one client (connect-callback +
+    // close-handler), or a watchdog firing mid-failure, can no longer
+    // stack reconnects — only the most recent schedule survives to call
+    // Connect(). This plus single-flight is what bounds the fan-out.
+    const uint64_t gen = m_generation.fetch_add(1) + 1;
+
     int n;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -203,22 +263,39 @@ void ConnectionSupervisor::ScheduleReconnect(const std::string& reason) {
         n = m_consecutiveFailures;
     }
 
-    // Exponential backoff with full jitter. Base 1s ×2^n, capped.
-    auto base = std::min<long long>(
-        m_cfg.backoffCap.count(),
-        m_cfg.backoffBase.count() * (1LL << std::min(n - 1, 6)));
+    // Exponential backoff with full jitter and a floor. Base 1s ×2^n,
+    // capped at backoffCap; after kCircuitBreakAfter consecutive failures
+    // the cap becomes a 5-minute cooldown — a hard-down server sees a
+    // bounded probe rate (~12/hour), never a storm.
+    const bool tripped = (m_cfg.circuitBreakAfter > 0 && n >= m_cfg.circuitBreakAfter);
+    const long long cap = tripped
+        ? std::max<long long>(m_cfg.backoffCap.count(), m_cfg.cooldownCap.count())
+        : m_cfg.backoffCap.count();
+    const auto base = std::min<long long>(
+        cap, std::max<long long>(m_cfg.backoffBase.count(), 1) * (1LL << std::min(n - 1, 6)));
     static thread_local std::mt19937 rng{std::random_device{}()};
-    std::uniform_int_distribution<long long> dist(0, base);
-    const double delaySec = static_cast<double>(dist(rng)) / 1000.0;
+    // Jitter range must stay valid when base < floor (fast test configs):
+    const long long lo = std::min<long long>(kBackoffFloorMs, base);
+    std::uniform_int_distribution<long long> dist(lo, base);
+    const long long delayMs = dist(rng);
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_lastScheduledDelayMs = delayMs;
+    }
 
+    if (tripped) {
+        ALOG_ERROR("conn-supervisor",
+                   "[" << m_cfg.name << "] degraded: " << n
+                       << " consecutive failures — cooldown probing every "
+                       << cap << "ms (last: " << reason << ")");
+    }
     ALOG_INFO("conn-supervisor",
               "[" << m_cfg.name << "] reconnect #" << n << " (" << reason
-                  << ") in " << static_cast<int>(delaySec * 1000) << " ms");
+                  << ") in " << delayMs << " ms");
 
-    const uint64_t gen = m_generation.load();
-    m_loop->runAfter(delaySec, [this, gen] {
+    m_loop->runAfter(static_cast<double>(delayMs) / 1000.0, [this, gen] {
         if (m_stopRequested.load() || m_fatal.load()) return;
-        if (gen != m_generation.load()) return;  // superseded
+        if (gen != m_generation.load()) return;  // superseded by a newer schedule
         Connect();
     });
 }
@@ -227,31 +304,62 @@ void ConnectionSupervisor::StartWatchdog() {
     m_loop->runEvery(5.0, [this] {
         if (m_stopRequested.load() || m_fatal.load()) return;
 
-        std::chrono::steady_clock::time_point lastEvent;
         State st;
+        std::chrono::steady_clock::time_point lastPong, lastBackoffAt;
+        long long lastDelayMs = 0;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-            lastEvent = m_lastEvent;
             st = m_state;
+            lastPong = m_lastPong;
+            lastBackoffAt = m_lastBackoffAt;
+            lastDelayMs = m_lastScheduledDelayMs;
         }
-        if (st == State::Connected &&
-            (std::chrono::steady_clock::now() - lastEvent) > m_cfg.stallTimeout) {
-            ForceReconnect("stall: no events within timeout");
+        const auto now = std::chrono::steady_clock::now();
+
+        if (st == State::Connected) {
+            // Transport-death detection ONLY. The pre-fix watchdog keyed on
+            // application-message silence — but a quiet inbox is healthy,
+            // not stalled (AgentMail sends no idle traffic), which forced a
+            // reconnect every stallTimeout forever (~288/day baseline churn).
+            // Drogon pings every pingInterval; a live server answers Pong
+            // (RFC 6455). Missing pongs = genuine transport death. No ping
+            // stream configured -> we cannot judge transport health this
+            // way, so the check is disabled rather than false-alarmed.
+            if (m_cfg.pingInterval > std::chrono::milliseconds(0)) {
+                const auto pongTimeout = 4 * m_cfg.pingInterval;
+                if (now - lastPong > pongTimeout) {
+                    ForceReconnect("transport dead: no pong within timeout");
+                }
+            }
+        } else if (st == State::Backoff && lastBackoffAt != std::chrono::steady_clock::time_point{}) {
+            // Orphan heal: if a scheduled reconnect never fired (missed
+            // close event, timer starvation), self-heal after 2× the last
+            // scheduled delay instead of wedging in Backoff forever.
+            const auto orphanAfter = std::chrono::milliseconds(
+                std::max<long long>(20000, 2 * lastDelayMs));
+            if (now - lastBackoffAt > orphanAfter) {
+                ALOG_WARNING("conn-supervisor",
+                             "[" << m_cfg.name << "] backoff orphan — self-healing reconnect");
+                m_generation.fetch_add(1);  // any lost timer is dead by definition
+                Connect();
+            }
         }
     });
 }
 
 void ConnectionSupervisor::ForceReconnect(const std::string& reason) {
     ALOG_INFO("conn-supervisor", "[" << m_cfg.name << "] forcing reconnect: " << reason);
-    // Invalidate any pending reconnect (generation bump), then drop the
-    // connection; the closed-handler + ScheduleReconnect path drives the
-    // retry. We never exit the loop from here — the watchdog heals, it
-    // does not kill (#60's watchdog killed the thread).
+    // Invalidate any pending reconnect (generation bump), mark Backoff
+    // honestly, then drop the connection; the closed-handler +
+    // ScheduleReconnect path drives the retry. We never exit the loop from
+    // here — the watchdog heals, it does not kill (#60's watchdog killed
+    // the thread).
     m_generation.fetch_add(1);
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_lastEvent = std::chrono::steady_clock::now();  // reset so we do not loop instantly
+        m_lastEvent = std::chrono::steady_clock::now();  // diagnostics
     }
+    Transition(State::Backoff, reason);
     if (m_ws) m_ws->stop();
 }
 

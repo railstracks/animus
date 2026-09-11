@@ -33,6 +33,8 @@ public:
         std::chrono::milliseconds stallTimeout{300000};  // no-event watchdog
         std::chrono::milliseconds backoffBase{1000};
         std::chrono::milliseconds backoffCap{60000};
+        int circuitBreakAfter{20};                      // consecutive failures -> cooldown mode
+        std::chrono::milliseconds cooldownCap{300000};  // attempt spacing once tripped
     };
 
     enum class State { Disabled, Connecting, Connected, Backoff, Error };
@@ -86,6 +88,11 @@ private:
     int m_consecutiveFailures{0};
     std::string m_lastError;
     std::chrono::steady_clock::time_point m_lastEvent;
+    // All below guarded by m_mutex (storm guards, #60 forensics 2026-09-10):
+    bool m_connectInFlight{false};       // single-flight connect attempts
+    std::chrono::steady_clock::time_point m_lastPong{};      // transport liveness
+    std::chrono::steady_clock::time_point m_lastBackoffAt{}; // orphan-heal anchor
+    long long m_lastScheduledDelayMs{0}; // orphan-heal threshold input
 
     trantor::EventLoop* m_loop{nullptr};
     drogon::WebSocketClient* m_ws{nullptr};  // owned by its loop via intrusive ptr

@@ -60,6 +60,7 @@ struct WsServer {
     void Stop();
 
     std::atomic<bool> refuseConnections{false};  // close accepted sockets instantly
+    std::atomic<bool> autoPong{true};            // answer pings (set false to fake dead transport)
     std::atomic<int> totalAccepts{0};
 
     void SendText(const std::string& text);
@@ -199,7 +200,8 @@ void WsServer::ClientLoop(int fd) {
                 exitLoop = true;
                 break;
             }
-            if (opcode == 0x9) {  // ping -> pong
+            if (opcode == 0x9) {  // ping -> pong (unless simulating dead transport)
+                if (!autoPong.load()) continue;
                 std::string pong;
                 pong += static_cast<char>(0x8A);
                 pong += static_cast<char>(payload.size());
@@ -447,6 +449,113 @@ int TestSendText() {
     return 0;
 }
 
+
+// ---------------------------------------------------------------------------
+// Storm regression tests (2026-09-10 outage, #60 forensics)
+// ---------------------------------------------------------------------------
+
+int TestFastFailNoStorm() {
+    std::cerr << "  [supervisor] fast-fail server cannot storm (bounded attempt rate)...\n";
+    uint16_t port = PickPort();
+    WsServer server(port);
+    server.refuseConnections = true;
+    server.Start();
+
+    SupervisorRun run;
+    auto cfg = run.MakeFastConfig(std::to_string(port));
+    cfg.backoffBase = std::chrono::milliseconds(50);
+    cfg.backoffCap = std::chrono::milliseconds(400);
+    run.Start(cfg);
+
+    // Pre-fix shape: connect-callback + close-handler both schedule, timers
+    // stack, fan-out reaches ~2,000 attempts/min (11,734 in 6 min in prod).
+    // Post-fix: floor + backoff + latest-wins bound the same window to a
+    // handful of attempts.
+    std::this_thread::sleep_for(4s);
+    int accepts = server.totalAccepts.load();
+    Assert(accepts > 0, "attempts are happening (no silent death)");
+    Assert(accepts <= 16,
+           "attempt rate bounded — storm impossible (got " + std::to_string(accepts) + ")");
+    Assert(run.sup.consecutive_failures() >= 2, "failures counted visibly");
+
+    run.StopAndJoin();
+    server.Stop();
+    return 0;
+}
+
+int TestQuietConnectionHealthy() {
+    std::cerr << "  [supervisor] quiet-but-alive connection is healthy (no silence churn)...\n";
+    uint16_t port = PickPort();
+    WsServer server(port);
+    server.Start();
+
+    SupervisorRun run;
+    auto cfg = run.MakeFastConfig(std::to_string(port));
+    cfg.pingInterval = std::chrono::milliseconds(200);  // pings flow, server pongs
+    cfg.stallTimeout = std::chrono::milliseconds(400);  // old watchdog would churn every 400ms
+    run.Start(cfg);
+
+    Assert(WaitUntil([&] { return run.connects.load() == 1; }), "connected once");
+    std::this_thread::sleep_for(2500ms);  // message silence >> stallTimeout
+    Assert(run.connects.load() == 1,
+           "no forced reconnect on message silence while transport alive");
+    Assert(run.sup.state() == ConnectionSupervisor::State::Connected, "still connected");
+
+    run.StopAndJoin();
+    server.Stop();
+    return 0;
+}
+
+int TestPongTimeoutFires() {
+    std::cerr << "  [supervisor] pong silence = transport death -> reconnect...\n";
+    uint16_t port = PickPort();
+    WsServer server(port);
+    server.autoPong = false;  // accepts + handshakes fine, never answers pings
+    server.Start();
+
+    SupervisorRun run;
+    auto cfg = run.MakeFastConfig(std::to_string(port));
+    cfg.pingInterval = std::chrono::milliseconds(200);  // pong timeout = 800ms
+    run.Start(cfg);
+
+    Assert(WaitUntil([&] { return run.connects.load() >= 2; }, 6000ms),
+           "dead transport detected via missing pongs and reconnected");
+
+    run.StopAndJoin();
+    server.Stop();
+    return 0;
+}
+
+int TestCircuitBreakCooldown() {
+    std::cerr << "  [supervisor] circuit breaker: cooldown throttles a hard-down server...\n";
+    uint16_t port = PickPort();
+    WsServer server(port);
+    server.refuseConnections = true;
+    server.Start();
+
+    SupervisorRun run;
+    auto cfg = run.MakeFastConfig(std::to_string(port));
+    cfg.backoffBase = std::chrono::milliseconds(50);
+    cfg.backoffCap = std::chrono::milliseconds(100);
+    cfg.circuitBreakAfter = 3;
+    cfg.cooldownCap = std::chrono::milliseconds(700);
+    run.Start(cfg);
+
+    // Deterministic on failure count, not wall-clock: wait for the breaker
+    // to trip (3 consecutive failures), then measure the attempt rate after.
+    Assert(WaitUntil([&] { return run.sup.consecutive_failures() >= 3; }, 5000ms),
+           "breaker trips after 3 consecutive failures");
+    const int tripped = server.totalAccepts.load();
+    std::this_thread::sleep_for(1500ms);
+    const int late = server.totalAccepts.load() - tripped;
+    Assert(late <= 3,
+           "cooldown throttles attempts after breaker trips (got " + std::to_string(late) + ")");
+
+    run.StopAndJoin();
+    server.Stop();
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -457,6 +566,10 @@ int main() {
     TestTerminalConfigError();
     TestFatalError();
     TestSendText();
+    TestFastFailNoStorm();
+    TestQuietConnectionHealthy();
+    TestPongTimeoutFires();
+    TestCircuitBreakCooldown();
     if (g_failures == 0) std::cerr << "All supervisor tests passed.\n";
     else std::cerr << g_failures << " failures.\n";
     return g_failures == 0 ? 0 : 1;
