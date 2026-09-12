@@ -136,6 +136,26 @@ void MemoryStore::EnsureSchema() {
         );
     )");
 
+    // #76: memory_layers uniqueness enforcement + duplicate cleanup.
+    // Tables created before the (agent_id, name) constraint existed (e.g.
+    // animus-tradingbot's PostgreSQL instance) accumulated a parallel
+    // duplicate layer set from racing boot inits. Remove duplicates that
+    // carry no observations (never observation-bearing rows), then enforce
+    // uniqueness with an index. If observation-bearing duplicates remain,
+    // index creation fails loudly — a visible tripwire, not silent decay.
+    m_store->Exec(
+        "DELETE FROM memory_layers WHERE id IN ("
+        "SELECT l.id FROM memory_layers l "
+        "WHERE NOT EXISTS (SELECT 1 FROM observations o WHERE o.layer_id = l.id) "
+        "AND l.id > (SELECT MIN(l2.id) FROM memory_layers l2 "
+        "WHERE l2.agent_id = l.agent_id AND l2.name = l.name))");
+    if (!m_store->Exec(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_layers_agent_name "
+        "ON memory_layers(agent_id, name)")) {
+        ALOG_ERROR("memory", "memory_layers unique index creation failed (observation-bearing "
+                 "duplicates remain?): " << m_store->ErrMsg());
+    }
+
     schema::CreateTable(m_store, R"(
         CREATE TABLE IF NOT EXISTS layer_perspectives (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -364,7 +384,10 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer) {
         "INSERT INTO memory_layers (agent_id, name, horizon, sort_order, evaluation_interval_seconds, "
         "cron_expr, consolidation_prompt, consolidation_intake_prompt, intake_interval, "
         "token_budget, enabled, created_at_unix_ms, updated_at_unix_ms) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+        // #76: idempotent layer ensure — parallel boot races collapse onto one row.
+        "ON CONFLICT(agent_id, name) DO NOTHING "
+        "RETURNING id");
     if (!stmt) return {};
 
     stmt->BindText(1, agentId);
@@ -385,13 +408,26 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer) {
     stmt->BindInt64(12, now);
     stmt->BindInt64(13, now);
 
-    stmt->ExecDML();
-    if (!DidWriteRows(stmt.get())) {
-        ALOG_WARNING("memory", "insert layer failed: " << m_store->ErrMsg());
+    // #76: statement-scoped id via RETURNING; on conflict resolve the
+    // existing row instead of failing (parallel-boot safe).
+    int64_t newLayerId = 0;
+    if (stmt->Step()) {
+        newLayerId = stmt->ColumnInt64(0);
+    } else {
+        auto existing = m_store->Prepare(
+            "SELECT id FROM memory_layers WHERE agent_id = ? AND name = ?");
+        if (existing && existing->BindText(1, agentId) && existing->BindText(2, layer.name)
+            && existing->Step()) {
+            newLayerId = existing->ColumnInt64(0);
+        }
+    }
+    if (newLayerId <= 0) {
+        ALOG_WARNING("memory", "insert layer failed (no RETURNING row and no existing row): "
+                  << m_store->ErrMsg());
         return {};
     }
 
-    auto result = GetLayer(m_store->LastInsertRowId());
+    auto result = GetLayer(newLayerId);
 
     // Auto-create perspective row
     if (result) {
@@ -687,7 +723,7 @@ Observation MemoryStore::CreateObservation(const Observation& obs) {
         "INSERT INTO observations (layer_id, agent_id, text, weight, decay_rate, tags, source, "
         "created_at_unix_ms, updated_at_unix_ms, last_evaluated_at_ms, next_review_at_ms, "
         "memory_state, superseded_by) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id");
     if (!stmt) return {};
 
     stmt->BindInt64(1, obs.layer_id);
@@ -704,10 +740,11 @@ Observation MemoryStore::CreateObservation(const Observation& obs) {
     stmt->BindInt64(12, MemoryStateToInt(obs.memory_state));
     stmt->BindInt64(13, obs.superseded_by);
 
-    bool execOk = stmt->ExecDML();
-    if (!execOk || !DidWriteRows(stmt.get())) {
-        ALOG_WARNING("memory", "insert observation failed: execOk=" << execOk
-                  << " changes=" << m_store->Changes()
+    // #76: statement-scoped id — the RETURNING row is the write receipt.
+    // (Store-global LastInsertRowId()/Changes() raced with concurrent DML:
+    // committed rows reported failed, ids borrowed from other threads.)
+    if (!stmt->Step()) {
+        ALOG_WARNING("memory", "insert observation failed (no RETURNING row): "
                   << " err=" << m_store->ErrMsg()
                   << " layer_id=" << obs.layer_id
                   << " agent=" << obs.agent_id
@@ -718,8 +755,7 @@ Observation MemoryStore::CreateObservation(const Observation& obs) {
                   << " next_review=" << nextReviewAt);
         return {};
     }
-
-    int64_t newId = m_store->LastInsertRowId();
+    int64_t newId = stmt->ColumnInt64(0);
 
     // Log mutation
     MemoryMutation m;
@@ -890,7 +926,7 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
         "INSERT INTO observations (layer_id, agent_id, text, weight, decay_rate, tags, source, "
         "created_at_unix_ms, updated_at_unix_ms, last_evaluated_at_ms, next_review_at_ms, "
         "memory_state, superseded_by) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id");
     if (!stmt) return {};
 
     stmt->BindInt64(1, newVersion.layer_id);
@@ -907,13 +943,12 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
     stmt->BindInt64(12, MemoryStateToInt(newVersion.memory_state));
     stmt->BindInt64(13, 0);  // current version
 
-    stmt->ExecDML();
-    if (!DidWriteRows(stmt.get())) {
+    // #76: statement-scoped id via RETURNING.
+    if (!stmt->Step()) {
         ALOG_WARNING("memory", "ReviseObservation: insert new version failed: " << m_store->ErrMsg());
         return {};
     }
-
-    int64_t newId = m_store->LastInsertRowId();
+    int64_t newId = stmt->ColumnInt64(0);
 
     // Mark the original as superseded
     auto supersede = m_store->Prepare(

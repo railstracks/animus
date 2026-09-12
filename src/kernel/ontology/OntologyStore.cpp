@@ -404,7 +404,7 @@ OntologyEntity OntologyStore::CreateEntity(
     auto stmt = m_store->Prepare(
         "INSERT INTO ontology_entities "
         "(parent_id, root_category, name, full_path, sort_order, agent_id, created_at_unix_ms, updated_at_unix_ms) "
-        "VALUES (?,?,?,?,?,?,?,?)");
+        "VALUES (?,?,?,?,?,?,?,?) RETURNING id");
     if (!stmt) return {};
 
     if (entity.parent_id.has_value()) stmt->BindInt64(1, *entity.parent_id);
@@ -416,13 +416,14 @@ OntologyEntity OntologyStore::CreateEntity(
     stmt->BindText(6, entity.agent_id);
     stmt->BindInt64(7, now);
     stmt->BindInt64(8, now);
-    stmt->ExecDML();
-    if (!DidWriteRows(stmt.get())) {
+    // #76: statement-scoped id via RETURNING. Failure (no row returned)
+    // includes the unique-path conflict — resolve the existing entity.
+    if (!stmt->Step()) {
         auto existing = FindByPath(entity.root_category, entity.full_path);
         return existing.value_or(OntologyEntity{});
     }
 
-    auto created = GetEntity(m_store->LastInsertRowId()).value_or(OntologyEntity{});
+    auto created = GetEntity(stmt->ColumnInt64(0)).value_or(OntologyEntity{});
     if (created.id > 0) {
         Json::Value snapshot = EntityToJson(created);
         OntologyMutation m;

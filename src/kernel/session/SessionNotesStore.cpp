@@ -39,7 +39,7 @@ SessionNote SessionNotesStore::Create(const std::string& sessionKey,
 
     auto stmt = m_store->Prepare(
         "INSERT INTO session_notes (session_key, agent_id, bullet, sort_order, "
-        "created_at_unix_ms, updated_at_unix_ms) VALUES (?, ?, ?, ?, ?, ?)");
+        "created_at_unix_ms, updated_at_unix_ms) VALUES (?, ?, ?, ?, ?, ?) RETURNING id");
     if (!stmt) return {};
 
     stmt->BindText(1, sessionKey);
@@ -48,11 +48,12 @@ SessionNote SessionNotesStore::Create(const std::string& sessionKey,
     stmt->BindInt(4, sortOrder);
     stmt->BindInt64(5, now);
     stmt->BindInt64(6, now);
-    stmt->ExecDML();
+    // #76: statement-scoped id via RETURNING.
+    int64_t newNoteId = stmt->Step() ? stmt->ColumnInt64(0) : 0;
     stmt->Finalize();
 
     SessionNote note;
-    note.id = m_store->LastInsertRowId();
+    note.id = newNoteId;
     note.session_key = sessionKey;
     note.agent_id = agentId;
     note.bullet = bullet;

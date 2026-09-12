@@ -867,7 +867,7 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                     fv.push_back(ExtractField(agentJson[key]));
                 }
                 auto stmt = m_store->Prepare(
-                    "INSERT INTO agents (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                    "INSERT INTO agents (" + cols.str() + ") VALUES (" + vals.str() + ")" + " RETURNING id");
                 if (stmt) {
                     for (size_t i = 0; i < fv.size(); ++i)
                         BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
@@ -929,19 +929,23 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                 if (key == "agent_id") val.strVal = agentId;
                 fv.push_back(val);
             }
+            // #76: statement-scoped id via RETURNING (archive replay inserts
+            // across many tables — the shared max-scan handed import remaps
+            // ids from concurrent inserts).
             auto stmt = m_store->Prepare(
-                "INSERT INTO " + tableName + " (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                "INSERT INTO " + tableName + " (" + cols.str() + ") VALUES (" + vals.str() + ")"
+                " RETURNING " + idCol);
             if (!stmt) {
                 ALOG_WARNING("archive", "failed to prepare insert into " << tableName << ": " << m_store->ErrMsg());
                 continue;
             }
             for (size_t i = 0; i < fv.size(); ++i)
                 BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
-            if (!stmt->ExecDML()) {
+            if (!stmt->Step()) {
                 ALOG_WARNING("archive", "insert into " << tableName << " failed: " << m_store->ErrMsg());
                 continue;
             }
-            int64_t newId = m_store->LastInsertRowId();
+            int64_t newId = stmt->ColumnInt64(0);
             if (exportId > 0)
                 m_idMap[tableName + ":" + std::to_string(exportId)] = newId;
         }
@@ -984,12 +988,12 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                     fv.push_back(val);
                 }
                 auto stmt = m_store->Prepare(
-                    "INSERT INTO memory_layers (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                    "INSERT INTO memory_layers (" + cols.str() + ") VALUES (" + vals.str() + ")" + " RETURNING id");
                 if (stmt) {
                     for (size_t i = 0; i < fv.size(); ++i)
                         BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
-                    if (stmt->ExecDML()) {
-                        int64_t newId = m_store->LastInsertRowId();
+                    if (stmt->Step()) {
+                        int64_t newId = stmt->ColumnInt64(0);
                         if (exportId > 0)
                             m_idMap["memory_layers:" + std::to_string(exportId)] = newId;
                     }
@@ -1031,12 +1035,12 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                     fv.push_back(val);
                 }
                 auto stmt = m_store->Prepare(
-                    "INSERT INTO ontology_entities (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                    "INSERT INTO ontology_entities (" + cols.str() + ") VALUES (" + vals.str() + ")" + " RETURNING id");
                 if (stmt) {
                     for (size_t i = 0; i < fv.size(); ++i)
                         BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
-                    if (stmt->ExecDML()) {
-                        int64_t newId = m_store->LastInsertRowId();
+                    if (stmt->Step()) {
+                        int64_t newId = stmt->ColumnInt64(0);
                         if (exportId > 0)
                             m_idMap["ontology_entities:" + std::to_string(exportId)] = newId;
                     }
@@ -1086,12 +1090,12 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                     fv.push_back(val);
                 }
                 auto stmt = m_store->Prepare(
-                    "INSERT INTO gallivanting_threads (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                    "INSERT INTO gallivanting_threads (" + cols.str() + ") VALUES (" + vals.str() + ")" + " RETURNING id");
                 if (stmt) {
                     for (size_t i = 0; i < fv.size(); ++i)
                         BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
-                    if (stmt->ExecDML()) {
-                        int64_t newId = m_store->LastInsertRowId();
+                    if (stmt->Step()) {
+                        int64_t newId = stmt->ColumnInt64(0);
                         if (exportId > 0)
                             m_idMap["gallivanting_threads:" + std::to_string(exportId)] = newId;
                     }
@@ -1141,12 +1145,12 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                     fv.push_back(val);
                 }
                 auto stmt = m_store->Prepare(
-                    "INSERT INTO gallivanting_sessions (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                    "INSERT INTO gallivanting_sessions (" + cols.str() + ") VALUES (" + vals.str() + ")" + " RETURNING id");
                 if (stmt) {
                     for (size_t i = 0; i < fv.size(); ++i)
                         BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
-                    if (stmt->ExecDML()) {
-                        int64_t newId = m_store->LastInsertRowId();
+                    if (stmt->Step()) {
+                        int64_t newId = stmt->ColumnInt64(0);
                         if (exportId > 0)
                             m_idMap["gallivanting_sessions:" + std::to_string(exportId)] = newId;
                     }
@@ -1211,12 +1215,12 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                     fv.push_back(val);
                 }
                 auto stmt = m_store->Prepare(
-                    "INSERT INTO sessions (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                    "INSERT INTO sessions (" + cols.str() + ") VALUES (" + vals.str() + ")" + " RETURNING id");
                 if (stmt) {
                     for (size_t i = 0; i < fv.size(); ++i)
                         BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
-                    if (stmt->ExecDML()) {
-                        int64_t newId = m_store->LastInsertRowId();
+                    if (stmt->Step()) {
+                        int64_t newId = stmt->ColumnInt64(0);
                         if (exportId > 0)
                             m_idMap["sessions:" + std::to_string(exportId)] = newId;
                     }
@@ -1265,12 +1269,12 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                     fv.push_back(val);
                 }
                 auto stmt = m_store->Prepare(
-                    "INSERT INTO session_turns (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                    "INSERT INTO session_turns (" + cols.str() + ") VALUES (" + vals.str() + ")" + " RETURNING id");
                 if (stmt) {
                     for (size_t i = 0; i < fv.size(); ++i)
                         BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
-                    if (stmt->ExecDML()) {
-                        int64_t newId = m_store->LastInsertRowId();
+                    if (stmt->Step()) {
+                        int64_t newId = stmt->ColumnInt64(0);
                         if (exportId > 0)
                             m_idMap["session_turns:" + std::to_string(exportId)] = newId;
                     }
@@ -1348,12 +1352,12 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                     fv.push_back(val);
                 }
                 auto stmt = m_store->Prepare(
-                    "INSERT INTO session_reports (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                    "INSERT INTO session_reports (" + cols.str() + ") VALUES (" + vals.str() + ")" + " RETURNING id");
                 if (stmt) {
                     for (size_t i = 0; i < fv.size(); ++i)
                         BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);
-                    if (stmt->ExecDML()) {
-                        int64_t newId = m_store->LastInsertRowId();
+                    if (stmt->Step()) {
+                        int64_t newId = stmt->ColumnInt64(0);
                         if (exportId > 0)
                             m_idMap["session_reports:" + std::to_string(exportId)] = newId;
                     }
@@ -1402,7 +1406,7 @@ std::string AgentArchiveReader::Read(const std::string& archivePath,
                     fv.push_back(val);
                 }
                 auto stmt = m_store->Prepare(
-                    "INSERT INTO session_turns_archive (" + cols.str() + ") VALUES (" + vals.str() + ")");
+                    "INSERT INTO session_turns_archive (" + cols.str() + ") VALUES (" + vals.str() + ")" + " RETURNING id");
                 if (stmt) {
                     for (size_t i = 0; i < fv.size(); ++i)
                         BindField(stmt.get(), static_cast<int>(i + 1), fv[i]);

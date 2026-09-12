@@ -57,7 +57,7 @@ AgendaEvent AgendaStore::Create(const std::string& agentId,
         "INSERT INTO agenda_events "
         "(agent_id, title, description, start_time, end_time, timezone, "
         "recurrence, completed, created_at_unix_ms, updated_at_unix_ms) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)");
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?) RETURNING id");
     if (!stmt) return {};
 
     stmt->BindText(1, agentId);
@@ -69,11 +69,12 @@ AgendaEvent AgendaStore::Create(const std::string& agentId,
     stmt->BindText(7, recurrence);
     stmt->BindInt64(8, now);
     stmt->BindInt64(9, now);
-    stmt->ExecDML();
+    // #76: statement-scoped id via RETURNING.
+    int64_t newAgendaId = stmt->Step() ? stmt->ColumnInt64(0) : 0;
     stmt->Finalize();
 
     AgendaEvent ev;
-    ev.id = m_store->LastInsertRowId();
+    ev.id = newAgendaId;
     ev.agent_id = agentId;
     ev.title = title;
     ev.description = description;

@@ -79,7 +79,7 @@ ChannelArrival ChannelContextStore::AddArrival(const ChannelArrival& arrival) {
         "delivery, peer_id, post_id, group_id, email_thread_id, "
         "source_message_id, reply_parent_id, thread_root_id, origin, "
         "reply_instructions, created_at_unix_ms, consumed) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)");
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) RETURNING id");
     if (!stmt) return {};
 
     stmt->BindText(1, NormalizeSessionKey(arrival.session_key));
@@ -101,11 +101,12 @@ ChannelArrival ChannelContextStore::AddArrival(const ChannelArrival& arrival) {
     stmt->BindText(17, arrival.origin);
     stmt->BindText(18, arrival.reply_instructions);
     stmt->BindInt64(19, now);
-    stmt->ExecDML();
+    // #76: statement-scoped id via RETURNING.
+    int64_t newArrivalId = stmt->Step() ? stmt->ColumnInt64(0) : 0;
     stmt->Finalize();
 
     ChannelArrival stored = arrival;
-    stored.id = m_store->LastInsertRowId();
+    stored.id = newArrivalId;
     stored.created_at_unix_ms = now;
     stored.consumed = false;
     return stored;
