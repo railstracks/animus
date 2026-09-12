@@ -33,6 +33,8 @@ public:
         std::chrono::milliseconds stallTimeout{300000};  // no-event watchdog
         std::chrono::milliseconds backoffBase{1000};
         std::chrono::milliseconds backoffCap{60000};
+        int circuitBreakAfter{20};                      // consecutive failures -> cooldown mode
+        std::chrono::milliseconds cooldownCap{300000};  // attempt spacing once tripped
     };
 
     enum class State { Disabled, Connecting, Connected, Backoff, Error };
@@ -86,6 +88,11 @@ private:
     int m_consecutiveFailures{0};
     std::string m_lastError;
     std::chrono::steady_clock::time_point m_lastEvent;
+    // All below guarded by m_mutex (storm guards, #60 forensics 2026-09-10):
+    bool m_connectInFlight{false};       // single-flight connect attempts
+    std::chrono::steady_clock::time_point m_lastPong{};      // transport liveness
+    std::chrono::steady_clock::time_point m_lastBackoffAt{}; // orphan-heal anchor
+    long long m_lastScheduledDelayMs{0}; // orphan-heal threshold input
 
     trantor::EventLoop* m_loop{nullptr};
     drogon::WebSocketClient* m_ws{nullptr};  // owned by its loop via intrusive ptr
@@ -94,6 +101,49 @@ private:
     // This trantor has no timer cancellation — pending reconnects carry the
     // generation they were scheduled in and no-op when it has moved on.
     std::atomic<uint64_t> m_generation{0};
+};
+
+/// PollFallbackGate - pure decision logic for bridging an adapter to a
+/// fallback poll transport while its supervised websocket is unhealthy
+/// (#60: capture must survive WS storms; a quiet degraded mode beats a
+/// blind one). Hysteresis: engage once the WS has been non-Connected for
+/// engageAfter; disengage the moment it is Connected again. No clocks
+/// inside - feed timestamps in. Terminal supervisor errors (auth
+/// rejection) must NOT engage the poller; the adapter checks state()
+/// itself before consulting the gate.
+class PollFallbackGate {
+public:
+    explicit PollFallbackGate(std::chrono::milliseconds engageAfter)
+        : m_engageAfter(engageAfter) {}
+
+    enum class Decision { None, Engage, Disengage };
+
+    /// One observation of the world. Call periodically (e.g. 1s ticks).
+    Decision Tick(std::chrono::steady_clock::time_point now, bool wsConnected) {
+        if (wsConnected) {
+            m_unhealthySince = {};
+            if (m_engaged) {
+                m_engaged = false;
+                return Decision::Disengage;
+            }
+            return Decision::None;
+        }
+        if (m_unhealthySince.time_since_epoch().count() == 0) {
+            m_unhealthySince = now;
+        }
+        if (!m_engaged && now - m_unhealthySince >= m_engageAfter) {
+            m_engaged = true;
+            return Decision::Engage;
+        }
+        return Decision::None;
+    }
+
+    bool engaged() const { return m_engaged; }
+
+private:
+    std::chrono::milliseconds m_engageAfter;
+    std::chrono::steady_clock::time_point m_unhealthySince{};
+    bool m_engaged{false};
 };
 
 }  // namespace animus::kernel
