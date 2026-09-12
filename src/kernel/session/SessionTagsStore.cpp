@@ -66,7 +66,7 @@ SessionTag SessionTagsStore::Add(const std::string& sessionKey,
 
     auto stmt = m_store->Prepare(
         "INSERT INTO session_tags (session_key, agent_id, tag, source, created_at_unix_ms) "
-        "VALUES (?, ?, ?, ?, ?)");
+        "VALUES (?, ?, ?, ?, ?) RETURNING id");
     if (!stmt) return {};
 
     stmt->BindText(1, sessionKey);
@@ -74,10 +74,11 @@ SessionTag SessionTagsStore::Add(const std::string& sessionKey,
     stmt->BindText(3, tag);
     stmt->BindText(4, source);
     stmt->BindInt64(5, now);
-    stmt->ExecDML();
+    // #76: statement-scoped id via RETURNING.
+    int64_t newTagId = stmt->Step() ? stmt->ColumnInt64(0) : 0;
 
     SessionTag result;
-    result.id = m_store->LastInsertRowId();
+    result.id = newTagId;
     result.session_key = sessionKey;
     result.tag = tag;
     result.source = source;

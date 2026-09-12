@@ -118,7 +118,7 @@ int64_t ConsolidationStore::CreateRun(const ConsolidationRun& run) {
     auto stmt = m_store->Prepare(
         "INSERT INTO consolidation_runs "
         "(agent_id, phase, started_unix_ms, status, summary_json, error) "
-        "VALUES (?, ?, ?, ?, ?, ?)");
+        "VALUES (?, ?, ?, ?, ?, ?) RETURNING id");
     if (!stmt) return 0;
     stmt->BindText(1, run.agent_id);
     stmt->BindText(2, run.phase);
@@ -126,9 +126,10 @@ int64_t ConsolidationStore::CreateRun(const ConsolidationRun& run) {
     stmt->BindText(4, run.status.empty() ? std::string("running") : run.status);
     stmt->BindText(5, run.summary_json.empty() ? std::string("{}") : run.summary_json);
     stmt->BindText(6, run.error);
-    stmt->ExecDML();
-
-    return m_store->LastInsertRowId();
+    // #76: statement-scoped id via RETURNING (consolidation_runs finally
+    // reports real run ids — the audit trail that was silently empty).
+    if (!stmt->Step()) return 0;
+    return stmt->ColumnInt64(0);
 }
 
 bool ConsolidationStore::FinishRun(int64_t runId, const std::string& status,

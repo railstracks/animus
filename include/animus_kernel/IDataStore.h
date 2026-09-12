@@ -91,6 +91,10 @@ public:
     virtual std::unique_ptr<IStatement> Prepare(const std::string& sql) = 0;
 
     // Last inserted row ID (after an INSERT).
+    // DEPRECATED (#76): store-global bookkeeping races with concurrent DML —
+    // on pooled backends it can return another thread's id or 0. New code
+    // MUST use "INSERT ... RETURNING id" + stmt->Step()/ColumnInt64(0).
+    // Retained only for legacy single-threaded paths.
     virtual int64_t LastInsertRowId() = 0;
 
     // Human-readable error message from the last failed operation.
@@ -108,6 +112,9 @@ public:
     // Number of rows affected by the last INSERT/UPDATE/DELETE.
     // SQLite: returns sqlite3_changes().
     // PostgreSQL: returns PQcmdTuples() from last execution.
+    // DEPRECATED (#76): shared across all concurrent callers — a competing
+    // thread's DML can zero it between your ExecDML and your check. Prefer
+    // the statement-scoped IStatement::RowsAffected().
     virtual int64_t Changes() = 0;
 
     // Transaction support.

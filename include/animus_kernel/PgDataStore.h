@@ -23,8 +23,9 @@ namespace animus::kernel {
 // connection and returns it to the pool when the statement is destroyed.
 // Exec() acquires, executes, and returns immediately.
 //
-// LastInsertRowId() tracks the last insert per-connection via thread-local
-// storage set by the statement that performed the INSERT.
+// LastInsertRowId() is DEPRECATED (#76): it max-scans per-connection state
+// across the whole pool, so under concurrent DML it returns another thread's
+// insert id or 0. New code uses "INSERT ... RETURNING id" via the statement.
 // ============================================================================
 
 class PgDataStore : public IDataStore {

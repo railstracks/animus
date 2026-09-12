@@ -205,7 +205,7 @@ MemoryFile MemoryFileStore::CreateFile(const MemoryFile& file) {
         auto stmt = m_store->Prepare(
             "INSERT INTO memory_files "
             "(source_path, file_type, content, content_mutable, agent_id, superseded, created_at_unix_ms, imported_at_unix_ms, status) "
-            "VALUES (?,?,?,?,?,?,?,?,?)");
+            "VALUES (?,?,?,?,?,?,?,?,?) RETURNING id");
         if (!stmt) return {};
         stmt->BindText(1, file.source_path);
         stmt->BindInt64(2, FileTypeToInt(file.file_type));
@@ -216,12 +216,13 @@ MemoryFile MemoryFileStore::CreateFile(const MemoryFile& file) {
         stmt->BindInt64(7, createdAt);
         stmt->BindInt64(8, importedAt);
         stmt->BindInt(9, static_cast<int64_t>(file.status));
-        stmt->ExecDML();
-        if (!DidWriteRows(stmt.get())) {
-            ALOG_WARNING("memory_files", "create failed: " << m_store->ErrMsg());
+        // #76: statement-scoped id via RETURNING (the Sep 10 file_write
+        // create-phantom shape — row committed, id lost to the shared scan).
+        if (!stmt->Step()) {
+            ALOG_WARNING("memory_files", "create failed (no RETURNING row): " << m_store->ErrMsg());
             return {};
         }
-        newId = m_store->LastInsertRowId();
+        newId = stmt->ColumnInt64(0);
         // stmt destroyed here — releases statement before GetFile reuses the connection
     }
 

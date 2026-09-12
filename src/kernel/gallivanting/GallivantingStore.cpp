@@ -152,9 +152,9 @@ GallivantingThread GallivantingStore::CreateThread(const GallivantingThread& thr
     const int64_t now = NowMs();
     int64_t newId = 0;
 
-    if (m_store->Dialect() == DataStoreDialect::PostgreSQL) {
-        // Postgres: use RETURNING id to get the new row ID directly,
-        // avoiding the LastInsertRowId() cross-connection timing issue.
+    // #76: RETURNING works uniformly on both dialects (SQLite >= 3.35) —
+    // the dialect fork existed only because LastInsertRowId() raced on PG.
+    {
         auto stmt = m_store->Prepare(
             "INSERT INTO gallivanting_threads "
             "(agent_id, name, description, sdt_tags, prompt_template, enabled, created_at_unix_ms, updated_at_unix_ms) "
@@ -173,26 +173,6 @@ GallivantingThread GallivantingStore::CreateThread(const GallivantingThread& thr
             newId = stmt->ColumnInt64(0);
         }
         stmt->Finalize();
-    } else {
-        // SQLite: LastInsertRowId() works reliably.
-        auto stmt = m_store->Prepare(
-            "INSERT INTO gallivanting_threads "
-            "(agent_id, name, description, sdt_tags, prompt_template, enabled, created_at_unix_ms, updated_at_unix_ms) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        if (!stmt) return {};
-
-        stmt->BindText(1, thread.agent_id);
-        stmt->BindText(2, thread.name);
-        stmt->BindText(3, thread.description);
-        stmt->BindText(4, thread.sdt_tags_json.empty() ? std::string("[]") : thread.sdt_tags_json);
-        stmt->BindText(5, thread.prompt_template);
-        stmt->BindInt64(6, thread.enabled ? 1 : 0);
-        stmt->BindInt64(7, now);
-        stmt->BindInt64(8, now);
-        stmt->ExecDML();
-        stmt->Finalize();
-
-        newId = m_store->LastInsertRowId();
     }
 
     auto created = GetThread(newId);
@@ -306,7 +286,7 @@ GallivantingSession GallivantingStore::CreateSession(const GallivantingSession& 
         "INSERT INTO gallivanting_sessions "
         "(thread_id, agent_id, started_at_unix_ms, duration_ms, "
         "summary, outcome, sdt_scores, tools_used, created_at_unix_ms) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id");
     if (!stmt) return {};
 
     stmt->BindInt64(1, session.thread_id);
@@ -318,10 +298,11 @@ GallivantingSession GallivantingStore::CreateSession(const GallivantingSession& 
     stmt->BindText(7, session.sdt_scores_json.empty() ? std::string("{}") : session.sdt_scores_json);
     stmt->BindText(8, session.tools_used_json.empty() ? std::string("[]") : session.tools_used_json);
     stmt->BindInt64(9, now);
-    stmt->ExecDML();
+    // #76: statement-scoped id via RETURNING.
+    if (!stmt->Step()) return {};
 
     GallivantingSession created = session;
-    created.id = m_store->LastInsertRowId();
+    created.id = stmt->ColumnInt64(0);
     created.created_at_unix_ms = now;
     return created;
 }

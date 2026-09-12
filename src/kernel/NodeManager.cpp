@@ -93,17 +93,18 @@ NodeManager::GeneratedCredentials NodeManager::GenerateCredentials(const std::st
 
     auto stmt = m_store->Prepare(
         "INSERT INTO node_tokens (token_hash, signing_key_hash, description, created_at_unix_ms, revoked) "
-        "VALUES (?,?,?,?,0)");
+        "VALUES (?,?,?,?,0) RETURNING id");
     if (!stmt) return result;
     stmt->BindText(1, hash);
     stmt->BindText(2, signingKeyHash);
     stmt->BindText(3, description);
     stmt->BindInt64(4, NowMs());
     stmt->BindInt64(4, NowMs());
-    stmt->ExecDML();
+    // #76: statement-scoped id via RETURNING.
+    int64_t newTokenId = stmt->Step() ? stmt->ColumnInt64(0) : 0;
 
     NodeToken t;
-    t.id = m_store->LastInsertRowId();
+    t.id = newTokenId;
     t.token = token;
     t.token_hash = hash;
     t.signing_key = signingKey;
