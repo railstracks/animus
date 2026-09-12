@@ -23,15 +23,22 @@
 namespace animus::kernel::memory {
 namespace {
 
+// #51: monotonic quality mapping, score = q/(1+q) with q >= 0 the raw
+// match quality (higher = better). The previous 1/(1+x) mapping inverted
+// both backends: PG ts_rank is higher-is-better (best match -> LOWEST
+// score, all weak OR-matches tied at ~0.9914), and SQLite FTS5 bm25()
+// is negative-is-better (clamping negatives to 0 flattened every decent
+// match to exactly 1.0). The Search() merge sorts by this value, so the
+// inversion reordered the final agent-facing result list worst-first.
 double ScoreFromBm25(double bm25Value) {
-    const double normalized = bm25Value < 0.0 ? 0.0 : bm25Value;
-    return 1.0 / (1.0 + normalized);
+    const double quality = bm25Value < 0.0 ? -bm25Value : 0.0;
+    return quality / (1.0 + quality);
 }
 
 double ScoreFromTsRank(double tsRank) {
-    // ts_rank produces values typically 0.01–10+.
-    // Normalize to 0–1 range similar to ScoreFromBm25.
-    return 1.0 / (1.0 + tsRank);
+    // ts_rank produces values typically 0.01–10+ (higher = better match).
+    const double quality = tsRank < 0.0 ? 0.0 : tsRank;
+    return quality / (1.0 + quality);
 }
 
 } // namespace
@@ -147,10 +154,17 @@ void MemorySearch::EnsureSchema() {
         )");
 
         // Backfill for observations FTS.
+        // #51: external-content FTS5 proxies rowid/column reads — and even
+        // COUNT(*) — to the content table, so "NOT IN (SELECT rowid FROM
+        // observations_fts)" matched nothing: the backfill was a structural
+        // no-op, and rows written before this schema existed (restores,
+        // fresh DBs, writes preceding the first MemorySearch construction)
+        // were never indexed and never self-healed. The _docsize shadow
+        // table holds the actual index membership.
         store->Exec(
             "INSERT INTO observations_fts(rowid, text) "
             "SELECT id, text FROM observations "
-            "WHERE id NOT IN (SELECT rowid FROM observations_fts)");
+            "WHERE id NOT IN (SELECT id FROM observations_fts_docsize)");
 
         // Verify FTS sync — force rebuild if counts diverge
         auto obsStats = VerifyFtsSync("observations");
@@ -237,10 +251,13 @@ void MemorySearch::EnsureDiaryFtsSchema() {
         )");
 
         // Backfill any rows that exist but aren't indexed yet.
+        // #51: membership tested against the _docsize shadow table (index
+        // truth) — external-content rowid reads are content-proxied and
+        // made the previous form a permanent no-op.
         store->Exec(
             "INSERT INTO diary_entries_fts(rowid, content) "
             "SELECT id, content FROM diary_entries "
-            "WHERE id NOT IN (SELECT rowid FROM diary_entries_fts)");
+            "WHERE id NOT IN (SELECT id FROM diary_entries_fts_docsize)");
     } else {
         // PostgreSQL: add tsvector column + GIN index for diary_entries.
         if (!schema::ColumnExists(store, "diary_entries", "search_vector")) {
@@ -371,7 +388,10 @@ MemorySearch::FtsSyncStats MemorySearch::VerifyFtsSync(const std::string& domain
             if (srcStmt && srcStmt->Step()) {
                 stats.source_count = srcStmt->ColumnInt64(0);
             }
-            auto ftsStmt = store->Prepare("SELECT COUNT(*) FROM diary_entries_fts");
+            // #51: index truth via shadow table — COUNT(*) on the
+            // external-content FTS table itself is content-proxied and
+            // always equals the source count.
+            auto ftsStmt = store->Prepare("SELECT COUNT(*) FROM diary_entries_fts_docsize");
             if (ftsStmt && ftsStmt->Step()) {
                 stats.fts_count = ftsStmt->ColumnInt64(0);
             }
@@ -380,7 +400,7 @@ MemorySearch::FtsSyncStats MemorySearch::VerifyFtsSync(const std::string& domain
             if (srcStmt && srcStmt->Step()) {
                 stats.source_count = srcStmt->ColumnInt64(0);
             }
-            auto ftsStmt = store->Prepare("SELECT COUNT(*) FROM observations_fts");
+            auto ftsStmt = store->Prepare("SELECT COUNT(*) FROM observations_fts_docsize");
             if (ftsStmt && ftsStmt->Step()) {
                 stats.fts_count = ftsStmt->ColumnInt64(0);
             }
@@ -586,6 +606,9 @@ std::vector<MemorySearchResult> MemorySearch::Search(
                 "FROM observations o "
                 "JOIN memory_layers ml ON ml.id = o.layer_id "
                 "WHERE o.search_vector @@ to_tsquery('english', ?) AND ml.agent_id=? "
+                // #51: retired/superseded observations no longer surface —
+                // previously they ranked at full strength (labelled but unfiltered).
+                "AND o.memory_state <> 2 AND o.superseded_by = 0 "
                 "ORDER BY ts_rank(o.search_vector, to_tsquery('english', ?)) DESC LIMIT ?");
             if (stmt) {
                 stmt->BindText(1, tsQuery);
@@ -619,6 +642,7 @@ std::vector<MemorySearchResult> MemorySearch::Search(
                 "JOIN observations o ON o.id = observations_fts.rowid "
                 "JOIN memory_layers ml ON ml.id = o.layer_id "
                 "WHERE observations_fts MATCH ? AND ml.agent_id=? "
+                "AND o.memory_state <> 2 AND o.superseded_by = 0 "
                 "ORDER BY bm25(observations_fts) LIMIT ?");
             if (stmt) {
                 stmt->BindText(1, FtsQueryFromNaturalLanguage(query));

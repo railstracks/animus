@@ -156,6 +156,41 @@ void MemoryStore::EnsureSchema() {
                  "duplicates remain?): " << m_store->ErrMsg());
     }
 
+    // #51: retire exact-duplicate ACTIVE observations (same layer, agent,
+    // text) keeping the oldest of each group. Formation of new duplicates
+    // stopped with statement-scoped ids (#76/#80); this heals the residue
+    // idempotently at boot. Superseded rows are revision history and are
+    // left untouched.
+    {
+        auto dupes = m_store->Prepare(
+            "SELECT id FROM observations o "
+            "WHERE o.memory_state <> 2 AND o.superseded_by = 0 "
+            "AND EXISTS (SELECT 1 FROM observations o2 "
+            "WHERE o2.memory_state <> 2 AND o2.superseded_by = 0 "
+            "AND o2.layer_id = o.layer_id AND o2.agent_id = o.agent_id "
+            "AND o2.text = o.text AND o2.id < o.id)");
+        std::vector<int64_t> dupeIds;
+        while (dupes && dupes->Step()) {
+            dupeIds.push_back(dupes->ColumnInt64(0));
+        }
+        for (int64_t dupeId : dupeIds) {
+            auto retire = m_store->Prepare(
+                "UPDATE observations SET memory_state = 2, updated_at_unix_ms = ? "
+                "WHERE id = ? AND memory_state <> 2");
+            if (retire && retire->BindInt64(1, NowUnixMs())
+                       && retire->BindInt64(2, dupeId)) {
+                retire->Step();
+            } else {
+                ALOG_WARNING("memory", "duplicate-observation retire failed for id "
+                          << dupeId << ": " << m_store->ErrMsg());
+            }
+        }
+        if (!dupeIds.empty()) {
+            ALOG_INFO("memory", "retired " << dupeIds.size()
+                   << " exact-duplicate observation(s) at schema init");
+        }
+    }
+
     schema::CreateTable(m_store, R"(
         CREATE TABLE IF NOT EXISTS layer_perspectives (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

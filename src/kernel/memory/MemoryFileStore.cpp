@@ -165,10 +165,13 @@ void MemoryFileStore::EnsureSchema() {
         )");
 
         // Backfill existing rows into FTS table.
+        // #51: membership tested against the _docsize shadow table (index
+        // truth) — external-content rowid reads are content-proxied and
+        // made the previous form a permanent no-op.
         m_store->Exec(
             "INSERT INTO memory_files_fts(rowid, content) "
             "SELECT id, content FROM memory_files "
-            "WHERE id NOT IN (SELECT rowid FROM memory_files_fts)");
+            "WHERE id NOT IN (SELECT id FROM memory_files_fts_docsize)");
     } else {
         // PostgreSQL: add tsvector column + GIN index.
         if (!schema::ColumnExists(m_store, "memory_files", "search_vector")) {

@@ -98,7 +98,7 @@ int TestCrossDomainSearch() {
     diary.session_id = "";
     diaryStore.Create(diary);
 
-    const auto allResults = search.Search("orionsignal", 0, MemorySearchDomain{}, 50);
+    const auto allResults = search.Search("orionsignal", "default", MemorySearchDomain{}, 50);
     Assert(!allResults.empty(), "search should return results");
     Assert(HasDomain(allResults, "observation"), "should include observation result");
     Assert(HasDomain(allResults, "ontology"), "should include ontology result");
@@ -110,12 +110,90 @@ int TestCrossDomainSearch() {
     filesOnly.ontology = false;
     filesOnly.raw_files = true;
     filesOnly.diary = false;
-    const auto fileResults = search.Search("orionsignal", 0, filesOnly, 20);
+    const auto fileResults = search.Search("orionsignal", "default", filesOnly, 20);
     Assert(!fileResults.empty(), "files-only search should return results");
     Assert(HasDomain(fileResults, "memory_file"), "files-only search should include memory_file");
     Assert(!HasDomain(fileResults, "observation"), "files-only search should exclude observation");
     Assert(!HasDomain(fileResults, "ontology"), "files-only search should exclude ontology");
     Assert(!HasDomain(fileResults, "diary"), "files-only search should exclude diary");
+
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
+int TestRankingAndFiltering() {
+    std::cerr << "  [MemorySearch] ranking monotonic + retired filtering...\n";
+    const auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+
+    MemoryStore memoryStore(&dataStore);
+    MemoryLayer layer;
+    layer.name = "day";
+    layer.horizon = "1 day";
+    layer.sort_order = 0;
+    layer.enabled = true;
+    auto createdLayer = memoryStore.CreateLayer(layer);
+    Assert(createdLayer.id > 0, "layer should be created");
+
+    auto makeObs = [&](const std::string& text) {
+        Observation obs;
+        obs.layer_id = createdLayer.id;
+        obs.agent_id = "default";
+        obs.text = text;
+        obs.source = "tests";
+        return memoryStore.CreateObservationForAgent("default", obs);
+    };
+
+    auto strong = makeObs("kestrelmark alpha beacon delta echo focus");
+    auto weak = makeObs("kestrelmark unrelated filler words only");
+    Assert(strong.id > 0 && weak.id > 0, "observations should be created");
+
+    auto retired = makeObs("sunsetword retired marker unique");
+    auto superseded = makeObs("tideword superseded marker unique");
+    Assert(retired.id > 0 && superseded.id > 0, "filter-test observations created");
+    dataStore.Exec("UPDATE observations SET memory_state = 2 WHERE id = "
+                   + std::to_string(retired.id));
+    dataStore.Exec("UPDATE observations SET superseded_by = 1 WHERE id = "
+                   + std::to_string(superseded.id));
+
+    makeObs("mirrorword duplicate body text alpha");
+    makeObs("mirrorword duplicate body text alpha");
+
+    MemoryFileStore memoryFileStore(&dataStore);
+    OntologyStore ontologyStore(&dataStore);
+    DiaryStore diaryStore(&dataStore);
+    MemoryStore secondPass(&dataStore);
+    MemorySearch search(&secondPass, &ontologyStore, &memoryFileStore, &diaryStore);
+
+    auto ranked = search.Search("kestrelmark alpha beacon delta echo focus", "default",
+                                MemorySearchDomain{}, 20);
+    int strongIdx = -1, weakIdx = -1;
+    for (size_t i = 0; i < ranked.size(); ++i) {
+        if (ranked[i].domain == "observation" && ranked[i].id == strong.id) strongIdx = (int)i;
+        if (ranked[i].domain == "observation" && ranked[i].id == weak.id) weakIdx = (int)i;
+    }
+    Assert(strongIdx >= 0 && weakIdx >= 0, "both ranked observations present");
+    if (strongIdx >= 0 && weakIdx >= 0) {
+        Assert(strongIdx < weakIdx, "stronger match must rank above weaker");
+        Assert(ranked[strongIdx].relevance > ranked[weakIdx].relevance,
+               "stronger match must have strictly higher relevance");
+    }
+
+    auto sunset = search.Search("sunsetword", "default", MemorySearchDomain{}, 20);
+    bool retiredSurfaced = false;
+    for (const auto& r : sunset) if (r.id == retired.id) retiredSurfaced = true;
+    Assert(!retiredSurfaced, "retired observation must not surface in search");
+    auto tide = search.Search("tideword", "default", MemorySearchDomain{}, 20);
+    bool supersededSurfaced = false;
+    for (const auto& r : tide) if (r.id == superseded.id) supersededSurfaced = true;
+    Assert(!supersededSurfaced, "superseded observation must not surface in search");
+
+    auto mirror = search.Search("mirrorword", "default", MemorySearchDomain{}, 20);
+    int mirrorCount = 0;
+    for (const auto& r : mirror)
+        if (r.domain == "observation" && r.text.find("mirrorword") != std::string::npos)
+            mirrorCount++;
+    Assert(mirrorCount == 1, "exact-duplicate observations deduplicated");
 
     std::filesystem::remove(dbPath);
     return 0;
@@ -127,6 +205,7 @@ int main() {
     std::cerr << "\n=== Memory Search Tests ===\n\n";
 
     TestCrossDomainSearch();
+    TestRankingAndFiltering();
 
     std::cerr << "\n";
     if (g_failures == 0) {
