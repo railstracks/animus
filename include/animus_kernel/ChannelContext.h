@@ -89,6 +89,13 @@ struct PollerRuntime {
     /// Check and record a string event ID (for WS-based connectors).
     bool RememberEventStr(const std::string& id) {
         if (seenEventStrIds.count(id)) return false;
+        if (seenEventStrIds.size() >= kMaxSeenIds) {
+            // Dedup cache, not a ledger - arbitrary eviction is fine.
+            // Bounded like the int64 variant: a 24/7 daemon must not leak.
+            size_t toRemove = seenEventStrIds.size() / 2;
+            auto it = seenEventStrIds.begin();
+            for (size_t i = 0; i < toRemove; ++i) { it = seenEventStrIds.erase(it); }
+        }
         seenEventStrIds.insert(id);
         return true;
     }

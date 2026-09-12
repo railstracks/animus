@@ -142,7 +142,15 @@ private:
     // Null before RunLoop starts and after Stop.
     std::unique_ptr<ConnectionSupervisor> m_supervisor;
 
-    void PollLoop();  // explicit degraded mode (config transport=poll)
+    // #60: automatic degraded mode. While the WS is unhealthy beyond the
+    // configured grace, the RunLoop thread bridges to the poll transport;
+    // the gate owns the engage/disengage hysteresis. Both poll modes run
+    // only on the RunLoop thread - never concurrently.
+    std::atomic<bool> m_pollFallbackActive{false};
+    std::string m_pollOwnAddress;  // lazily-resolved self-send guard (poll)
+
+    void PollLoop();   // explicit degraded mode (config transport=poll)
+    bool PollOnce();   // one HTTP poll pass (shared by both poll modes)
     void ProcessMessage(const Json::Value& msg);
 };
 
