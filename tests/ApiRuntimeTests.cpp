@@ -966,6 +966,9 @@ int TestFilesResultPaths() {
     r = fx.runtime->ExecuteAction("testpkg", "emit escape", "agent", Json::Value());
     Assert(!r["success"].asBool() && !r.isMember("files"),
            "escaping declaration still rejected, files stripped");
+    return 0;
+}
+
 // #119 opts.timeout_s + request-template timeout_s — long-request APIs
 // (pixellab field test: image generation routinely takes 20-45s, default 30
 // races). Fixture /slow sleeps 1.2s; timeout_s=1 must fail transport,
