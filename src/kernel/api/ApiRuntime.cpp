@@ -459,6 +459,14 @@ Json::Value DoHttp(BridgeContext* bc, const std::string& method, lua_State* L, i
     req.url = url;
     req.timeout_seconds = 30;
     if (lua_istable(L, optsIdx)) {
+        // #119 opts.timeout_s — long-request APIs (image generation routinely
+        // takes 20-45s; found field-testing the pixellab package). Clamp 1-300.
+        lua_getfield(L, optsIdx, "timeout_s");
+        if (lua_isnumber(L, -1)) {
+            int t = static_cast<int>(lua_tonumber(L, -1));
+            if (t >= 1 && t <= 300) req.timeout_seconds = t;
+        }
+        lua_pop(L, 1);
         lua_getfield(L, optsIdx, "headers");
         if (lua_istable(L, -1)) {
             lua_pushnil(L);
@@ -1170,7 +1178,11 @@ Json::Value ApiRuntime::ExecuteInternal(const std::string& packageName,
         HttpClient::Request hreq;
         hreq.method = method;
         hreq.url = url;
-        hreq.timeout_seconds = 30;
+        // connection templates: same long-request allowance as ctx.http (#119)
+        {
+            const int tt = reqTmpl.get("timeout_s", 30).asInt();
+            hreq.timeout_seconds = (tt >= 1 && tt <= 300) ? tt : 30;
+        }
         if (reqTmpl.isMember("headers") && reqTmpl["headers"].isObject()) {
             for (const std::string& h : reqTmpl["headers"].getMemberNames()) {
                 std::string hv = Interpolate(reqTmpl["headers"][h].asString(), liveState, args,
