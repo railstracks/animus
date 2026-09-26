@@ -941,6 +941,31 @@ int TestHookContext() {
     return 0;
 }
 
+// #120 files result: relative-path declarations resolve against the package
+// filespace (same namespace as ctx.fs.write), not the daemon CWD. Found
+// field-testing the pixellab package: every relative entry was rejected as
+// "file path escapes package filespace" though the writes themselves landed.
+// Escape attempts must still be rejected, and verified entries carry bytes.
+int TestFilesResultPaths() {
+    std::cerr << "  [runtime] files result path resolution...\n";
+    Fixture fx;
+    std::string extra = R"({"name": "emit file", "kind": "action", "description": "d",
+        "script": "function run(ctx) ctx.fs.write('out.bin', 'hello') return {output='wrote', files={{path='out.bin', description='artifact'}}} end"},)"
+        R"({"name": "emit escape", "kind": "action", "description": "d",
+        "script": "function run(ctx) return {files={{path='../../etc/passwd'}}} end"})";
+    InstallFixturePkg(fx, extra);
+
+    auto r = fx.runtime->ExecuteAction("testpkg", "emit file", "agent", Json::Value());
+    Assert(r["success"].asBool(), "relative files path accepted");
+    Assert(r["files"].size() == 1 && r["files"][0]["bytes"].asInt64() == 5,
+           "files entry verified with byte count");
+
+    r = fx.runtime->ExecuteAction("testpkg", "emit escape", "agent", Json::Value());
+    Assert(!r["success"].asBool() && !r.isMember("files"),
+           "escaping declaration still rejected, files stripped");
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -953,6 +978,7 @@ int main() {
     TestSandboxGlobals();
     TestFsAndHttpBudget();
     TestHookContext();
+    TestFilesResultPaths();
     if (g_failures == 0) std::cerr << "All api runtime tests passed.\n";
     else std::cerr << g_failures << " failures.\n";
     return g_failures == 0 ? 0 : 1;
