@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <filesystem>
 #include <cstring>
 #include <map>
@@ -118,6 +119,8 @@ struct HttpServer {
                     continue;
                 }
             }
+            if (lastPath.rfind("/slow", 0) == 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1200));
             std::string body = "{\"ok\":true,\"path\":\"" + lastPath + "\"}";
             std::string resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
                                "Content-Length: " + std::to_string(body.size()) +
@@ -941,6 +944,69 @@ int TestHookContext() {
     return 0;
 }
 
+// #120 files result: relative-path declarations resolve against the package
+// filespace (same namespace as ctx.fs.write), not the daemon CWD. Found
+// field-testing the pixellab package: every relative entry was rejected as
+// "file path escapes package filespace" though the writes themselves landed.
+// Escape attempts must still be rejected, and verified entries carry bytes.
+int TestFilesResultPaths() {
+    std::cerr << "  [runtime] files result path resolution...\n";
+    Fixture fx;
+    std::string extra = R"({"name": "emit file", "kind": "action", "description": "d",
+        "script": "function run(ctx) ctx.fs.write('out.bin', 'hello') return {output='wrote', files={{path='out.bin', description='artifact'}}} end"},)"
+        R"({"name": "emit escape", "kind": "action", "description": "d",
+        "script": "function run(ctx) return {files={{path='../../etc/passwd'}}} end"})";
+    InstallFixturePkg(fx, extra);
+
+    auto r = fx.runtime->ExecuteAction("testpkg", "emit file", "agent", Json::Value());
+    Assert(r["success"].asBool(), "relative files path accepted");
+    Assert(r["files"].size() == 1 && r["files"][0]["bytes"].asInt64() == 5,
+           "files entry verified with byte count");
+
+    r = fx.runtime->ExecuteAction("testpkg", "emit escape", "agent", Json::Value());
+    Assert(!r["success"].asBool() && !r.isMember("files"),
+           "escaping declaration still rejected, files stripped");
+    return 0;
+}
+
+// #119 opts.timeout_s + request-template timeout_s — long-request APIs
+// (pixellab field test: image generation routinely takes 20-45s, default 30
+// races). Fixture /slow sleeps 1.2s; timeout_s=1 must fail transport,
+// timeout_s=5 must succeed. Template site gets the same pair via JSON.
+int TestHttpTimeoutOption() {
+    std::cerr << "  [runtime] http timeout_s option (script + template)...\n";
+    Fixture fx;
+    std::string extra = R"({"name": "slow fetch", "kind": "action", "description": "d",
+        "parameters": {"wait": {"type": "integer", "required": true}},
+        "script": "function run(ctx) local r = ctx.http.get(ctx.package.get_state('base_url')..'/slow', {timeout_s = ctx.args.wait}) return {output='status '..tostring(r.status), data={err=tostring(r.error)}} end"},)"
+        R"({"name": "slow template", "kind": "action", "description": "d",
+        "parameters": {"wait": {"type": "integer", "required": true}},
+        "request": {"method": "GET", "url": "{{state.base_url}}/slow", "timeout_s": 1,
+                    "headers": {"Authorization": "Bearer {{state.token}}"}},
+        "script": "function run(ctx) local r = ctx.request or {} return {output='status '..tostring(r.status)} end"})";
+    InstallFixturePkg(fx, extra);
+
+    Json::Value args1;
+    args1["wait"] = 1;
+    auto r = fx.runtime->ExecuteAction("testpkg", "slow fetch", "agent", args1);
+    Assert(r["success"].asBool() && r["output"].asString() == "status 0",
+           "script timeout_s=1 hits transport timeout");
+    Assert(r["data"]["err"].asString().find("Timeout") != std::string::npos,
+           "timeout surfaces as transport error");
+
+    Json::Value args5;
+    args5["wait"] = 5;
+    r = fx.runtime->ExecuteAction("testpkg", "slow fetch", "agent", args5);
+    Assert(r["success"].asBool() && r["output"].asString() == "status 200",
+           "script timeout_s=5 rides out the slow endpoint");
+
+    r = fx.runtime->ExecuteAction("testpkg", "slow template", "agent", args1);
+    Assert(r["success"].asBool() && r["output"].asString() == "status 0",
+           "template timeout_s honored (1s vs 1.2s endpoint)");
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -953,6 +1019,8 @@ int main() {
     TestSandboxGlobals();
     TestFsAndHttpBudget();
     TestHookContext();
+    TestFilesResultPaths();
+    TestHttpTimeoutOption();
     if (g_failures == 0) std::cerr << "All api runtime tests passed.\n";
     else std::cerr << g_failures << " failures.\n";
     return g_failures == 0 ? 0 : 1;
