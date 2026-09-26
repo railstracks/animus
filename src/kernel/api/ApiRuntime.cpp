@@ -1341,6 +1341,12 @@ Json::Value ApiRuntime::ExecuteInternal(const std::string& packageName,
         for (const auto& f : result["files"]) {
             if (!f.isObject() || !f.isMember("path")) continue;
             fs::path p(f["path"].asString());
+            // Scripts declare files relative to the package filespace (the
+            // same namespace ctx.fs.write takes). Canonicalizing the raw
+            // declaration resolves it against the daemon CWD instead — every
+            // relative entry then reads as an escape. Join first; absolute
+            // declarations still face the containment check below.
+            if (p.is_relative()) p = root / p;
             std::error_code nec;
             auto canon = fs::weakly_canonical(p, nec);
             auto rootCanon = fs::weakly_canonical(root, nec);
