@@ -1147,7 +1147,7 @@ int TestLongpollPostBody() {
          "script": "function run(ctx) return {dispatches={{reason='poll', prompt='seen'}}} end"}
       ],
       "connections": [
-        {"name": "finsight_drain", "type": "longpoll",
+        {"name": "finsight-drain", "type": "longpoll",
          "url_template": "{{state.base_url}}/api/v1/bridge/drain",
          "headers_template": "{\"Authorization\": \"Bearer {{state.token}}\", \"X-Finsight-Target\": \"{{state.target_id}}\"}",
          "poll": {"method": "POST", "interval_s": 15, "cursor_path": "next_since_seq",
