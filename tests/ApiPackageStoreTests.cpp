@@ -358,6 +358,15 @@ int TestManifestInstall() {
         Rejects(R"({"kind":"api_package","name":"nopoll","version":"1","description":"x",
                   "connections":[{"name":"c","type":"longpoll","url_template":"x"}]})",
                 "poll", "longpoll without poll rejected");
+        Rejects(R"({"kind":"api_package","name":"badmethod","version":"1","description":"x",
+                  "connections":[{"name":"c","type":"longpoll","url_template":"x",
+                                  "poll":{"interval_s":15,"cursor_path":"a","method":"DELETE"}}]})",
+                "poll.method must be", "unknown poll.method rejected");
+        Rejects(R"({"kind":"api_package","name":"bodyget","version":"1","description":"x",
+                  "connections":[{"name":"c","type":"longpoll","url_template":"x",
+                                  "poll":{"interval_s":15,"cursor_path":"a",
+                                          "body_template":{"a":"b"}}}]})",
+                "requires poll.method", "body_template without POST rejected");
         Rejects(R"({"kind":"api_package","name":"statchema","version":"1","description":"x",
                   "state_schema":{"tok":{"secret":true}}})",
                 "string 'type'", "state_schema entry without type rejected");
