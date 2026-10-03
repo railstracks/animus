@@ -3,6 +3,7 @@
 // transport and the ctx.http budget cap.
 
 #include "animus_kernel/api/ApiRuntime.h"
+#include "animus_kernel/api/ApiConnectionManager.h"
 #include "animus_kernel/api/SecretsVault.h"
 #include "animus_kernel/ApiPackageStore.h"
 #include "animus_kernel/SqliteDataStore.h"
