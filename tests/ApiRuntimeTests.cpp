@@ -3,6 +3,7 @@
 // transport and the ctx.http budget cap.
 
 #include "animus_kernel/api/ApiRuntime.h"
+#include "animus_kernel/api/ApiConnectionManager.h"
 #include "animus_kernel/api/SecretsVault.h"
 #include "animus_kernel/ApiPackageStore.h"
 #include "animus_kernel/SqliteDataStore.h"
@@ -46,6 +47,7 @@ void Assert(bool condition, const std::string& msg) {
 struct HttpServer {
     std::atomic<int> hits{0};
     std::string lastPath;
+    std::string lastMethod;
     std::string lastBody;
     std::string lastAuth;
     std::mutex mutex;
@@ -95,6 +97,7 @@ struct HttpServer {
             {
                 std::lock_guard<std::mutex> lock(mutex);
                 size_t sp = req.find(' ');
+                lastMethod = req.substr(0, sp);
                 lastPath = req.substr(sp + 1, req.find(' ', sp + 1) - sp - 1);
                 if (contentLen) lastBody = req.substr(headerEnd, contentLen);
                 size_t au = req.find("Authorization:");
@@ -1118,6 +1121,129 @@ int TestHttpTimeoutOption() {
     return 0;
 }
 
+// Longpoll POST + poll.body_template — pull-drain transports (finsight wire-
+// up) POST receipts/cursors in the request body. Whole-value refs
+// ({{state.pending_receipts}}) embed as NATIVE JSON: a string state value
+// that parses as JSON (cursor "0", receipts "[{...}]") must arrive as
+// number/array, not stringified — Finsight's Bridge::Drain type-checks.
+// GET regression: default method, params still appended, never a body
+// (libcurl silently turns a bodied GET into a POST — kernel drops it).
+int TestLongpollPostBody() {
+    std::cerr << "  [runtime] longpoll POST + body_template...\n";
+    Fixture fx;
+    std::string manifest = R"({
+      "kind": "api_package", "name": "finsight", "version": "0.0.1",
+      "description": "drain receiver",
+      "state_schema": {
+        "target_id": {"type": "string", "default": "buffett"},
+        "token": {"type": "string", "secret": true},
+        "base_url": {"type": "string", "default": "http://127.0.0.1:PORT"},
+        "seq_cursor": {"type": "string", "default": "0"},
+        "pending_receipts": {"type": "string", "default": "[]"}
+      },
+      "commands": [
+        {"name": "on message", "kind": "hook", "event": "on_message",
+         "description": "drain response",
+         "script": "function run(ctx) return {dispatches={{reason='poll', prompt='seen'}}} end"}
+      ],
+      "connections": [
+        {"name": "finsight-drain", "type": "longpoll",
+         "url_template": "{{state.base_url}}/api/v1/bridge/drain",
+         "headers_template": {"Authorization": "Bearer {{state.token}}", "X-Finsight-Target": "{{state.target_id}}"},
+         "hooks": {"on_message": "on message"},
+         "poll": {"method": "POST", "interval_s": 15, "cursor_path": "next_since_seq",
+                  "body_template": {"since_seq": "{{state.seq_cursor}}", "receipts": "{{state.pending_receipts}}"}}}
+      ]
+    })";
+    size_t p;
+    while ((p = manifest.find("PORT")) != std::string::npos)
+        manifest.replace(p, 4, std::to_string(fx.port));
+    auto pkg = fx.store.InstallFromManifest(manifest, "", "", true);
+    fx.store.SetPackageEnabled(pkg.id, true);
+    fx.store.ApprovePackage(pkg.id);
+    Json::Value state(Json::objectValue);
+    state["token"] = "DRAIN-TOKEN-1";
+    {
+        Json::Value schema;
+        std::istringstream ss(pkg.state_schema);
+        Json::CharReaderBuilder rb;
+        std::string pe;
+        Json::parseFromStream(rb, ss, &schema, &pe);
+        std::string err;
+        fx.vault.SplitStateSecrets(pkg.id, schema, state, err);
+    }
+    Json::StreamWriterBuilder wb;
+    fx.store.SetPackageState(pkg.id, Json::writeString(wb, state));
+
+    ApiConnectionManager mgr(&fx.store, fx.runtime.get(), &fx.http);
+    std::vector<ApiConnectionManager::Dispatch> got;
+    mgr.SetDispatchCallback(
+        [&](const ApiConnectionManager::Dispatch& d) { got.push_back(d); });
+
+    // 1) first POST: cursor "0" + receipts "[]" embed as native JSON
+    Assert(mgr.PollOnce() == 1, "one connection polled");
+    Assert(fx.server.lastMethod == "POST", "poll.method POST issued");
+    {
+        Json::Value body;
+        std::istringstream ss(fx.server.lastBody);
+        Json::CharReaderBuilder rb;
+        std::string e;
+        Json::parseFromStream(rb, ss, &body, &e);
+        Assert(body["since_seq"].isNumeric() && body["since_seq"].asInt() == 0,
+               "cursor string state '0' embedded as native number");
+        Assert(body["receipts"].isArray() && body["receipts"].size() == 0,
+               "receipts '[]' string state embedded as native array");
+    }
+    Assert(fx.server.lastAuth.find("Bearer") != std::string::npos,
+           "bearer header sent");
+    Assert(!got.empty() && got[0].prompt == "seen", "on_message dispatched");
+
+    // 2) whole-value ref stays a REAL array with object elements
+    state["pending_receipts"] = "[{\"event_id\":\"e1\",\"status\":\"ack\"}]";
+    fx.store.SetPackageState(pkg.id, Json::writeString(wb, state));
+    mgr.PollOnce();
+    {
+        Json::Value body;
+        std::istringstream ss(fx.server.lastBody);
+        Json::CharReaderBuilder rb;
+        std::string e;
+        Json::parseFromStream(rb, ss, &body, &e);
+        Assert(body["receipts"].isArray() && body["receipts"].size() == 1 &&
+                   body["receipts"][0]["event_id"].asString() == "e1",
+               "receipts batch embedded as array of objects");
+    }
+
+    // 3) GET regression: default method, params appended, no body
+    {
+        Fixture fx2;
+        std::string m2 = R"({
+          "kind": "api_package", "name": "getter", "version": "0.0.1",
+          "description": "d",
+          "state_schema": {"base_url": {"type": "string", "default": "http://127.0.0.1:PORT"},
+                           "seq_cursor": {"type": "string", "default": "0"}},
+          "commands": [{"name": "on message", "kind": "hook", "event": "on_message",
+                        "description": "d",
+                        "script": "function run(ctx) return {dispatches={{reason='poll', prompt='ok'}}} end"}],
+          "connections": [{"name": "c", "type": "longpoll",
+                           "url_template": "{{state.base_url}}/t",
+                           "poll": {"interval_s": 15, "cursor_path": "next_since_seq",
+                                    "params_template": {"since_seq": "{{state.seq_cursor}}"}}}]
+        })";
+        while ((p = m2.find("PORT")) != std::string::npos)
+            m2.replace(p, 4, std::to_string(fx2.port));
+        auto pkg2 = fx2.store.InstallFromManifest(m2, "", "", true);
+        fx2.store.SetPackageEnabled(pkg2.id, true);
+        fx2.store.ApprovePackage(pkg2.id);
+        ApiConnectionManager mgr2(&fx2.store, fx2.runtime.get(), &fx2.http);
+        Assert(mgr2.PollOnce() == 1, "GET connection polled");
+        Assert(fx2.server.lastMethod == "GET", "default method stays GET");
+        Assert(fx2.server.lastBody.empty(), "GET sends no body");
+        Assert(fx2.server.lastPath.find("since_seq=0") != std::string::npos,
+               "params_template still appended on GET");
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -1133,6 +1259,7 @@ int main() {
     TestFilesResultPaths();
     TestHttpTimeoutOption();
     TestWritesGate();
+    TestLongpollPostBody();
     if (g_failures == 0) std::cerr << "All api runtime tests passed.\n";
     else std::cerr << g_failures << " failures.\n";
     return g_failures == 0 ? 0 : 1;

@@ -25,8 +25,11 @@ struct ApiPackageConnection;
 //
 // For every enabled package connection:
 //   - longpoll: on the poll interval, interpolate url/headers/params from live
-//     package state (secrets included; schema defaults overlaid), GET, parse
-//     the response, extract the cursor via poll.cursor_path, and hand the
+//     package state (secrets included; schema defaults overlaid), issue the
+//     request (GET by default; POST/PUT/PATCH may carry poll.body_template —
+//     string values interpolate, non-string values embed as literal JSON —
+//     for pull-drain transports that need a request body), parse the
+//     response, extract the cursor via poll.cursor_path, and hand the
 //     parsed body to the connection's on_message hook (ApiRuntime::RunHook).
 //   - websocket: not driven here yet (longpoll lands first; ws arrives with
 //     channel-grade supervisor reuse).

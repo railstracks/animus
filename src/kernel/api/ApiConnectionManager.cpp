@@ -242,7 +242,18 @@ ApiConnectionManager::PollOutcome ApiConnectionManager::PollConnection(
     }
 
     HttpClient::Request req;
-    req.method = "GET";
+    // poll.method (default GET). POST/PUT/PATCH may carry a request body
+    // (poll.body_template); anything else falls back to GET with a warning —
+    // the store lint already rejects unknown methods at install time.
+    {
+        const std::string m = poll.get("method", Json::Value("GET")).asString();
+        req.method = (m == "POST" || m == "PUT" || m == "PATCH") ? m : "GET";
+        if (m != req.method)
+            ALOG_WARNING("api-conn", "[" << pkg.name << ":" << conn.name
+                                          << "] unsupported poll.method '" << m
+                                          << "' (GET/POST/PUT/PATCH) — using "
+                                          << req.method);
+    }
     req.url = url;
     req.timeout_seconds = 30;
 
@@ -289,6 +300,84 @@ ApiConnectionManager::PollOutcome ApiConnectionManager::PollConnection(
             req.url += (req.url.find('?') == std::string::npos ? "?" : "&") + qs;
     }
 
+    // Request body from poll.body_template (POST/PUT/PATCH only). String
+    // values interpolate from state — secrets flow into the body and are
+    // masked at logs, same as url/headers. WHOLE-VALUE REFERENCES embed
+    // natively: a body value that is exactly "{{state.key}}" binds the state
+    // value itself, and a string state value that parses as JSON (cursor
+    // "0", receipts "[{...}]") embeds as parsed JSON — pull-drain transports
+    // need arrays/numbers in the body, and a stringified value would be
+    // rejected by the receiving API. Non-string template values embed as
+    // literal JSON. A body on GET is DROPPED, not sent: libcurl silently
+    // flips a bodied GET into a POST via CURLOPT_POSTFIELDS, and the store
+    // lint rejects that combination at install time — this guard is the
+    // runtime backstop.
+    Json::Value bodyTmpl = poll.get("body_template", Json::Value(Json::nullValue));
+    if (!bodyTmpl.isNull()) {
+        if (req.method == "GET") {
+            ALOG_WARNING("api-conn", "[" << pkg.name << ":" << conn.name
+                                         << "] poll.body_template ignored for GET");
+        } else if (!bodyTmpl.isObject()) {
+            ALOG_WARNING("api-conn", "[" << pkg.name << ":" << conn.name
+                                         << "] poll.body_template must be an object — ignored");
+        } else {
+            Json::Value body(Json::objectValue);
+            bool ok = true;
+            for (const std::string& k : bodyTmpl.getMemberNames()) {
+                const Json::Value& tv = bodyTmpl[k];
+                if (!tv.isString()) {
+                    body[k] = tv;  // literal JSON value — embedded natively
+                    continue;
+                }
+                collectSecret(tv.asString());
+                // Whole-value state reference: {{state.key}} alone -> bind the
+                // state value natively (parsed JSON for string-typed state).
+                std::string trimmed = tv.asString();
+                while (!trimmed.empty() && trimmed.front() == ' ') trimmed.erase(0, 1);
+                while (!trimmed.empty() && trimmed.back() == ' ') trimmed.pop_back();
+                bool embedded = false;
+                if (trimmed.rfind("{{state.", 0) == 0 && trimmed.size() >= 4 + 6 &&
+                    trimmed.compare(trimmed.size() - 2, 2, "}}") == 0 &&
+                    trimmed.find("{{", 2) == std::string::npos) {
+                    const std::string ref = trimmed.substr(8, trimmed.size() - 10);  // after "{{state."
+                    const Json::Value* sv = ResolvePath(stateCtx, ref);
+                    if (sv && !sv->isNull()) {
+                        if (sv->isString()) {
+                            Json::Value parsed =
+                                ParseJsonOr(sv->asString(), Json::Value(Json::nullValue));
+                            if (!parsed.isNull()) {
+                                body[k] = parsed;
+                                embedded = true;
+                            }
+                        } else {
+                            body[k] = *sv;
+                            embedded = true;
+                        }
+                    }
+                }
+                if (!embedded) {
+                    std::string v = ApiRuntime::Interpolate(tv.asString(), stateCtx, emptyArgs,
+                                                            {}, ierr);
+                    if (!ierr.empty()) {
+                        ALOG_WARNING("api-conn", "[" << pkg.name << ":" << conn.name
+                                                     << "] body '" << k
+                                                     << "' interpolation: " << ierr);
+                        ok = false;
+                        break;
+                    }
+                    body[k] = v;
+                }
+            }
+            if (ok) {
+                req.body = JsonWriteCompact(body);
+                if (req.headers.find("Content-Type") == req.headers.end())
+                    req.headers["Content-Type"] = "application/json";
+            } else {
+                return o;  // malformed template: no request this tick
+            }
+        }
+    }
+
     // #25 egress gate: connection polls live under the same package scope.
     {
         std::string egressHost;
@@ -302,7 +391,7 @@ ApiConnectionManager::PollOutcome ApiConnectionManager::PollConnection(
         }
     }
 
-    ALOG_INFO("api-conn", "[" << pkg.name << ":" << conn.name << "] poll GET "
+    ALOG_INFO("api-conn", "[" << pkg.name << ":" << conn.name << "] poll " << req.method << " "
                               << ApiRuntime::MaskSecrets(req.url, secretValues));
 
     // #25: polls follow redirects under the same per-hop package scope
