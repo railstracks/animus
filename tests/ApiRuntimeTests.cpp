@@ -1149,7 +1149,8 @@ int TestLongpollPostBody() {
       "connections": [
         {"name": "finsight-drain", "type": "longpoll",
          "url_template": "{{state.base_url}}/api/v1/bridge/drain",
-         "headers_template": "{\"Authorization\": \"Bearer {{state.token}}\", \"X-Finsight-Target\": \"{{state.target_id}}\"}",
+         "headers_template": {"Authorization": "Bearer {{state.token}}", "X-Finsight-Target": "{{state.target_id}}"},
+         "hooks": {"on_message": "on message"},
          "poll": {"method": "POST", "interval_s": 15, "cursor_path": "next_since_seq",
                   "body_template": {"since_seq": "{{state.seq_cursor}}", "receipts": "{{state.pending_receipts}}"}}}
       ]
