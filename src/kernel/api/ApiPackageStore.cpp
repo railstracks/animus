@@ -1473,6 +1473,21 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
                     if (!poll.get("interval_s", Json::Value(0)).isNumeric() ||
                         poll.get("interval_s", Json::Value(0)).asDouble() <= 0)
                         lint.Add("longpoll connection '" + conn.name + "': poll.interval_s must be > 0");
+                    const std::string pmethod = poll.get("method", Json::Value("GET")).asString();
+                    if (!pmethod.empty() && pmethod != "GET" && pmethod != "POST" &&
+                        pmethod != "PUT" && pmethod != "PATCH")
+                        lint.Add("longpoll connection '" + conn.name +
+                                 "': poll.method must be GET, POST, PUT or PATCH");
+                    const Json::Value bodyT =
+                        poll.get("body_template", Json::Value(Json::nullValue));
+                    if (!bodyT.isNull()) {
+                        if (!bodyT.isObject())
+                            lint.Add("longpoll connection '" + conn.name +
+                                     "': poll.body_template must be an object");
+                        if (pmethod != "POST" && pmethod != "PUT" && pmethod != "PATCH")
+                            lint.Add("longpoll connection '" + conn.name +
+                                     "': poll.body_template requires poll.method POST, PUT or PATCH");
+                    }
                     if (!poll.get("params_template", Json::Value(Json::objectValue)).isObject())
                         lint.Add("longpoll connection '" + conn.name + "': poll.params_template must be an object");
                     conn.poll = JsonCompact(poll);
