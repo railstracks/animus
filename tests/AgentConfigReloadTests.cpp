@@ -2,6 +2,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <cstdlib>
 
 #include <chrono>
 #include <filesystem>
@@ -187,6 +188,14 @@ int TestReloadFromDisk() {
     }
 
     animus::kernel::KernelConfig config;
+    // #187: per-run temp dataDir isolates the datastore from parallel
+    // suites sharing the ctest CWD. This suite's own boot failure
+    // (providers file path, #186) is unchanged by this — separate ticket.
+    char dataDirBuf[] = "/tmp/animus_agent_cfg_reload_data_XXXXXX";
+    if (!mkdtemp(dataDirBuf)) {
+        return Fail(9, "failed to create temp dataDir (#187)");
+    }
+    config.dataDir = dataDirBuf;
     config.admin.enabled = true;
     config.admin.host = "127.0.0.1";
     config.admin.port = port;
