@@ -201,6 +201,26 @@ int TestReloadFromDisk() {
     config.admin.port = port;
     config.agentStorage.persistToDisk = true;
     config.agentStorage.filePath = cfgPath.string();
+    // #186: mirror the full storage config — the other four storage
+    // configs default to persistToDisk=true with EMPTY paths, which the
+    // kernel refuses loudly (per #95/#163). Absent files boot as
+    // defaults (fresh-install path), matching the AdminServerTests
+    // ws-gate fixture shape.
+    const std::filesystem::path reloadDataDir(dataDirBuf);
+    config.interfaceStorage.persistToDisk = true;
+    config.interfaceStorage.filePath =
+        (reloadDataDir / "interface_reload_test.json").string();
+    config.memory.persistToDisk = true;
+    config.memory.filePath =
+        (reloadDataDir / "memory_reload_test.json").string();
+    config.constitutionStorage.persistToDisk = true;
+    config.constitutionStorage.filePath =
+        (reloadDataDir / "constitution_reload_test.json").string();
+    config.providerStorage.persistToDisk = true;
+    config.providerStorage.providersFilePath =
+        (reloadDataDir / "providers_reload_test.json").string();
+    config.providerStorage.authFilePath =
+        (reloadDataDir / "auth_reload_test.json").string();
 
     animus::kernel::AgentKernel kernel;
     std::string error;
@@ -240,8 +260,66 @@ int TestReloadFromDisk() {
     return 0;
 }
 
+// #186: pin the loud-refusal contract at boot — the pre-fix fixture
+// shape (only agentStorage configured; every other storage config left
+// at its persistToDisk=true + empty-path default) must fail kernel
+// start with a specific diagnostic, not silently boot. Boot order is
+// deterministic (agent -> providers -> interface -> memory ->
+// constitution) and providers run in store mode (the kernel always
+// attaches a config store; an empty file path only disables legacy
+// import there), so the interface validation is the first to fire —
+// the exact refusal this suite used to die on.
+//
+// The failed boot returns before the admin RunLoop thread starts, so
+// no drogon instance is created; running this BEFORE TestReloadFromDisk
+// keeps the good boot the only full boot in the process (a second
+// in-process boot that reaches drogon segfaults — the documented
+// global/drogon lifecycle issue, worked around in AdminServerTests via
+// the --ws-gate-only child).
+int TestBootRefusalLoud() {
+    const std::uint16_t port = ReserveFreePort();
+    if (port == 0) {
+        return Fail(10, "failed to reserve port for refusal test (#186)");
+    }
+
+    char dataDirBuf[] = "/tmp/animus_agent_cfg_refusal_data_XXXXXX";
+    if (!mkdtemp(dataDirBuf)) {
+        return Fail(11, "failed to create temp dataDir (#186)");
+    }
+
+    animus::kernel::KernelConfig config;
+    config.dataDir = dataDirBuf;
+    config.admin.enabled = true;
+    config.admin.host = "127.0.0.1";
+    config.admin.port = port;
+    // Deliberately the pre-fix shape: agentStorage configured, every
+    // other storage config at its persistToDisk=true + empty-path
+    // default. Absent agent file boots as defaults (fresh-install
+    // path), so the boot proceeds to the interface refusal.
+    config.agentStorage.persistToDisk = true;
+    config.agentStorage.filePath =
+        (std::filesystem::path(dataDirBuf) / "agent_refusal_test.json").string();
+
+    animus::kernel::AgentKernel kernel;
+    std::string error;
+    if (kernel.Start(config, &error)) {
+        kernel.Stop();
+        return Fail(12, "#186: kernel booted despite persistence with empty storage paths");
+    }
+    if (error.find("interface config file path must not be empty when persistence is enabled")
+        == std::string::npos) {
+        return Fail(13, "#186: refusal was not loud/specific: " + error);
+    }
+
+    return 0;
+}
+
 } // namespace
 
 int main() {
+    int rc = TestBootRefusalLoud();
+    if (rc != 0) {
+        return rc;
+    }
     return TestReloadFromDisk();
 }
