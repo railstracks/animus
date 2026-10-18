@@ -273,9 +273,19 @@ void OntologyStore::EnsureSchema() {
         )");
 
         // Preserve property but orphan it when evidence is deleted.
+        // #189: this must run BEFORE the delete. The FK action on
+        // linked_observation_id (ON DELETE SET NULL, foreign_keys=ON)
+        // clears the link as part of the delete itself, so an AFTER
+        // DELETE trigger's WHERE linked_observation_id = OLD.id never
+        // matched — the link was already NULL. BEFORE fires while the
+        // link still resolves; nulling it here also makes the FK action
+        // a no-op. The unconditional DROP migrates existing installs off
+        // the defeated AFTER version (IF NOT EXISTS would keep it).
+        m_store->Exec(
+            "DROP TRIGGER IF EXISTS trg_ontology_orphan_property_on_observation_delete");
         m_store->Exec(R"(
-            CREATE TRIGGER IF NOT EXISTS trg_ontology_orphan_property_on_observation_delete
-            AFTER DELETE ON observations
+            CREATE TRIGGER trg_ontology_orphan_property_on_observation_delete
+            BEFORE DELETE ON observations
             BEGIN
                 UPDATE ontology_properties
                 SET linked_observation_id = NULL,

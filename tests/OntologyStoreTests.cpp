@@ -121,6 +121,17 @@ int TestPropertyStateSyncAndOrphaning() {
 
     Assert(memoryStore.DeleteObservation(createdObservation.id),
            "Observation deletion should succeed");
+    // #189: the orphan contract holds AT DELETE TIME (the BEFORE DELETE
+    // trigger fires while the FK link still resolves) — not only after a
+    // rescue sync. Pin it pre-sync.
+    {
+        auto atDelete = ontologyStore.GetProperty(entity->id, "language");
+        Assert(atDelete.has_value(), "Orphaned property still exists at delete time");
+        Assert(!atDelete->linked_observation_id.has_value(),
+               "Orphaned property clears link at delete time");
+        Assert(atDelete->memory_state == MemoryState::Deprecated,
+               "Orphaned property deprecated at delete time (trigger, pre-sync)");
+    }
     ontologyStore.SyncPropertyStatesFromObservations(&memoryStore);
     auto orphaned = ontologyStore.GetProperty(entity->id, "language");
     Assert(orphaned.has_value(), "Orphaned property should still exist");
