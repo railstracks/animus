@@ -316,6 +316,32 @@ void TestNoVault() {
     }
 }
 
+// #186: pin the file-mode loud-refusal contract — persistence
+// enabled with an empty providers path must refuse with a diagnostic,
+// not silently proceed. At kernel boot the manager runs in store mode
+// (empty path is legal there — it only disables legacy import), so the
+// file-mode refusal is pinned here at its implementation site: a bare
+// ProviderManager with no configured store.
+void TestEmptyPathRefusal() {
+    std::cerr << "  [empty-path] file-mode persistence with empty path refuses loudly...\n";
+    ProviderManager mgr;  // no ConfigureStore -> file mode
+    KernelConfig::ProviderConfigStorage s;
+    s.persistToDisk = true;
+    s.providersFilePath = "";
+    s.authFilePath = "";
+    mgr.Configure(s);
+
+    std::string err;
+    Assert(!mgr.LoadProviders(&err), "load must refuse empty providers path");
+    Assert(err.find("providers file path must not be empty when persistence is enabled")
+               != std::string::npos,
+           "load refusal must be specific: " + err);
+    Assert(!mgr.SaveProviders(&err), "save must refuse empty providers path");
+    Assert(err.find("providers file path must not be empty when persistence is enabled")
+               != std::string::npos,
+           "save refusal must be specific: " + err);
+}
+
 int main() {
     std::cerr << "ProviderStore tests:\n";
     TestBootImport();
@@ -323,6 +349,7 @@ int main() {
     TestReloadPreservesRuntime();
     TestReservedNamespace();
     TestNoVault();
+    TestEmptyPathRefusal();
     if (g_failures == 0) std::cerr << "ALL PASSED\n";
     else std::cerr << g_failures << " FAILURE(S)\n";
     return g_failures == 0 ? 0 : 1;
