@@ -497,21 +497,11 @@ int TestAdminServerAndAgentApi() {
         std::filesystem::remove(constitutionPath, ec);
         std::filesystem::remove(providersPath, ec);
         std::filesystem::remove(authPath, ec);
-        // AgentKernel currently uses fixed datastore/session paths.
-        // Clear these to keep this test deterministic across runs.
-        std::filesystem::remove("state/memory.db", ec);
-        std::filesystem::remove("state/sessions.json", ec);
-        std::filesystem::remove("state/sessions.json.migrated", ec);
-        std::filesystem::remove("build/state/memory.db", ec);
-        std::filesystem::remove("build/state/sessions.json", ec);
-        std::filesystem::remove("build/state/sessions.json.migrated", ec);
-        // #163: the kernel's default datastore is CWD-relative "memory.db"
-        // (repo root when run from the build tree) — neither state/ nor
-        // build/state/. Unremoved, it persists across runs and shifts every
-        // session id / count assertion.
-        std::filesystem::remove("memory.db", ec);
-        std::filesystem::remove("memory.db-wal", ec);
-        std::filesystem::remove("memory.db-shm", ec);
+        // #187: the kernel below boots with a per-run temp dataDir (see
+        // the config site), so no CWD-relative memory.db/sessions.json
+        // exist to reset. The legacy removes here also raced parallel
+        // suites on the shared ctest CWD (SQLite "database is locked" /
+        // missing-table flake under ctest -j) and retire with it.
     }
     std::filesystem::create_directories(cfgPath.parent_path());
 
@@ -647,6 +637,15 @@ int TestAdminServerAndAgentApi() {
     }
 
     animus::kernel::KernelConfig config;
+    // #187: per-run temp dataDir isolates this kernel's datastore
+    // (memory.db, sessions.json, api-vault.key, sops/, api-files/) from
+    // parallel suites sharing the ctest CWD; the datastore is empty every
+    // run, so the session id / count assertions stay deterministic.
+    char dataDirBuf[] = "/tmp/animus_admin_srv_data_XXXXXX";
+    if (!mkdtemp(dataDirBuf)) {
+        return Fail(968, "failed to create temp dataDir for admin kernel (#187)");
+    }
+    config.dataDir = dataDirBuf;
     config.admin.enabled = true;
     config.admin.host = "127.0.0.1";
     config.admin.port = port;
@@ -2558,15 +2557,13 @@ int TestWsAuthGate() {
             }
         };
 
-        // Reset the CWD-relative shared datastore exactly like the parent
-        // suite's fixture cleanup: a previous child run persisted the
-        // 'wsgate' user (auth/setup), which would make this boot user-auth
-        // instead of open and fail the control step deterministically.
-        {
-            std::error_code ec;
-            std::filesystem::remove("memory.db", ec);
-            std::filesystem::remove("memory.db-wal", ec);
-            std::filesystem::remove("memory.db-shm", ec);
+        // #187: fresh per-run temp dataDir — no prior state can exist,
+        // so the open-instance control step is deterministic by
+        // construction (the legacy CWD memory.db removes raced parallel
+        // suites on the shared ctest CWD).
+        char dataDirBuf[] = "/tmp/animus_admin_ws_gate_data_XXXXXX";
+        if (!mkdtemp(dataDirBuf)) {
+            return Fail(969, "failed to create temp dataDir for ws-gate kernel (#187)");
         }
 
         const std::uint16_t port2 = ReserveFreePort();
@@ -2575,6 +2572,7 @@ int TestWsAuthGate() {
         }
 
         animus::kernel::KernelConfig config2;
+        config2.dataDir = dataDirBuf;  // #187: per-run datastore isolation
         config2.admin.enabled = true;
         config2.admin.host = "127.0.0.1";
         config2.admin.port = port2;
