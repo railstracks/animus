@@ -1,3 +1,69 @@
+// #185: the admin WS auth gate is SHARED by every admin WS
+// controller — hoisted to file scope from the #95 /ws/chat fix so
+// /ws/observations uses the identical gate, never a duplicated
+// variant: open-instance early-out, single ValidateToken pass
+// (query-param form first, then the Authorization header form),
+// loopback opt-in checked after validation, rejected connections
+// recorded as rate-limiter failures.
+
+bool IsLoopbackIp(const std::string& ip) {
+    return ip == "127.0.0.1" || ip == "::1" || ip == "::ffff:127.0.0.1";
+}
+
+
+bool IsAuthorizedConnection(
+    AdminServer& server,
+    const drogon::HttpRequestPtr& req,
+    const drogon::WebSocketConnectionPtr& conn) {
+    auto& authManager = server.GetAuthManager();
+
+    // Open instance: neither a static token nor user auth is
+    // configured. Mirrors the REST middleware's early-out on
+    // !IsAuthRequired().
+    if (!authManager.IsAuthRequired()) {
+        return true;
+    }
+
+    // Token extraction — the same forms the REST path and the admin
+    // UI use: ?token= query param first (browser WS clients cannot set
+    // headers), then the Authorization: Bearer form.
+    std::string token = req->getParameter("token");
+    if (token.empty()) {
+        const std::string authHeader = req->getHeader("Authorization");
+        static const std::string kBearerPrefix = "Bearer ";
+        if (authHeader.rfind(kBearerPrefix, 0) == 0) {
+            token = authHeader.substr(kBearerPrefix.size());
+        }
+    }
+
+    // Single validation gate, identical to REST: ValidateToken accepts
+    // BOTH the static token and user session tokens, constant-time.
+    // (#95: the old gate admitted every connection whenever the static
+    // token was unset — including user-auth instances where the REST
+    // middleware would 401 — and compared tokens with ==.)
+    const auto [result, userId] = authManager.ValidateToken(token);
+    if (result == AuthResult::Ok || result == AuthResult::AuthNotRequired) {
+        if (conn) {
+            authManager.RecordSuccess(conn->peerAddr().toIp());
+        }
+        return true;
+    }
+
+    // Explicit operator opt-in for local tooling. Checked after token
+    // validation so permitted loopback clients never feed the limiter.
+    if (server.m_config.allowUnauthenticatedLocalhost && conn) {
+        if (IsLoopbackIp(conn->peerAddr().toIp())) {
+            return true;
+        }
+    }
+
+    if (conn) {
+        authManager.RecordFailure(conn->peerAddr().toIp());
+    }
+    return false;
+}
+
+
 class AdminChatWebSocketController
     : public drogon::WebSocketController<AdminChatWebSocketController, false> {
 public:
@@ -394,62 +460,6 @@ private:
         SendJson(conn, payload);
     }
 
-    static bool IsLoopbackIp(const std::string& ip) {
-        return ip == "127.0.0.1" || ip == "::1" || ip == "::ffff:127.0.0.1";
-    }
-
-    static bool IsAuthorizedConnection(
-        AdminServer& server,
-        const drogon::HttpRequestPtr& req,
-        const drogon::WebSocketConnectionPtr& conn) {
-        auto& authManager = server.GetAuthManager();
-
-        // Open instance: neither a static token nor user auth is
-        // configured. Mirrors the REST middleware's early-out on
-        // !IsAuthRequired().
-        if (!authManager.IsAuthRequired()) {
-            return true;
-        }
-
-        // Token extraction — the same forms the REST path and the admin
-        // UI use: ?token= query param first (browser WS clients cannot set
-        // headers), then the Authorization: Bearer form.
-        std::string token = req->getParameter("token");
-        if (token.empty()) {
-            const std::string authHeader = req->getHeader("Authorization");
-            static const std::string kBearerPrefix = "Bearer ";
-            if (authHeader.rfind(kBearerPrefix, 0) == 0) {
-                token = authHeader.substr(kBearerPrefix.size());
-            }
-        }
-
-        // Single validation gate, identical to REST: ValidateToken accepts
-        // BOTH the static token and user session tokens, constant-time.
-        // (#95: the old gate admitted every connection whenever the static
-        // token was unset — including user-auth instances where the REST
-        // middleware would 401 — and compared tokens with ==.)
-        const auto [result, userId] = authManager.ValidateToken(token);
-        if (result == AuthResult::Ok || result == AuthResult::AuthNotRequired) {
-            if (conn) {
-                authManager.RecordSuccess(conn->peerAddr().toIp());
-            }
-            return true;
-        }
-
-        // Explicit operator opt-in for local tooling. Checked after token
-        // validation so permitted loopback clients never feed the limiter.
-        if (server.m_config.allowUnauthenticatedLocalhost && conn) {
-            if (IsLoopbackIp(conn->peerAddr().toIp())) {
-                return true;
-            }
-        }
-
-        if (conn) {
-            authManager.RecordFailure(conn->peerAddr().toIp());
-        }
-        return false;
-    }
-
     // Identity lookup token for #73: the same token the authorization
     // check above consumed. Prefers whichever form carried it (query param
     // first — the admin UI connects with ?token=<session token>; then the
@@ -570,6 +580,20 @@ public:
         const drogon::WebSocketConnectionPtr& wsConnPtr) override {
         AdminServer* server = g_activeAdminServer.load();
         if (!server) {
+            return;
+        }
+
+        // #185: same shared auth gate as /ws/chat — rejected
+        // connections get the observation controller's error shape and
+        // are closed. Authorized connections proceed to filter parse +
+        // subscriber registration; the catch-up replay query params are
+        // untouched by the gate.
+        if (!IsAuthorizedConnection(*server, req, wsConnPtr)) {
+            Json::Value out(Json::objectValue);
+            out["type"] = "error";
+            out["error"] = "unauthorized";
+            SendJson(wsConnPtr, out);
+            wsConnPtr->shutdown();
             return;
         }
 

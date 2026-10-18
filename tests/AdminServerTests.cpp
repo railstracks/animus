@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cerrno>
 #include <cstring>
+#include <map>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -82,6 +83,41 @@ bool ExtractJsonString(const std::string& body, const std::string& key, std::str
         return false;
     }
     *out = match[1].str();
+    return true;
+}
+
+// #194/#185: WS-frame bytes that arrived glued to the 101 handshake
+// in the same TCP recv, keyed by fd. The server can push frames the
+// instant the upgrade completes (the auth gate's rejection, observation
+// replay on connect) and the kernel often coalesces them with the
+// handshake response. ConnectWebSocket stores them here;
+// ReadWebSocketFrame drains them before reading the socket. (Discarding
+// them swallowed rejection frames and broke the ws-gate matrix steps
+// ~13% of runs — #194's real root cause; the busy-poll hypothesis in
+// that ticket was wrong.) Invariants: the store overwrites any stale
+// entry for the fd; drain erases on empty; the non-101 failure path
+// erases (those bytes are an HTTP body, not frames).
+bool ReadExact(int fd, void* buffer, std::size_t size);
+
+std::map<int, std::string> g_wsHandshakeLeftovers;
+
+// ReadExact with the per-fd handshake-leftover buffer drained first.
+bool BufferedReadExact(int fd, void* buffer, std::size_t size) {
+    char* dst = static_cast<char*>(buffer);
+    std::size_t taken = 0;
+    auto it = g_wsHandshakeLeftovers.find(fd);
+    if (it != g_wsHandshakeLeftovers.end()) {
+        while (taken < size && !it->second.empty()) {
+            dst[taken++] = it->second.front();
+            it->second.erase(0, 1);
+        }
+        if (it->second.empty()) {
+            g_wsHandshakeLeftovers.erase(it);
+        }
+    }
+    if (taken < size) {
+        return ReadExact(fd, dst + taken, size - taken);
+    }
     return true;
 }
 
@@ -163,10 +199,22 @@ bool ConnectWebSocket(
         }
     }
 
+    {
+        // #194/#185: keep post-handshake bytes — they are WS frames
+        // the server pushed at upgrade time (auth-gate rejection,
+        // observation replay), often coalesced into this same recv.
+        // Discarding them swallowed the frames the ws-gate matrix
+        // waits for.
+        const std::size_t headerEnd = response.find("\r\n\r\n");
+        if (headerEnd != std::string::npos && response.size() > headerEnd + 4) {
+            g_wsHandshakeLeftovers[fd] = response.substr(headerEnd + 4);
+        }
+    }
     if (response.rfind("HTTP/1.1 101", 0) != 0 && response.rfind("HTTP/1.0 101", 0) != 0) {
         if (responseOut) {
             *responseOut = response;
         }
+        g_wsHandshakeLeftovers.erase(fd);
         ::close(fd);
         return false;
     }
@@ -216,7 +264,7 @@ bool SendWebSocketText(int fd, const std::string& payload) {
 
 bool ReadWebSocketFrame(int fd, int* opcodeOut, std::string* payloadOut) {
     std::uint8_t header[2] = {0, 0};
-    if (!ReadExact(fd, header, sizeof(header))) {
+    if (!BufferedReadExact(fd, header, sizeof(header))) {
         return false;
     }
 
@@ -226,13 +274,13 @@ bool ReadWebSocketFrame(int fd, int* opcodeOut, std::string* payloadOut) {
 
     if (length == 126U) {
         std::uint8_t ext[2] = {0, 0};
-        if (!ReadExact(fd, ext, sizeof(ext))) {
+        if (!BufferedReadExact(fd, ext, sizeof(ext))) {
             return false;
         }
         length = (static_cast<std::uint64_t>(ext[0]) << 8) | ext[1];
     } else if (length == 127U) {
         std::uint8_t ext[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-        if (!ReadExact(fd, ext, sizeof(ext))) {
+        if (!BufferedReadExact(fd, ext, sizeof(ext))) {
             return false;
         }
         length = 0U;
@@ -243,13 +291,13 @@ bool ReadWebSocketFrame(int fd, int* opcodeOut, std::string* payloadOut) {
 
     std::array<std::uint8_t, 4> mask{{0, 0, 0, 0}};
     if (masked) {
-        if (!ReadExact(fd, mask.data(), mask.size())) {
+        if (!BufferedReadExact(fd, mask.data(), mask.size())) {
             return false;
         }
     }
 
     std::vector<std::uint8_t> bytes(length);
-    if (length > 0U && !ReadExact(fd, bytes.data(), bytes.size())) {
+    if (length > 0U && !BufferedReadExact(fd, bytes.data(), bytes.size())) {
         return false;
     }
 
@@ -2676,6 +2724,23 @@ int TestWsAuthGate() {
             return Fail(960, "post-setup unauthenticated ws/chat was not rejected with 'unauthorized'");
         }
 
+        // #185: /ws/observations must reject an unauthenticated
+        // connection on a user-auth instance (same shared gate).
+        int fdObsReject = -1;
+        std::string upgradeObsReject;
+        if (!ConnectWebSocket(config2.admin.host, config2.admin.port,
+                              "/ws/observations", &fdObsReject, &upgradeObsReject)) {
+            kernel2.Stop();
+            return Fail(970, "post-setup ws/observations upgrade unexpectedly failed (#185)");
+        }
+        const bool obsRejected =
+            WaitForWebSocketPayloadContaining(fdObsReject, "unauthorized", 3000, nullptr);
+        if (!obsRejected) {
+            closeIfOpen(fdObsReject);
+            kernel2.Stop();
+            return Fail(971, "post-setup unauthenticated ws/observations was not rejected (#185)");
+        }
+
         // Login and prove session-token admission over WS.
         int loginCode = 0;
         std::string loginBody;
@@ -2710,6 +2775,25 @@ int TestWsAuthGate() {
             return Fail(965, "session-token ws/chat did not answer list_sessions");
         }
 
+        // #185: /ws/observations admits with a session token; the
+        // catch-up replay query param flows through the gate undisturbed.
+        const std::string obsPath =
+            std::string("/ws/observations?to") + "ken=" + tokenMatch[1].str() +
+            "&last_seen_timestamp_unix_ms=0";
+        int fdObsAuth = -1;
+        std::string upgradeObsAuth;
+        if (!ConnectWebSocket(config2.admin.host, config2.admin.port,
+                              obsPath, &fdObsAuth, &upgradeObsAuth)) {
+            kernel2.Stop();
+            return Fail(972, "session-token ws/observations upgrade failed (#185)");
+        }
+        if (!SendWebSocketText(fdObsAuth, R"({"type":"filter","layers":[]})")
+            || !WaitForWebSocketPayloadContaining(fdObsAuth, "\"type\":\"filter_applied\"", 3000, nullptr)) {
+            closeIfOpen(fdObsAuth);
+            kernel2.Stop();
+            return Fail(973, "session-token ws/observations did not answer filter_applied (#185)");
+        }
+
         kernel2.Stop();
         // Close client sockets only after server teardown: peer-closed
         // sockets made the server's shutdownWrite hit ENOTCONN (muduo
@@ -2717,6 +2801,8 @@ int TestWsAuthGate() {
         closeIfOpen(fdCtl);
         closeIfOpen(fdReject);
         closeIfOpen(fdAuth);
+        closeIfOpen(fdObsReject);
+        closeIfOpen(fdObsAuth);
     }
 
     return 0;
