@@ -55,6 +55,12 @@ ctx = {
     stat = function(name) end,          -- → {size, mtime} | nil
     list = function() end,              -- → { {name, size, mtime}, ... }
   },
+  crypto = {                            -- pure request-signing primitives (#121); no network, no state
+    hmac_sha256 = function(key, data) end, -- → 64-char lowercase hex | nil, reason (byte-safe strings)
+    sha256 = function(data) end,        -- → 64-char lowercase hex | nil, reason
+    -- exchange/webhook schemes, e.g. Bitvavo:
+    --   ctx.crypto.hmac_sha256(secret, ts .. method .. path .. body)
+  },
   log = function(...) end,              -- ALOG, prefixed [api:<package>:<command>]
   now = 1788373166000,                  -- epoch ms
 }

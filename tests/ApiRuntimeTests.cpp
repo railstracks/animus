@@ -1276,6 +1276,41 @@ int TestLongpollPostBody() {
 
 }  // namespace
 
+int TestCryptoPrimitives() {
+    std::cerr << "  [runtime] ctx.crypto: hmac_sha256 + sha256 known-answer tests...\n";
+    Fixture fx;
+    // RFC 4231 HMAC-SHA256 vectors + FIPS 180-4 SHA-256 vectors; the binary
+    // key case also proves Lua-string byte-safety through the binding (#121).
+    std::string cmds = R"({"name": "crypto kat", "kind": "action", "description": "d",
+        "script": "function run(ctx) local k1 = string.rep(string.char(11), 20) local h1 = ctx.crypto.hmac_sha256(k1, 'Hi There') local h2 = ctx.crypto.hmac_sha256('Jefe', 'what do ya want for nothing?') local s1 = ctx.crypto.sha256('abc') local s2 = ctx.crypto.sha256('') return {data={rfc1=h1, rfc2=h2, abc=s1, empty=s2}} end"},
+        {"name": "crypto badargs", "kind": "action", "description": "d",
+        "script": "function run(ctx) return {output=ctx.crypto.hmac_sha256(nil, 'x')} end"})";
+    InstallFixturePkg(fx, cmds);
+    Json::Value args(Json::objectValue);
+    auto r = fx.runtime->ExecuteAction("testpkg", "crypto kat", "agent", args);
+    Assert(r["success"].asBool(),
+           "crypto KAT script runs: " + r["error"].asString());
+    Assert(r["data"]["rfc1"].asString() ==
+               "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+           "hmac RFC4231 TC1 (binary key)");
+    Assert(r["data"]["rfc2"].asString() ==
+               "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
+           "hmac RFC4231 TC2 (ascii key)");
+    Assert(r["data"]["abc"].asString() ==
+               "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+           "sha256('abc')");
+    Assert(r["data"]["empty"].asString() ==
+               "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+           "sha256('')");
+
+    // type errors raise Lua errors -> surfaced through the normal script-error path
+    r = fx.runtime->ExecuteAction("testpkg", "crypto badargs", "agent", args);
+    Assert(!r["success"].asBool(), "nil key fails loudly");
+    Assert(r["error"].asString().find("hmac_sha256") != std::string::npos,
+           "error names the primitive");
+    return 0;
+}
+
 int main() {
     std::cerr << "ApiRuntime tests:\n";
     TestInterpolation();
@@ -1291,6 +1326,7 @@ int main() {
     TestHttpTimeoutOption();
     TestWritesGate();
     TestLongpollPostBody();
+    TestCryptoPrimitives();
     if (g_failures == 0) std::cerr << "All api runtime tests passed.\n";
     else std::cerr << g_failures << " failures.\n";
     return g_failures == 0 ? 0 : 1;
