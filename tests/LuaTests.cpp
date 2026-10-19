@@ -10,6 +10,9 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <fstream>
+#include <sstream>
+#include <unistd.h>
 
 #include <json/json.h>
 #include <json/reader.h>
@@ -691,6 +694,248 @@ void TestMemoryLimit() {
 // ============================================================================
 // Main
 // ============================================================================
+// ============================================================================
+// Test: Bluesky richtext facets (#36)
+// Loads the real adapter with a stubbed animus table and asserts facets
+// in the createRecord / sendMessage payloads. One Eval chunk per case:
+// prelude (stubs) + adapter source + driver, sharing chunk-local scope.
+// ============================================================================
+std::string ReadBlueskyAdapterSrc() {
+    char exe[4096];
+    const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    std::vector<std::string> candidates;
+    if (n > 0) {
+        exe[n] = '\0';
+        std::string dir(exe);
+        const auto slash = dir.rfind('/');
+        if (slash != std::string::npos)
+            candidates.push_back(dir.substr(0, slash) + "/../../state/lua/_shared/bluesky.lua");
+    }
+    candidates.push_back("state/lua/_shared/bluesky.lua");
+    candidates.push_back("../../state/lua/_shared/bluesky.lua");
+    for (const auto& c : candidates) {
+        std::ifstream f(c);
+        if (!f) continue;
+        std::stringstream ss;
+        ss << f.rdbuf();
+        std::string s = ss.str();
+        if (!s.empty()) return s;
+    }
+    return "";
+}
+
+const char* kBskyPrelude = R"lua(
+local calls = {}
+local captured = nil
+local function stub_reply(url)
+    if string.find(url, "createSession", 1, true) then
+        return { status = 200, body = json.encode({ accessJwt = "h.p.s", did = "did:plc:t", refreshJwt = "r.p.s" }) }
+    end
+    if string.find(url, "getRecord", 1, true) then
+        return { status = 200, body = json.encode({ uri = "at://did:plc:t/app.bsky.feed.post/root", cid = "bafyr", value = { cid = "bafyr" } }) }
+    end
+    return { status = 200, body = json.encode({ uri = "at://did:plc:t/app.bsky.feed.post/new", cid = "bafyn" }) }
+end
+animus.register_channel = function(t) captured = t end
+animus.http_post = function(url, opts)
+    table.insert(calls, { url = url, body = (opts and opts.body) or "" })
+    return stub_reply(url)
+end
+animus.http_get = function(url, opts)
+    table.insert(calls, { url = url, body = "" })
+    return stub_reply(url)
+end
+config.set("channels.bluesky:test.handle", "tester.bsky.social")
+config.set("channels.bluesky:test.app_password", "app-pass")
+config.set("channels.bluesky:test.access_jwt", "")
+config.set("channels.bluesky:test.did", "")
+)lua";
+
+// Runs one case; extracts the record (post/reply) or message (chat) actually
+// sent, json-encoded, from the stubbed http layer.
+Json::Value RunBlueskyCase(LuaState& lua, const std::string& src, const std::string& driver) {
+    std::string out;
+    try {
+        out = lua.Eval(std::string(kBskyPrelude) + "\n" + src + "\n" + driver, "bsky-case");
+    } catch (const std::exception& e) {
+        Assert(false, std::string("Eval threw: ") + e.what());
+        return Json::Value();  // null degrades to assert failures, not abort
+    }
+    Json::Value v;
+    std::string err;
+    Assert(Json::Reader().parse(out, v), "case output should be JSON, got: " + out.substr(0, 200));
+    // Eval serializes Lua string returns as JSON strings (quoted+escaped);
+    // unwrap one layer so callers always get the object/array.
+    if (v.isString()) {
+        const std::string inner = v.asString();
+        Assert(Json::Reader().parse(inner, v), "unwrapped case output should be JSON, got: " + inner.substr(0, 200));
+    }
+    return v;
+}
+
+void AssertFacet(const Json::Value& f, int bs, int be, const char* type, const std::string& val) {
+    Assert(f["index"]["byteStart"].asInt() == bs,
+           "facet byteStart " + std::to_string(f["index"]["byteStart"].asInt()) + " != " + std::to_string(bs));
+    Assert(f["index"]["byteEnd"].asInt() == be,
+           "facet byteEnd " + std::to_string(f["index"]["byteEnd"].asInt()) + " != " + std::to_string(be));
+    const std::string got = f["features"][0]["$type"].asString();
+    Assert(got == type, "facet $type " + got + " != " + type);
+    const std::string field = (got.find("#tag") != std::string::npos) ? "tag" : "uri";
+    Assert(f["features"][0][field].asString() == val,
+           "facet " + field + " " + f["features"][0][field].asString() + " != " + val);
+}
+
+const char* kBskyPostDriver = R"lua(
+local r = captured.handler({ action = "post", platform_id = "bluesky:test", content = CONTENT })
+local rec
+for _, c in ipairs(calls) do
+    if string.find(c.url, "createRecord", 1, true) then rec = json.decode(c.body).record end
+end
+return json.encode({ ok = (r.success == true), record = rec })
+)lua";
+
+void TestBlueskyFacets() {
+    std::cerr << "  TestBlueskyFacets...";
+    const std::string src = ReadBlueskyAdapterSrc();
+    Assert(!src.empty(), "bluesky.lua source found");
+
+    ToolRegistry tools;
+    HttpClient http;
+    LuaState::Config config;
+    config.agentId = "test";
+    config.instructionLimit = 5'000'000;
+    LuaState lua(config, tools, http);
+
+    // helper: run post case with given content
+    auto post_case = [&](const std::string& content) {
+        std::string driver = std::string(kBskyPostDriver);
+        const std::string marker = "CONTENT";
+        const size_t p = driver.find(marker);
+        driver.replace(p, marker.size(), content);
+        return RunBlueskyCase(lua, src, driver);
+    };
+
+    // 1. plain hashtag: "#hello world" -> tag facet 0..6
+    {
+        Json::Value v = post_case("\"#hello world\"");
+        Assert(v["ok"].asBool(), "case1 post succeeds");
+        Assert(v["record"]["facets"].isArray() && v["record"]["facets"].size() == 1, "case1 one facet");
+        if (v["record"]["facets"].size() == 1)
+            AssertFacet(v["record"]["facets"][0], 0, 6, "app.bsky.richtext.facet#tag", "hello");
+    }
+
+    // 2. mid-string URL: "see https://example.com/page now" -> link 4..28
+    {
+        Json::Value v = post_case("\"see https://example.com/page now\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case2 one facet");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 4, 28, "app.bsky.richtext.facet#link", "https://example.com/page");
+    }
+
+    // 3. emoji (4 bytes) shifts offsets: "\xF0\x9F\xA6\x85 #kestrel" -> tag 5..13
+    {
+        Json::Value v = post_case("\"\\xF0\\x9F\\xA6\\x85 #kestrel\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case3 one facet (emoji before tag)");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 5, 13, "app.bsky.richtext.facet#tag", "kestrel");
+    }
+
+    // 4. CJK (3-byte chars) before URL: -> link 7..23
+    {
+        Json::Value v = post_case("\"\\xE8\\xA6\\x8B\\xE3\\x81\\xA6 https://x.test/a \\xE3\\x81\\xAD\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case4 one facet (CJK before url)");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 7, 23, "app.bsky.richtext.facet#link", "https://x.test/a");
+    }
+
+    // 5. trailing punctuation excluded: "check https://x.test/a." -> 6..22, no dot
+    {
+        Json::Value v = post_case("\"check https://x.test/a.\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case5 one facet");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 6, 22, "app.bsky.richtext.facet#link", "https://x.test/a");
+    }
+
+    // 6. hashtag trailing punctuation: "#test, done" -> tag test 0..5
+    {
+        Json::Value v = post_case("\"#test, done\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case6 one facet");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 0, 5, "app.bsky.richtext.facet#tag", "test");
+    }
+
+    // 7. url fragment is NOT a hashtag: one link facet only
+    {
+        Json::Value v = post_case("\"go https://x.test/a#frag now\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case7 exactly one facet (frag not a tag)");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 3, 24, "app.bsky.richtext.facet#link", "https://x.test/a#frag");
+    }
+
+    // 8. www form -> https-prefixed uri, span covers bare www text
+    {
+        Json::Value v = post_case("\"www.example.com works\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case8 one facet");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 0, 15, "app.bsky.richtext.facet#link", "https://www.example.com");
+    }
+
+    // 9. plain text -> facets key absent entirely
+    {
+        Json::Value v = post_case("\"just plain text\"");
+        Assert(v["ok"].asBool(), "case9 post succeeds");
+        Assert(!v["record"].isMember("facets"), "case9 no facets key on plain text");
+    }
+
+    // 10. reply path inherits facets + keeps reply refs
+    {
+        const char* driver = R"lua(
+local r = captured.handler({ action = "reply", platform_id = "bluesky:test", post_id = "at://did:plc:t/app.bsky.feed.post/root", root_id = "at://did:plc:t/app.bsky.feed.post/root", content = "#thread" })
+local rec
+for _, c in ipairs(calls) do
+    if string.find(c.url, "createRecord", 1, true) then rec = json.decode(c.body).record end
+end
+return json.encode({ ok = (r.success == true), record = rec })
+)lua";
+        Json::Value v = RunBlueskyCase(lua, src, driver);
+        Assert(v["ok"].asBool(), "case10 reply succeeds");
+        Assert(v["record"]["reply"]["parent"]["uri"].asString().find("root") != std::string::npos,
+               "case10 reply ref intact");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case10 reply has facets");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 0, 7, "app.bsky.richtext.facet#tag", "thread");
+    }
+
+    // 11. chat_send attaches facets inside message
+    {
+        const char* driver = R"lua(
+local r = captured.handler({ action = "chat_send", platform_id = "bluesky:test", convo_id = "convo1", content = "ping #dm" })
+local msg
+for _, c in ipairs(calls) do
+    if string.find(c.url, "sendMessage", 1, true) then msg = json.decode(c.body).message end
+end
+return json.encode({ ok = (r.success == true), message = msg })
+)lua";
+        Json::Value v = RunBlueskyCase(lua, src, driver);
+        Assert(v["ok"].asBool(), "case11 chat_send succeeds");
+        Assert(v["message"]["text"].asString() == "ping #dm", "case11 message text");
+        const Json::Value& fs = v["message"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case11 chat message has facets");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 5, 8, "app.bsky.richtext.facet#tag", "dm");
+    }
+
+    std::cerr << " done\n";
+}
+
 int main() {
     std::cerr << "Running Lua integration tests...\n";
 
@@ -708,6 +953,7 @@ int main() {
     TestCoroutineMode();
     TestInstructionLimit();
     TestMemoryLimit();
+    TestBlueskyFacets();
 
     if (g_failures > 0) {
         std::cerr << "\nFAILED: " << g_failures << " assertions failed\n";
