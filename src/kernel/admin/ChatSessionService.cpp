@@ -355,7 +355,10 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
 
             // #73: record a trusted arrival carrying the authenticated
             // user identity so the ChannelContextProvider renders a context
-            // card naming who the agent is talking to. Written before the
+            // card naming who the agent is talking to. #56: the card names
+            // the surface "webchat" (first-class channel identity, not
+            // internal admin/ws_chat jargon) and carries the session key —
+            // identity-aware context for UI sessions. Written before the
             // chain runs (same contract as AgentKernel::ExecuteChannelDispatch);
             // marked consumed after the chain sees it. Unauthenticated
             // connections (static-token instances, loopback) record nothing
@@ -366,14 +369,14 @@ bool ChatSessionService::EnqueueStreamingResponse(const Request& request) const 
                 arrival.session_key = session->Key().ToString();
                 arrival.agent_id = session->AgentId().empty()
                     ? "default" : session->AgentId();
-                arrival.channel_type = "admin";
-                arrival.channel_name = "ws_chat";
-                arrival.platform_id = "admin:ws_chat";
+                arrival.channel_type = "webchat";
+                arrival.platform_id = "webchat";
                 arrival.message_type = "chat";
                 arrival.delivery = "auto";
                 Json::Value origin(Json::objectValue);
                 origin["user"] = authUsername;
                 origin["user_id"] = authUserId;
+                origin["session"] = arrival.session_key;
                 origin["auth"] = "session";
                 if (!authRole.empty()) origin["role"] = authRole;
                 Json::StreamWriterBuilder originWriter;
