@@ -752,6 +752,39 @@ void HookInstructionCount(lua_State* L, lua_Debug*) {
 }
 
 // Sandbox globals per SANDBOX.md. No io/require/loadfile/load/dofile/print.
+// ctx.crypto — pure primitives for request signing (exchange/webhook-style
+// schemes, e.g. Bitvavo's HMAC-SHA256 over timestamp..method..path..body).
+// No network, no state; lowercase hex out; operational failures return
+// nil+err per ctx conventions (#121). Arg type errors raise Lua errors
+// like the rest of ctx.
+static int CryptoHmacSha256(lua_State* L) {
+    size_t keyLen = 0, dataLen = 0;
+    const char* key = luaL_checklstring(L, 1, &keyLen);
+    const char* data = luaL_checklstring(L, 2, &dataLen);
+    const std::string mac = crypto::HmacSha256Hex(std::string(key, keyLen),
+                                                  std::string(data, dataLen));
+    if (mac.size() != 64) {  // EVP failure guard (digest empty on error)
+        lua_pushnil(L);
+        lua_pushstring(L, "hmac_sha256 failed");
+        return 2;
+    }
+    lua_pushlstring(L, mac.data(), mac.size());
+    return 1;
+}
+
+static int CryptoSha256(lua_State* L) {
+    size_t dataLen = 0;
+    const char* data = luaL_checklstring(L, 1, &dataLen);
+    const std::string digest = crypto::Sha256Hex(std::string(data, dataLen));
+    if (digest.size() != 64) {
+        lua_pushnil(L);
+        lua_pushstring(L, "sha256 failed");
+        return 2;
+    }
+    lua_pushlstring(L, digest.data(), digest.size());
+    return 1;
+}
+
 void BuildSandboxGlobals(lua_State* L, BridgeContext* bc) {
     luaL_requiref(L, "_G", luaopen_base, 1);
     lua_pop(L, 1);
@@ -847,6 +880,14 @@ void BuildCtx(lua_State* L, BridgeContext* bc, const Json::Value& request, bool 
     lua_pushcclosure(L, CtxHttpDelete, 1);
     lua_setfield(L, -2, "delete");
     lua_setfield(L, -2, "http");
+
+    // ctx.crypto (pure: request signing; no network, no state)
+    lua_createtable(L, 0, 2);
+    lua_pushcfunction(L, CryptoHmacSha256);
+    lua_setfield(L, -2, "hmac_sha256");
+    lua_pushcfunction(L, CryptoSha256);
+    lua_setfield(L, -2, "sha256");
+    lua_setfield(L, -2, "crypto");
 
     // ctx.fs
     lua_createtable(L, 0, 5);
