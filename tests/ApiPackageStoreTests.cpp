@@ -9,6 +9,9 @@
 #include <iostream>
 #include <string>
 #include <unistd.h>
+#include <fstream>
+#include <sstream>
+#include <vector>
 
 using namespace animus::kernel;
 
@@ -461,6 +464,48 @@ int TestManifestInstall() {
 
 }  // namespace
 
+// #104 acceptance: the shipped fixture manifest (not the inline copy)
+// must install clean through the FULL lint set (headers + body + url
+// query + poll) - proves no false positives on a real-world manifest.
+std::string ReadFixtureManifest() {
+    std::vector<std::string> candidates;
+    char exe[4096];
+    const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    if (n > 0) {
+        exe[n] = '\0';
+        std::string dir(exe);
+        const auto slash = dir.rfind('/');
+        if (slash != std::string::npos)
+            candidates.push_back(dir.substr(0, slash) + "/../../tests/fixtures/manifests/alpaca.json");
+    }
+    candidates.push_back("tests/fixtures/manifests/alpaca.json");
+    candidates.push_back("../../tests/fixtures/manifests/alpaca.json");
+    for (const auto& c : candidates) {
+        std::ifstream f(c);
+        if (!f) continue;
+        std::stringstream ss;
+        ss << f.rdbuf();
+        std::string s = ss.str();
+        if (!s.empty()) return s;
+    }
+    return "";
+}
+
+int TestFixtureFileInstalls() {
+    std::cerr << "  [store] fixture file installs clean (full lint)...\n";
+    const std::string manifest = ReadFixtureManifest();
+    Assert(!manifest.empty(), "fixture manifest file found");
+    const std::string path = MakeTempDbPath();
+    {
+        SqliteDataStore db(path);
+        ApiPackageStore store(&db);
+        ApiPackage p = store.InstallFromManifest(manifest);
+        Assert(p.name == "alpaca", "fixture installs clean through full lint");
+    }
+    unlink(path.c_str());
+    return 0;
+}
+
 int main() {
     std::cerr << "ApiPackageStore tests:\n";
     TestSchemaIdempotent();
@@ -469,6 +514,7 @@ int main() {
     TestCascadeDelete();
     TestAgentOverlay();
     TestManifestInstall();
+    TestFixtureFileInstalls();
     if (g_failures == 0) std::cerr << "All api package store tests passed.\n";
     else std::cerr << g_failures << " failures.\n";
     return g_failures == 0 ? 0 : 1;
