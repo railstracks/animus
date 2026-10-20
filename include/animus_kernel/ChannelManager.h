@@ -163,6 +163,10 @@ public:
     // --- Send auto-reply via the right connector ---
     void SendReply(const ReplyTarget& target, const std::string& text);
 
+    /// Send a /me-style action (adapters without action semantics fall back
+    /// to a plain reply). Mirrors SendReply's adapter dispatch.
+    void SendAction(const ReplyTarget& target, const std::string& text);
+
     // --- Migration ---
     // Migrate from legacy interfaces.json + social.* keys
     int MigrateFromLegacy();

@@ -108,7 +108,21 @@ std::string EscapeJson(const std::string& s) {
       case '\n': out += "\\n";  break;
       case '\t': out += "\\t";  break;
       case '\r': out += "\\r";  break;
-      default:   out += c;      break;
+      default: {
+        // #204: raw control bytes in the wire JSON make providers reject
+        // the whole request (HTTP 400) — escape them as \uXXXX instead.
+        // Unsigned cast is essential: UTF-8 continuation bytes are negative
+        // as signed char and must pass through untouched.
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (uc < 0x20 || uc == 0x7F) {
+          char esc[8];
+          std::snprintf(esc, sizeof(esc), "\\u%04X", uc);
+          out += esc;
+        } else {
+          out += c;
+        }
+        break;
+      }
     }
   }
   return out;

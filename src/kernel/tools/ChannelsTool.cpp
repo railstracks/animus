@@ -151,7 +151,7 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
     if (adapterType == "irc" && m_channelManager) {
         ToolResult result;
         result.call_id = call.id;
-        if (action == "post" || action == "reply") {
+        if (action == "post" || action == "reply" || action == "send_action") {
             // Channel: explicit arg wins; the reply-target resolution above
             // fills it from the latest arrival's peer_id when omitted (the
             // IRC adapter sets peer_id to the #channel or DM nick).
@@ -168,9 +168,15 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
             rt.channel_name = ExtractInstanceName(platformId);
             rt.channel_type = "irc";
             rt.irc_target = target;
-            m_channelManager->SendReply(rt, content);
-            result.success = true;
-            result.output = "Message sent to " + target + " on IRC";
+            if (action == "send_action") {
+                m_channelManager->SendAction(rt, content);
+                result.success = true;
+                result.output = "Action sent to " + target + " on IRC";
+            } else {
+                m_channelManager->SendReply(rt, content);
+                result.success = true;
+                result.output = "Message sent to " + target + " on IRC";
+            }
             result.call_id = call.id;
             return result;
         }

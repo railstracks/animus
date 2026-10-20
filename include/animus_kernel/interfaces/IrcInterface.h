@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -55,6 +56,28 @@ public:
     void Stop();
     bool SendPrivmsg(const std::string& target, const std::string& message);
 
+    // --- #204: text normalization + outbound actions ---
+    // Inbound: CTCP frames and mIRC formatting codes are converted to safe
+    // markdown-ish text; no raw control byte ever reaches the message
+    // callback (raw  in stored turns kills every later LLM call with
+    // HTTP 400 — providers reject illegal control bytes in JSON strings).
+    // Returns nullopt for non-ACTION CTCP (VERSION, PING, DCC ...): machine
+    // probes that must never become conversational turns.
+    static std::optional<std::string> NormalizeIncomingText(const std::string& text);
+    // Outbound: markdown emphasis pairs -> IRC formatting codes.
+    // Conservative: non-empty inner without the marker char, no space at
+    // inner edges, word boundaries for single-char markers, bullet lines
+    // and snake_case left alone.
+    static std::string MarkdownToIrcFormat(const std::string& text);
+    // Wrap a chunk in a CTCP ACTION frame.
+    static std::string ActionFrame(const std::string& chunk);
+    // Send a /me-style action message to a channel or nick.
+    bool SendAction(const std::string& target, const std::string& message);
+
+    // Single-line dispatch (public for tests; safe without a connection —
+    // SendRaw on a closed socket returns false).
+    void HandleLine(const std::string& line, bool* joined);
+
 private:
     struct ParsedLine {
         std::string prefix;
@@ -69,7 +92,6 @@ private:
     void ReportStatus(bool connected, const std::string& error);
     void RunLoop();
     bool ConnectAndRun(std::string* error);
-    void HandleLine(const std::string& line, bool* joined);
     bool Connect(std::string* error);
     bool SendRaw(const std::string& line);
     void CloseSocket();
