@@ -29,6 +29,8 @@
 #include "animus_kernel/llm/OpenAIProvider.h"
 #include "animus_kernel/KernelConfig.h"
 
+#include <json/json.h>
+
 using namespace animus::kernel::llm;
 using animus::kernel::llm::openai_compat::ExtractJsonString;
 
@@ -813,6 +815,51 @@ void TestDegenerateBodyRetries() {
   }
 }
 
+
+// ============================================================================
+// #204: control characters must never reach the wire JSON raw
+// ============================================================================
+
+void TestBuildRequestBodyControlChars() {
+  std::cout << "BuildOpenAIRequestBody control-char hardening... ";
+
+  // Direct unit: EscapeJson emits \uXXXX escapes for control bytes.
+  const std::string escaped = openai_compat::EscapeJson("\x01\x02\x1F\x7F");
+  if (escaped != "\\u0001\\u0002\\u001F\\u007F") {
+    FAIL("EscapeJson must escape control chars as \\uXXXX, got: " + escaped);
+    return;
+  }
+
+  // Integration: the request body with control chars in message content must
+  // be valid JSON and roundtrip the content byte-exact. This is the #204
+  // incident in miniature: a raw \x01 in the body makes providers (Go-based
+  // OpenAI-compat endpoints, e.g. Ollama) reject the whole request with
+  // HTTP 400 and the agent goes silently dead.
+  LLMRequest req;
+  req.model = "test-model";
+  req.stream = false;
+  LLMMessage msg;
+  msg.role = "user";
+  msg.content = std::string("poison\x01") + "\x02mid\x1F" + "end\x7F";
+  req.messages.push_back(msg);
+
+  const std::string body = openai_compat::BuildOpenAIRequestBody(req);
+
+  Json::Value v;
+  Json::Reader reader;
+  if (!reader.parse(body, v)) {
+    FAIL("body with control chars must parse as JSON (raw byte leaked: #204)");
+    return;
+  }
+  const std::string roundtrip =
+      v["messages"][0]["content"].asString();
+  if (roundtrip != msg.content) {
+    FAIL("content must roundtrip byte-exact, got: " + roundtrip);
+    return;
+  }
+  std::cout << "ok\n";
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -828,6 +875,7 @@ int main() {
   TestRegistryCreateUnknown();
   TestRegistryAvailable();
   TestMockProviderBuildRequestBody();
+  TestBuildRequestBodyControlChars();
   TestMockProviderParseResponse();
   TestIsSSEDone();
   TestProviderUnavailable();

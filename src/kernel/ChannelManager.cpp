@@ -474,6 +474,19 @@ std::string ChannelManager::GetWhatsAppQrUrl(const std::string& name) const {
     return it->second->whatsapp_qr_url;
 }
 
+void ChannelManager::SendAction(const ReplyTarget& target, const std::string& text) {
+    std::lock_guard<std::mutex> lock(m_adaptersMutex);
+    auto it = m_adapters.find(target.channel_name);
+    if (it != m_adapters.end()) {
+        it->second->SendAction(target, text);
+        return;
+    }
+    if (target.channel_type == "irc") {
+        ALOG_WARNING("channels", "IRC adapter not found for: "
+                  << target.channel_name);
+    }
+}
+
 void ChannelManager::SendReply(const ReplyTarget& target, const std::string& text) {
     // --- Adapter-based dispatch ---
     // For connectors migrated to IChannelAdapter, delegate directly.

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cerrno>
 #include <chrono>
 #include <cstdio>
@@ -137,11 +138,199 @@ void IrcInterfaceRuntime::Stop() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// #204: IRC text normalization
+//
+// Incident: /me messages arrive as CTCP frames ("\001ACTION ...\001"); raw
+// \001 bytes stored in a session turn make every later LLM request fail
+// with HTTP 400 (control bytes are illegal in JSON strings) — the agent
+// goes silent, restart-proof, invisibly. Everything inbound passes through
+// NormalizeIncomingText; everything outbound through MarkdownToIrcFormat.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Convert mIRC formatting codes to markdown-ish text and sweep remaining
+// control bytes. Toggle codes map to paired delimiters naturally: the first
+// 0x02 opens (**), the second closes (**) — pairs fall out for free.
+std::string FormatIrcCodes(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    bool bold = false, ital = false, under = false;
+    for (std::size_t i = 0; i < in.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(in[i]);
+        switch (c) {
+            case 0x02:  // bold toggle
+                out += "**";
+                bold = !bold;
+                break;
+            case 0x1D:  // italic toggle
+                out += "*";
+                ital = !ital;
+                break;
+            case 0x1F:  // underline toggle
+                out += "__";
+                under = !under;
+                break;
+            case 0x0F: {  // reset — closes whatever is open
+                if (bold) out += "**";
+                if (ital) out += "*";
+                if (under) out += "__";
+                bold = ital = under = false;
+                break;
+            }
+            case 0x03: {  // color: optional fg[,bg], each 1-2 digits
+                std::size_t j = i + 1;
+                int digits = 0;
+                while (j < in.size() && digits < 2
+                       && std::isdigit(static_cast<unsigned char>(in[j]))) {
+                    ++j;
+                    ++digits;
+                }
+                if (j < in.size() && in[j] == ',') {
+                    ++j;
+                    int digits2 = 0;
+                    while (j < in.size() && digits2 < 2
+                           && std::isdigit(static_cast<unsigned char>(in[j]))) {
+                        ++j;
+                        ++digits2;
+                    }
+                }
+                i = j - 1;  // for-loop ++i skips the code itself
+                break;
+            }
+            case 0x16:  // reverse video
+            case 0x07:  // beep
+                break;  // stripped
+            default:
+                // Final sweep: no raw control byte survives except \n and \t.
+                if (c < 0x20 && c != '\n' && c != '\t') break;
+                if (c == 0x7F) break;  // DEL
+                out += in[i];
+        }
+    }
+    return out;
+}
+
+bool IrcFmtAlnum(char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) != 0;
+}
+
+// Convert one marker's paired occurrences to IRC codes. Guards: non-empty
+// inner without the marker char, no space at inner edges (markdown's own
+// rule), and for single-char markers: word boundaries + bullet lines.
+std::string ConvertMarkerPairs(const std::string& text, const std::string& marker,
+                               char ircCode, bool wordBoundaryGuard) {
+    std::string out;
+    out.reserve(text.size());
+    std::size_t i = 0;
+    while (i < text.size()) {
+        if (text.compare(i, marker.size(), marker) == 0) {
+            const std::size_t innerStart = i + marker.size();
+            const std::size_t close = text.find(marker, innerStart);
+            if (close != std::string::npos) {
+                const std::string inner =
+                    text.substr(innerStart, close - innerStart);
+                bool ok = !inner.empty()
+                    && inner.find(marker[0]) == std::string::npos
+                    && inner.front() != ' ' && inner.back() != ' '
+                    && inner.front() != '\n' && inner.back() != '\n';
+                if (ok && marker == "*") {
+                    // Line-initial "* " is a bullet, not emphasis.
+                    const bool lineStart = (i == 0) || text[i - 1] == '\n';
+                    if (lineStart && innerStart < text.size()
+                        && text[innerStart] == ' ') {
+                        ok = false;
+                    }
+                }
+                if (ok && wordBoundaryGuard) {
+                    // 2*3*4 and snake_case_word stay literal.
+                    if (i > 0 && IrcFmtAlnum(text[i - 1])) ok = false;
+                    const std::size_t after = close + marker.size();
+                    if (after < text.size() && IrcFmtAlnum(text[after])) ok = false;
+                }
+                if (ok) {
+                    out += ircCode;
+                    out += inner;
+                    out += ircCode;
+                    i = close + marker.size();
+                    continue;
+                }
+            }
+        }
+        out += text[i];
+        ++i;
+    }
+    return out;
+}
+
+}  // namespace
+
+std::optional<std::string> IrcInterfaceRuntime::NormalizeIncomingText(
+    const std::string& text) {
+    std::string t = text;
+    if (!t.empty() && t.front() == '\001') {
+        // CTCP frame: \001COMMAND args...\001
+        if (t.size() >= 2 && t.back() == '\001') {
+            t.pop_back();
+        }
+        t.erase(0, 1);
+        std::string cmd;
+        const std::size_t sp = t.find(' ');
+        if (sp == std::string::npos) {
+            cmd = t;
+            t.clear();
+        } else {
+            cmd = t.substr(0, sp);
+            t = t.substr(sp + 1);
+        }
+        std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::toupper);
+        if (cmd == "ACTION") {
+            if (t.empty()) return std::nullopt;  // bare /me carries nothing
+            return std::string("* ") + FormatIrcCodes(t);
+        }
+        // VERSION, PING, FINGER, TIME, DCC, CLIENTINFO, ... — machine
+        // probes, not conversation. Dropped; caller logs.
+        return std::nullopt;
+    }
+    return FormatIrcCodes(t);
+}
+
+std::string IrcInterfaceRuntime::MarkdownToIrcFormat(const std::string& text) {
+    std::string out = ConvertMarkerPairs(text, "**", '\002', false);
+    out = ConvertMarkerPairs(out, "__", '\037', false);
+    out = ConvertMarkerPairs(out, "*", '\035', true);
+    out = ConvertMarkerPairs(out, "_", '\035', true);
+    return out;
+}
+
+std::string IrcInterfaceRuntime::ActionFrame(const std::string& chunk) {
+    return "\001ACTION " + chunk + "\001";
+}
+
+bool IrcInterfaceRuntime::SendAction(const std::string& target,
+                                     const std::string& message) {
+    if (target.empty() || message.empty()) {
+        return false;
+    }
+    std::string body = MarkdownToIrcFormat(message);
+    std::replace(body.begin(), body.end(), '\r', ' ');
+    std::replace(body.begin(), body.end(), '\n', ' ');
+    const std::size_t maxChunk = 380;  // conservative under RFC line limit.
+    for (std::size_t pos = 0; pos < body.size(); pos += maxChunk) {
+        const std::string chunk = body.substr(pos, maxChunk);
+        if (!SendRaw("PRIVMSG " + target + " :" + ActionFrame(chunk))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool IrcInterfaceRuntime::SendPrivmsg(const std::string& target, const std::string& message) {
     if (target.empty() || message.empty()) {
         return false;
     }
-    std::string body = message;
+    std::string body = MarkdownToIrcFormat(message);
     std::replace(body.begin(), body.end(), '\r', ' ');
     std::replace(body.begin(), body.end(), '\n', ' ');
     const std::size_t maxChunk = 380; // conservative under RFC line limit.
@@ -423,7 +612,13 @@ void IrcInterfaceRuntime::HandleLine(const std::string& line, bool* joined) {
         return;
     }
     if (m_messageCallback) {
-        m_messageCallback(sourceNick, target, parsed.trailing, isNotice);
+        const auto normalized = NormalizeIncomingText(parsed.trailing);
+        if (!normalized) {
+            std::cerr << "[irc] dropped CTCP from " << sourceNick << ": "
+                      << parsed.trailing.substr(0, 40) << std::endl;
+            return;
+        }
+        m_messageCallback(sourceNick, target, *normalized, isNotice);
     }
 }
 

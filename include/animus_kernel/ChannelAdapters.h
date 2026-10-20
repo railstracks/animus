@@ -68,6 +68,7 @@ public:
     bool Start(const ChannelState& state, std::string* error) override;
     void Stop() override;
     void SendReply(const ChannelReplyTarget& target, const std::string& text) override;
+    void SendAction(const ChannelReplyTarget& target, const std::string& text) override;
     bool IsConnected() const override;
 
 private:

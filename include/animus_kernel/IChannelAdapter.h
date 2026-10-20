@@ -92,6 +92,13 @@ public:
     virtual void SendReply(const ChannelReplyTarget& target,
                            const std::string& text) = 0;
 
+    /// Send a /me-style action message through this channel. Adapters
+    /// without action semantics fall back to a normal reply.
+    virtual void SendAction(const ChannelReplyTarget& target,
+                            const std::string& text) {
+        SendReply(target, text);
+    }
+
     /// Check if the connector is currently connected/active.
     virtual bool IsConnected() const = 0;
 
