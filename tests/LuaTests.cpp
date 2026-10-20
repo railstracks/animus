@@ -700,6 +700,30 @@ void TestMemoryLimit() {
 // in the createRecord / sendMessage payloads. One Eval chunk per case:
 // prelude (stubs) + adapter source + driver, sharing chunk-local scope.
 // ============================================================================
+std::string ReadIrcAdapterSrc() {
+    char exe[4096];
+    const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    std::vector<std::string> candidates;
+    if (n > 0) {
+        exe[n] = '\0';
+        std::string dir(exe);
+        const auto slash = dir.rfind('/');
+        if (slash != std::string::npos)
+            candidates.push_back(dir.substr(0, slash) + "/../../state/lua/_shared/irc.lua");
+    }
+    candidates.push_back("state/lua/_shared/irc.lua");
+    candidates.push_back("../../state/lua/_shared/irc.lua");
+    for (const auto& c : candidates) {
+        std::ifstream f(c);
+        if (f.good()) {
+            std::stringstream ss;
+            ss << f.rdbuf();
+            return ss.str();
+        }
+    }
+    return "";
+}
+
 std::string ReadBlueskyAdapterSrc() {
     char exe[4096];
     const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
@@ -936,6 +960,81 @@ return json.encode({ ok = (r.success == true), message = msg })
     std::cerr << " done\n";
 }
 
+
+// ============================================================================
+// #204 follow-up: the IRC Lua adapter must DECLARE send_action
+// ============================================================================
+// The C++ bridge (ChannelsTool) intercepts irc post/reply/send_action before
+// the Lua handler runs — but the schema the model sees (tool action enum +
+// describe output + action validation) is built from THIS registration. If
+// send_action is not in the Lua action list, the agent cannot discover or
+// call it, no matter what the backend supports. (Live sighting: Vesper
+// iterated /me-as-literal-text, blind action calls, and describe — the
+// command was invisible until the schema declared it.)
+void TestIrcAdapterSendAction() {
+    ToolRegistry tools;
+    HttpClient http;
+    LuaState::Config config;
+    config.agentId = "test";
+    config.instructionLimit = 100'000;
+    LuaState lua(config, tools, http);
+
+    // Prelude: capture the registration; stub the two globals irc.lua uses.
+    const char* prelude = R"(
+captured = nil
+animus = {}
+function animus.register_channel(t) captured = t end
+config = {}
+function config.get(k) return "" end
+)";
+
+    const std::string src = ReadIrcAdapterSrc();
+    Assert(!src.empty(), "irc.lua source found");
+
+    const std::string driver = R"(
+local out = {}
+out.id = captured.id
+out.has_send_action = false
+for _, a in ipairs(captured.actions) do
+    if a == "send_action" then out.has_send_action = true end
+end
+out.schema_has = (captured.schema.send_action ~= nil)
+out.has_content_param = false
+if captured.schema.send_action then
+    for _, p in ipairs(captured.schema.send_action) do
+        if p.name == "content" then out.has_content_param = true end
+    end
+end
+local r = captured.handler({ action = "send_action", channel = "#t", content = "waves" })
+out.handler_success = r.success
+out.handler_output = r.output or ""
+return out
+)";
+
+    const std::string out = lua.Eval(
+        std::string(prelude) + "\n" + src + "\n" + driver, "irc-schema-case");
+    Json::Value v;
+    Assert(Json::Reader().parse(out, v), "irc schema case output parses, got: "
+           + out.substr(0, 120));
+    if (v.isString()) {
+        Assert(Json::Reader().parse(v.asString(), v),
+               "irc schema output unwrap parses");
+    }
+
+    Assert(v.get("id", "").asString() == "irc", "registration id is irc");
+    Assert(v.get("has_send_action", false).asBool(),
+           "actions list declares send_action");
+    Assert(v.get("schema_has", false).asBool(),
+           "schema block declares send_action parameters");
+    Assert(v.get("has_content_param", false).asBool(),
+           "send_action schema has a content parameter");
+    Assert(v.get("handler_success", true).asBool() == false,
+           "send_action handler runs (fallback path, no C++ bridge in tests)");
+    Assert(v.get("handler_output", "").asString().find("not available")
+               != std::string::npos,
+           "send_action fallback mirrors post/reply error text");
+}
+
 int main() {
     std::cerr << "Running Lua integration tests...\n";
 
@@ -954,6 +1053,7 @@ int main() {
     TestInstructionLimit();
     TestMemoryLimit();
     TestBlueskyFacets();
+    TestIrcAdapterSendAction();
 
     if (g_failures > 0) {
         std::cerr << "\nFAILED: " << g_failures << " assertions failed\n";

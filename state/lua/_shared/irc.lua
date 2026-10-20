@@ -51,6 +51,11 @@ end
 -- the Lua handler mirrors the same limitation and error text.
 actions.reply = actions.post
 
+-- send_action routes through the C++ bridge's SendAction path, which wraps
+-- the text in a CTCP ACTION frame (\001ACTION text\001) — a /me on the wire.
+-- The Lua handler mirrors post/reply's fallback error for unmatched instances.
+actions.send_action = actions.post
+
 function actions.list_channels(args)
     local platform_id = args.platform_id or ""
 
@@ -127,7 +132,7 @@ animus.register_channel({
     id = "irc",
     name = "IRC",
     capabilities = {"read", "write"},
-    actions = {"post", "reply", "list_channels", "join", "part", "get_channel"},
+    actions = {"post", "reply", "send_action", "list_channels", "join", "part", "get_channel"},
     schema = {
         post = {
             { name = "channel", type = "string", required = true, description = "Target channel (e.g. #steadyfort)" },
@@ -136,6 +141,10 @@ animus.register_channel({
         reply = {
             { name = "channel", type = "string", required = false, description = "Target channel (e.g. #steadyfort); filled automatically from the arrival when omitted" },
             { name = "content", type = "string", required = true, description = "Message text" },
+        },
+        send_action = {
+            { name = "channel", type = "string", required = false, description = "Target channel (e.g. #steadyfort); filled automatically from the arrival when omitted" },
+            { name = "content", type = "string", required = true, description = "Action text for a /me-style emote (e.g. 'leans over the console') — sent as a CTCP ACTION; do NOT prefix with /me" },
         },
         list_channels = {},
         join = {
