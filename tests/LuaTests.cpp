@@ -1008,6 +1008,7 @@ end
 local r = captured.handler({ action = "send_action", channel = "#t", content = "waves" })
 out.handler_success = r.success
 out.handler_output = r.output or ""
+out.handler_error = r.error or ""
 return out
 )";
 
@@ -1033,6 +1034,9 @@ return out
     Assert(v.get("handler_output", "").asString().find("not available")
                != std::string::npos,
            "send_action fallback mirrors post/reply error text");
+    Assert(v.get("handler_error", "").asString().find("not available")
+               != std::string::npos,
+           "send_action fallback carries error field (#209 legibility)");
 }
 
 // ============================================================================
@@ -1069,6 +1073,7 @@ for _, p in ipairs(captured.schema.part) do
 end
 local r = captured.handler({ action = "join", channel = "#t" })
 out.join_fallback = (r.output or "")
+out.join_fallback_err = r.error or ""
 return out
 )";
 
@@ -1088,6 +1093,9 @@ return out
     const std::string fb = v.get("join_fallback", "").asString();
     Assert(fb.find("allow_join_part") != std::string::npos,
            "join fallback names the allow_join_part toggle");
+    Assert(v.get("join_fallback_err", "").asString().find("allow_join_part")
+               != std::string::npos,
+           "join fallback error field names the toggle (#209)");
 }
 
 int main() {

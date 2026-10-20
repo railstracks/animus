@@ -170,7 +170,9 @@ void IrcAdapter::OnMessage(const std::string& sourceNick,
     // semantics explicitly rather than relying on the kernel default.
     dispatchMeta["reply_instructions"] =
         "Reply using the channels tool with action=reply (or action=post; "
-        "action=send_action for /me-style emotes); "
+        "action=send_action for /me-style emotes) and platform_id \"irc:" +
+        m_channelName +
+        "\"; "
         "the channel is provided by the arrival and filled automatically. "
         "Text replies are NOT delivered. In channels, if the message is not "
         "addressed to you, staying silent is correct.";

@@ -123,6 +123,46 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
     std::string action = GetStringField(preArgs, "action");
     std::string adapterType = ExtractAdapterType(platformId);
 
+    // #209: resolve platform_id BEFORE the C++ bridge checks. Models
+    // routinely omit it on minimal replies (the card names the action,
+    // not the id) — without this, IRC calls skip the bridge entirely and
+    // die in the Lua fallback as "unknown Lua handler error". Sources:
+    //   1. this session's latest arrival (the platform being replied on);
+    //   2. single-instance inference: exactly one IRC channel configured —
+    //      unambiguous by definition.
+    if (platformId.empty() && m_channelManager) {
+        if (m_channelContextStore) {
+            const std::string hoistSessionKey =
+                GetStringField(preArgs, "__session_key", "");
+            const std::string hoistAgentId =
+                GetStringField(preArgs, "__agent_id", "");
+            if (!hoistSessionKey.empty()) {
+                auto latest = m_channelContextStore->LatestArrival(
+                    hoistSessionKey, hoistAgentId);
+                if (latest && !latest->platform_id.empty()) {
+                    platformId = latest->platform_id;
+                }
+            }
+        }
+        if (platformId.empty()) {
+            int ircCount = 0;
+            std::string soleIrc;
+            for (const auto& ch : m_channelManager->ListChannels()) {
+                if (ch.type == "irc") {
+                    ++ircCount;
+                    soleIrc = ch.name;
+                }
+            }
+            if (ircCount == 1) {
+                platformId = "irc:" + soleIrc;
+            }
+        }
+        if (!platformId.empty()) {
+            preArgs["platform_id"] = platformId;
+            adapterType = ExtractAdapterType(platformId);
+        }
+    }
+
     // C++ bridge: WhatsApp reply/send — no HTTP API; sends go through the
     // gateway outbox via ChannelManager (same path as auto-replies).
     if (adapterType == "whatsapp" && m_channelManager &&

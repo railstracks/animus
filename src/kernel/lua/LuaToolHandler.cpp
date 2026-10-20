@@ -231,7 +231,9 @@ ToolResult LuaToolHandler::Execute(const ToolCall& call) {
         } else {
             result.error = returnVal.isMember("error")
                 ? returnVal["error"].asString()
-                : "unknown Lua handler error";
+                : (returnVal.isMember("output") && returnVal["output"].isString()
+                       ? returnVal["output"].asString()
+                       : "unknown Lua handler error");
         }
     } else {
         // Handler returned a plain value — treat as success

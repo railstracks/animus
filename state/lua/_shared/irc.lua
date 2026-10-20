@@ -38,11 +38,13 @@ function actions.post(args)
     -- The C++ bridge in ChannelsTool intercepts irc post/reply before this
     -- handler runs, so reaching here means no channel instance matched —
     -- advise the standard reply path.
+    local err = "IRC send not available for this instance (no C++ bridge match). " ..
+                "Check the platform_id with channels list, or use the configured " ..
+                "IRC instance."
     return {
         success = false,
-        output = "IRC send not available for this instance (no C++ bridge match). " ..
-                 "Check the platform_id with channels list, or use the configured " ..
-                 "IRC instance.",
+        error = err,   -- #209: dispatcher reads error, not output, on failure
+        output = err,  -- kept for readers of output
         target = target,
     }
 end
@@ -85,10 +87,12 @@ end
 -- (gated per-instance by the allow_join_part toggle in the /channels
 -- admin form). These fallbacks run only when no bridge is present.
 function actions.join(args)
+    local err = "IRC join is available on live instances with channel roaming " ..
+                "enabled (allow_join_part in the admin UI)."
     return {
         success = false,
-        output = "IRC join is available on live instances with channel roaming " ..
-                 "enabled (allow_join_part in the admin UI).",
+        error = err,   -- #209: dispatcher reads error, not output, on failure
+        output = err,
     }
 end
 
