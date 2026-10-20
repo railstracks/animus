@@ -326,6 +326,77 @@ bool IrcInterfaceRuntime::SendAction(const std::string& target,
     return true;
 }
 
+// --- #205: dynamic channel membership ---
+namespace {
+// Channel targets must be channel-shaped (RFC 2812: one of # & ! + as the
+// first byte) with no spaces, control bytes, or overlength content — a
+// crafted "channel" like "#foo\r\nQUIT" would inject a second IRC command
+// onto the wire (the #204 injection lesson, applied to JOIN/PART).
+bool IsValidChannelTarget(const std::string& channel) {
+    if (channel.empty() || channel.size() > 200) return false;
+    const char c0 = channel[0];
+    if (c0 != '#' && c0 != '&' && c0 != '!' && c0 != '+') return false;
+    for (const unsigned char c : channel) {
+        if (c < 0x20 || c == 0x7F || c == ' ') return false;
+    }
+    return true;
+}
+
+// Channel keys are single tokens: no spaces or control bytes.
+bool IsSafeChannelKey(const std::string& key) {
+    if (key.empty()) return true;
+    if (key.size() > 200) return false;
+    for (const unsigned char c : key) {
+        if (c < 0x20 || c == 0x7F || c == ' ') return false;
+    }
+    return true;
+}
+
+// Reasons are free text after the wire colon: neutralize every control
+// byte to a space so the reason can never terminate the PART command.
+// (\r\n adjacent -> two spaces, mirroring SendAction's body treatment.)
+std::string NeutralizeControlBytes(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const unsigned char c : text) {
+        out.push_back((c < 0x20 || c == 0x7F) ? ' ' : static_cast<char>(c));
+    }
+    return out;
+}
+}  // namespace
+
+std::optional<std::string> IrcInterfaceRuntime::BuildJoinCommand(const std::string& channel,
+                                                                 const std::string& key) {
+    if (!IsValidChannelTarget(channel) || !IsSafeChannelKey(key)) {
+        return std::nullopt;
+    }
+    std::string cmd = "JOIN " + channel;
+    if (!key.empty()) cmd += " " + key;
+    return cmd;
+}
+
+std::optional<std::string> IrcInterfaceRuntime::BuildPartCommand(const std::string& channel,
+                                                                 const std::string& reason) {
+    if (!IsValidChannelTarget(channel)) return std::nullopt;
+    std::string neutral = NeutralizeControlBytes(reason);
+    if (neutral.size() > 300) neutral.resize(300);  // stay under the 512-byte wire limit
+    std::string cmd = "PART " + channel;
+    if (!neutral.empty()) cmd += " :" + neutral;
+    return cmd;
+}
+
+bool IrcInterfaceRuntime::Join(const std::string& channel, const std::string& key) {
+    const auto cmd = BuildJoinCommand(channel, key);
+    if (!cmd.has_value()) return false;
+    return SendRaw(*cmd);
+}
+
+bool IrcInterfaceRuntime::Part(const std::string& channel, const std::string& reason) {
+    const auto cmd = BuildPartCommand(channel, reason);
+    if (!cmd.has_value()) return false;
+    return SendRaw(*cmd);
+}
+
 bool IrcInterfaceRuntime::SendPrivmsg(const std::string& target, const std::string& message) {
     if (target.empty() || message.empty()) {
         return false;

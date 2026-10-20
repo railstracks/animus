@@ -218,6 +218,68 @@ void TestSendActionNoSocket() {
     Assert(!rt.SendAction("#st_test", ""), "SendAction with empty message false");
 }
 
+
+// ============================================================================
+// #205: JOIN/PART wire commands — encoding + injection validation
+// ============================================================================
+void TestJoinPartBuild() {
+    // Valid joins
+    Assert(IrcInterfaceRuntime::BuildJoinCommand("#test") == "JOIN #test",
+           "join: plain channel");
+    Assert(IrcInterfaceRuntime::BuildJoinCommand("#test", "secret") == "JOIN #test secret",
+           "join: keyed channel");
+    Assert(IrcInterfaceRuntime::BuildJoinCommand("#test", "") == "JOIN #test",
+           "join: empty key omitted");
+    Assert(IrcInterfaceRuntime::BuildJoinCommand("&under") == "JOIN &under",
+           "join: & prefix is a valid channel");
+
+    // Injection + shape rejection (octal escapes: \001 consumes 3 digits max,
+    // never swallows the following char — the #204 hex lesson)
+    Assert(!IrcInterfaceRuntime::BuildJoinCommand("#foo\r\nQUIT", "").has_value(),
+           "join: CRLF injection rejected");
+    Assert(!IrcInterfaceRuntime::BuildJoinCommand("foo", "").has_value(),
+           "join: missing channel prefix rejected");
+    Assert(!IrcInterfaceRuntime::BuildJoinCommand("#foo bar", "").has_value(),
+           "join: space in channel rejected");
+    Assert(!IrcInterfaceRuntime::BuildJoinCommand("", "").has_value(),
+           "join: empty channel rejected");
+    Assert(!IrcInterfaceRuntime::BuildJoinCommand("#a\001b", "").has_value(),
+           "join: control byte in channel rejected");
+    Assert(!IrcInterfaceRuntime::BuildJoinCommand("#test", "k\001").has_value(),
+           "join: control byte in key rejected");
+
+    // Valid parts
+    Assert(IrcInterfaceRuntime::BuildPartCommand("#test") == "PART #test",
+           "part: no reason omits trailing colon");
+    Assert(IrcInterfaceRuntime::BuildPartCommand("#test", "bye all") == "PART #test :bye all",
+           "part: reason after colon");
+    // CRLF in reason is neutralized to spaces (never a second wire command);
+    // \r\n adjacent -> two replacements -> two spaces (SendAction behavior)
+    Assert(IrcInterfaceRuntime::BuildPartCommand("#t", "bye\r\nQUIT :x")
+               == "PART #t :bye  QUIT :x",
+           "part: CRLF in reason becomes spaces");
+    Assert(!IrcInterfaceRuntime::BuildPartCommand("foo", "").has_value(),
+           "part: missing prefix rejected");
+
+    // Reason length capped under the 512-byte wire limit
+    const std::string longReason(500, 'a');
+    const auto capped = IrcInterfaceRuntime::BuildPartCommand("#t", longReason);
+    Assert(capped.has_value() && capped->size() <= 512,
+           "part: long reason capped under wire limit");
+}
+
+void TestJoinPartNoSocket() {
+    IrcInterfaceRuntime rt(
+        "test", TestConfig(),
+        [](const std::string&, const std::string&, const std::string&, bool) {},
+        nullptr);
+    Assert(!rt.Join("#st_test"),
+           "Join without a connection returns false (no crash)");
+    Assert(!rt.Part("#st_test"),
+           "Part without a connection returns false (no crash)");
+    Assert(!rt.Join("bad"), "Join with invalid channel returns false");
+}
+
 }  // namespace
 
 // ============================================================================
@@ -234,6 +296,8 @@ int main() {
     TestMarkdownToIrc();
     TestActionFrame();
     TestSendActionNoSocket();
+    TestJoinPartBuild();
+    TestJoinPartNoSocket();
 
     std::cerr << "\n";
     if (g_failures > 0) {

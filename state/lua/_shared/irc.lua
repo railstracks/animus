@@ -81,16 +81,19 @@ function actions.list_channels(args)
     }
 end
 
+-- #205: join/part are intercepted by the C++ bridge on live instances
+-- (gated per-instance by the allow_join_part toggle in the /channels
+-- admin form). These fallbacks run only when no bridge is present.
 function actions.join(args)
     return {
         success = false,
-        output = "IRC join/part requires C++ bridge access (not yet implemented). " ..
-                 "Configure channels in the admin UI.",
+        output = "IRC join is available on live instances with channel roaming " ..
+                 "enabled (allow_join_part in the admin UI).",
     }
 end
 
 function actions.part(args)
-    return actions.join(args)  -- same limitation
+    return actions.join(args)  -- same limitation, same message shape
 end
 
 function actions.get_channel(args)
@@ -148,10 +151,12 @@ animus.register_channel({
         },
         list_channels = {},
         join = {
-            { name = "channel", type = "string", required = true, description = "Channel to join" },
+            { name = "channel", type = "string", required = true, description = "Channel to join (e.g. #campaign-night)" },
+            { name = "key", type = "string", required = false, description = "Channel key (password) for keyed channels" },
         },
         part = {
             { name = "channel", type = "string", required = true, description = "Channel to leave" },
+            { name = "farewell", type = "string", required = false, description = "Optional part reason shown to the channel" },
         },
         get_channel = {
             { name = "channel", type = "string", required = false, description = "Channel name" },

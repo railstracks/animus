@@ -69,6 +69,8 @@ public:
     void Stop() override;
     void SendReply(const ChannelReplyTarget& target, const std::string& text) override;
     void SendAction(const ChannelReplyTarget& target, const std::string& text) override;
+    bool JoinChannel(const ChannelReplyTarget& target, const std::string& key) override;
+    bool PartChannel(const ChannelReplyTarget& target, const std::string& reason) override;
     bool IsConnected() const override;
 
 private:
