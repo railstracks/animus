@@ -74,6 +74,25 @@ public:
     // Send a /me-style action message to a channel or nick.
     bool SendAction(const std::string& target, const std::string& message);
 
+    // --- #205: dynamic channel membership ---
+    // Build a validated JOIN wire command. Target must be channel-shaped
+    // (one of # & ! + as first byte), with no spaces, control bytes, or
+    // overlength content — a crafted "channel" like "#foo\r\nQUIT" must
+    // never reach the socket. Key is optional; empty key is omitted.
+    // Returns nullopt when the target or key is invalid.
+    static std::optional<std::string> BuildJoinCommand(const std::string& channel,
+                                                       const std::string& key = "");
+    // Build a validated PART wire command. Reason is optional; control
+    // bytes in the reason are neutralized (replaced with spaces) so it can
+    // never inject a second IRC command.
+    static std::optional<std::string> BuildPartCommand(const std::string& channel,
+                                                       const std::string& reason = "");
+    // Join/part a channel on the live connection. Return false when the
+    // command is invalid or no connection is established (SendRaw on a
+    // closed socket returns false).
+    bool Join(const std::string& channel, const std::string& key = "");
+    bool Part(const std::string& channel, const std::string& reason = "");
+
     // Single-line dispatch (public for tests; safe without a connection —
     // SendRaw on a closed socket returns false).
     void HandleLine(const std::string& line, bool* joined);

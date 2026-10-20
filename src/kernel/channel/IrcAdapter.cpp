@@ -92,6 +92,24 @@ void IrcAdapter::SendAction(const ChannelReplyTarget& target, const std::string&
     }
 }
 
+// #205: forward to the runtime's validated wire builders. Return value
+// flows back to the agent (honest failure on invalid target / no socket).
+bool IrcAdapter::JoinChannel(const ChannelReplyTarget& target, const std::string& key) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_runtime) {
+        return m_runtime->Join(target.irc_target, key);
+    }
+    return false;
+}
+
+bool IrcAdapter::PartChannel(const ChannelReplyTarget& target, const std::string& reason) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_runtime) {
+        return m_runtime->Part(target.irc_target, reason);
+    }
+    return false;
+}
+
 bool IrcAdapter::IsConnected() const {
     // TODO: track connected state from OnStatus callback
     return m_runtime != nullptr;

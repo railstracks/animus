@@ -48,7 +48,9 @@ export const channels = {
         respondToDm: '回复直接消息',
         respondToNotices: '回复通知',
         allowedDmUsers: '允许的 DM 用户',
-        reconnect: '自动重新连接'
+        reconnect: '自动重新连接',
+        allowJoinPart: '允许加入/离开频道',
+        allowJoinPartHint: '允许代理自行加入和离开 IRC 频道'
       },
       telegram: {
         botToken: '机器人代币',

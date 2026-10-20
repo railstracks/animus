@@ -49,7 +49,9 @@ export const channels = {
         respondToDm: 'Respond to direct messages',
         respondToNotices: 'Respond to notices',
         allowedDmUsers: 'Allowed DM users',
-        reconnect: 'Auto-reconnect'
+        reconnect: 'Auto-reconnect',
+        allowJoinPart: 'Allow channel join/part',
+        allowJoinPartHint: 'Let the agent join and leave IRC channels at its discretion (roaming)'
       },
       telegram: {
         botToken: 'Bot Token',

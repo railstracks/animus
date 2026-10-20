@@ -1035,6 +1035,61 @@ return out
            "send_action fallback mirrors post/reply error text");
 }
 
+// ============================================================================
+// #205: join/part schemas declare key/farewell; fallback names the toggle
+// ============================================================================
+void TestIrcAdapterJoinPartSchema() {
+    ToolRegistry tools;
+    HttpClient http;
+    LuaState::Config config;
+    config.agentId = "test";
+    config.instructionLimit = 100'000;
+    LuaState lua(config, tools, http);
+
+    const char* prelude = R"(
+captured = nil
+animus = {}
+function animus.register_channel(t) captured = t end
+config = {}
+function config.get(k) return "" end
+)";
+
+    const std::string src = ReadIrcAdapterSrc();
+    Assert(!src.empty(), "irc.lua source found");
+
+    const std::string driver = R"(
+local out = {}
+out.join_has_key = false
+out.part_has_farewell = false
+for _, p in ipairs(captured.schema.join) do
+    if p.name == "key" then out.join_has_key = true end
+end
+for _, p in ipairs(captured.schema.part) do
+    if p.name == "farewell" then out.part_has_farewell = true end
+end
+local r = captured.handler({ action = "join", channel = "#t" })
+out.join_fallback = (r.output or "")
+return out
+)";
+
+    const std::string out = lua.Eval(
+        std::string(prelude) + "\n" + src + "\n" + driver, "irc-joinpart-schema");
+    Json::Value v;
+    Assert(Json::Reader().parse(out, v), "join/part schema output parses, got: "
+           + out.substr(0, 120));
+    if (v.isString()) {
+        Assert(Json::Reader().parse(v.asString(), v),
+               "join/part output unwrap parses");
+    }
+    Assert(v.get("join_has_key", false).asBool(),
+           "join schema declares optional key param");
+    Assert(v.get("part_has_farewell", false).asBool(),
+           "part schema declares optional farewell param");
+    const std::string fb = v.get("join_fallback", "").asString();
+    Assert(fb.find("allow_join_part") != std::string::npos,
+           "join fallback names the allow_join_part toggle");
+}
+
 int main() {
     std::cerr << "Running Lua integration tests...\n";
 
@@ -1054,6 +1109,7 @@ int main() {
     TestMemoryLimit();
     TestBlueskyFacets();
     TestIrcAdapterSendAction();
+    TestIrcAdapterJoinPartSchema();
 
     if (g_failures > 0) {
         std::cerr << "\nFAILED: " << g_failures << " assertions failed\n";

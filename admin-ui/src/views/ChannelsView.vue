@@ -97,6 +97,7 @@ const formData = ref({
   irc_realname: 'Animus Agent',
   irc_channels_multiline: '',
   irc_dm_only: false,
+  irc_allow_join_part: false,
   irc_respond_to_channel_activity: true,
   irc_respond_to_direct_messages: true,
   irc_respond_to_notices: false,
@@ -217,6 +218,7 @@ function resetForm(): void {
     irc_realname: 'Animus Agent',
     irc_channels_multiline: '',
     irc_dm_only: false,
+  irc_allow_join_part: false,
     irc_respond_to_channel_activity: true,
     irc_respond_to_direct_messages: true,
     irc_respond_to_notices: false,
@@ -316,6 +318,7 @@ function buildIrcConfig(): Record<string, unknown> {
     realname: formData.value.irc_realname.trim() || 'Animus Agent',
     channels,
     dm_only: formData.value.irc_dm_only,
+    allow_join_part: formData.value.irc_allow_join_part,
     respond_to_channel_activity: formData.value.irc_respond_to_channel_activity,
     respond_to_direct_messages: formData.value.irc_respond_to_direct_messages,
     respond_to_notices: formData.value.irc_respond_to_notices,
@@ -339,6 +342,7 @@ function loadIrcConfig(cfg: Record<string, any>): void {
   formData.value.irc_username = String(cfg.username ?? 'animus');
   formData.value.irc_realname = String(cfg.realname ?? 'Animus Agent');
   formData.value.irc_dm_only = String(cfg.dm_only ?? 'false') === 'true';
+  formData.value.irc_allow_join_part = String(cfg.allow_join_part ?? 'false') === 'true';
   formData.value.irc_respond_to_channel_activity = String(cfg.respond_to_channel_activity ?? 'true') === 'true';
   formData.value.irc_respond_to_direct_messages = String(cfg.respond_to_direct_messages ?? 'true') === 'true';
   formData.value.irc_respond_to_notices = String(cfg.respond_to_notices ?? 'false') === 'true';
@@ -956,7 +960,8 @@ onMounted(async () => {
               <v-select v-model="formData.irc_agent_id" :items="agentItems" :label="t('channels.form.irc.agent')" density="comfortable" class="mb-2" />
               <v-checkbox v-model="formData.irc_respond_to_channel_activity" :label="t('channels.form.irc.respondToChannel')" density="comfortable" hide-details class="mb-1" />
               <v-checkbox v-model="formData.irc_respond_to_direct_messages" :label="t('channels.form.irc.respondToDm')" density="comfortable" hide-details class="mb-1" />
-              <v-checkbox v-model="formData.irc_respond_to_notices" :label="t('channels.form.irc.respondToNotices')" density="comfortable" hide-details class="mb-2" />
+              <v-checkbox v-model="formData.irc_respond_to_notices" :label="t('channels.form.irc.respondToNotices')" density="comfortable" hide-details class="mb-1" />
+              <v-checkbox v-model="formData.irc_allow_join_part" :label="t('channels.form.irc.allowJoinPart')" density="comfortable" :hint="t('channels.form.irc.allowJoinPartHint')" persistent-hint class="mb-2" />
               <v-textarea v-model="formData.irc_allowed_dm_users" :label="t('channels.form.irc.allowedDmUsers')" density="comfortable" rows="2" class="mb-2" />
               <v-checkbox v-model="formData.irc_reconnect_enabled" :label="t('channels.form.irc.reconnect')" density="comfortable" hide-details class="mb-1" />
             </template>

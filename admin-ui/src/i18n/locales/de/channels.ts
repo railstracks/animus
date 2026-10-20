@@ -48,7 +48,9 @@ export const channels = {
         respondToDm: 'Reagieren Sie auf Direktnachrichten',
         respondToNotices: 'Reagieren Sie auf Hinweise',
         allowedDmUsers: 'Zugelassene DM-Benutzer',
-        reconnect: 'Automatische Wiederverbindung'
+        reconnect: 'Automatische Wiederverbindung',
+        allowJoinPart: 'Kanalbeitritt/-verlassen erlauben',
+        allowJoinPartHint: 'Der Agent darf IRC-Kanäle nach eigenem Ermessen betreten und verlassen (Roaming)'
       },
       telegram: {
         botToken: 'Bot-Token',

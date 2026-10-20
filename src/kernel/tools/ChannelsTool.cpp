@@ -180,6 +180,45 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
             result.call_id = call.id;
             return result;
         }
+        if (action == "join" || action == "part") {
+            // #205: opt-in gate — channel roaming must be enabled per
+            // instance (allow_join_part in the /channels admin form).
+            const std::string instance = ExtractInstanceName(platformId);
+            auto chState = m_channelManager->GetChannel(instance);
+            const bool allowed = chState.has_value()
+                && chState->config.get("allow_join_part", false).asBool();
+            if (!allowed) {
+                result.success = false;
+                result.error = "IRC channel joining is disabled on this instance. "
+                               "Ask the operator to enable it (allow_join_part in the /channels admin form).";
+                return result;
+            }
+            std::string channel = GetStringField(preArgs, "channel");
+            if (channel.empty()) channel = GetStringField(preArgs, "target");
+            if (channel.empty()) {
+                result.success = false;
+                result.error = "IRC " + action + " requires a 'channel' parameter";
+                return result;
+            }
+            ChannelManager::ReplyTarget rt;
+            rt.channel_name = instance;
+            rt.channel_type = "irc";
+            rt.irc_target = channel;
+            if (action == "join") {
+                const std::string key = GetStringField(preArgs, "key");
+                result.success = m_channelManager->JoinChannel(rt, key);
+                result.output = result.success
+                    ? "Joined " + channel + (key.empty() ? std::string() : " (with key)")
+                    : "Join failed: invalid channel name or no connection";
+            } else {
+                const std::string farewell = GetStringField(preArgs, "farewell");
+                result.success = m_channelManager->PartChannel(rt, farewell);
+                result.output = result.success
+                    ? "Left " + channel
+                    : "Part failed: invalid channel name or no connection";
+            }
+            return result;
+        }
         if (action == "list_channels") {
             auto chState = m_channelManager->GetChannel(ExtractInstanceName(platformId));
             if (chState) {
