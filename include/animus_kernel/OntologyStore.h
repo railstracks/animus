@@ -51,6 +51,7 @@ struct OntologyProperty {
     PropertyType value_type{PropertyType::Text};
     memory::MemoryState memory_state{memory::MemoryState::New};
     std::optional<int64_t> linked_observation_id;
+    std::string agent_id{"default"};
     int64_t created_at_unix_ms{0};
     int64_t updated_at_unix_ms{0};
 };
@@ -82,7 +83,8 @@ public:
         const std::string& agent_id = "");
     std::optional<OntologyEntity> GetEntity(int64_t id);
     std::optional<OntologyEntity> FindByPath(
-        RootCategory category, const std::string& full_path);
+        RootCategory category, const std::string& full_path,
+        const std::string& agent_id = "");
     OntologyEntity CreateEntity(const OntologyEntity& entity,
                                 const std::string& motivation = "");
     bool UpdateEntity(const OntologyEntity& entity,

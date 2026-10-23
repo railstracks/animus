@@ -738,6 +738,7 @@ int64_t ConsolidationPipeline::ReconcileOntologyFromObservations(
             ontology::OntologyProperty p;
             p.entity_id = entity->id;
             p.key = key;
+            if (!agentId.empty()) p.agent_id = agentId;
             p.value = property["value"].isString()
                 ? property["value"].asString()
                 : JsonToString(property["value"]);

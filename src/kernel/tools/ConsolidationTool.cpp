@@ -1141,6 +1141,7 @@ ToolResult ConsolidationTool::HandleOntologyUpsert(const std::string& arguments,
             prop.key = key;
             prop.value = value;
             prop.value_type = *propType;
+            if (!agentId.empty()) prop.agent_id = agentId;
 
             m_ontologyStore->SetProperty(prop, propMotivation);
             upsertedProps.append(key);
@@ -1286,7 +1287,7 @@ ToolResult ConsolidationTool::HandleOntologyGet(const std::string& arguments, co
             }
             // Stored full_path INCLUDES the category prefix
             // ("persons/JunkTarget"), matching what ontology:list returns.
-            entity = m_ontologyStore->FindByPath(*category, path);
+            entity = m_ontologyStore->FindByPath(*category, path, agentId);
         }
     }
 
