@@ -141,12 +141,23 @@ void MemorySearch::EnsureSchema() {
         CREATE TABLE IF NOT EXISTS ontology_search_docs (
             doc_id INTEGER PRIMARY KEY AUTOINCREMENT,
             entity_id INTEGER NOT NULL REFERENCES ontology_entities(id) ON DELETE CASCADE,
+            agent_id TEXT NOT NULL DEFAULT 'default',
             text TEXT NOT NULL DEFAULT ''
         );
     )");
     store->Exec(
         "CREATE INDEX IF NOT EXISTS idx_ontology_search_docs_entity "
         "ON ontology_search_docs(entity_id)");
+    // #215: agent-scoped ontology search. Existing installs get the column
+    // via ALTER + backfill from the owning entity; fresh installs already
+    // have it from CREATE TABLE, so ColumnExists skips both statements.
+    if (!schema::ColumnExists(store, "ontology_search_docs", "agent_id")) {
+        store->Exec("ALTER TABLE ontology_search_docs ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'default'");
+        store->Exec(
+            "UPDATE ontology_search_docs SET agent_id = COALESCE("
+            "(SELECT e.agent_id FROM ontology_entities e "
+             "WHERE e.id = ontology_search_docs.entity_id), 'default')");
+    }
 
     if (store->Dialect() == DataStoreDialect::SQLite) {
         store->Exec(R"(
@@ -443,10 +454,11 @@ void MemorySearch::RefreshOntologyDocs() {
         // Entity path/name doc.
         {
             auto stmt = store->Prepare(
-                "INSERT INTO ontology_search_docs(entity_id, text) VALUES (?, ?)");
+                "INSERT INTO ontology_search_docs(entity_id, agent_id, text) VALUES (?, ?, ?)");
             if (stmt) {
                 stmt->BindInt64(1, entity.id);
-                stmt->BindText(2, entity.full_path + " " + entity.name);
+                stmt->BindText(2, entity.agent_id);
+                stmt->BindText(3, entity.full_path + " " + entity.name);
                 stmt->ExecDML();
             }
         }
@@ -455,10 +467,11 @@ void MemorySearch::RefreshOntologyDocs() {
         const auto properties = m_ontologyStore->ListProperties(entity.id);
         for (const auto& property : properties) {
             auto stmt = store->Prepare(
-                "INSERT INTO ontology_search_docs(entity_id, text) VALUES (?, ?)");
+                "INSERT INTO ontology_search_docs(entity_id, agent_id, text) VALUES (?, ?, ?)");
             if (!stmt) continue;
             stmt->BindInt64(1, entity.id);
-            stmt->BindText(2, property.key + " " + property.value);
+            stmt->BindText(2, entity.agent_id);
+            stmt->BindText(3, property.key + " " + property.value);
             stmt->ExecDML();
         }
     }
@@ -574,16 +587,21 @@ std::vector<MemorySearchResult> MemorySearch::Search(
         if (isPostgres) {
             // PostgreSQL: tsvector search on ontology_search_docs.
             const std::string tsQueryOnt = PgTsQueryFromNaturalLanguage(query);
-            auto stmt = store->Prepare(
+            // #215: scope ontology docs to the searching agent.
+            std::string ontSql =
                 "SELECT d.entity_id, d.text, ts_rank(d.search_vector, to_tsquery('english', ?)) "
                 "FROM ontology_search_docs d "
-                "WHERE d.search_vector @@ to_tsquery('english', ?) "
-                "ORDER BY ts_rank(d.search_vector, to_tsquery('english', ?)) DESC LIMIT ?");
+                "WHERE d.search_vector @@ to_tsquery('english', ?) ";
+            if (!agentKey.empty()) ontSql += "AND d.agent_id=? ";
+            ontSql += "ORDER BY ts_rank(d.search_vector, to_tsquery('english', ?)) DESC LIMIT ?";
+            auto stmt = store->Prepare(ontSql);
             if (stmt) {
-                stmt->BindText(1, tsQueryOnt);
-                stmt->BindText(2, tsQueryOnt);
-                stmt->BindText(3, tsQueryOnt);
-                stmt->BindInt64(4, perDomainLimit * 3);
+                int ontBind = 1;
+                stmt->BindText(ontBind++, tsQueryOnt);
+                stmt->BindText(ontBind++, tsQueryOnt);
+                if (!agentKey.empty()) stmt->BindText(ontBind++, agentKey);
+                stmt->BindText(ontBind++, tsQueryOnt);
+                stmt->BindInt64(ontBind, perDomainLimit * 3);
 
                 std::unordered_map<int64_t, MemorySearchResult> bestByEntity;
                 while (stmt->Step()) {
@@ -611,15 +629,19 @@ std::vector<MemorySearchResult> MemorySearch::Search(
             }
         } else {
             // SQLite: FTS5 + bm25.
-            auto stmt = store->Prepare(
+            // #215: scope ontology docs to the searching agent.
+            std::string ontSql =
                 "SELECT d.entity_id, d.text, bm25(ontology_search_fts) "
                 "FROM ontology_search_fts "
                 "JOIN ontology_search_docs d ON d.doc_id = ontology_search_fts.rowid "
-                "WHERE ontology_search_fts MATCH ? "
-                "ORDER BY bm25(ontology_search_fts) LIMIT ?");
+                "WHERE ontology_search_fts MATCH ? ";
+            if (!agentKey.empty()) ontSql += "AND d.agent_id=? ";
+            ontSql += "ORDER BY bm25(ontology_search_fts) LIMIT ?";
+            auto stmt = store->Prepare(ontSql);
             if (stmt) {
                 stmt->BindText(1, FtsQueryFromNaturalLanguage(query));
-                stmt->BindInt64(2, perDomainLimit * 3);
+                if (!agentKey.empty()) stmt->BindText(2, agentKey);
+                stmt->BindInt64(agentKey.empty() ? 2 : 3, perDomainLimit * 3);
 
                 std::unordered_map<int64_t, MemorySearchResult> bestByEntity;
                 while (stmt->Step()) {

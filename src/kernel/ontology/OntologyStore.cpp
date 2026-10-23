@@ -134,6 +134,7 @@ OntologyProperty RowToProperty(IStatement* stmt) {
     }
     p.created_at_unix_ms = stmt->ColumnInt64(7);
     p.updated_at_unix_ms = stmt->ColumnInt64(8);
+    p.agent_id = stmt->ColumnText(9);
     return p;
 }
 
@@ -163,6 +164,7 @@ Json::Value PropertyToJson(const OntologyProperty& property) {
     out["value"] = property.value;
     out["value_type"] = static_cast<Json::Int>(PropertyTypeToInt(property.value_type));
     out["memory_state"] = static_cast<Json::Int>(MemoryStateToInt(property.memory_state));
+    out["agent_id"] = property.agent_id;
     if (property.linked_observation_id.has_value()) {
         out["linked_observation_id"] = static_cast<Json::Int64>(*property.linked_observation_id);
     } else {
@@ -196,9 +198,15 @@ void OntologyStore::EnsureSchema() {
         );
     )");
 
+    // #215: per-agent worldviews - path namespace scoped by owning agent.
+    // Dropping the legacy agent-blind index is safe: it guaranteed global
+    // path uniqueness, so (agent_id, root_category, full_path) is strictly
+    // more unique - no collision resolution needed on existing installs.
     m_store->Exec(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_ontology_entities_category_path "
-        "ON ontology_entities(root_category, full_path)");
+        "DROP INDEX IF EXISTS idx_ontology_entities_category_path");
+    m_store->Exec(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_ontology_entities_agent_category_path "
+        "ON ontology_entities(agent_id, root_category, full_path)");
     m_store->Exec(
         "CREATE INDEX IF NOT EXISTS idx_ontology_entities_parent "
         "ON ontology_entities(parent_id)");
@@ -396,14 +404,21 @@ std::optional<OntologyEntity> OntologyStore::GetEntity(int64_t id) {
 }
 
 std::optional<OntologyEntity> OntologyStore::FindByPath(
-        RootCategory category, const std::string& full_path) {
-    auto stmt = m_store->Prepare(
-        "SELECT id, parent_id, root_category, name, full_path, sort_order, agent_id, "
-        "created_at_unix_ms, updated_at_unix_ms "
-        "FROM ontology_entities WHERE root_category=? AND full_path=?");
+        RootCategory category, const std::string& full_path,
+        const std::string& agent_id) {
+    // #215: empty agent_id = unscoped lookup (admin/migration paths).
+    const char* sql = agent_id.empty()
+        ? "SELECT id, parent_id, root_category, name, full_path, sort_order, agent_id, "
+          "created_at_unix_ms, updated_at_unix_ms "
+          "FROM ontology_entities WHERE root_category=? AND full_path=?"
+        : "SELECT id, parent_id, root_category, name, full_path, sort_order, agent_id, "
+          "created_at_unix_ms, updated_at_unix_ms "
+          "FROM ontology_entities WHERE root_category=? AND full_path=? AND agent_id=?";
+    auto stmt = m_store->Prepare(sql);
     if (!stmt) return std::nullopt;
     stmt->BindInt64(1, RootCategoryToInt(category));
     stmt->BindText(2, full_path);
+    if (!agent_id.empty()) stmt->BindText(3, agent_id);
     if (!stmt->Step()) return std::nullopt;
     return RowToEntity(stmt.get());
 }
@@ -429,7 +444,7 @@ OntologyEntity OntologyStore::CreateEntity(
     // #76: statement-scoped id via RETURNING. Failure (no row returned)
     // includes the unique-path conflict — resolve the existing entity.
     if (!stmt->Step()) {
-        auto existing = FindByPath(entity.root_category, entity.full_path);
+        auto existing = FindByPath(entity.root_category, entity.full_path, entity.agent_id);
         return existing.value_or(OntologyEntity{});
     }
 
@@ -540,7 +555,7 @@ std::vector<OntologyProperty> OntologyStore::ListProperties(int64_t entity_id) {
     std::vector<OntologyProperty> out;
     auto stmt = m_store->Prepare(
         "SELECT id, entity_id, key, value, value_type, memory_state, linked_observation_id, "
-        "created_at_unix_ms, updated_at_unix_ms "
+        "created_at_unix_ms, updated_at_unix_ms, agent_id "
         "FROM ontology_properties WHERE entity_id=? ORDER BY key ASC");
     if (!stmt) return out;
     stmt->BindInt64(1, entity_id);
@@ -554,7 +569,7 @@ std::optional<OntologyProperty> OntologyStore::GetProperty(
         int64_t entity_id, const std::string& key) {
     auto stmt = m_store->Prepare(
         "SELECT id, entity_id, key, value, value_type, memory_state, linked_observation_id, "
-        "created_at_unix_ms, updated_at_unix_ms "
+        "created_at_unix_ms, updated_at_unix_ms, agent_id "
         "FROM ontology_properties WHERE entity_id=? AND key=?");
     if (!stmt) return std::nullopt;
     stmt->BindInt64(1, entity_id);
@@ -602,8 +617,8 @@ OntologyProperty OntologyStore::SetProperty(const OntologyProperty& prop, const 
         auto stmt = m_store->Prepare(
             "INSERT INTO ontology_properties "
             "(entity_id, key, value, value_type, memory_state, linked_observation_id, "
-            "created_at_unix_ms, updated_at_unix_ms) "
-            "VALUES (?,?,?,?,?,?,?,?)");
+            "agent_id, created_at_unix_ms, updated_at_unix_ms) "
+            "VALUES (?,?,?,?,?,?,?,?,?)");
         if (!stmt) return {};
         stmt->BindInt64(1, prop.entity_id);
         stmt->BindText(2, prop.key);
@@ -612,8 +627,9 @@ OntologyProperty OntologyStore::SetProperty(const OntologyProperty& prop, const 
         stmt->BindInt64(5, MemoryStateToInt(effectiveState));
         if (prop.linked_observation_id.has_value()) stmt->BindInt64(6, *prop.linked_observation_id);
         else stmt->BindNull(6);
-        stmt->BindInt64(7, now);
+        stmt->BindText(7, prop.agent_id.empty() ? std::string("default") : prop.agent_id);
         stmt->BindInt64(8, now);
+        stmt->BindInt64(9, now);
         stmt->ExecDML();
         success = DidWriteRows(stmt.get());
     }
@@ -638,7 +654,7 @@ OntologyProperty OntologyStore::SetProperty(const OntologyProperty& prop, const 
 bool OntologyStore::DeleteProperty(int64_t id, const std::string& motivation) {
     auto stmtGet = m_store->Prepare(
         "SELECT id, entity_id, key, value, value_type, memory_state, linked_observation_id, "
-        "created_at_unix_ms, updated_at_unix_ms "
+        "created_at_unix_ms, updated_at_unix_ms, agent_id "
         "FROM ontology_properties WHERE id=?");
     if (!stmtGet) return false;
     stmtGet->BindInt64(1, id);
@@ -768,7 +784,7 @@ std::optional<OntologyEntity> OntologyStore::EnsureEntityPath(
 
     for (const auto& segment : parts) {
         std::string fullPath = prefix.empty() ? segment : (prefix + "/" + segment);
-        auto existing = FindByPath(category, fullPath);
+        auto existing = FindByPath(category, fullPath, agent_id);
         if (existing.has_value()) {
             last = *existing;
             parentId = last.id;

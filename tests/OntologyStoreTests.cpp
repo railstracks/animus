@@ -144,6 +144,68 @@ int TestPropertyStateSyncAndOrphaning() {
     return 0;
 }
 
+int TestAgentScopedPathResolution() {
+    std::cerr << "  [Ontology] #215: per-agent path namespace + property stamping...\n";
+    const auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memoryStore(&dataStore);
+    OntologyStore ontologyStore(&dataStore);
+
+    auto a1 = ontologyStore.EnsureEntityPath(
+        RootCategory::Persons, "shared_target", "seed", "agent-a");
+    auto b1 = ontologyStore.EnsureEntityPath(
+        RootCategory::Persons, "shared_target", "seed", "agent-b");
+    Assert(a1.has_value() && b1.has_value(), "both agents should create the same path");
+    Assert(a1->id != b1->id, "#215: same path must resolve to distinct per-agent entities");
+    Assert(a1->agent_id == "agent-a", "agent A entity stamped");
+    Assert(b1->agent_id == "agent-b", "agent B entity stamped");
+
+    auto fa = ontologyStore.FindByPath(RootCategory::Persons, "persons/shared_target", "agent-a");
+    auto fb = ontologyStore.FindByPath(RootCategory::Persons, "persons/shared_target", "agent-b");
+    Assert(fa.has_value() && fa->id == a1->id, "scoped lookup returns A's entity");
+    Assert(fb.has_value() && fb->id == b1->id, "scoped lookup returns B's entity");
+
+    auto fun = ontologyStore.FindByPath(RootCategory::Persons, "persons/shared_target");
+    Assert(fun.has_value(), "unscoped lookup still resolves (admin/migration path)");
+
+    auto a2 = ontologyStore.EnsureEntityPath(
+        RootCategory::Persons, "shared_target", "seed", "agent-a");
+    Assert(a2.has_value() && a2->id == a1->id,
+           "re-ensure within one agent returns the same entity (unique index)");
+
+    OntologyProperty pa;
+    pa.entity_id = a1->id;
+    pa.key = "phone";
+    pa.value = "555-0100";
+    pa.agent_id = "agent-a";
+    auto spa = ontologyStore.SetProperty(pa, "test");
+    Assert(spa.id > 0, "agent-stamped property should be created");
+    auto gpa = ontologyStore.GetProperty(a1->id, "phone");
+    Assert(gpa.has_value() && gpa->agent_id == "agent-a",
+           "property row carries the writing agent's id");
+
+    OntologyProperty pl;
+    pl.entity_id = b1->id;
+    pl.key = "note";
+    pl.value = "legacy write";
+    auto spl = ontologyStore.SetProperty(pl, "test");
+    Assert(spl.id > 0, "legacy property should be created");
+    auto gpl = ontologyStore.GetProperty(b1->id, "note");
+    Assert(gpl.has_value() && gpl->agent_id == "default",
+           "legacy property (no agent set) defaults to 'default'");
+
+    OntologyProperty pb;
+    pb.entity_id = b1->id;
+    pb.key = "phone";
+    pb.value = "555-0200";
+    pb.agent_id = "agent-b";
+    auto spb = ontologyStore.SetProperty(pb, "test");
+    Assert(spb.id > 0 && spb.id != spa.id, "same key on distinct entities is distinct rows");
+
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -151,6 +213,7 @@ int main() {
 
     TestEntityPathAndPropertyUpsert();
     TestPropertyStateSyncAndOrphaning();
+    TestAgentScopedPathResolution();
 
     std::cerr << "\n";
     if (g_failures == 0) {

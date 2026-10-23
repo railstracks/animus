@@ -277,7 +277,7 @@ int main(int argc, char* argv[]) {
         {"ontology_mutations", {"id", "entity_id", "mutation_type", "description",
                                  "created_at_unix_ms"}, {}},
         // ontology_search_docs
-        {"ontology_search_docs", {"doc_id", "entity_id", "text"}, {}},
+        {"ontology_search_docs", {"doc_id", "entity_id", "agent_id", "text"}, {}},
         // consolidation_watermarks
         {"consolidation_watermarks", {"id", "agent_id", "source", "last_processed_id",
                                        "last_run_unix_ms"}, {}},

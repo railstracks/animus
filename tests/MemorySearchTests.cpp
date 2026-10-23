@@ -199,6 +199,60 @@ int TestRankingAndFiltering() {
     return 0;
 }
 
+int TestOntologySearchAgentScoping() {
+    std::cerr << "  [MemorySearch] #215: ontology arm scoped by searching agent...\n";
+    const auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memoryStore(&dataStore);
+    MemoryFileStore memoryFileStore(&dataStore);
+    OntologyStore ontologyStore(&dataStore);
+    DiaryStore diaryStore(&dataStore);
+    MemorySearch search(&memoryStore, &ontologyStore, &memoryFileStore, &diaryStore);
+
+    auto eA = ontologyStore.EnsureEntityPath(
+        RootCategory::Concepts, "zephyr_alpha", "seed", "agent-a");
+    auto eB = ontologyStore.EnsureEntityPath(
+        RootCategory::Concepts, "zephyr_beta", "seed", "agent-b");
+    Assert(eA.has_value() && eB.has_value(), "both agents' entities created");
+    Assert(eA->id != eB->id, "per-agent entities must be distinct");
+
+    OntologyProperty pA;
+    pA.entity_id = eA->id;
+    pA.key = "band";
+    pA.value = "wide";
+    pA.agent_id = "agent-a";
+    Assert(ontologyStore.SetProperty(pA, "seed").id > 0, "A property written");
+
+    OntologyProperty pB;
+    pB.entity_id = eB->id;
+    pB.key = "band";
+    pB.value = "wide";
+    pB.agent_id = "agent-b";
+    Assert(ontologyStore.SetProperty(pB, "seed").id > 0, "B property written");
+
+    auto collect = [&](const std::string& who) {
+        std::vector<int64_t> ids;
+        for (auto& r : search.Search("zephyr", who, MemorySearchDomain{}, 20)) {
+            if (r.domain == "ontology") ids.push_back(r.id);
+        }
+        return ids;
+    };
+
+    const auto idsA = collect("agent-a");
+    Assert(idsA.size() == 1, "agent-a sees exactly one ontology entity");
+    Assert(!idsA.empty() && idsA[0] == eA->id, "agent-a sees only its own entity");
+
+    const auto idsB = collect("agent-b");
+    Assert(idsB.size() == 1, "agent-b sees exactly one ontology entity");
+    Assert(!idsB.empty() && idsB[0] == eB->id, "agent-b sees only its own entity");
+
+    const auto idsUnscoped = collect("");
+    Assert(idsUnscoped.size() == 2, "unscoped (admin) search sees both entities");
+
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -206,6 +260,7 @@ int main() {
 
     TestCrossDomainSearch();
     TestRankingAndFiltering();
+    TestOntologySearchAgentScoping();
 
     std::cerr << "\n";
     if (g_failures == 0) {
