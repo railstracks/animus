@@ -60,4 +60,32 @@ struct ToolResult {
     std::string error;        // error message if !success
 };
 
+/// #218: single source of truth for session-type compatibility between the
+/// offer side (ToolSchemaService::GetForSession) and the dispatch side
+/// (ToolExecutionService::Execute). The set of tools offered to a session
+/// and the set callable from it must agree.
+inline bool SessionTypeAllowsTool(
+        const std::string& sessionType,
+        const std::string& toolName,
+        const std::vector<std::string>& sessionTypes) {
+    // Tools without session_types are general-purpose: available in every
+    // non-consolidation session; in consolidation sessions only the audited
+    // safe set (mirrors ToolSchemaService's kConsolidationSafe).
+    if (sessionTypes.empty()) {
+        if (sessionType != "consolidation") return true;
+        static const char* kConsolidationSafe[] = {"diary", "memory", "sessions"};
+        for (const char* safe : kConsolidationSafe) {
+            if (toolName == safe) return true;
+        }
+        return false;
+    }
+    for (const auto& st : sessionTypes) {
+        if (st == sessionType) return true;
+        // "default" matches any non-consolidation session type
+        // (gallivanting, chat, scheduled, ...) — mirrors ToolSchemaService.
+        if (st == "default" && sessionType != "consolidation") return true;
+    }
+    return false;
+}
+
 } // namespace animus::kernel

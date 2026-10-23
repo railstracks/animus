@@ -904,6 +904,7 @@ bool ChainRunner::ProcessResponse(
     ToolExecutionContext execCtx;
     execCtx.sessionKey = session.Key().ToString();
     execCtx.agentId = session.AgentId();
+    execCtx.sessionType = session.SessionType();
     std::size_t maxToolResultChars = 75000;  // default
     if (m_agentStore && !session.AgentId().empty()) {
         auto agent = m_agentStore->GetById(session.AgentId());

@@ -1098,6 +1098,64 @@ return out
            "join fallback error field names the toggle (#209)");
 }
 
+// ============================================================================
+// Test: #216 — Lua tool bridge must overwrite __agent_id with the VM's bound
+// agent. Scripts cannot impersonate another agent through the tool bridge.
+// ============================================================================
+void TestLuaBridgeAgentIdentity() {
+    std::cerr << "  TestLuaBridgeAgentIdentity...";
+
+    ToolRegistry tools;
+    HttpClient http;
+
+    // Echo tool that reports the __agent_id it actually received
+    class AgentEchoTool : public IToolHandler {
+    public:
+        ToolDefinition GetDefinition() const override {
+            ToolDefinition def;
+            def.name = "agent_echo";
+            def.description = "Echoes the __agent_id it received";
+            def.parameters.push_back({"message", "string", "Message", false});
+            def.resultMode = ToolResultMode::deliver_to_model;
+            return def;
+        }
+
+        ToolResult Execute(const ToolCall& call) override {
+            Json::Value args;
+            Json::CharReaderBuilder builder;
+            std::istringstream stream(call.arguments);
+            std::string errors;
+            Json::parseFromStream(builder, stream, &args, &errors);
+
+            ToolResult result;
+            result.call_id = call.id;
+            result.success = true;
+            result.output = args.isMember("__agent_id") ? args["__agent_id"].asString() : "<none>";
+            return result;
+        }
+    };
+
+    tools.Register(std::make_unique<AgentEchoTool>());
+
+    LuaState::Config config;
+    config.agentId = "lua-owner-agent";  // distinct value — the assertion target
+    config.instructionLimit = 100'000;
+
+    LuaState lua(config, tools, http);
+
+    // Script attempts to impersonate another agent through the bridge
+    std::string result = lua.Eval(
+        "local r = tools.agent_echo({__agent_id = 'spoofed-agent'}); return r",
+        "lua-owner-agent"
+    );
+    Assert(result.find("lua-owner-agent") != std::string::npos,
+           "bridge must overwrite spoofed __agent_id with the bound agent, got: " + result);
+    Assert(result.find("spoofed-agent") == std::string::npos,
+           "spoofed __agent_id must not survive the bridge, got: " + result);
+
+    std::cerr << " done\n";
+}
+
 int main() {
     std::cerr << "Running Lua integration tests...\n";
 
@@ -1110,6 +1168,7 @@ int main() {
     TestInterfaceRegistration();
     TestSocialRegistration();
     TestToolBridge();
+    TestLuaBridgeAgentIdentity();
     TestScriptStore();
     TestHttpClient();
     TestCoroutineMode();
