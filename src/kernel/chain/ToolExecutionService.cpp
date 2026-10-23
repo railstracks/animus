@@ -9,6 +9,7 @@
 #include <json/writer.h>
 
 #include "animus_kernel/SessionManager.h"
+#include "animus_kernel/tools/ToolTypes.h"
 
 namespace animus::kernel {
 
@@ -155,6 +156,29 @@ ToolResult ToolExecutionService::Execute(
 
     ToolResult toolResult;
 
+    // #218: default-deny session-type gate — the offered set and the
+    // callable set must agree. Checked BEFORE __node forwarding so a remote
+    // node cannot launder a locally-refused call. Tools unknown to the local
+    // registry still forward (remote registries may differ).
+    auto* handler = m_tools.Find(call.name);
+    if (handler) {
+        const auto def = handler->GetDefinition();
+        if (!SessionTypeAllowsTool(ctx.sessionType, call.name, def.session_types)) {
+            toolResult.call_id = call.id;
+            toolResult.success = false;
+            toolResult.error = "tool '" + call.name +
+                "' is not available in session type '" +
+                (ctx.sessionType.empty() ? std::string("default") : ctx.sessionType) + "'";
+            if (routeResult) {
+                *routeResult = ToolRouteResult::deliver_to_model;
+            }
+            std::cerr << "[tool-exec] session-type gate refused tool: " << call.name
+                      << " (session type '" << ctx.sessionType << "', session key '"
+                      << ctx.sessionKey << "')" << std::endl;
+            return toolResult;
+        }
+    }
+
     if (!nodeName.empty() && m_nodeManager) {
         // Forward to remote node
         std::cerr << "[tool-exec] Forwarding to node: " << nodeName << std::endl;
@@ -166,7 +190,6 @@ ToolResult ToolExecutionService::Execute(
             *routeResult = ToolRouteResult::deliver_to_model;
         }
     } else {
-        auto* handler = m_tools.Find(call.name);
         if (handler) {
             try {
                 toolResult = handler->Execute(tc);

@@ -708,6 +708,19 @@ if(ANIMUS_BUILD_TESTS)
     )
     add_test(NAME ConsolidationTests COMMAND animus_consolidation_tests)
 
+    add_executable(animus_tool_dispatch_tests
+      tests/ToolDispatchTests.cpp
+    )
+    target_link_libraries(animus_tool_dispatch_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_tool_dispatch_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_tool_dispatch_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME ToolDispatchTests COMMAND animus_tool_dispatch_tests)
+
     add_executable(animus_ontology_store_tests
       tests/OntologyStoreTests.cpp
     )

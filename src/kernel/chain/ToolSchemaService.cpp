@@ -9,6 +9,7 @@
 #include <json/writer.h>
 
 #include "animus_kernel/tools/ChannelsTool.h"
+#include "animus_kernel/tools/ToolTypes.h"
 #include "animus_kernel/tools/ApiTool.h"
 
 namespace animus::kernel {
@@ -133,27 +134,14 @@ std::vector<llm::LLMToolDef> ToolSchemaService::GetForSession(
 
     // Consolidation sessions: bypass agent whitelist, use dedicated toolset
     if (sessionType == "consolidation") {
-        static const std::set<std::string> kConsolidationSafe = {
-            "diary", "memory", "sessions"
-        };
-
         std::vector<llm::LLMToolDef> defs;
         for (const auto& def : m_tools.GetAllDefinitions()) {
             auto* handler = m_tools.Find(def.name);
             if (!handler) continue;
             const auto& td = handler->GetDefinition();
-
-            if (!td.session_types.empty()) {
-                for (const auto& st : td.session_types) {
-                    if (st == "consolidation") {
-                        defs.push_back(Convert(def));
-                        break;
-                    }
-                }
-            } else {
-                if (kConsolidationSafe.count(def.name)) {
-                    defs.push_back(Convert(def));
-                }
+            // #218: shared predicate with ToolExecutionService — offered == callable.
+            if (SessionTypeAllowsTool("consolidation", def.name, td.session_types)) {
+                defs.push_back(Convert(def));
             }
         }
         return defs;
@@ -167,18 +155,10 @@ std::vector<llm::LLMToolDef> ToolSchemaService::GetForSession(
         auto* handler = m_tools.Find(def.name);
         if (!handler) continue;
         const auto& td = handler->GetDefinition();
-        if (td.session_types.empty()) {
+        // #218: shared predicate with ToolExecutionService — offered == callable.
+        // (The consolidation session type never reaches this branch; it returns above.)
+        if (SessionTypeAllowsTool(sessionType, def.name, td.session_types)) {
             defs.push_back(def);
-        } else {
-            for (const auto& st : td.session_types) {
-                // "default" matches any non-consolidation session type
-                // (gallivanting, chat, scheduled, etc.) — not just empty sessionType.
-                if (st == sessionType ||
-                    (st == "default" && sessionType != "consolidation")) {
-                    defs.push_back(def);
-                    break;
-                }
-            }
         }
     }
 
