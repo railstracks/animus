@@ -258,6 +258,26 @@ int TestPipelineIntakeFromDiary() {
     std::filesystem::remove(dbPath);
     return 0;
 }
+// #220: the default intake prompt must instruct consolidation tool calls
+// (action "create") — the only path the pipeline honors — and must not
+// request a JSON array return, which IntakeFromDiary/IntakeFromSessions
+// discard (no return-value parsing; see the intake contract above).
+int TestDefaultIntakePromptToolContract() {
+    const std::string prompt = ConsolidationPipeline::Config{}.intake_prompt;
+
+    // Names the consolidation tool and the create action (the instructed path)
+    Assert(prompt.find("consolidation") != std::string::npos,
+           "default intake prompt must name the consolidation tool");
+    Assert(prompt.find("action \"create\"") != std::string::npos,
+           "default intake prompt must instruct action \"create\" tool calls");
+
+    // Does not request a JSON array (the old, never-parsed contract)
+    Assert(prompt.find("JSON array") == std::string::npos,
+           "default intake prompt must not request a JSON array");
+    Assert(prompt.find("empty array") == std::string::npos,
+           "default intake prompt must not request an empty-array return");
+    return 0;
+}
 
 int TestPipelineLayerConsolidation() {
     std::cerr << "  [Pipeline] Layer consolidation (promote)...\n";
@@ -978,6 +998,7 @@ int main() {
     // Pipeline tests
     std::cerr << "\n-- Pipeline: Intake --\n";
     TestPipelineIntakeFromDiary();
+    TestDefaultIntakePromptToolContract();
 
     std::cerr << "\n-- Pipeline: Layer Consolidation --\n";
     TestPipelineLayerConsolidation();
