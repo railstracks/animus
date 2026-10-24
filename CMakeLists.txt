@@ -65,7 +65,7 @@ else()
     GIT_REPOSITORY https://github.com/drogonframework/drogon.git
     GIT_TAG v1.9.12
     GIT_SHALLOW TRUE
-    PATCH_COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/patch_drogon_ws.py ${drogon_SOURCE_DIR}
+    PATCH_COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/patch_drogon_ws.py ${CMAKE_BINARY_DIR}/_deps/drogon-src
   )
   FetchContent_MakeAvailable(drogon)
 
