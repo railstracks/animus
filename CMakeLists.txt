@@ -907,6 +907,19 @@ if(ANIMUS_BUILD_TESTS)
     )
     add_test(NAME MemoryFileStoreTests COMMAND animus_memory_file_store_tests)
 
+    add_executable(animus_active_memory_tests
+      tests/ActiveMemoryProviderTests.cpp
+    )
+    target_link_libraries(animus_active_memory_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_active_memory_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_active_memory_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME ActiveMemoryProviderTests COMMAND animus_active_memory_tests)
+
     add_executable(animus_memory_search_tests
       tests/MemorySearchTests.cpp
     )
