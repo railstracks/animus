@@ -933,6 +933,19 @@ if(ANIMUS_BUILD_TESTS)
     )
     add_test(NAME MemorySearchTests COMMAND animus_memory_search_tests)
 
+    add_executable(animus_memory_store_layer_seeding_tests
+      tests/MemoryStoreLayerSeedingTests.cpp
+    )
+    target_link_libraries(animus_memory_store_layer_seeding_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_memory_store_layer_seeding_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_memory_store_layer_seeding_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME MemoryStoreLayerSeedingTests COMMAND animus_memory_store_layer_seeding_tests)
+
     add_executable(animus_lua_tests
       tests/LuaTests.cpp
     )

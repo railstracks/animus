@@ -416,14 +416,26 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer, int64_t preset_id
     auto now = NowUnixMs();
     std::string agentId = layer.agent_id;
 
-    // #78 P2c deterministic defaults: a preset row that already exists (by
-    // id — replicated copy or reseed; or by name — legacy autoincrement
-    // defaults from a pre-P2c node) is KEPT, never duplicated.
+    // #78 P2c deterministic defaults: a preset row that already exists —
+    // replicated copy or reseed — is KEPT, never duplicated.
+    // #213: preset ids 1..7 are a single global id-space, so the by-id
+    // lookup is agent-qualified: a preset id counts as taken only if the
+    // row at that id BELONGS to the seeding agent (the replicated-copy /
+    // reseed case the pinning was built for). A row held by a different
+    // agent is not adopted — fall through to auto-id allocation below;
+    // unique(agent_id, name) remains the dedup for later-seeded agents.
+    // A genuinely absent preset id stays claimable (fresh store or a
+    // deleted slot), which keeps first-agent pinning and single-agent
+    // installs byte-identical.
+    bool claim_preset = preset_id > 0;
     if (preset_id > 0) {
         auto byId = m_store->Prepare(
-            "SELECT id FROM memory_layers WHERE id = ?");
+            "SELECT id, agent_id FROM memory_layers WHERE id = ?");
         if (byId && byId->BindInt64(1, preset_id) && byId->Step()) {
-            return GetLayer(preset_id).value_or(MemoryLayer{});
+            if (byId->ColumnText(1) == agentId) {
+                return GetLayer(preset_id).value_or(MemoryLayer{});
+            }
+            claim_preset = false;  // held by another agent (#213)
         }
         auto byName = m_store->Prepare(
             "SELECT id FROM memory_layers WHERE agent_id = ? AND name = ?");
@@ -433,7 +445,7 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer, int64_t preset_id
         }
     }
 
-    const bool fixed = preset_id > 0;
+    const bool fixed = claim_preset;
     auto stmt = m_store->Prepare(std::string(
         "INSERT INTO memory_layers (")
         + (fixed ? "id, " : "")
