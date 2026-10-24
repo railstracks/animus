@@ -1,5 +1,6 @@
 #include "animus_kernel/tools/DiffusionTool.h"
 #include "animus_kernel/DiffusionCapabilities.h"
+#include "animus_kernel/Log.h"
 
 #include <json/json.h>
 #include <iostream>
@@ -415,12 +416,28 @@ ToolResult DiffusionTool::ExecuteGenerate(const ToolCall& call, const Json::Valu
     std::string savePath;
     if (!outputPath.empty()) {
         savePath = outputPath;
-        // Ensure parent directory exists
+        // Ensure parent directory exists (#229: fail the call, not the kernel)
         auto parent = std::filesystem::path(savePath).parent_path();
-        if (!parent.empty()) std::filesystem::create_directories(parent);
+        if (!parent.empty()) {
+            try {
+                std::filesystem::create_directories(parent);
+            } catch (const std::filesystem::filesystem_error& e) {
+                result.success = false;
+                result.error = "Cannot create output directory '" + parent.string()
+                             + "': " + e.code().message();
+                return result;
+            }
+        }
     } else {
+        std::string outputDir = EnsureOutputDir();
+        if (outputDir.empty()) {
+            result.success = false;
+            result.error = "Cannot create output directory '" + m_config.output_dir
+                         + "' (media generation disabled — see startup log)";
+            return result;
+        }
         std::string filename = GenerateFilename(type, ext);
-        savePath = EnsureOutputDir() + "/" + filename;
+        savePath = outputDir + "/" + filename;
     }
 
     // If we have base64 data, decode and save directly
@@ -477,7 +494,17 @@ std::unique_ptr<IDiffusionProvider> DiffusionTool::CreateProvider(
 
 std::string DiffusionTool::EnsureOutputDir() {
     auto dir = std::filesystem::path(m_config.output_dir);
-    std::filesystem::create_directories(dir);
+    try {
+        std::filesystem::create_directories(dir);
+    } catch (const std::filesystem::filesystem_error& e) {
+        // #229: an uncreatable output dir must disable media generation,
+        // never escape uncaught — it once terminated AgentKernel::Start at
+        // boot (abort -> exit-139 crash loop with zero diagnostics).
+        ALOG_ERROR("diffusion", "Cannot create output directory '" << m_config.output_dir
+                       << "': " << e.code().message()
+                       << " — media generation will fail per-call until fixed");
+        return {};
+    }
     return m_config.output_dir;
 }
 

@@ -1,5 +1,6 @@
 #include "animus_kernel/tools/ImageTool.h"
 #include "animus_kernel/tools/ImageGenProvider.h"
+#include "animus_kernel/Log.h"
 #include "animus_kernel/tools/ImageResize.h"
 #include "animus_kernel/ChainRunner.h"
 #include "animus_kernel/AgentStore.h"
@@ -658,7 +659,16 @@ IImageGenProvider* ImageTool::GetGenProvider(const std::string& name) {
 // ============================================================================
 
 void ImageTool::EnsureOutputDir() {
-    std::filesystem::create_directories(m_config.generation_output_dir);
+    try {
+        std::filesystem::create_directories(m_config.generation_output_dir);
+    } catch (const std::filesystem::filesystem_error& e) {
+        // #229: log and continue — the subsequent save fails per-call with a
+        // clean error (empty savedPath path in ExecuteGenerate) instead of an
+        // uncaught exception terminating the kernel.
+        ALOG_ERROR("image", "Cannot create output directory '"
+                       << m_config.generation_output_dir
+                       << "': " << e.code().message());
+    }
 }
 
 std::string ImageTool::SaveBase64Image(const std::string& base64_data,
