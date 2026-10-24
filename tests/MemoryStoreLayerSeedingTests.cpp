@@ -169,6 +169,103 @@ int TestPresetIdClaimableAfterDelete() {
     return 0;
 }
 
+// ── #236: perspective auto-create must key on the pinning OUTCOME ──
+//
+// Bug: the forced perspective branch gated on preset_id > 0 (the REQUEST)
+// instead of `fixed` (the pinning outcome), so post-#213 fall-through
+// layers (auto layer ids, e.g. agent B's 8..14) still forced perspective
+// id = layer id into the single id-space cross-apply replicates — and
+// OR IGNORE silently dropped the row on collision, leaving layers
+// perspective-less with no error surfaced.
+
+int TestFallThroughPerspectivesGetRows() {
+    std::cerr << "  [LayerSeeding] #236 fall-through perspectives...\n";
+    const auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memoryStore(&dataStore);
+
+    Assert(memoryStore.CreateDefaultLayersForAgent("agent-a"), "agent-a seeding");
+    Assert(memoryStore.CreateDefaultLayersForAgent("agent-b"), "agent-b seeding");
+
+    auto a = memoryStore.ListLayersForAgent("agent-a");
+    auto b = memoryStore.ListLayersForAgent("agent-b");
+    Assert(a.size() == 7, "agent-a has 7 layers");
+    Assert(b.size() == 7, "agent-b has 7 layers");
+
+    for (const auto& layer : a) {
+        Assert(memoryStore.GetPerspective(layer.id).has_value(),
+               "agent-a layer " + std::to_string(layer.id) + " has a perspective");
+    }
+    for (const auto& layer : b) {
+        Assert(memoryStore.GetPerspective(layer.id).has_value(),
+               "agent-b layer " + std::to_string(layer.id) + " has a perspective");
+    }
+
+    // 14 distinct perspective rows — one per layer, none swallowed.
+    auto count = dataStore.Prepare(
+        "SELECT COUNT(*) FROM layer_perspectives");
+    Assert(count && count->Step(), "count perspectives");
+    Assert(count->ColumnInt64(0) == 14,
+           "14 perspective rows, got " + std::to_string(count->ColumnInt64(0)));
+    return 0;
+}
+
+// Regression: a foreign perspective row squatting a preset id (dirty or
+// pre-replicated store) must not leave the pinned layer perspective-less —
+// the swallowed forced insert falls back to the auto path with a warning.
+// FK-legal construction: the store enforces PRAGMA foreign_keys=ON, so the
+// squatter must reference a REAL layer — remove layer 1 (its perspective
+// cascades away), free layer 2's perspective slot, then squat id 1 at
+// layer 2. A later agent's seeding pins layer 1 (absent again) but its
+// forced perspective insert collides with the squatter.
+int TestPresetPerspectiveSquatFallsBack() {
+    std::cerr << "  [LayerSeeding] #236 preset-id squat fallback...\n";
+    const auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memoryStore(&dataStore);
+
+    // Agent A pins layers 1..7 with perspectives 1..7.
+    Assert(memoryStore.CreateDefaultLayersForAgent("agent-a"), "agent-a seeding");
+
+    // Dirty-store construction (FK-legal).
+    auto delLayer = dataStore.Prepare("DELETE FROM memory_layers WHERE id=1");
+    Assert(delLayer && delLayer->ExecDML(), "remove layer 1 (perspective cascades)");
+    auto delP2 = dataStore.Prepare(
+        "DELETE FROM layer_perspectives WHERE layer_id=2");
+    Assert(delP2 && delP2->ExecDML(), "free layer 2's perspective slot");
+    auto squat = dataStore.Prepare(
+        "INSERT INTO layer_perspectives (id, layer_id, updated_at_unix_ms) "
+        "VALUES (1, 2, 0)");
+    Assert(squat && squat->ExecDML(), "squat perspective id 1");
+
+    // Agent B seeds: preset id 1 is ABSENT as a layer, so B pins layer 1 —
+    // but the forced perspective insert (id=1) collides with the squatter.
+    // The fallback must still give layer 1 a perspective row.
+    Assert(memoryStore.CreateDefaultLayersForAgent("agent-b"), "agent-b seeding");
+
+    auto b = memoryStore.ListLayersForAgent("agent-b");
+    Assert(b.size() == 7, "agent-b has 7 layers, got " +
+           std::to_string(b.size()));
+    Assert(!b.empty() && b.front().id == 1,
+           "agent-b pinned layer 1, got id " +
+           std::to_string(b.empty() ? -1 : b.front().id));
+
+    Assert(memoryStore.GetPerspective(1).has_value(),
+           "layer 1 has a perspective despite id squat");
+    // The squatter row is untouched: layer 2's perspective still holds id 1.
+    auto squatter = dataStore.Prepare(
+        "SELECT COUNT(*) FROM layer_perspectives WHERE layer_id=2 AND id=1");
+    Assert(squatter && squatter->Step() && squatter->ColumnInt64(0) == 1,
+           "squatter row untouched");
+
+    // Every one of agent-b's layers ends with a perspective — none swallowed.
+    for (const auto& layer : b) {
+        Assert(memoryStore.GetPerspective(layer.id).has_value(),
+               "agent-b layer " + std::to_string(layer.id) + " has a perspective");
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -177,6 +274,8 @@ int main() {
     TestReseedDedupesStableIds();
     TestSingleAgentPresetIdsUnchanged();
     TestPresetIdClaimableAfterDelete();
+    TestFallThroughPerspectivesGetRows();
+    TestPresetPerspectiveSquatFallsBack();
     if (g_failures > 0) {
         std::cerr << "[MemoryStoreLayerSeedingTests] FAILED: " << g_failures
                   << " assertion(s)\n";

@@ -501,15 +501,22 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer, int64_t preset_id
 
     // Auto-create perspective row. #78 P2c: preset layers get a preset
     // perspective id (same value) — cross-apply converges on identical rows.
+    // #236: the forced id is legal ONLY for genuinely pinned layers. Post-#213
+    // fall-through layers (preset id held by another agent) take auto layer
+    // ids — forcing perspective id = layer id there writes into the same
+    // single id-space cross-apply replicates, and OR IGNORE silently drops
+    // the row on collision (layer left perspective-less, no error surfaced).
+    // Gate on the pinning OUTCOME (`fixed`), not on the request.
     if (result) {
-        std::string sql = (preset_id > 0)
+        const bool perspectivePinned = fixed;
+        std::string sql = perspectivePinned
             ? "INSERT OR IGNORE INTO layer_perspectives "
               "(id, layer_id, updated_at_unix_ms) VALUES (?,?,?)"
             : schema::InsertIgnoreSql(m_store,
               "layer_perspectives", "layer_id, updated_at_unix_ms", "layer_id");
         auto ps = m_store->Prepare(sql);
         if (ps) {
-            if (preset_id > 0) {
+            if (perspectivePinned) {
                 ps->BindInt64(1, result->id);   // id = layer_id (1:1)
                 ps->BindInt64(2, result->id);
                 ps->BindInt64(3, now);
@@ -518,6 +525,24 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer, int64_t preset_id
                 ps->BindInt64(2, now);
             }
             ps->Step();
+            // #236: a swallowed forced insert (id squatted by a foreign
+            // row in a legacy/dirty store, or a replicated perspective
+            // that arrived ahead of its layer) must not leave the layer
+            // perspective-less — fall back to the auto path keyed on
+            // layer_id, which is a no-op when the row already exists.
+            if (perspectivePinned && !DidWriteRows(ps.get())) {
+                ALOG_WARNING("memory", "preset perspective id " << result->id
+                    << " collided with a foreign row; falling back to auto id "
+                    "for layer " << result->id);
+                auto fb = m_store->Prepare(schema::InsertIgnoreSql(m_store,
+                    "layer_perspectives", "layer_id, updated_at_unix_ms",
+                    "layer_id"));
+                if (fb) {
+                    fb->BindInt64(1, result->id);
+                    fb->BindInt64(2, now);
+                    fb->Step();
+                }
+            }
         }
     }
 
