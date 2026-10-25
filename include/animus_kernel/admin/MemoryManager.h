@@ -135,6 +135,10 @@ public:
     OperationResult SqlGetObservation(
         memory::MemoryStore* store,
         const std::string& idStr) const;
+    OperationResult SqlPatchObservation(
+        memory::MemoryStore* store,
+        const std::string& idStr,
+        const Json::Value* body) const;
     OperationResult SqlDeleteObservation(
         memory::MemoryStore* store,
         const std::string& idStr) const;

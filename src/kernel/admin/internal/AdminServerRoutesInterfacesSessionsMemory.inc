@@ -2387,6 +2387,25 @@
                 }
 
                 const auto body = req->getJsonObject();
+                // #223: numeric ids live in the Sql store — route admin PATCH
+                // through ReviseObservation (supersession chain + actor-tagged
+                // mutation row), mirroring the GET/DELETE digit dispatch.
+                // Legacy string ids keep the JSON-map path.
+                bool isNumeric = !observationId.empty();
+                for (char ch : observationId) {
+                    if (ch < '0' || ch > '9') {
+                        isNumeric = false;
+                        break;
+                    }
+                }
+                if (isNumeric) {
+                    const auto sqlResult = server->m_memoryManager.SqlPatchObservation(
+                        server->m_memoryStore, observationId, body.get());
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(sqlResult.body);
+                    resp->setStatusCode(static_cast<drogon::HttpStatusCode>(sqlResult.httpStatusCode));
+                    callback(resp);
+                    return;
+                }
                 const auto result = server->m_memoryManager.PatchObservationFromBody(
                     observationId, body ? *body : Json::Value(Json::nullValue));
                 if (result.httpStatusCode != 200) {

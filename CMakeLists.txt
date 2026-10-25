@@ -1024,6 +1024,19 @@ if(ANIMUS_BUILD_TESTS)
     )
     add_test(NAME MediaOutputDirTests COMMAND animus_media_outdir_tests)
 
+    add_executable(animus_admin_observation_tests
+      tests/AdminObservationTests.cpp
+    )
+    target_link_libraries(animus_admin_observation_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_admin_observation_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_admin_observation_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME AdminObservationTests COMMAND animus_admin_observation_tests)
+
     add_executable(animus_channel_helpers_tests
       tests/ChannelHelpersTests.cpp
     )

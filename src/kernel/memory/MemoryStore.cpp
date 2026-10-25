@@ -1012,7 +1012,8 @@ bool MemoryStore::TouchEvaluation(int64_t obs_id) {
 }
 
 Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& new_text,
-                                           double new_weight, const std::string& new_tags_json) {
+                                           double new_weight, const std::string& new_tags_json,
+                                           const std::string& source_override) {
     auto original = GetObservation(obs_id);
     if (!original) {
         ALOG_WARNING("memory", "ReviseObservation: observation " << obs_id << " not found");
@@ -1029,7 +1030,9 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
     newVersion.weight = new_weight;
     newVersion.decay_rate = original->decay_rate;
     newVersion.tags_json = new_tags_json.empty() ? original->tags_json : new_tags_json;
-    newVersion.source = original->source;
+    // #223: provenance override — an admin edit is distinguishable from
+    // an agent's revision on the observation itself.
+    newVersion.source = source_override.empty() ? original->source : source_override;
     newVersion.memory_state = MemoryState::New;
     newVersion.superseded_by = 0;  // current version
 
@@ -1077,7 +1080,11 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
     m.target_id = newId;
     m.from_layer_id = original->layer_id;
     m.to_layer_id = original->layer_id;
-    m.motivation = "Copy-on-write revision: old version " + std::to_string(obs_id) + " preserved as snapshot";
+    m.motivation = "Copy-on-write revision: old version " + std::to_string(obs_id) +
+                   " preserved as snapshot";
+    if (!source_override.empty()) {
+        m.motivation += " [actor: " + source_override + "]";
+    }
     LogMutation(m);
 
     return GetObservation(newId).value_or(Observation{});
@@ -1234,6 +1241,10 @@ std::optional<LayerPerspective> MemoryStore::SetPerspective(const LayerPerspecti
 // ============================================================================
 
 void MemoryStore::LogMutation(const MemoryMutation& m) {
+    // #223: callers that omit unix_ms (pre-existing ReviseObservation did)
+    // would stamp rows with 0, making them invisible to QueryMutations
+    // (unix_ms > since). Default a zero stamp to now.
+    const int64_t ts = (m.unix_ms != 0) ? m.unix_ms : NowUnixMs();
     auto stmt = m_store->Prepare(
         "INSERT INTO memory_mutations (mutation_type, target_type, target_id, "
         "from_layer_id, to_layer_id, previous_state, motivation, unix_ms) "
@@ -1249,7 +1260,7 @@ void MemoryStore::LogMutation(const MemoryMutation& m) {
     else stmt->BindNull(5);
     stmt->BindText(6, m.previous_state);
     stmt->BindText(7, m.motivation);
-    stmt->BindInt64(8, m.unix_ms);
+    stmt->BindInt64(8, ts);
 
     stmt->ExecDML();
     if (!DidWriteRows(stmt.get())) {
