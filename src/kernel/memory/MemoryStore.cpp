@@ -820,6 +820,18 @@ std::optional<Observation> MemoryStore::GetObservation(int64_t id) {
 
 Observation MemoryStore::CreateObservation(const Observation& obs) {
     auto now = NowUnixMs();
+    // #226 (reopened, real root cause): honor caller-supplied timestamps
+    // when non-zero (backfill/import/tests preserving original times); the
+    // zero default stamps now exactly as before. The prior unconditional
+    // now-stamping made the perspective-revision staleness guard a
+    // millisecond-boundary coin flip: a caller seeding an observation
+    // "postdated" (e.g. +60s) had the override silently discarded, so the
+    // observation landed 0-2ms after the auto-created perspective row and
+    // the guard skipped ~50% of runs regardless of load.
+    const int64_t createdAt = (obs.created_at_unix_ms > 0)
+        ? obs.created_at_unix_ms : now;
+    const int64_t updatedAt = (obs.updated_at_unix_ms > 0)
+        ? obs.updated_at_unix_ms : now;
     int64_t nextReviewAt = obs.next_review_at_ms;
     if (nextReviewAt <= 0) {
         int64_t evalIntervalSeconds = 0;
@@ -844,8 +856,8 @@ Observation MemoryStore::CreateObservation(const Observation& obs) {
     stmt->BindDouble(5, obs.decay_rate);
     stmt->BindText(6, obs.tags_json);
     stmt->BindText(7, obs.source);
-    stmt->BindInt64(8, now);
-    stmt->BindInt64(9, now);
+    stmt->BindInt64(8, createdAt);
+    stmt->BindInt64(9, updatedAt);
     stmt->BindInt64(10, obs.last_evaluated_at_ms);
     stmt->BindInt64(11, nextReviewAt);
     stmt->BindInt64(12, MemoryStateToInt(obs.memory_state));
