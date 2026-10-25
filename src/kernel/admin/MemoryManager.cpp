@@ -6,6 +6,7 @@
 #include <fstream>
 #include <memory>
 #include <optional>
+#include <sstream>
 
 #include <json/json.h>
 
@@ -1153,7 +1154,7 @@ MemoryManager::OperationResult MemoryManager::SqlCreateLayerObservation(
     obs.weight = (*body).get("weight", 1.0).asDouble();
     obs.decay_rate = (*body).get("decay_rate", 0.95).asDouble();
     obs.tags_json = (*body).get("tags", "[]").asString();
-    obs.source = (*body).get("source", "manual").asString();
+    obs.source = (*body).get("source", "admin").asString();
     obs.memory_state = ParseMemoryState(*body, memory::MemoryState::New);
     const std::string agentId = (*body).get("agent_id", "default").asString();
     if (obs.text.empty()) {
@@ -1163,6 +1164,15 @@ MemoryManager::OperationResult MemoryManager::SqlCreateLayerObservation(
     }
 
     const auto created = store->CreateObservationForAgent(agentId, obs);
+    // #223: admin creates leave an actor-tagged mutation row (agent-side
+    // create logging is unchanged — full-row snapshots are #221's lane).
+    memory::MemoryMutation cm;
+    cm.mutation_type = "create";
+    cm.target_type = "observation";
+    cm.target_id = created.id;
+    cm.to_layer_id = created.layer_id;
+    cm.motivation = "Created via admin API [actor: admin]";
+    store->LogMutation(cm);
     out.httpStatusCode = 201;
     out.body = BuildSqlObservationJson(created);
     return out;
@@ -1210,13 +1220,118 @@ MemoryManager::OperationResult MemoryManager::SqlDeleteObservation(
         out.body = Json::Value("invalid id");
         return out;
     }
+    auto existing = store->GetObservation(*idParsed);
+    if (!existing) {
+        out.httpStatusCode = 404;
+        out.body = Json::Value("not found");
+        return out;
+    }
     if (!store->DeleteObservation(*idParsed)) {
         out.httpStatusCode = 404;
         out.body = Json::Value("not found");
         return out;
     }
+    // #223: admin deletes leave an actor-tagged mutation row (delete
+    // previously logged nothing — full-row snapshots are #221's lane).
+    memory::MemoryMutation dm;
+    dm.mutation_type = "delete";
+    dm.target_type = "observation";
+    dm.target_id = *idParsed;
+    dm.from_layer_id = existing->layer_id;
+    dm.motivation = "Deleted via admin API [actor: admin]";
+    store->LogMutation(dm);
     out.httpStatusCode = 200;
     out.body = Json::Value("ok");
+    return out;
+}
+
+MemoryManager::OperationResult MemoryManager::SqlPatchObservation(
+    memory::MemoryStore* store,
+    const std::string& idStr,
+    const Json::Value* body) const {
+    OperationResult out;
+    if (!store) {
+        out.httpStatusCode = 503;
+        out.body = Json::Value("memory store not available");
+        return out;
+    }
+    auto idParsed = ParseInt64PathId(idStr);
+    if (!idParsed) {
+        out.httpStatusCode = 400;
+        out.body = Json::Value("invalid id");
+        return out;
+    }
+    if (!body || !body->isObject()) {
+        out.httpStatusCode = 400;
+        out.body = Json::Value("request body must be a JSON object");
+        return out;
+    }
+
+    auto current = store->GetObservation(*idParsed);
+    if (!current) {
+        out.httpStatusCode = 404;
+        out.body = Json::Value("not found");
+        return out;
+    }
+
+    // PATCH semantics: absent fields keep their current values.
+    std::string newText = current->text;
+    if (body->isMember("text")) {
+        if (!(*body)["text"].isString()) {
+            out.httpStatusCode = 400;
+            out.body = Json::Value("text must be a string");
+            return out;
+        }
+        newText = (*body)["text"].asString();
+    }
+    double newWeight = current->weight;
+    if (body->isMember("weight")) {
+        const Json::Value& w = (*body)["weight"];
+        if (!(w.isDouble() || w.isInt() || w.isUInt())) {
+            out.httpStatusCode = 400;
+            out.body = Json::Value("weight must be a number");
+            return out;
+        }
+        newWeight = w.asDouble();
+    }
+    std::string newTags = current->tags_json;
+    if (body->isMember("tags")) {
+        const Json::Value& t = (*body)["tags"];
+        if (t.isString()) {
+            newTags = t.asString();  // tags_json convention (Sql create route)
+        } else if (t.isArray()) {
+            for (Json::ArrayIndex i = 0; i < t.size(); ++i) {
+                if (!t[i].isString()) {
+                    out.httpStatusCode = 400;
+                    out.body = Json::Value("tags must be an array of strings");
+                    return out;
+                }
+            }
+            Json::StreamWriterBuilder writerBuilder;
+            writerBuilder["indentation"] = "";
+            std::ostringstream ss;
+            std::unique_ptr<Json::StreamWriter> writer(writerBuilder.newStreamWriter());
+            writer->write(t, &ss);
+            newTags = ss.str();
+        } else {
+            out.httpStatusCode = 400;
+            out.body = Json::Value("tags must be a JSON array string or an array of strings");
+            return out;
+        }
+    }
+
+    // #223: an admin edit IS a revision — the same supersession chain +
+    // mutation row an agent's revision leaves, with admin provenance on
+    // the new version and in the mutation motivation.
+    const auto revised = store->ReviseObservation(
+        *idParsed, newText, newWeight, newTags, "admin");
+    if (revised.id == 0) {
+        out.httpStatusCode = 500;
+        out.body = Json::Value("revision failed");
+        return out;
+    }
+    out.httpStatusCode = 200;
+    out.body = BuildSqlObservationJson(revised);
     return out;
 }
 

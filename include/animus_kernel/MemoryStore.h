@@ -166,8 +166,12 @@ public:
     // Copy-on-write revision: creates a new version of the observation,
     // preserving the old one as a historical snapshot.
     // Returns the new observation (with the new ID).
+    // source_override non-empty (e.g. "admin") marks the revision's
+    // provenance — carried onto the new version's source field and into
+    // the mutation row's motivation (#223).
     Observation ReviseObservation(int64_t obs_id, const std::string& new_text,
-                                  double new_weight, const std::string& new_tags_json);
+                                   double new_weight, const std::string& new_tags_json,
+                                   const std::string& source_override = "");
     // List the version chain for an observation (oldest first).
     // Returns all versions: the current one and all superseded predecessors.
     std::vector<Observation> GetObservationHistory(int64_t obs_id);
