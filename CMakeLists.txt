@@ -288,6 +288,7 @@ add_library(animus_kernel
   src/kernel/data/SchemaHelpers.cpp
   src/kernel/data/DatabaseConfig.cpp
   src/kernel/memory/MemoryStore.cpp
+  src/kernel/memory/EmbeddingSweep.cpp
   src/kernel/memory/MemoryFileStore.cpp
   src/kernel/tools/NodeTool.cpp
   src/kernel/NodeManager.cpp
@@ -1036,6 +1037,19 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME AdminObservationTests COMMAND animus_admin_observation_tests)
+
+    add_executable(animus_embedding_sweep_tests
+      tests/EmbeddingSweepTests.cpp
+    )
+    target_link_libraries(animus_embedding_sweep_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_embedding_sweep_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_embedding_sweep_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME EmbeddingSweepTests COMMAND animus_embedding_sweep_tests)
 
     add_executable(animus_channel_helpers_tests
       tests/ChannelHelpersTests.cpp
