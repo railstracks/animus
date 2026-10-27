@@ -150,6 +150,10 @@ AgentKernel::~AgentKernel() {
 
     delete m_channelManager; m_channelManager = nullptr;
     if (m_messageQueue) { m_messageQueue->Shutdown(); m_messageQueue.reset(); }
+    // #224: drop the layer-change hook before the pipeline it targets dies.
+    if (m_memoryStore) {
+        m_memoryStore->SetLayerChangedCallback(nullptr);
+    }
     delete m_consolidation; m_consolidation = nullptr;
     delete m_chainRunner;
     m_chainRunner = nullptr;
@@ -1310,6 +1314,20 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 }
                 return ResolveContextWindow(aid, providerId, model);
             });
+        }
+        // #224: layer create/update/delete re-registers the consolidation
+        // schedule set live — no restart needed (ChannelManager restart-hook
+        // pattern). RefreshSchedules is a no-op unless the pipeline is
+        // running, so pre-Start seeding and post-Stop callbacks are inert.
+        // Pointer stability: both raw members are owned by the kernel and
+        // ~AgentKernel deletes m_consolidation before m_memoryStore, so the
+        // callback cannot dangle; after consolidation->Stop() the refresh
+        // guard keeps late fires harmless.
+        if (m_memoryStore && m_consolidation) {
+            m_memoryStore->SetLayerChangedCallback(
+                [consolidation = m_consolidation]() {
+                    consolidation->RefreshSchedules();
+                });
         }
         {
             std::string consErr;

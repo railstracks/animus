@@ -5,6 +5,7 @@
 #include "animus_kernel/TokenEstimate.h"
 #include "animus_kernel/scheduler/Scheduler.h"
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <sstream>
@@ -20,6 +21,36 @@ namespace {
 int64_t NowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+// #224 drive-by: the session-report schedule is documented as staggered
+// 30 minutes after intake. Shift a cron expression's minute field by +30
+// (mod 60) — but ONLY for a plain integer minute field. Step ("*/5"),
+// list ("0,30"), and range ("10-50") minute fields are left untouched:
+// shifting those changes the schedule's shape, not just its phase, and
+// for step expressions the +30 heuristic doesn't even apply cleanly.
+// Returns the input unchanged when no shift is applied.
+std::string ShiftCronMinuteBy30(const std::string& cron) {
+    // Five-field cron expected; anything else passes through untouched.
+    const size_t firstSpace = cron.find(' ');
+    if (firstSpace == std::string::npos || cron.find_first_not_of(" \t") != 0) {
+        return cron;
+    }
+    const std::string minuteField = cron.substr(0, firstSpace);
+    // Plain non-negative integer only — no '*', '/', ',', '-', leading spaces.
+    if (minuteField.empty() ||
+        minuteField.find_first_not_of("0123456789") != std::string::npos) {
+        return cron;
+    }
+    int minute = 0;
+    try {
+        minute = std::stoi(minuteField);
+    } catch (...) {
+        return cron;  // overflow or parse failure — leave untouched
+    }
+    if (minute < 0 || minute > 59) return cron;  // not a valid minute field
+    const int shifted = (minute + 30) % 60;
+    return std::to_string(shifted) + cron.substr(firstSpace);
 }
 
 // Extract JSON array from LLM response (handles markdown code blocks)
@@ -159,33 +190,7 @@ void ConsolidationPipeline::RegisterSchedules(Scheduler* scheduler) {
     if (!scheduler || !m_memoryStore) return;
 
     // ---- Deduplicate: remove stale consolidation schedules from previous runs ----
-    // Old schedules (with wrong messages like "intake:1") persist across restarts.
-    // Clear all system consolidation schedules, then register fresh ones.
-    {
-        // Clear ALL consolidation schedules from any previous daemon run.
-        // Old schedules may have different agent_ids ("system", "default", or real UUIDs)
-        // and their next_fire times are in the past, causing immediate firing on boot.
-        std::vector<std::string> agentsToClear;
-        agentsToClear.push_back("system");
-        agentsToClear.push_back("default");
-        if (m_agentStore) {
-            for (const auto& a : m_agentStore->List()) agentsToClear.push_back(a.id);
-        }
-        size_t totalCleared = 0;
-        for (const auto& aid : agentsToClear) {
-            auto existing = scheduler->List(aid, "consolidation");
-            for (const auto& sched : existing) {
-                std::string err;
-                scheduler->Cancel(sched.id, &err);
-            }
-            totalCleared += existing.size();
-        }
-        if (totalCleared > 0) {
-            std::cerr << "[consolidation] cleared " << totalCleared
-                      << " stale consolidation schedules across " << agentsToClear.size()
-                      << " agents" << std::endl;
-        }
-    }
+    ClearStaleConsolidationSchedules(scheduler);
 
     // Register intake schedules from agent-level config or layer-level config.
     // Agent-level takes precedence; falls back to any layer with intake_interval set.
@@ -275,10 +280,12 @@ void ConsolidationPipeline::RegisterSchedules(Scheduler* scheduler) {
             reportSd.agent_id = agent.id;
             reportSd.tag = "consolidation";
             reportSd.type = ScheduleType::Recurring;
-            // Offset by 30 minutes: shift cron minute by +30 (mod 60)
-            // This is a simple heuristic — for sub-hourly crons it may overlap with intake,
-            // but for typical hourly/daily schedules it provides clean separation.
-            reportSd.next_fire = reportCron;
+            // Offset by 30 minutes: shift cron minute by +30 (mod 60).
+            // Applied only to plain integer minute fields — step/list/range
+            // minute fields pass through untouched (see ShiftCronMinuteBy30).
+            // Sub-hourly crons may still overlap with intake; the shift is a
+            // heuristic for clean separation on typical hourly/daily schedules.
+            reportSd.next_fire = ShiftCronMinuteBy30(reportCron);
             reportSd.message = "session_report";
 
             std::string err;
@@ -286,13 +293,68 @@ void ConsolidationPipeline::RegisterSchedules(Scheduler* scheduler) {
             if (!reportId.empty()) {
                 m_registeredScheduleIds.push_back(reportId);
                 std::cerr << "[consolidation] registered session_report schedule for agent "
-                          << agent.id << " (cron=" << reportCron << ")" << std::endl;
+                          << agent.id << " (cron=" << reportSd.next_fire << ")" << std::endl;
             } else {
                 std::cerr << "[consolidation] failed to register session_report schedule for agent "
                           << agent.id << ": " << err << std::endl;
             }
         }
     }
+}
+
+// ============================================================================
+// Stale-schedule cleanup — shared by Start and the #224 refresh path
+// ============================================================================
+
+void ConsolidationPipeline::ClearStaleConsolidationSchedules(Scheduler* scheduler) {
+    // Clear ALL consolidation schedules from any previous daemon run.
+    // Old schedules may have different agent_ids ("system", "default", or real UUIDs)
+    // and their next_fire times are in the past, causing immediate firing on boot.
+    // #224: the clear set must cover every agent that can own a consolidation
+    // schedule — layer agent ids too, not just AgentStore rows. A layer created
+    // for an agent id that never got an AgentStore row (admin-created bare ids)
+    // would otherwise keep its stale schedule across refreshes and duplicate.
+    std::vector<std::string> agentsToClear;
+    agentsToClear.push_back("system");
+    agentsToClear.push_back("default");
+    if (m_agentStore) {
+        for (const auto& a : m_agentStore->List()) agentsToClear.push_back(a.id);
+    }
+    if (m_memoryStore) {
+        for (const auto& layer : m_memoryStore->ListLayers()) {
+            if (std::find(agentsToClear.begin(), agentsToClear.end(), layer.agent_id)
+                == agentsToClear.end()) {
+                agentsToClear.push_back(layer.agent_id);
+            }
+        }
+    }
+    size_t totalCleared = 0;
+    for (const auto& aid : agentsToClear) {
+        auto existing = scheduler->List(aid, "consolidation");
+        for (const auto& sched : existing) {
+            std::string err;
+            scheduler->Cancel(sched.id, &err);
+        }
+        totalCleared += existing.size();
+    }
+    if (totalCleared > 0) {
+        std::cerr << "[consolidation] cleared " << totalCleared
+                  << " stale consolidation schedules across " << agentsToClear.size()
+                  << " agents" << std::endl;
+    }
+}
+
+// ============================================================================
+// #224: live schedule refresh — layers added/updated/enabled while running
+// ============================================================================
+
+void ConsolidationPipeline::RefreshSchedules() {
+    // No-op unless running: before Start there is nothing to refresh, and
+    // after Stop the m_registeredScheduleIds are already cancelled. The guard
+    // also keeps a late layer-change callback (racing teardown) inert.
+    if (!m_running.load()) return;
+    if (!m_scheduler) return;
+    RegisterSchedules(m_scheduler);
 }
 
 // ============================================================================
