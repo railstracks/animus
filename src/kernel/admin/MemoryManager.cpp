@@ -1238,6 +1238,8 @@ MemoryManager::OperationResult MemoryManager::SqlDeleteObservation(
     dm.target_type = "observation";
     dm.target_id = *idParsed;
     dm.from_layer_id = existing->layer_id;
+    // #221: full-row snapshot — the log alone reconstructs the deleted row.
+    dm.row_snapshot = memory::ObservationToJson(*existing);
     dm.motivation = "Deleted via admin API [actor: admin]";
     store->LogMutation(dm);
     out.httpStatusCode = 200;

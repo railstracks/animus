@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <json/json.h>
 #include <mutex>
 #include <utility>
 
@@ -20,6 +21,29 @@ static int64_t NowUnixMs() {
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch())
             .count());
+}
+
+std::string ObservationToJson(const Observation& obs) {
+    // #221: full-row snapshot for memory_mutations.row_snapshot. Keep every
+    // column — the mutation log alone must reconstruct the departed row.
+    Json::Value out(Json::objectValue);
+    out["id"] = static_cast<Json::Int64>(obs.id);
+    out["layer_id"] = static_cast<Json::Int64>(obs.layer_id);
+    out["agent_id"] = obs.agent_id;
+    out["text"] = obs.text;
+    out["weight"] = obs.weight;
+    out["decay_rate"] = obs.decay_rate;
+    out["tags_json"] = obs.tags_json;
+    out["source"] = obs.source;
+    out["created_at_unix_ms"] = static_cast<Json::Int64>(obs.created_at_unix_ms);
+    out["updated_at_unix_ms"] = static_cast<Json::Int64>(obs.updated_at_unix_ms);
+    out["last_evaluated_at_ms"] = static_cast<Json::Int64>(obs.last_evaluated_at_ms);
+    out["next_review_at_ms"] = static_cast<Json::Int64>(obs.next_review_at_ms);
+    out["memory_state"] = static_cast<Json::Int64>(obs.memory_state);
+    out["superseded_by"] = static_cast<Json::Int64>(obs.superseded_by);
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    return Json::writeString(wb, out);
 }
 
 int64_t MemoryStateToInt(MemoryState state) {
@@ -228,12 +252,22 @@ void MemoryStore::EnsureSchema() {
             from_layer_id INTEGER,
             to_layer_id INTEGER,
             previous_state TEXT NOT NULL DEFAULT '',
+            row_snapshot TEXT NOT NULL DEFAULT '',
             motivation TEXT NOT NULL DEFAULT '',
             unix_ms INTEGER NOT NULL
         );
     )");
 
     // ── Migrations ──────────────────────────────────────────────────
+
+    // Migration (#221): memory_mutations.row_snapshot — full-row JSON
+    // snapshot captured before destructive mutations (archive, admin
+    // delete, retire, revise) so the mutation log alone can reconstruct
+    // the departed row. Dialect-agnostic: both SQLite and PostgreSQL
+    // stores may predate the column.
+    if (!schema::ColumnExists(m_store, "memory_mutations", "row_snapshot")) {
+        m_store->Exec("ALTER TABLE memory_mutations ADD COLUMN row_snapshot TEXT NOT NULL DEFAULT ''");
+    }
 
     // Migration: rename horizon_seconds → horizon (text), add sort_order
     // Only applies to SQLite — PostgreSQL tables start with correct schema
@@ -964,6 +998,9 @@ bool MemoryStore::SetObservationMemoryState(
     m.target_type = "observation";
     m.target_id = obs_id;
     m.previous_state = std::to_string(static_cast<int>(existing->memory_state));
+    // #221: full-row snapshot — the log must reconstruct the row as it
+    // stood before the state change, not just the old state code.
+    m.row_snapshot = ObservationToJson(*existing);
     m.motivation = motivation;
     m.unix_ms = now;
     LogMutation(m);
@@ -1015,6 +1052,9 @@ bool MemoryStore::MoveObservation(int64_t obs_id, int64_t to_layer_id,
     m.from_layer_id = from_layer;
     m.to_layer_id = to_layer_id;
     m.previous_state = obs->text.substr(0, 200);
+    // #221: full-row snapshot — previous_state truncates at 200 chars;
+    // the snapshot carries the whole row across the layer move.
+    m.row_snapshot = ObservationToJson(*obs);
     m.motivation = motivation;
     m.unix_ms = now;
     LogMutation(m);
@@ -1114,6 +1154,9 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
     m.target_id = newId;
     m.from_layer_id = original->layer_id;
     m.to_layer_id = original->layer_id;
+    // #221: full-row snapshot of the pre-revision row — copy-on-write
+    // preserves the old version, and the log now does too.
+    m.row_snapshot = ObservationToJson(*original);
     m.motivation = "Copy-on-write revision: old version " + std::to_string(obs_id) +
                    " preserved as snapshot";
     if (!source_override.empty()) {
@@ -1281,8 +1324,8 @@ void MemoryStore::LogMutation(const MemoryMutation& m) {
     const int64_t ts = (m.unix_ms != 0) ? m.unix_ms : NowUnixMs();
     auto stmt = m_store->Prepare(
         "INSERT INTO memory_mutations (mutation_type, target_type, target_id, "
-        "from_layer_id, to_layer_id, previous_state, motivation, unix_ms) "
-        "VALUES (?,?,?,?,?,?,?,?)");
+        "from_layer_id, to_layer_id, previous_state, row_snapshot, motivation, unix_ms) "
+        "VALUES (?,?,?,?,?,?,?,?,?)");
     if (!stmt) return;
 
     stmt->BindText(1, m.mutation_type);
@@ -1293,8 +1336,9 @@ void MemoryStore::LogMutation(const MemoryMutation& m) {
     if (m.to_layer_id.has_value()) stmt->BindInt64(5, *m.to_layer_id);
     else stmt->BindNull(5);
     stmt->BindText(6, m.previous_state);
-    stmt->BindText(7, m.motivation);
-    stmt->BindInt64(8, ts);
+    stmt->BindText(7, m.row_snapshot);
+    stmt->BindText(8, m.motivation);
+    stmt->BindInt64(9, ts);
 
     stmt->ExecDML();
     if (!DidWriteRows(stmt.get())) {
@@ -1306,7 +1350,7 @@ std::vector<MemoryMutation> MemoryStore::QueryMutations(int64_t since_unix_ms, i
     std::vector<MemoryMutation> result;
     auto stmt = m_store->Prepare(
         "SELECT id, mutation_type, target_type, target_id, from_layer_id, to_layer_id, "
-        "previous_state, motivation, unix_ms "
+        "previous_state, row_snapshot, motivation, unix_ms "
         "FROM memory_mutations WHERE unix_ms > ? ORDER BY unix_ms DESC LIMIT ?");
     if (!stmt) return result;
 
@@ -1322,8 +1366,9 @@ std::vector<MemoryMutation> MemoryStore::QueryMutations(int64_t since_unix_ms, i
         if (!stmt->IsColumnNull(4)) m.from_layer_id = stmt->ColumnInt64(4);
         if (!stmt->IsColumnNull(5)) m.to_layer_id = stmt->ColumnInt64(5);
         m.previous_state = stmt->ColumnText(6);
-        m.motivation = stmt->ColumnText(7);
-        m.unix_ms = stmt->ColumnInt64(8);
+        m.row_snapshot = stmt->ColumnText(7);
+        m.motivation = stmt->ColumnText(8);
+        m.unix_ms = stmt->ColumnInt64(9);
         result.push_back(std::move(m));
     }
     return result;

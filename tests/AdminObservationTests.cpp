@@ -26,6 +26,7 @@
 #include <chrono>
 #include <filesystem>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 #include <json/json.h>
@@ -143,24 +144,70 @@ int main() {
         Assert(foundCreate, "create mutation row carries [actor: admin]");
     }
 
-    // ---- 3. Admin delete: actor-tagged mutation row ----
+    // ---- 3. Admin delete: actor-tagged mutation row + #221 full-row
+    //      snapshot — the log alone reconstructs the departed row ----
     {
         Fixture fx;
-        auto orig = fx.SeedObservation("to be deleted");
+        memory::Observation seed;
+        seed.layer_id = 1;
+        seed.agent_id = "agent-a";
+        seed.text = "rich observation to be deleted";
+        seed.weight = 3.25;
+        seed.tags_json = "[\"alpha\",\"beta\"]";
+        seed.source = "unit-test";
+        auto orig = fx.store.CreateObservationForAgent("agent-a", seed);
+        Assert(orig.id > 0, "rich observation created");
+
+        // Depart in a non-default state so the snapshot proves it captured
+        // the row as it stood, not a default.
+        Assert(fx.store.SetObservationMemoryState(
+                   orig.id, memory::MemoryState::Current, "state change en route"),
+               "state change -> true");
+
         auto result = fx.manager.SqlDeleteObservation(
             &fx.store, std::to_string(orig.id));
         Assert(result.httpStatusCode == 200, "delete -> 200");
 
         auto mutations = fx.store.QueryMutations(0, 100);
-        bool foundDelete = false;
+        bool foundDelete = false, foundRetire = false;
         for (const auto& m : mutations) {
-            if (m.mutation_type == "delete" && m.target_type == "observation" &&
-                m.target_id == orig.id &&
+            if (m.target_type != "observation" || m.target_id != orig.id) continue;
+            if (m.mutation_type == "delete" &&
                 m.motivation.find("[actor: admin]") != std::string::npos) {
                 foundDelete = true;
             }
+            if (m.mutation_type == "observation_state_changed" &&
+                !m.row_snapshot.empty()) {
+                foundRetire = true;
+            }
         }
         Assert(foundDelete, "delete mutation row carries [actor: admin]");
+        Assert(foundRetire, "state-change mutation carries a row snapshot");
+
+        // #221 acceptance: the delete row's snapshot alone reconstructs
+        // text, weight, tags, memory_state, layer, source (agent too).
+        bool reconstructed = false;
+        for (const auto& m : mutations) {
+            if (m.mutation_type != "delete" || m.target_id != orig.id) continue;
+            Json::CharReaderBuilder rb;
+            Json::Value snap;
+            std::string errs;
+            std::istringstream ss(m.row_snapshot);
+            if (!Json::parseFromStream(rb, ss, &snap, &errs)) {
+                Assert(false, "row_snapshot parses as JSON: " + errs);
+                break;
+            }
+            reconstructed =
+                snap["text"].asString() == "rich observation to be deleted" &&
+                snap["weight"].asDouble() == 3.25 &&
+                snap["tags_json"].asString() == "[\"alpha\",\"beta\"]" &&
+                snap["memory_state"].asInt64() == 1 &&  // MemoryState::Current
+                snap["layer_id"].asInt64() == orig.layer_id &&
+                snap["source"].asString() == "unit-test" &&
+                snap["agent_id"].asString() == "agent-a";
+        }
+        Assert(reconstructed,
+               "delete row_snapshot reconstructs the departed observation");
     }
 
     // ---- 4. Error shapes ----

@@ -77,9 +77,18 @@ struct MemoryMutation {
     std::optional<int64_t> from_layer_id;
     std::optional<int64_t> to_layer_id;
     std::string previous_state;
+    std::string row_snapshot;   // #221: full-row JSON snapshot of the target
+                                // before the mutation — the log alone can
+                                // reconstruct destroyed rows (archive, delete,
+                                // retire, revise)
     std::string motivation;
     int64_t unix_ms{0};
 };
+
+// #221: serialize a full observation row to compact JSON for the
+// memory_mutations row_snapshot column (mirrors OntologyStore's
+// EntityToJson pattern).
+std::string ObservationToJson(const Observation& obs);
 
 // ============================================================================
 // MemoryStore — SQLite-backed memory layer storage

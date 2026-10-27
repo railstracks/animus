@@ -1028,13 +1028,17 @@ int ConsolidationPipeline::DemoteObservation(int64_t obsId, int64_t fromLayerId,
 
 int ConsolidationPipeline::ArchiveObservation(int64_t obsId, int64_t fromLayerId,
                                                 const std::string& reason) {
-    // Archive = delete from active layers (remains in mutation log)
-    if (m_memoryStore->DeleteObservation(obsId)) {
+    // Archive = delete from active layers (remains in mutation log).
+    // #221: capture the full row BEFORE deleting — the mutation log
+    // alone must reconstruct the archived observation.
+    const auto snapshot = m_memoryStore->GetObservation(obsId);
+    if (snapshot && m_memoryStore->DeleteObservation(obsId)) {
         memory::MemoryMutation mut;
         mut.mutation_type = "archive";
         mut.target_type = "observation";
         mut.target_id = obsId;
         mut.from_layer_id = fromLayerId;
+        mut.row_snapshot = memory::ObservationToJson(*snapshot);
         mut.motivation = reason;
         mut.unix_ms = NowMs();
         m_memoryStore->LogMutation(mut);
