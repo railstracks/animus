@@ -131,6 +131,13 @@ public:
     void Stop();
     bool IsRunning() const;
 
+    // #224: re-register the consolidation schedule set after a memory-layer
+    // change (create/update/delete/enable). Same clear-then-register sweep as
+    // Start — idempotent, safe to call repeatedly. No-op unless the pipeline
+    // is running. Intended to be wired to MemoryStore's layer-changed hook by
+    // the kernel (ChannelManager restart-hook pattern).
+    void RefreshSchedules();
+
     // Manual trigger (for admin API or testing)
     bool RunIntake(
         const std::string& agentId,
@@ -162,6 +169,9 @@ private:
 
     // Register cron schedules for enabled layers + intake
     void RegisterSchedules(Scheduler* scheduler);
+    // #224: clear stale consolidation schedules (all known agent ids + layer
+    // agent ids). Shared by Start and RefreshSchedules.
+    void ClearStaleConsolidationSchedules(Scheduler* scheduler);
 
     // Intake internals
     int64_t IntakeFromDiary(
