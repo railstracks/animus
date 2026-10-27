@@ -18,6 +18,7 @@
 #include <iostream>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -419,6 +420,35 @@ int TestPipelineDemoteToArchive() {
 
     auto stats = pipeline.GetStats();
     Assert(stats.observations_archived >= 1, "Stats should show 1+ archived");
+
+    // #221: the archive mutation's row_snapshot reconstructs the departed
+    // row — archive deletes from active layers, so the log is all that
+    // remains.
+    {
+        auto muts = memStore.QueryMutations(0, 1000);
+        const MemoryMutation* archiveMut = nullptr;
+        for (const auto& m : muts) {
+            if (m.mutation_type == "archive" && m.target_id == createdObsId) {
+                archiveMut = &m;
+            }
+        }
+        Assert(archiveMut != nullptr, "archive mutation row exists");
+        if (archiveMut) {
+            Json::CharReaderBuilder rb;
+            Json::Value snap;
+            std::string errs;
+            std::istringstream ss(archiveMut->row_snapshot);
+            Assert(Json::parseFromStream(rb, ss, &snap, &errs),
+                   "archive row_snapshot parses as JSON: " + errs);
+            Assert(snap["text"].asString() ==
+                       "Trivial observation that should be archived",
+                   "archive row_snapshot reconstructs text");
+            Assert(snap["weight"].asDouble() == 0.1,
+                   "archive row_snapshot reconstructs weight");
+            Assert(snap["source"].asString() == "intake:diary",
+                   "archive row_snapshot reconstructs source");
+        }
+    }
 
     std::filesystem::remove(dbPath);
     return 0;
