@@ -245,6 +245,105 @@ int main() {
                "patched weight applied");
     }
 
+    // ---- 5. #222 retired-wins-until-revised tombstones ----
+    {
+        // 5a. Retire T, then intake identical T -> newcomer Deprecated.
+        Fixture fx;
+        auto retired = fx.SeedObservation("the earth is flat");
+        Assert(fx.store.SetObservationMemoryState(
+                   retired.id, memory::MemoryState::Deprecated, "judged wrong"),
+               "retire -> true");
+
+        memory::Observation newcomer;
+        newcomer.layer_id = 1;
+        newcomer.agent_id = "agent-a";
+        newcomer.text = "the earth is flat";
+        newcomer.source = "intake";
+        auto created = fx.store.CreateObservationForAgent("agent-a", newcomer);
+        Assert(created.id > 0, "tombstoned newcomer created");
+        Assert(created.memory_state == memory::MemoryState::Deprecated,
+               "newcomer lands Deprecated, not live");
+
+        bool foundTombstoneNote = false;
+        for (const auto& m : fx.store.QueryMutations(0, 200)) {
+            if (m.mutation_type == "observation_auto_deprecated" &&
+                m.target_id == created.id &&
+                m.motivation.find("retired observation") != std::string::npos) {
+                foundTombstoneNote = true;
+            }
+        }
+        Assert(foundTombstoneNote, "auto-deprecate mutation note surfaces");
+
+        // 5b. Control: distinct text is untouched.
+        auto other = fx.SeedObservation("distinct text control");
+        Assert(other.memory_state == memory::MemoryState::New,
+               "distinct text lands New");
+
+        // 5c. Revise remains the resurrection route — even with identical
+        // text: the revision lifts the same-text tombstone under it.
+        auto revived = fx.store.ReviseObservation(
+            retired.id, "the earth is flat", 1.0, "", "");
+        Assert(revived.id > 0, "revise of retired original succeeds");
+        Assert(revived.memory_state == memory::MemoryState::New,
+               "revised version is live");
+        auto original = fx.store.GetObservation(retired.id);
+        Assert(original.has_value() && original->superseded_by == revived.id,
+               "supersession chain intact");
+        auto newcomerRow = fx.store.GetObservation(created.id);
+        Assert(newcomerRow.has_value() &&
+                   newcomerRow->superseded_by == revived.id,
+               "same-text tombstone lifted under the revision");
+        bool liftNoted = false;
+        for (const auto& m : fx.store.QueryMutations(0, 200)) {
+            if (m.mutation_type == "revise" && m.target_id == revived.id &&
+                m.motivation.find("lifted 1 same-text tombstone") !=
+                    std::string::npos) {
+                liftNoted = true;
+            }
+        }
+        Assert(liftNoted, "revise mutation notes the tombstone lift");
+    }
+
+    // ---- 6. #222 boot sweep: live twin of an active tombstone ----
+    {
+        std::string dbPath = MakeTempDbPath();
+        int64_t liveId = 0, retiredId = 0;
+        {
+            SqliteDataStore ds{dbPath};
+            memory::MemoryStore s{&ds};
+            s.CreateDefaultLayersForAgent("agent-a");
+            memory::Observation seed;
+            seed.layer_id = 1;
+            seed.agent_id = "agent-a";
+            seed.text = "resurrection candidate";
+            seed.source = "seed";
+            retiredId = s.CreateObservationForAgent("agent-a", seed).id;
+            liveId = s.CreateObservationForAgent("agent-a", seed).id;
+            Assert(retiredId > 0 && liveId > 0 && liveId != retiredId,
+                   "both twins created");
+            Assert(s.SetObservationMemoryState(
+                       retiredId, memory::MemoryState::Deprecated, "judged wrong"),
+                   "retire one twin");
+        }
+        {
+            SqliteDataStore ds{dbPath};
+            memory::MemoryStore s{&ds};  // EnsureSchema sweep fires here
+            auto after = s.GetObservation(liveId);
+            Assert(after.has_value() &&
+                       after->memory_state == memory::MemoryState::Deprecated,
+                   "boot sweep retired the tombstone-violating twin");
+            bool swept = false;
+            for (const auto& m : s.QueryMutations(0, 200)) {
+                if (m.mutation_type == "observation_auto_deprecated" &&
+                    m.target_id == liveId) {
+                    swept = true;
+                }
+            }
+            Assert(swept, "boot sweep left a mutation note");
+        }
+        std::filesystem::remove(dbPath);
+    }
+
     if (g_failures > 0) {
         std::cerr << "\nFAILED: " << g_failures << " assertions failed\n";
         return 1;
