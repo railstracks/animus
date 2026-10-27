@@ -209,6 +209,12 @@ private:
 
     void NotifyLayerChanged();
 
+    // #222: retired-wins-until-revised — deprecate an observation because
+    // an active tombstone (retired, never-revised row with identical
+    // agent/layer/text) already rejected this value. Distinct mutation
+    // type so tombstone hits surface in review.
+    bool AutoDeprecateObservation(const Observation& row, const std::string& reason);
+
     IDataStore* m_store;
     mutable std::mutex m_callbackMutex;
     LayerChangeCallback m_layerChangedCallback;

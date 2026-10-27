@@ -212,8 +212,20 @@ void MemoryStore::EnsureSchema() {
             dupeIds.push_back(dupes->ColumnInt64(0));
         }
         for (int64_t dupeId : dupeIds) {
+            // #222: a dedupe retiree is a SUPERSESSION, not a value
+            // verdict — point it at the surviving twin (smallest live id).
+            // Otherwise the retiree (memory_state=2, superseded_by=0) is
+            // indistinguishable from a deliberate retirement tombstone and
+            // the #222 boot sweep would retire the survivor too, collapsing
+            // every duplicated text to zero live rows.
             auto retire = m_store->Prepare(
-                "UPDATE observations SET memory_state = 2, updated_at_unix_ms = ? "
+                "UPDATE observations SET memory_state = 2, updated_at_unix_ms = ?, "
+                "superseded_by = (SELECT MIN(o2.id) FROM observations o2 "
+                "WHERE o2.memory_state <> 2 AND o2.superseded_by = 0 "
+                "AND o2.layer_id = observations.layer_id "
+                "AND o2.agent_id = observations.agent_id "
+                "AND o2.text = observations.text "
+                "AND o2.id < observations.id) "
                 "WHERE id = ? AND memory_state <> 2");
             if (retire && retire->BindInt64(1, NowUnixMs())
                        && retire->BindInt64(2, dupeId)) {
@@ -226,6 +238,40 @@ void MemoryStore::EnsureSchema() {
         if (!dupeIds.empty()) {
             ALOG_INFO("memory", "retired " << dupeIds.size()
                    << " exact-duplicate observation(s) at schema init");
+        }
+    }
+
+    // #222: retired-wins-until-revised boot sweep. A live row whose text
+    // matches an ACTIVE tombstone (retired, never revised, same agent/
+    // layer/text) is a resurrection that slipped past the create-time
+    // check — pre-fix intake, restored backups, bypassing paths. Retire
+    // it with a mutation note. Revision chains stay untouched: a
+    // retired-then-revised original no longer counts as a tombstone
+    // (ReviseObservation lifts same-text tombstones alongside).
+    {
+        auto strays = m_store->Prepare(
+            "SELECT id FROM observations o "
+            "WHERE o.memory_state <> 2 AND o.superseded_by = 0 "
+            "AND EXISTS (SELECT 1 FROM observations r "
+            "WHERE r.memory_state = 2 AND r.superseded_by = 0 "
+            "AND r.layer_id = o.layer_id AND r.agent_id = o.agent_id "
+            "AND r.text = o.text AND r.id <> o.id)");
+        std::vector<int64_t> strayIds;
+        while (strays && strays->Step()) {
+            strayIds.push_back(strays->ColumnInt64(0));
+        }
+        int64_t swept = 0;
+        for (int64_t id : strayIds) {
+            auto row = GetObservation(id);
+            if (row && AutoDeprecateObservation(
+                    *row, "retired-wins-until-revised boot sweep: live twin of "
+                          "an active tombstone")) {
+                ++swept;
+            }
+        }
+        if (swept > 0) {
+            ALOG_INFO("memory", "swept " << swept
+                   << " tombstone-violating observation(s) at schema init");
         }
     }
 
@@ -1147,6 +1193,32 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
     supersede->BindInt64(3, obs_id);
     supersede->Step();
 
+    // #222: retired-wins-until-REVISED — an explicit revision of text X is
+    // the legitimate resurrection route, so it lifts every remaining
+    // same-text tombstone (retired, never-revised rows) by superseding
+    // them under the new version. Without this, a revision that keeps the
+    // retired text would itself be swept as a tombstone violation at the
+    // next schema init.
+    int64_t lifted = 0;
+    {
+        auto lift = m_store->Prepare(
+            "UPDATE observations SET superseded_by=?, updated_at_unix_ms=? "
+            "WHERE memory_state=2 AND superseded_by=0 "
+            "AND agent_id=? AND layer_id=? AND text=? AND id<>?");
+        if (lift) {
+            lift->BindInt64(1, newId);
+            lift->BindInt64(2, now);
+            lift->BindText(3, newVersion.agent_id);
+            lift->BindInt64(4, newVersion.layer_id);
+            lift->BindText(5, newVersion.text);
+            lift->BindInt64(6, newId);
+            lift->ExecDML();
+            if (DidWriteRows(lift.get())) {
+                lifted = schema::RowsAffected(m_store);
+            }
+        }
+    }
+
     // Log the mutation
     MemoryMutation m;
     m.mutation_type = "revise";
@@ -1159,6 +1231,10 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
     m.row_snapshot = ObservationToJson(*original);
     m.motivation = "Copy-on-write revision: old version " + std::to_string(obs_id) +
                    " preserved as snapshot";
+    if (lifted > 0) {
+        m.motivation += " (lifted " + std::to_string(lifted) +
+                        " same-text tombstone(s): retired-wins-until-revised)";
+    }
     if (!source_override.empty()) {
         m.motivation += " [actor: " + source_override + "]";
     }
@@ -1416,7 +1492,65 @@ Observation MemoryStore::CreateObservationForAgent(
         const std::string& agent_id, const Observation& obs) {
     Observation agentObs = obs;
     agentObs.agent_id = agent_id;
-    return CreateObservation(agentObs);
+    Observation created = CreateObservation(agentObs);
+
+    // #222: retired-wins-until-revised. An active tombstone (retired,
+    // never-revised row with identical agent/layer/text) already rejected
+    // this value — silent re-derivation must not resurrect it. The
+    // newcomer still lands (intake stays autonomous) but arrives already
+    // Deprecated with a mutation note. The revise path is the legitimate
+    // resurrection route and never passes through here.
+    if (created.id > 0) {
+        auto twin = m_store->Prepare(
+            "SELECT id FROM observations "
+            "WHERE agent_id=? AND layer_id=? AND text=? "
+            "AND memory_state=2 AND superseded_by=0 AND id<>? LIMIT 1");
+        if (twin) {
+            twin->BindText(1, created.agent_id);
+            twin->BindInt64(2, created.layer_id);
+            twin->BindText(3, created.text);
+            twin->BindInt64(4, created.id);
+            if (twin->Step()) {
+                const int64_t twinId = twin->ColumnInt64(0);
+                AutoDeprecateObservation(
+                    created,
+                    "retired-wins-until-revised: identical to retired observation " +
+                        std::to_string(twinId) +
+                        " — silent re-derivation does not resurrect; use revise");
+                auto refreshed = GetObservation(created.id);
+                if (refreshed) return *refreshed;
+            }
+        }
+    }
+    return created;
+}
+
+bool MemoryStore::AutoDeprecateObservation(
+        const Observation& row, const std::string& reason) {
+    auto now = NowUnixMs();
+    auto stmt = m_store->Prepare(
+        "UPDATE observations SET memory_state=?, updated_at_unix_ms=? WHERE id=?");
+    if (!stmt) return false;
+    stmt->BindInt64(1, MemoryStateToInt(MemoryState::Deprecated));
+    stmt->BindInt64(2, now);
+    stmt->BindInt64(3, row.id);
+    stmt->ExecDML();
+    if (!DidWriteRows(stmt.get())) return false;
+
+    MemoryMutation m;
+    m.mutation_type = "observation_auto_deprecated";
+    m.target_type = "observation";
+    m.target_id = row.id;
+    m.from_layer_id = row.layer_id;
+    m.previous_state = std::to_string(static_cast<int>(row.memory_state));
+    // #221: full-row snapshot — what the row looked like on arrival.
+    m.row_snapshot = ObservationToJson(row);
+    m.motivation = reason;
+    m.unix_ms = now;
+    LogMutation(m);
+    ALOG_INFO("memory", "auto-deprecated observation " << row.id
+           << " (retired-wins-until-revised tombstone match)");
+    return true;
 }
 
 std::vector<Observation> MemoryStore::SearchObservationsForAgent(
