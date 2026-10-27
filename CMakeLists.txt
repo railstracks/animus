@@ -512,6 +512,7 @@ target_link_options(animusd PRIVATE -rdynamic)
 
 add_executable(animus-migrate
   src/migrate.cpp
+  src/Migration.cpp
 )
 
 target_link_libraries(animus-migrate PRIVATE animus_kernel)
@@ -526,6 +527,19 @@ set_target_properties(animus-migrate PROPERTIES
 
 if(ANIMUS_BUILD_TESTS)
     enable_testing()
+
+    add_executable(animus_migration_tests
+      tests/MigrationTests.cpp
+      src/Migration.cpp
+    )
+    target_link_libraries(animus_migration_tests PRIVATE animus_kernel)
+    target_include_directories(animus_migration_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(animus_migration_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME MigrationTests COMMAND animus_migration_tests)
 
     add_executable(animus_jobs_tests
       tests/JobsTests.cpp
