@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -192,10 +194,24 @@ public:
     // Returns true if layers were created, false if layers already existed.
     bool CreateDefaultLayersForAgent(const std::string& agent_id);
 
+    // #224: notification hook — fired after a layer create/update/delete
+    // commits. Lets the consolidation pipeline re-register its cron schedules
+    // without a restart (ChannelManager restart-hook pattern). Consumers must
+    // tolerate callbacks arriving after their own teardown has begun.
+    using LayerChangeCallback = std::function<void()>;
+    void SetLayerChangedCallback(LayerChangeCallback cb) {
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        m_layerChangedCallback = std::move(cb);
+    }
+
 private:
     void EnsureSchema();
 
+    void NotifyLayerChanged();
+
     IDataStore* m_store;
+    mutable std::mutex m_callbackMutex;
+    LayerChangeCallback m_layerChangedCallback;
 };
 
 } // namespace animus::kernel::memory

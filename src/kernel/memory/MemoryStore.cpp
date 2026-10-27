@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iostream>
 #include <json/json.h>
+#include <mutex>
 #include <utility>
 
 namespace animus::kernel::memory {
@@ -65,6 +66,19 @@ MemoryState IntToMemoryState(int64_t value) {
 
 MemoryStore::MemoryStore(IDataStore* dataStore) : m_store(dataStore) {
     EnsureSchema();
+}
+
+void MemoryStore::NotifyLayerChanged() {
+    // #224: fire-and-forget hook so the consolidation pipeline can re-register
+    // its cron schedules without a restart. Copy under the guard: the callback
+    // itself may mutate the member (SetLayerChangedCallback(nullptr) during
+    // teardown) or re-enter the store.
+    LayerChangeCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        cb = m_layerChangedCallback;
+    }
+    if (cb) cb();
 }
 
 MemoryStore::~MemoryStore() = default;
@@ -580,6 +594,10 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer, int64_t preset_id
         }
     }
 
+    // #224: layer set changed — let the consolidation pipeline re-register
+    // its schedules without a restart. Fired only on success paths.
+    if (result) NotifyLayerChanged();
+
     return result.value_or(MemoryLayer{});
 }
 
@@ -738,7 +756,9 @@ bool MemoryStore::UpdateLayer(const MemoryLayer& layer) {
     stmt->BindInt64(12, layer.id);
 
     stmt->ExecDML();
-    return DidWriteRows(stmt.get());
+    const bool wrote = DidWriteRows(stmt.get());
+    if (wrote) NotifyLayerChanged();
+    return wrote;
 }
 
 bool MemoryStore::DeleteLayer(int64_t id) {
@@ -746,7 +766,9 @@ bool MemoryStore::DeleteLayer(int64_t id) {
     if (!stmt) return false;
     stmt->BindInt64(1, id);
     stmt->ExecDML();
-    return DidWriteRows(stmt.get());
+    const bool deleted = DidWriteRows(stmt.get());
+    if (deleted) NotifyLayerChanged();
+    return deleted;
 }
 
 int MemoryStore::DeleteLayersForAgent(const std::string& agent_id) {

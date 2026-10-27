@@ -10,6 +10,7 @@
 #include "animus_kernel/AgentStore.h"
 #include "animus_kernel/OntologyStore.h"
 #include "animus_kernel/MemoryFileStore.h"
+#include "animus_kernel/scheduler/Scheduler.h"
 #include "animus_kernel/tools/ConsolidationTool.h"
 
 #include <chrono>
@@ -638,6 +639,226 @@ int TestPipelineRunLog() {
 }
 
 // ============================================================================
+// #224: live schedule refresh — layers created/updated/enabled after Start
+// must get their consolidation schedules without a restart.
+// ============================================================================
+
+static void MakeScheduleTestLayer(MemoryStore& memStore, const std::string& agentId,
+                                  const std::string& name, const char* cron,
+                                  bool enabled) {
+    MemoryLayer layer;
+    layer.agent_id = agentId;
+    layer.name = name;
+    layer.horizon = "test horizon";
+    layer.cron_expr = cron;
+    layer.evaluation_interval_seconds = 3600;
+    layer.token_budget = 4096;
+    layer.enabled = enabled;
+    memStore.CreateLayer(layer);
+}
+
+int TestRefreshSchedulesOnLayerCreate() {
+    std::cerr << "  [#224] Layer create during run registers schedule...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    Scheduler scheduler(&dataStore);
+
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, nullptr, nullptr, nullptr, nullptr, MockLLMCallback);
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    // Layer that exists before Start gets its schedule at Start.
+    MakeScheduleTestLayer(memStore, "agent1", "day", "0 */2 * * *", true);
+    std::string err;
+    Assert(pipeline.Start(&scheduler, &err), "Start should succeed: " + err);
+    // Wire the layer-change hook exactly as AgentKernel does (#224).
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+    Assert(scheduler.List("agent1", "consolidation").size() == 1,
+           "pre-existing enabled layer should have 1 schedule after Start");
+
+    // Wire the same hook AgentKernel wires (ChannelManager restart-hook
+    // pattern) — layer mutations now drive live refreshes.
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+
+    // Create an enabled layer while running — its schedule must appear
+    // without a restart (the acceptance criterion).
+    MakeScheduleTestLayer(memStore, "agent1", "week", "0 3 * * *", true);
+    Assert(scheduler.List("agent1", "consolidation").size() == 2,
+           "layer created during run should get a schedule without restart");
+
+    memStore.SetLayerChangedCallback(nullptr);
+    pipeline.Stop();
+    Assert(scheduler.List("agent1", "consolidation").empty(),
+           "Stop should cancel all pipeline schedules");
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
+int TestRefreshSchedulesOnLayerUpdate() {
+    std::cerr << "  [#224] Layer update during run re-registers schedule...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    Scheduler scheduler(&dataStore);
+
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, nullptr, nullptr, nullptr, nullptr, MockLLMCallback);
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    MakeScheduleTestLayer(memStore, "agent1", "day", "0 */2 * * *", true);
+    std::string err;
+    Assert(pipeline.Start(&scheduler, &err), "Start should succeed: " + err);
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+    const auto before = scheduler.List("agent1", "consolidation");
+    Assert(before.size() == 1, "expected 1 schedule after Start");
+
+    // Wire the same hook AgentKernel wires — layer mutations drive live refresh.
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+
+    // Change the layer's cron while running — the schedule set must follow.
+    auto layer = memStore.ListLayersForAgent("agent1").front();
+    layer.cron_expr = "15 */3 * * *";
+    Assert(memStore.UpdateLayer(layer), "UpdateLayer should succeed");
+
+    const auto after = scheduler.List("agent1", "consolidation");
+    Assert(after.size() == 1, "update should not duplicate schedules");
+    Assert(after[0].cron_expr == "15 */3 * * *",
+           "refresh should pick up the new cron, got: " + after[0].cron_expr);
+
+    pipeline.Stop();
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
+int TestRefreshSchedulesOnLayerDisable() {
+    std::cerr << "  [#224] Layer disable during run removes schedule...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    Scheduler scheduler(&dataStore);
+
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, nullptr, nullptr, nullptr, nullptr, MockLLMCallback);
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    MakeScheduleTestLayer(memStore, "agent1", "day", "0 */2 * * *", true);
+    std::string err;
+    Assert(pipeline.Start(&scheduler, &err), "Start should succeed: " + err);
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+    Assert(scheduler.List("agent1", "consolidation").size() == 1, "expected 1 schedule");
+
+    // Disable the layer — the schedule must be gone without a restart.
+    auto layer = memStore.ListLayersForAgent("agent1").front();
+    layer.enabled = false;
+    Assert(memStore.UpdateLayer(layer), "UpdateLayer should succeed");
+    Assert(scheduler.List("agent1", "consolidation").empty(),
+           "disabled layer's schedule should be removed without restart");
+
+    // Re-enable — schedule must come back.
+    layer.enabled = true;
+    Assert(memStore.UpdateLayer(layer), "UpdateLayer should succeed");
+    Assert(scheduler.List("agent1", "consolidation").size() == 1,
+           "re-enabled layer's schedule should be restored without restart");
+
+    pipeline.Stop();
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
+int TestRefreshNoDuplicateSchedules() {
+    std::cerr << "  [#224] Repeated refresh does not duplicate schedules...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    Scheduler scheduler(&dataStore);
+
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, nullptr, nullptr, nullptr, nullptr, MockLLMCallback);
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    MakeScheduleTestLayer(memStore, "agent1", "day", "0 */2 * * *", true);
+    std::string err;
+    Assert(pipeline.Start(&scheduler, &err), "Start should succeed: " + err);
+
+    // Hammer the refresh path — every layer mutation (callback-wired, as the
+    // kernel does) and explicit refreshes must leave exactly one schedule
+    // per scheduled layer.
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+    for (int i = 0; i < 5; ++i) {
+        MakeScheduleTestLayer(memStore, "agent1", "day", "0 */2 * * *", true);
+        auto layer = memStore.ListLayersForAgent("agent1").front();
+        layer.cron_expr = "0 */2 * * *";
+        memStore.UpdateLayer(layer);
+    }
+    pipeline.RefreshSchedules();
+    pipeline.RefreshSchedules();
+
+    Assert(scheduler.List("agent1", "consolidation").size() == 1,
+           "repeated refresh must not duplicate schedules");
+
+    memStore.SetLayerChangedCallback(nullptr);
+    pipeline.Stop();
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
+int TestSessionReportScheduleShifted() {
+    std::cerr << "  [#224] Session-report cron is shifted +30 min...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    AgentStore agentStore(&dataStore);
+    Scheduler scheduler(&dataStore);
+
+    // Agent-level intake cron drives the session-report registration.
+    Agent agent;
+    agent.id = "agent1";
+    agent.name = "Agent One";
+    agent.intake_interval = "0 * * * *";
+    auto created = agentStore.Create(agent);
+    Assert(!created.id.empty(), "agent create should succeed");
+
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, nullptr, nullptr, nullptr, &agentStore, MockLLMCallback);
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    std::string err;
+    Assert(pipeline.Start(&scheduler, &err), "Start should succeed: " + err);
+
+    // Intake schedule keeps the agent cron; session-report is shifted +30.
+    auto scheds = scheduler.List("agent1", "consolidation");
+    bool sawIntake = false, sawShifted = false;
+    for (const auto& s : scheds) {
+        if (s.message == "intake:day") {
+            sawIntake = true;
+            Assert(s.cron_expr == "0 * * * *", "intake cron should be unshifted");
+        }
+        if (s.message == "session_report") {
+            sawShifted = true;
+            Assert(s.cron_expr == "30 * * * *",
+                   "session-report cron should be shifted +30, got: " + s.cron_expr);
+        }
+    }
+    Assert(sawIntake, "intake schedule should exist");
+    Assert(sawShifted, "session_report schedule should exist");
+
+    pipeline.Stop();
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -1042,6 +1263,12 @@ int main() {
     TestPipelineStats();
     TestPipelineRunLog();
 
+    std::cerr << "\n-- #224: Live schedule refresh --\n";
+    TestRefreshSchedulesOnLayerCreate();
+    TestRefreshSchedulesOnLayerUpdate();
+    TestRefreshSchedulesOnLayerDisable();
+    TestRefreshNoDuplicateSchedules();
+    TestSessionReportScheduleShifted();
 
     std::cerr << "\n";
     if (g_failures == 0) {
