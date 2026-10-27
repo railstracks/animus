@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace animus::kernel {
 
@@ -28,6 +29,10 @@ bool ColumnExists(IDataStore* store, const std::string& table, const std::string
 
 // Returns true if a table exists.
 bool TableExists(IDataStore* store, const std::string& table);
+
+// Returns the column names of a table in declaration order.
+// Empty when the table does not exist (or introspection fails).
+std::vector<std::string> GetTableColumns(IDataStore* store, const std::string& table);
 
 // Returns true if an index exists.
 bool IndexExists(IDataStore* store, const std::string& indexName);

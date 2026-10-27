@@ -60,6 +60,33 @@ bool TableExists(IDataStore* store, const std::string& table) {
     return false;
 }
 
+std::vector<std::string> GetTableColumns(IDataStore* store, const std::string& table) {
+    std::vector<std::string> columns;
+    if (!store) return columns;
+
+    if (store->Dialect() == DataStoreDialect::PostgreSQL) {
+        auto stmt = store->Prepare(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = ? ORDER BY ordinal_position");
+        if (!stmt) return columns;
+        stmt->BindText(1, table);
+        while (stmt->Step()) {
+            columns.push_back(stmt->ColumnText(0));
+        }
+        return columns;
+    }
+
+    // SQLite (declaration order via cid; pragma_table_info is table-valued
+    // on SQLite >= 3.16, same surface ColumnExists relies on)
+    auto stmt = store->Prepare(
+        "SELECT name FROM pragma_table_info('" + table + "') ORDER BY cid");
+    if (!stmt) return columns;
+    while (stmt->Step()) {
+        columns.push_back(stmt->ColumnText(0));
+    }
+    return columns;
+}
+
 bool IndexExists(IDataStore* store, const std::string& indexName) {
     if (!store) return false;
 
