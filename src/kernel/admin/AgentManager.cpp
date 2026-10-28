@@ -153,6 +153,10 @@ AgentManager::OperationResult AgentManager::DeleteAgent(const std::string& id) {
         result.error = "agent not found";
         return result;
     }
+    // #214: capture before AgentStore::Delete removes the agents row —
+    // memory_files.agent_id is INTEGER and cleanup binds this value, not the
+    // TEXT id.
+    const int64_t numericId = existing->numeric_id;
 
     if (m_agentStore->HasActiveSessions(id)) {
         result.statusCode = 409;
@@ -178,22 +182,85 @@ AgentManager::OperationResult AgentManager::DeleteAgent(const std::string& id) {
 
     // Clean up all other agent-scoped tables. Agent deletion doesn't cascade
     // automatically for tables without FK references to agents.
-    const struct { const char* table; const char* agent_col; } cleanup[] = {
-        {"diary_entries", "agent_id"},
-        {"ontology_properties", "agent_id"},
-        {"ontology_entities", "agent_id"},
-        {"gallivanting_sessions", "agent_id"},
-        {"gallivanting_threads", "agent_id"},
-        {"schedules", "agent_id"},
-        {"consolidation_runs", "agent_id"},
-        {"consolidation_watermarks", "agent_id"},
-        {"lua_scripts", "agent_id"},
-        {"memory_files", "agent_id"},
+    //
+    // #214 — the identity representation is per-table:
+    //  * Most tables key agent_id on the TEXT agent id.
+    //  * memory_files.agent_id is INTEGER (Agent::numeric_id) — the writer
+    //    (MemoryFileStore::CreateFile) and every reader already speak numeric,
+    //    and 0 is the shared/global sentinel (#225/#232), so cleanup binds the
+    //    numeric id there instead of re-expressing the sentinel as TEXT.
+    //    Must never bind 0: that would delete the shared files.
+    //  * Four tables carry 'default' as the shared-rows sentinel
+    //    (ontology_properties, ontology_entities, gallivanting_sessions,
+    //    gallivanting_threads): agent ids are server-generated MD5 hex, so a
+    //    literal "default" agent cannot be distinguished from shared rows and
+    //    its deletion must skip those tables with a loud log instead of
+    //    deleting everyone's data.
+    //
+    // Per-table deleted-row counts are logged unconditionally — a silent zero
+    // on a table that should have had rows is exactly the failure this loop
+    // used to hide (Prepare failures and bind mismatches were both swallowed).
+    struct CleanupTable {
+        const char* table;
+        const char* agent_col;
+        bool use_numeric;
+        bool skip_for_default_sentinel;
     };
+    const CleanupTable cleanup[] = {
+        {"diary_entries", "agent_id", false, false},
+        {"ontology_properties", "agent_id", false, true},
+        {"ontology_entities", "agent_id", false, true},
+        {"gallivanting_sessions", "agent_id", false, true},
+        {"gallivanting_threads", "agent_id", false, true},
+        {"schedules", "agent_id", false, false},
+        {"consolidation_runs", "agent_id", false, false},
+        {"consolidation_watermarks", "agent_id", false, false},
+        {"lua_scripts", "agent_id", false, false},
+        {"memory_files", "agent_id", true, false},
+    };
+    const bool isDefaultSentinel = (id == "default");
+    if (isDefaultSentinel) {
+        std::cerr << "[agent-manager] deleting agent \"default\": shared-row "
+                     "sentinel tables (ontology_properties, ontology_entities, "
+                     "gallivanting_sessions, gallivanting_threads) are skipped "
+                     "— their 'default' rows are indistinguishable from shared "
+                     "rows and belong to no single agent"
+                  << std::endl;
+    }
     for (const auto& c : cleanup) {
+        if (c.skip_for_default_sentinel && isDefaultSentinel) {
+            std::cerr << "[agent-manager] skipped " << c.table
+                      << " for deleted agent \"default\" (shared-rows sentinel)"
+                      << std::endl;
+            continue;
+        }
         auto del = m_memoryStore->DataStore()->Prepare(
             std::string("DELETE FROM ") + c.table + " WHERE " + c.agent_col + "=?");
-        if (del) { del->BindText(1, id); del->ExecDML(); }
+        if (!del) {
+            std::cerr << "[agent-manager] cleanup prepare failed for "
+                      << c.table << ": " << m_memoryStore->DataStore()->ErrMsg()
+                      << std::endl;
+            continue;
+        }
+        if (c.use_numeric) {
+            // memory_files is numeric-keyed; the deleted agent's numeric id is
+            // known before AgentStore::Delete removes the agents row. Guard
+            // against 0 (unset/unknown numeric id): binding 0 would delete the
+            // shared/global files instead of this agent's.
+            if (numericId <= 0) {
+                std::cerr << "[agent-manager] cleanup skipped memory_files for "
+                          << "deleted agent " << id
+                          << ": numeric id unknown/zero" << std::endl;
+                continue;
+            }
+            del->BindInt64(1, numericId);
+        } else {
+            del->BindText(1, id);
+        }
+        del->ExecDML();
+        std::cerr << "[agent-manager] cleanup deleted " << del->RowsAffected()
+                  << " row(s) from " << c.table << " for deleted agent " << id
+                  << std::endl;
     }
 
     result.deletedId = id;

@@ -960,6 +960,18 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME MemoryStoreLayerSeedingTests COMMAND animus_memory_store_layer_seeding_tests)
+    add_executable(animus_agent_deletion_cleanup_tests
+      tests/AgentManagerDeletionCleanupTests.cpp
+    )
+    target_link_libraries(animus_agent_deletion_cleanup_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_agent_deletion_cleanup_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_agent_deletion_cleanup_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME AgentManagerDeletionCleanupTests COMMAND animus_agent_deletion_cleanup_tests)
 
     add_executable(animus_lua_tests
       tests/LuaTests.cpp
