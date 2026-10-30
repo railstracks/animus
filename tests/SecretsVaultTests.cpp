@@ -384,6 +384,104 @@ bool InstallThrowsWith(Fixture& fx, const std::string& manifest, const std::stri
     }
 }
 
+int TestLintBodyAndUrlGates() {
+    Fixture fx;
+    const std::string okSchema = R"({"token": {"type": "string", "secret": true},
+                                     "base":  {"type": "string", "default": "https://x.test"}})";
+    const std::string tmplTok = std::string("{{state") + ".token}}";
+    const std::string okConn = R"({"name": "poll", "type": "longpoll",
+        "url_template": "{{state.base}}/poll",
+        "headers_template": {"X-Api-Token": ")" + tmplTok + R"("},
+        "poll": {"cursor_path": "next", "interval_s": 5, "dispatch": {"command": "fetch"}},
+        "hooks": {}})";
+    const std::string okAction = R"({"name": "fetch", "kind": "action", "description": "d",
+        "request": {"method": "GET", "url": "{{state.base}}/x",
+                    "headers": {"Authorization": ")" + tmplTok + R"("}},
+        "script": "function run(ctx) return {output='ok'} end"})";
+
+    // baseline: templated everywhere -> installs
+    try {
+        fx.store.InstallFromManifest(ManifestWith(okSchema, okAction, okConn));
+    } catch (const std::runtime_error& e) {
+        Assert(false, "baseline body/url manifest installs (got: " + std::string(e.what()) + ")");
+    }
+
+    // literal api_key in action request body JSON
+    Assert(InstallThrowsWith(fx,
+            ManifestWith(okSchema, R"({"name": "post", "kind": "action", "description": "d",
+                "request": {"method": "POST", "url": "{{state.base}}/orders",
+                            "headers": {"Authorization": ")" + tmplTok + R"("},
+                            "body": "{\"api_key\": \"sk-liv-qq77-notreal\", \"qty\": 2}"},
+                "script": "function run(ctx) return {output='ok'} end"})", okConn),
+            "forbidden in package files"),
+           "literal api_key in body rejected (#104)");
+
+    // templated credential in body installs
+    try {
+        fx.store.InstallFromManifest(ManifestWith(okSchema, R"({"name": "post2", "kind": "action", "description": "d",
+            "request": {"method": "POST", "url": "{{state.base}}/orders",
+                        "headers": {"Authorization": ")" + tmplTok + R"("},
+                        "body": "{\"api_key\": \")" + tmplTok + R"(\", \"qty\": 2}"},
+            "script": "function run(ctx) return {output='ok'} end"})", okConn));
+    } catch (const std::runtime_error& e) {
+        Assert(false, "templated body credential installs (got: " + std::string(e.what()) + ")");
+    }
+
+    // literal credential as url query param value
+    Assert(InstallThrowsWith(fx,
+            ManifestWith(okSchema, R"({"name": "q", "kind": "action", "description": "d",
+                "request": {"method": "GET", "url": "{{state.base}}/v2?key=sk-liv-qq88-notreal",
+                            "headers": {"Authorization": ")" + tmplTok + R"("}},
+                "script": "function run(ctx) return {output='ok'} end"})", okConn),
+            "forbidden in package files"),
+           "literal key= query param rejected (#104)");
+
+    // templated query param installs
+    try {
+        fx.store.InstallFromManifest(ManifestWith(okSchema, R"({"name": "q2", "kind": "action", "description": "d",
+            "request": {"method": "GET", "url": "{{state.base}}/v2?key=)" + tmplTok + R"(",
+                        "headers": {"Authorization": ")" + tmplTok + R"("}},
+            "script": "function run(ctx) return {output='ok'} end"})", okConn));
+    } catch (const std::runtime_error& e) {
+        Assert(false, "templated query param installs (got: " + std::string(e.what()) + ")");
+    }
+
+    // non-credential query params stay untouched (no false positive)
+    try {
+        fx.store.InstallFromManifest(ManifestWith(okSchema, R"({"name": "q3", "kind": "action", "description": "d",
+            "request": {"method": "GET", "url": "{{state.base}}/v2?market=BTC-EUR&limit=10",
+                        "headers": {"Authorization": ")" + tmplTok + R"("}},
+            "script": "function run(ctx) return {output='ok'} end"})", okConn));
+    } catch (const std::runtime_error& e) {
+        Assert(false, "non-credential query param installs (got: " + std::string(e.what()) + ")");
+    }
+
+    // nested credential inside body JSON object
+    Assert(InstallThrowsWith(fx,
+            ManifestWith(okSchema, R"({"name": "post3", "kind": "action", "description": "d",
+                "request": {"method": "POST", "url": "{{state.base}}/orders",
+                            "headers": {"Authorization": ")" + tmplTok + R"("},
+                            "body": "{\"order\": {\"password\": \"hunter2-notreal\", \"qty\": 2}}"},
+                "script": "function run(ctx) return {output='ok'} end"})", okConn),
+            "forbidden in package files"),
+           "nested credential in body rejected (#104)");
+
+    // literal credential inside connection poll config
+    Assert(InstallThrowsWith(fx,
+            ManifestWith(okSchema, okAction, R"({"name": "poll3", "type": "longpoll",
+                "url_template": "{{state.base}}/poll",
+                "headers_template": {"X-Api-Token": ")" + tmplTok + R"("},
+                "poll": {"cursor_path": "next", "interval_s": 5,
+                         "dispatch": {"command": "fetch"},
+                         "headers": {"Authorization": "Basic bGl0ZXJhbC1ub3RyZWFs"}},
+                "hooks": {}})"),
+            "forbidden in package files"),
+           "literal credential in poll config rejected (#104)");
+
+    return 0;
+}
+
+
 int TestLintGates() {
     std::cerr << "  [vault] lint: secret defaults, literal credential headers...\n";
     Fixture fx;
@@ -725,6 +823,7 @@ int main() {
     TestSplitStateSecrets();
     TestMigration();
     TestLintGates();
+    TestLintBodyAndUrlGates();
     TestAgentScope();
     TestConfigStoreIntegration();
     TestAgentMigration();

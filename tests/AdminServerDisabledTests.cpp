@@ -2,6 +2,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <cstdlib>
 
 #include <chrono>
 #include <iostream>
@@ -70,6 +71,13 @@ int TestAdminServerDisabled() {
     }
 
     animus::kernel::KernelConfig config;
+    // #187: per-run temp dataDir keeps this boot's datastore off the
+    // shared ctest CWD (parallel suites used to collide on memory.db).
+    char dataDirBuf[] = "/tmp/animus_admin_disabled_data_XXXXXX";
+    if (!mkdtemp(dataDirBuf)) {
+        return Fail(4, "failed to create temp dataDir (#187)");
+    }
+    config.dataDir = dataDirBuf;
     config.admin.enabled = false;
     config.admin.host = "127.0.0.1";
     config.admin.port = port;

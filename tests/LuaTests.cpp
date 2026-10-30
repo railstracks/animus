@@ -10,6 +10,9 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <fstream>
+#include <sstream>
+#include <unistd.h>
 
 #include <json/json.h>
 #include <json/reader.h>
@@ -691,6 +694,468 @@ void TestMemoryLimit() {
 // ============================================================================
 // Main
 // ============================================================================
+// ============================================================================
+// Test: Bluesky richtext facets (#36)
+// Loads the real adapter with a stubbed animus table and asserts facets
+// in the createRecord / sendMessage payloads. One Eval chunk per case:
+// prelude (stubs) + adapter source + driver, sharing chunk-local scope.
+// ============================================================================
+std::string ReadIrcAdapterSrc() {
+    char exe[4096];
+    const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    std::vector<std::string> candidates;
+    if (n > 0) {
+        exe[n] = '\0';
+        std::string dir(exe);
+        const auto slash = dir.rfind('/');
+        if (slash != std::string::npos)
+            candidates.push_back(dir.substr(0, slash) + "/../../state/lua/_shared/irc.lua");
+    }
+    candidates.push_back("state/lua/_shared/irc.lua");
+    candidates.push_back("../../state/lua/_shared/irc.lua");
+    for (const auto& c : candidates) {
+        std::ifstream f(c);
+        if (f.good()) {
+            std::stringstream ss;
+            ss << f.rdbuf();
+            return ss.str();
+        }
+    }
+    return "";
+}
+
+std::string ReadBlueskyAdapterSrc() {
+    char exe[4096];
+    const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    std::vector<std::string> candidates;
+    if (n > 0) {
+        exe[n] = '\0';
+        std::string dir(exe);
+        const auto slash = dir.rfind('/');
+        if (slash != std::string::npos)
+            candidates.push_back(dir.substr(0, slash) + "/../../state/lua/_shared/bluesky.lua");
+    }
+    candidates.push_back("state/lua/_shared/bluesky.lua");
+    candidates.push_back("../../state/lua/_shared/bluesky.lua");
+    for (const auto& c : candidates) {
+        std::ifstream f(c);
+        if (!f) continue;
+        std::stringstream ss;
+        ss << f.rdbuf();
+        std::string s = ss.str();
+        if (!s.empty()) return s;
+    }
+    return "";
+}
+
+const char* kBskyPrelude = R"lua(
+local calls = {}
+local captured = nil
+local function stub_reply(url)
+    if string.find(url, "createSession", 1, true) then
+        return { status = 200, body = json.encode({ accessJwt = "h.p.s", did = "did:plc:t", refreshJwt = "r.p.s" }) }
+    end
+    if string.find(url, "getRecord", 1, true) then
+        return { status = 200, body = json.encode({ uri = "at://did:plc:t/app.bsky.feed.post/root", cid = "bafyr", value = { cid = "bafyr" } }) }
+    end
+    return { status = 200, body = json.encode({ uri = "at://did:plc:t/app.bsky.feed.post/new", cid = "bafyn" }) }
+end
+animus.register_channel = function(t) captured = t end
+animus.http_post = function(url, opts)
+    table.insert(calls, { url = url, body = (opts and opts.body) or "" })
+    return stub_reply(url)
+end
+animus.http_get = function(url, opts)
+    table.insert(calls, { url = url, body = "" })
+    return stub_reply(url)
+end
+config.set("channels.bluesky:test.handle", "tester.bsky.social")
+config.set("channels.bluesky:test.app_password", "app-pass")
+config.set("channels.bluesky:test.access_jwt", "")
+config.set("channels.bluesky:test.did", "")
+)lua";
+
+// Runs one case; extracts the record (post/reply) or message (chat) actually
+// sent, json-encoded, from the stubbed http layer.
+Json::Value RunBlueskyCase(LuaState& lua, const std::string& src, const std::string& driver) {
+    std::string out;
+    try {
+        out = lua.Eval(std::string(kBskyPrelude) + "\n" + src + "\n" + driver, "bsky-case");
+    } catch (const std::exception& e) {
+        Assert(false, std::string("Eval threw: ") + e.what());
+        return Json::Value();  // null degrades to assert failures, not abort
+    }
+    Json::Value v;
+    std::string err;
+    Assert(Json::Reader().parse(out, v), "case output should be JSON, got: " + out.substr(0, 200));
+    // Eval serializes Lua string returns as JSON strings (quoted+escaped);
+    // unwrap one layer so callers always get the object/array.
+    if (v.isString()) {
+        const std::string inner = v.asString();
+        Assert(Json::Reader().parse(inner, v), "unwrapped case output should be JSON, got: " + inner.substr(0, 200));
+    }
+    return v;
+}
+
+void AssertFacet(const Json::Value& f, int bs, int be, const char* type, const std::string& val) {
+    Assert(f["index"]["byteStart"].asInt() == bs,
+           "facet byteStart " + std::to_string(f["index"]["byteStart"].asInt()) + " != " + std::to_string(bs));
+    Assert(f["index"]["byteEnd"].asInt() == be,
+           "facet byteEnd " + std::to_string(f["index"]["byteEnd"].asInt()) + " != " + std::to_string(be));
+    const std::string got = f["features"][0]["$type"].asString();
+    Assert(got == type, "facet $type " + got + " != " + type);
+    const std::string field = (got.find("#tag") != std::string::npos) ? "tag" : "uri";
+    Assert(f["features"][0][field].asString() == val,
+           "facet " + field + " " + f["features"][0][field].asString() + " != " + val);
+}
+
+const char* kBskyPostDriver = R"lua(
+local r = captured.handler({ action = "post", platform_id = "bluesky:test", content = CONTENT })
+local rec
+for _, c in ipairs(calls) do
+    if string.find(c.url, "createRecord", 1, true) then rec = json.decode(c.body).record end
+end
+return json.encode({ ok = (r.success == true), record = rec })
+)lua";
+
+void TestBlueskyFacets() {
+    std::cerr << "  TestBlueskyFacets...";
+    const std::string src = ReadBlueskyAdapterSrc();
+    Assert(!src.empty(), "bluesky.lua source found");
+
+    ToolRegistry tools;
+    HttpClient http;
+    LuaState::Config config;
+    config.agentId = "test";
+    config.instructionLimit = 5'000'000;
+    LuaState lua(config, tools, http);
+
+    // helper: run post case with given content
+    auto post_case = [&](const std::string& content) {
+        std::string driver = std::string(kBskyPostDriver);
+        const std::string marker = "CONTENT";
+        const size_t p = driver.find(marker);
+        driver.replace(p, marker.size(), content);
+        return RunBlueskyCase(lua, src, driver);
+    };
+
+    // 1. plain hashtag: "#hello world" -> tag facet 0..6
+    {
+        Json::Value v = post_case("\"#hello world\"");
+        Assert(v["ok"].asBool(), "case1 post succeeds");
+        Assert(v["record"]["facets"].isArray() && v["record"]["facets"].size() == 1, "case1 one facet");
+        if (v["record"]["facets"].size() == 1)
+            AssertFacet(v["record"]["facets"][0], 0, 6, "app.bsky.richtext.facet#tag", "hello");
+    }
+
+    // 2. mid-string URL: "see https://example.com/page now" -> link 4..28
+    {
+        Json::Value v = post_case("\"see https://example.com/page now\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case2 one facet");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 4, 28, "app.bsky.richtext.facet#link", "https://example.com/page");
+    }
+
+    // 3. emoji (4 bytes) shifts offsets: "\xF0\x9F\xA6\x85 #kestrel" -> tag 5..13
+    {
+        Json::Value v = post_case("\"\\xF0\\x9F\\xA6\\x85 #kestrel\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case3 one facet (emoji before tag)");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 5, 13, "app.bsky.richtext.facet#tag", "kestrel");
+    }
+
+    // 4. CJK (3-byte chars) before URL: -> link 7..23
+    {
+        Json::Value v = post_case("\"\\xE8\\xA6\\x8B\\xE3\\x81\\xA6 https://x.test/a \\xE3\\x81\\xAD\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case4 one facet (CJK before url)");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 7, 23, "app.bsky.richtext.facet#link", "https://x.test/a");
+    }
+
+    // 5. trailing punctuation excluded: "check https://x.test/a." -> 6..22, no dot
+    {
+        Json::Value v = post_case("\"check https://x.test/a.\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case5 one facet");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 6, 22, "app.bsky.richtext.facet#link", "https://x.test/a");
+    }
+
+    // 6. hashtag trailing punctuation: "#test, done" -> tag test 0..5
+    {
+        Json::Value v = post_case("\"#test, done\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case6 one facet");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 0, 5, "app.bsky.richtext.facet#tag", "test");
+    }
+
+    // 7. url fragment is NOT a hashtag: one link facet only
+    {
+        Json::Value v = post_case("\"go https://x.test/a#frag now\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case7 exactly one facet (frag not a tag)");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 3, 24, "app.bsky.richtext.facet#link", "https://x.test/a#frag");
+    }
+
+    // 8. www form -> https-prefixed uri, span covers bare www text
+    {
+        Json::Value v = post_case("\"www.example.com works\"");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case8 one facet");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 0, 15, "app.bsky.richtext.facet#link", "https://www.example.com");
+    }
+
+    // 9. plain text -> facets key absent entirely
+    {
+        Json::Value v = post_case("\"just plain text\"");
+        Assert(v["ok"].asBool(), "case9 post succeeds");
+        Assert(!v["record"].isMember("facets"), "case9 no facets key on plain text");
+    }
+
+    // 10. reply path inherits facets + keeps reply refs
+    {
+        const char* driver = R"lua(
+local r = captured.handler({ action = "reply", platform_id = "bluesky:test", post_id = "at://did:plc:t/app.bsky.feed.post/root", root_id = "at://did:plc:t/app.bsky.feed.post/root", content = "#thread" })
+local rec
+for _, c in ipairs(calls) do
+    if string.find(c.url, "createRecord", 1, true) then rec = json.decode(c.body).record end
+end
+return json.encode({ ok = (r.success == true), record = rec })
+)lua";
+        Json::Value v = RunBlueskyCase(lua, src, driver);
+        Assert(v["ok"].asBool(), "case10 reply succeeds");
+        Assert(v["record"]["reply"]["parent"]["uri"].asString().find("root") != std::string::npos,
+               "case10 reply ref intact");
+        const Json::Value& fs = v["record"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case10 reply has facets");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 0, 7, "app.bsky.richtext.facet#tag", "thread");
+    }
+
+    // 11. chat_send attaches facets inside message
+    {
+        const char* driver = R"lua(
+local r = captured.handler({ action = "chat_send", platform_id = "bluesky:test", convo_id = "convo1", content = "ping #dm" })
+local msg
+for _, c in ipairs(calls) do
+    if string.find(c.url, "sendMessage", 1, true) then msg = json.decode(c.body).message end
+end
+return json.encode({ ok = (r.success == true), message = msg })
+)lua";
+        Json::Value v = RunBlueskyCase(lua, src, driver);
+        Assert(v["ok"].asBool(), "case11 chat_send succeeds");
+        Assert(v["message"]["text"].asString() == "ping #dm", "case11 message text");
+        const Json::Value& fs = v["message"]["facets"];
+        Assert(fs.isArray() && fs.size() == 1, "case11 chat message has facets");
+        if (fs.size() == 1)
+            AssertFacet(fs[0], 5, 8, "app.bsky.richtext.facet#tag", "dm");
+    }
+
+    std::cerr << " done\n";
+}
+
+
+// ============================================================================
+// #204 follow-up: the IRC Lua adapter must DECLARE send_action
+// ============================================================================
+// The C++ bridge (ChannelsTool) intercepts irc post/reply/send_action before
+// the Lua handler runs — but the schema the model sees (tool action enum +
+// describe output + action validation) is built from THIS registration. If
+// send_action is not in the Lua action list, the agent cannot discover or
+// call it, no matter what the backend supports. (Live sighting: Vesper
+// iterated /me-as-literal-text, blind action calls, and describe — the
+// command was invisible until the schema declared it.)
+void TestIrcAdapterSendAction() {
+    ToolRegistry tools;
+    HttpClient http;
+    LuaState::Config config;
+    config.agentId = "test";
+    config.instructionLimit = 100'000;
+    LuaState lua(config, tools, http);
+
+    // Prelude: capture the registration; stub the two globals irc.lua uses.
+    const char* prelude = R"(
+captured = nil
+animus = {}
+function animus.register_channel(t) captured = t end
+config = {}
+function config.get(k) return "" end
+)";
+
+    const std::string src = ReadIrcAdapterSrc();
+    Assert(!src.empty(), "irc.lua source found");
+
+    const std::string driver = R"(
+local out = {}
+out.id = captured.id
+out.has_send_action = false
+for _, a in ipairs(captured.actions) do
+    if a == "send_action" then out.has_send_action = true end
+end
+out.schema_has = (captured.schema.send_action ~= nil)
+out.has_content_param = false
+if captured.schema.send_action then
+    for _, p in ipairs(captured.schema.send_action) do
+        if p.name == "content" then out.has_content_param = true end
+    end
+end
+local r = captured.handler({ action = "send_action", channel = "#t", content = "waves" })
+out.handler_success = r.success
+out.handler_output = r.output or ""
+out.handler_error = r.error or ""
+return out
+)";
+
+    const std::string out = lua.Eval(
+        std::string(prelude) + "\n" + src + "\n" + driver, "irc-schema-case");
+    Json::Value v;
+    Assert(Json::Reader().parse(out, v), "irc schema case output parses, got: "
+           + out.substr(0, 120));
+    if (v.isString()) {
+        Assert(Json::Reader().parse(v.asString(), v),
+               "irc schema output unwrap parses");
+    }
+
+    Assert(v.get("id", "").asString() == "irc", "registration id is irc");
+    Assert(v.get("has_send_action", false).asBool(),
+           "actions list declares send_action");
+    Assert(v.get("schema_has", false).asBool(),
+           "schema block declares send_action parameters");
+    Assert(v.get("has_content_param", false).asBool(),
+           "send_action schema has a content parameter");
+    Assert(v.get("handler_success", true).asBool() == false,
+           "send_action handler runs (fallback path, no C++ bridge in tests)");
+    Assert(v.get("handler_output", "").asString().find("not available")
+               != std::string::npos,
+           "send_action fallback mirrors post/reply error text");
+    Assert(v.get("handler_error", "").asString().find("not available")
+               != std::string::npos,
+           "send_action fallback carries error field (#209 legibility)");
+}
+
+// ============================================================================
+// #205: join/part schemas declare key/farewell; fallback names the toggle
+// ============================================================================
+void TestIrcAdapterJoinPartSchema() {
+    ToolRegistry tools;
+    HttpClient http;
+    LuaState::Config config;
+    config.agentId = "test";
+    config.instructionLimit = 100'000;
+    LuaState lua(config, tools, http);
+
+    const char* prelude = R"(
+captured = nil
+animus = {}
+function animus.register_channel(t) captured = t end
+config = {}
+function config.get(k) return "" end
+)";
+
+    const std::string src = ReadIrcAdapterSrc();
+    Assert(!src.empty(), "irc.lua source found");
+
+    const std::string driver = R"(
+local out = {}
+out.join_has_key = false
+out.part_has_farewell = false
+for _, p in ipairs(captured.schema.join) do
+    if p.name == "key" then out.join_has_key = true end
+end
+for _, p in ipairs(captured.schema.part) do
+    if p.name == "farewell" then out.part_has_farewell = true end
+end
+local r = captured.handler({ action = "join", channel = "#t" })
+out.join_fallback = (r.output or "")
+out.join_fallback_err = r.error or ""
+return out
+)";
+
+    const std::string out = lua.Eval(
+        std::string(prelude) + "\n" + src + "\n" + driver, "irc-joinpart-schema");
+    Json::Value v;
+    Assert(Json::Reader().parse(out, v), "join/part schema output parses, got: "
+           + out.substr(0, 120));
+    if (v.isString()) {
+        Assert(Json::Reader().parse(v.asString(), v),
+               "join/part output unwrap parses");
+    }
+    Assert(v.get("join_has_key", false).asBool(),
+           "join schema declares optional key param");
+    Assert(v.get("part_has_farewell", false).asBool(),
+           "part schema declares optional farewell param");
+    const std::string fb = v.get("join_fallback", "").asString();
+    Assert(fb.find("allow_join_part") != std::string::npos,
+           "join fallback names the allow_join_part toggle");
+    Assert(v.get("join_fallback_err", "").asString().find("allow_join_part")
+               != std::string::npos,
+           "join fallback error field names the toggle (#209)");
+}
+
+// ============================================================================
+// Test: #216 — Lua tool bridge must overwrite __agent_id with the VM's bound
+// agent. Scripts cannot impersonate another agent through the tool bridge.
+// ============================================================================
+void TestLuaBridgeAgentIdentity() {
+    std::cerr << "  TestLuaBridgeAgentIdentity...";
+
+    ToolRegistry tools;
+    HttpClient http;
+
+    // Echo tool that reports the __agent_id it actually received
+    class AgentEchoTool : public IToolHandler {
+    public:
+        ToolDefinition GetDefinition() const override {
+            ToolDefinition def;
+            def.name = "agent_echo";
+            def.description = "Echoes the __agent_id it received";
+            def.parameters.push_back({"message", "string", "Message", false});
+            def.resultMode = ToolResultMode::deliver_to_model;
+            return def;
+        }
+
+        ToolResult Execute(const ToolCall& call) override {
+            Json::Value args;
+            Json::CharReaderBuilder builder;
+            std::istringstream stream(call.arguments);
+            std::string errors;
+            Json::parseFromStream(builder, stream, &args, &errors);
+
+            ToolResult result;
+            result.call_id = call.id;
+            result.success = true;
+            result.output = args.isMember("__agent_id") ? args["__agent_id"].asString() : "<none>";
+            return result;
+        }
+    };
+
+    tools.Register(std::make_unique<AgentEchoTool>());
+
+    LuaState::Config config;
+    config.agentId = "lua-owner-agent";  // distinct value — the assertion target
+    config.instructionLimit = 100'000;
+
+    LuaState lua(config, tools, http);
+
+    // Script attempts to impersonate another agent through the bridge
+    std::string result = lua.Eval(
+        "local r = tools.agent_echo({__agent_id = 'spoofed-agent'}); return r",
+        "lua-owner-agent"
+    );
+    Assert(result.find("lua-owner-agent") != std::string::npos,
+           "bridge must overwrite spoofed __agent_id with the bound agent, got: " + result);
+    Assert(result.find("spoofed-agent") == std::string::npos,
+           "spoofed __agent_id must not survive the bridge, got: " + result);
+
+    std::cerr << " done\n";
+}
+
 int main() {
     std::cerr << "Running Lua integration tests...\n";
 
@@ -703,11 +1168,15 @@ int main() {
     TestInterfaceRegistration();
     TestSocialRegistration();
     TestToolBridge();
+    TestLuaBridgeAgentIdentity();
     TestScriptStore();
     TestHttpClient();
     TestCoroutineMode();
     TestInstructionLimit();
     TestMemoryLimit();
+    TestBlueskyFacets();
+    TestIrcAdapterSendAction();
+    TestIrcAdapterJoinPartSchema();
 
     if (g_failures > 0) {
         std::cerr << "\nFAILED: " << g_failures << " assertions failed\n";

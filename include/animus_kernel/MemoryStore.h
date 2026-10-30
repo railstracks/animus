@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -75,9 +77,18 @@ struct MemoryMutation {
     std::optional<int64_t> from_layer_id;
     std::optional<int64_t> to_layer_id;
     std::string previous_state;
+    std::string row_snapshot;   // #221: full-row JSON snapshot of the target
+                                // before the mutation — the log alone can
+                                // reconstruct destroyed rows (archive, delete,
+                                // retire, revise)
     std::string motivation;
     int64_t unix_ms{0};
 };
+
+// #221: serialize a full observation row to compact JSON for the
+// memory_mutations row_snapshot column (mirrors OntologyStore's
+// EntityToJson pattern).
+std::string ObservationToJson(const Observation& obs);
 
 // ============================================================================
 // MemoryStore — SQLite-backed memory layer storage
@@ -166,8 +177,12 @@ public:
     // Copy-on-write revision: creates a new version of the observation,
     // preserving the old one as a historical snapshot.
     // Returns the new observation (with the new ID).
+    // source_override non-empty (e.g. "admin") marks the revision's
+    // provenance — carried onto the new version's source field and into
+    // the mutation row's motivation (#223).
     Observation ReviseObservation(int64_t obs_id, const std::string& new_text,
-                                  double new_weight, const std::string& new_tags_json);
+                                   double new_weight, const std::string& new_tags_json,
+                                   const std::string& source_override = "");
     // List the version chain for an observation (oldest first).
     // Returns all versions: the current one and all superseded predecessors.
     std::vector<Observation> GetObservationHistory(int64_t obs_id);
@@ -179,10 +194,30 @@ public:
     // Returns true if layers were created, false if layers already existed.
     bool CreateDefaultLayersForAgent(const std::string& agent_id);
 
+    // #224: notification hook — fired after a layer create/update/delete
+    // commits. Lets the consolidation pipeline re-register its cron schedules
+    // without a restart (ChannelManager restart-hook pattern). Consumers must
+    // tolerate callbacks arriving after their own teardown has begun.
+    using LayerChangeCallback = std::function<void()>;
+    void SetLayerChangedCallback(LayerChangeCallback cb) {
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        m_layerChangedCallback = std::move(cb);
+    }
+
 private:
     void EnsureSchema();
 
+    void NotifyLayerChanged();
+
+    // #222: retired-wins-until-revised — deprecate an observation because
+    // an active tombstone (retired, never-revised row with identical
+    // agent/layer/text) already rejected this value. Distinct mutation
+    // type so tombstone hits surface in review.
+    bool AutoDeprecateObservation(const Observation& row, const std::string& reason);
+
     IDataStore* m_store;
+    mutable std::mutex m_callbackMutex;
+    LayerChangeCallback m_layerChangedCallback;
 };
 
 } // namespace animus::kernel::memory

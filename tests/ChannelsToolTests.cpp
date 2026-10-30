@@ -3,6 +3,8 @@
 #include "animus_kernel/lua/LuaState.h"
 #include "animus_kernel/lua/LuaToolHandler.h"
 #include "animus_kernel/tools/HttpClient.h"
+#include "animus_kernel/ChannelManager.h"
+#include "animus_kernel/ChannelState.h"
 
 #include <iostream>
 #include <string>
@@ -406,6 +408,104 @@ void TestChannelsToolMissingAction() {
 // ============================================================================
 // Main
 // ============================================================================
+
+// ============================================================================
+// #209: bridge reachability without platform_id — inference + hoisted fill.
+// Live sighting: Vesper's reply/part calls omitted platform_id (the card
+// never stated it), skipped the C++ bridge, and died in the Lua fallback
+// as "unknown Lua handler error".
+// ============================================================================
+void TestIrcBridgeInferenceAndGate() {
+    std::cerr << "  TestIrcBridgeInferenceAndGate...";
+    HttpClient http;
+    ChannelsTool tool;
+
+    // Single IRC channel, roaming OFF: join without platform_id must reach
+    // the C++ bridge and hit the named gate error — not the Lua fallback.
+    {
+        ChannelManager manager(http, nullptr, {}, {});
+        tool.SetChannelManager(&manager);
+        ChannelState st;
+        st.name = "irc_single";
+        st.type = "irc";
+        st.enabled = true;
+        st.config = Json::Value(Json::objectValue);
+        st.config["nick"] = "t";
+        st.config["host"] = "h";
+        Json::Value chans(Json::arrayValue);
+        Json::Value c1(Json::objectValue);
+        c1["name"] = "#boot";
+        chans.append(c1);
+        st.config["channels"] = chans;
+        std::string err;
+        Assert(manager.CreateChannel(st, &err), "CreateChannel irc: " + err);
+
+        Json::StreamWriterBuilder wb;
+        wb.settings_["indentation"] = "";
+
+        ToolCall joinCall;
+        joinCall.id = "t209-join-gate";
+        Json::Value jargs(Json::objectValue);
+        jargs["action"] = "join";
+        jargs["channel"] = "#somewhere";
+        joinCall.arguments = Json::writeString(wb, jargs);
+        const auto r = tool.Execute(joinCall);
+        Assert(!r.success, "#209 join gate: roaming off -> failure");
+        Assert(r.error.find("joining is disabled") != std::string::npos,
+               "#209 join gate: named toggle error, got: " + r.error);
+
+        // reply without platform_id must reach the bridge too (adapter
+        // lookup miss is fine — the output string proves the path).
+        ToolCall replyCall;
+        replyCall.id = "t209-reply";
+        Json::Value rargs(Json::objectValue);
+        rargs["action"] = "reply";
+        rargs["channel"] = "#somewhere";
+        rargs["content"] = "hello";
+        replyCall.arguments = Json::writeString(wb, rargs);
+        const auto r2 = tool.Execute(replyCall);
+        Assert(r2.success, "#209 reply via inference reports success");
+        Assert(r2.output.find("Message sent to #somewhere on IRC") != std::string::npos,
+               "#209 reply bridge output, got: " + r2.output);
+    }
+
+    // Roaming ON: join reaches JoinChannel — no live adapter, so the honest
+    // "no connection" failure is the expected end-state.
+    {
+        ChannelManager manager(http, nullptr, {}, {});
+        tool.SetChannelManager(&manager);
+        ChannelState st;
+        st.name = "irc_single";
+        st.type = "irc";
+        st.enabled = true;
+        st.config = Json::Value(Json::objectValue);
+        st.config["nick"] = "t";
+        st.config["host"] = "h";
+        st.config["allow_join_part"] = true;
+        Json::Value chans(Json::arrayValue);
+        Json::Value c1(Json::objectValue);
+        c1["name"] = "#boot";
+        chans.append(c1);
+        st.config["channels"] = chans;
+        std::string err;
+        Assert(manager.CreateChannel(st, &err), "CreateChannel irc2: " + err);
+
+        Json::StreamWriterBuilder wb;
+        wb.settings_["indentation"] = "";
+        ToolCall joinCall;
+        joinCall.id = "t209-join-live";
+        Json::Value jargs(Json::objectValue);
+        jargs["action"] = "join";
+        jargs["channel"] = "#somewhere";
+        joinCall.arguments = Json::writeString(wb, jargs);
+        const auto r = tool.Execute(joinCall);
+        Assert(!r.success, "#209 join roaming on, no adapter -> false");
+        Assert(r.output.find("Join failed") != std::string::npos,
+               "#209 join honest failure, got: " + r.output);
+    }
+    std::cerr << " done.\n";
+}
+
 int main() {
     std::cerr << "ChannelsTool tests:\n";
 
@@ -415,6 +515,7 @@ int main() {
     TestChannelsToolUnknownPlatform();
     TestChannelsToolMissingAction();
     TestChannelsToolWithLuaAdapter();
+    TestIrcBridgeInferenceAndGate();
 
     std::cerr << "\n";
     if (g_failures > 0) {

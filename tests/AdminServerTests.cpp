@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cerrno>
 #include <cstring>
+#include <map>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -82,6 +83,41 @@ bool ExtractJsonString(const std::string& body, const std::string& key, std::str
         return false;
     }
     *out = match[1].str();
+    return true;
+}
+
+// #194/#185: WS-frame bytes that arrived glued to the 101 handshake
+// in the same TCP recv, keyed by fd. The server can push frames the
+// instant the upgrade completes (the auth gate's rejection, observation
+// replay on connect) and the kernel often coalesces them with the
+// handshake response. ConnectWebSocket stores them here;
+// ReadWebSocketFrame drains them before reading the socket. (Discarding
+// them swallowed rejection frames and broke the ws-gate matrix steps
+// ~13% of runs — #194's real root cause; the busy-poll hypothesis in
+// that ticket was wrong.) Invariants: the store overwrites any stale
+// entry for the fd; drain erases on empty; the non-101 failure path
+// erases (those bytes are an HTTP body, not frames).
+bool ReadExact(int fd, void* buffer, std::size_t size);
+
+std::map<int, std::string> g_wsHandshakeLeftovers;
+
+// ReadExact with the per-fd handshake-leftover buffer drained first.
+bool BufferedReadExact(int fd, void* buffer, std::size_t size) {
+    char* dst = static_cast<char*>(buffer);
+    std::size_t taken = 0;
+    auto it = g_wsHandshakeLeftovers.find(fd);
+    if (it != g_wsHandshakeLeftovers.end()) {
+        while (taken < size && !it->second.empty()) {
+            dst[taken++] = it->second.front();
+            it->second.erase(0, 1);
+        }
+        if (it->second.empty()) {
+            g_wsHandshakeLeftovers.erase(it);
+        }
+    }
+    if (taken < size) {
+        return ReadExact(fd, dst + taken, size - taken);
+    }
     return true;
 }
 
@@ -163,10 +199,22 @@ bool ConnectWebSocket(
         }
     }
 
+    {
+        // #194/#185: keep post-handshake bytes — they are WS frames
+        // the server pushed at upgrade time (auth-gate rejection,
+        // observation replay), often coalesced into this same recv.
+        // Discarding them swallowed the frames the ws-gate matrix
+        // waits for.
+        const std::size_t headerEnd = response.find("\r\n\r\n");
+        if (headerEnd != std::string::npos && response.size() > headerEnd + 4) {
+            g_wsHandshakeLeftovers[fd] = response.substr(headerEnd + 4);
+        }
+    }
     if (response.rfind("HTTP/1.1 101", 0) != 0 && response.rfind("HTTP/1.0 101", 0) != 0) {
         if (responseOut) {
             *responseOut = response;
         }
+        g_wsHandshakeLeftovers.erase(fd);
         ::close(fd);
         return false;
     }
@@ -216,7 +264,7 @@ bool SendWebSocketText(int fd, const std::string& payload) {
 
 bool ReadWebSocketFrame(int fd, int* opcodeOut, std::string* payloadOut) {
     std::uint8_t header[2] = {0, 0};
-    if (!ReadExact(fd, header, sizeof(header))) {
+    if (!BufferedReadExact(fd, header, sizeof(header))) {
         return false;
     }
 
@@ -226,13 +274,13 @@ bool ReadWebSocketFrame(int fd, int* opcodeOut, std::string* payloadOut) {
 
     if (length == 126U) {
         std::uint8_t ext[2] = {0, 0};
-        if (!ReadExact(fd, ext, sizeof(ext))) {
+        if (!BufferedReadExact(fd, ext, sizeof(ext))) {
             return false;
         }
         length = (static_cast<std::uint64_t>(ext[0]) << 8) | ext[1];
     } else if (length == 127U) {
         std::uint8_t ext[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-        if (!ReadExact(fd, ext, sizeof(ext))) {
+        if (!BufferedReadExact(fd, ext, sizeof(ext))) {
             return false;
         }
         length = 0U;
@@ -243,13 +291,13 @@ bool ReadWebSocketFrame(int fd, int* opcodeOut, std::string* payloadOut) {
 
     std::array<std::uint8_t, 4> mask{{0, 0, 0, 0}};
     if (masked) {
-        if (!ReadExact(fd, mask.data(), mask.size())) {
+        if (!BufferedReadExact(fd, mask.data(), mask.size())) {
             return false;
         }
     }
 
     std::vector<std::uint8_t> bytes(length);
-    if (length > 0U && !ReadExact(fd, bytes.data(), bytes.size())) {
+    if (length > 0U && !BufferedReadExact(fd, bytes.data(), bytes.size())) {
         return false;
     }
 
@@ -497,21 +545,11 @@ int TestAdminServerAndAgentApi() {
         std::filesystem::remove(constitutionPath, ec);
         std::filesystem::remove(providersPath, ec);
         std::filesystem::remove(authPath, ec);
-        // AgentKernel currently uses fixed datastore/session paths.
-        // Clear these to keep this test deterministic across runs.
-        std::filesystem::remove("state/memory.db", ec);
-        std::filesystem::remove("state/sessions.json", ec);
-        std::filesystem::remove("state/sessions.json.migrated", ec);
-        std::filesystem::remove("build/state/memory.db", ec);
-        std::filesystem::remove("build/state/sessions.json", ec);
-        std::filesystem::remove("build/state/sessions.json.migrated", ec);
-        // #163: the kernel's default datastore is CWD-relative "memory.db"
-        // (repo root when run from the build tree) — neither state/ nor
-        // build/state/. Unremoved, it persists across runs and shifts every
-        // session id / count assertion.
-        std::filesystem::remove("memory.db", ec);
-        std::filesystem::remove("memory.db-wal", ec);
-        std::filesystem::remove("memory.db-shm", ec);
+        // #187: the kernel below boots with a per-run temp dataDir (see
+        // the config site), so no CWD-relative memory.db/sessions.json
+        // exist to reset. The legacy removes here also raced parallel
+        // suites on the shared ctest CWD (SQLite "database is locked" /
+        // missing-table flake under ctest -j) and retire with it.
     }
     std::filesystem::create_directories(cfgPath.parent_path());
 
@@ -647,6 +685,15 @@ int TestAdminServerAndAgentApi() {
     }
 
     animus::kernel::KernelConfig config;
+    // #187: per-run temp dataDir isolates this kernel's datastore
+    // (memory.db, sessions.json, api-vault.key, sops/, api-files/) from
+    // parallel suites sharing the ctest CWD; the datastore is empty every
+    // run, so the session id / count assertions stay deterministic.
+    char dataDirBuf[] = "/tmp/animus_admin_srv_data_XXXXXX";
+    if (!mkdtemp(dataDirBuf)) {
+        return Fail(968, "failed to create temp dataDir for admin kernel (#187)");
+    }
+    config.dataDir = dataDirBuf;
     config.admin.enabled = true;
     config.admin.host = "127.0.0.1";
     config.admin.port = port;
@@ -2558,15 +2605,13 @@ int TestWsAuthGate() {
             }
         };
 
-        // Reset the CWD-relative shared datastore exactly like the parent
-        // suite's fixture cleanup: a previous child run persisted the
-        // 'wsgate' user (auth/setup), which would make this boot user-auth
-        // instead of open and fail the control step deterministically.
-        {
-            std::error_code ec;
-            std::filesystem::remove("memory.db", ec);
-            std::filesystem::remove("memory.db-wal", ec);
-            std::filesystem::remove("memory.db-shm", ec);
+        // #187: fresh per-run temp dataDir — no prior state can exist,
+        // so the open-instance control step is deterministic by
+        // construction (the legacy CWD memory.db removes raced parallel
+        // suites on the shared ctest CWD).
+        char dataDirBuf[] = "/tmp/animus_admin_ws_gate_data_XXXXXX";
+        if (!mkdtemp(dataDirBuf)) {
+            return Fail(969, "failed to create temp dataDir for ws-gate kernel (#187)");
         }
 
         const std::uint16_t port2 = ReserveFreePort();
@@ -2575,6 +2620,7 @@ int TestWsAuthGate() {
         }
 
         animus::kernel::KernelConfig config2;
+        config2.dataDir = dataDirBuf;  // #187: per-run datastore isolation
         config2.admin.enabled = true;
         config2.admin.host = "127.0.0.1";
         config2.admin.port = port2;
@@ -2678,6 +2724,23 @@ int TestWsAuthGate() {
             return Fail(960, "post-setup unauthenticated ws/chat was not rejected with 'unauthorized'");
         }
 
+        // #185: /ws/observations must reject an unauthenticated
+        // connection on a user-auth instance (same shared gate).
+        int fdObsReject = -1;
+        std::string upgradeObsReject;
+        if (!ConnectWebSocket(config2.admin.host, config2.admin.port,
+                              "/ws/observations", &fdObsReject, &upgradeObsReject)) {
+            kernel2.Stop();
+            return Fail(970, "post-setup ws/observations upgrade unexpectedly failed (#185)");
+        }
+        const bool obsRejected =
+            WaitForWebSocketPayloadContaining(fdObsReject, "unauthorized", 3000, nullptr);
+        if (!obsRejected) {
+            closeIfOpen(fdObsReject);
+            kernel2.Stop();
+            return Fail(971, "post-setup unauthenticated ws/observations was not rejected (#185)");
+        }
+
         // Login and prove session-token admission over WS.
         int loginCode = 0;
         std::string loginBody;
@@ -2712,6 +2775,25 @@ int TestWsAuthGate() {
             return Fail(965, "session-token ws/chat did not answer list_sessions");
         }
 
+        // #185: /ws/observations admits with a session token; the
+        // catch-up replay query param flows through the gate undisturbed.
+        const std::string obsPath =
+            std::string("/ws/observations?to") + "ken=" + tokenMatch[1].str() +
+            "&last_seen_timestamp_unix_ms=0";
+        int fdObsAuth = -1;
+        std::string upgradeObsAuth;
+        if (!ConnectWebSocket(config2.admin.host, config2.admin.port,
+                              obsPath, &fdObsAuth, &upgradeObsAuth)) {
+            kernel2.Stop();
+            return Fail(972, "session-token ws/observations upgrade failed (#185)");
+        }
+        if (!SendWebSocketText(fdObsAuth, R"({"type":"filter","layers":[]})")
+            || !WaitForWebSocketPayloadContaining(fdObsAuth, "\"type\":\"filter_applied\"", 3000, nullptr)) {
+            closeIfOpen(fdObsAuth);
+            kernel2.Stop();
+            return Fail(973, "session-token ws/observations did not answer filter_applied (#185)");
+        }
+
         kernel2.Stop();
         // Close client sockets only after server teardown: peer-closed
         // sockets made the server's shutdownWrite hit ENOTCONN (muduo
@@ -2719,6 +2801,8 @@ int TestWsAuthGate() {
         closeIfOpen(fdCtl);
         closeIfOpen(fdReject);
         closeIfOpen(fdAuth);
+        closeIfOpen(fdObsReject);
+        closeIfOpen(fdObsAuth);
     }
 
     return 0;

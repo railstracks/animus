@@ -65,7 +65,7 @@ else()
     GIT_REPOSITORY https://github.com/drogonframework/drogon.git
     GIT_TAG v1.9.12
     GIT_SHALLOW TRUE
-    PATCH_COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/patch_drogon_ws.py ${drogon_SOURCE_DIR}
+    PATCH_COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/patch_drogon_ws.py ${CMAKE_BINARY_DIR}/_deps/drogon-src
   )
   FetchContent_MakeAvailable(drogon)
 
@@ -288,6 +288,7 @@ add_library(animus_kernel
   src/kernel/data/SchemaHelpers.cpp
   src/kernel/data/DatabaseConfig.cpp
   src/kernel/memory/MemoryStore.cpp
+  src/kernel/memory/EmbeddingSweep.cpp
   src/kernel/memory/MemoryFileStore.cpp
   src/kernel/tools/NodeTool.cpp
   src/kernel/NodeManager.cpp
@@ -511,6 +512,7 @@ target_link_options(animusd PRIVATE -rdynamic)
 
 add_executable(animus-migrate
   src/migrate.cpp
+  src/Migration.cpp
 )
 
 target_link_libraries(animus-migrate PRIVATE animus_kernel)
@@ -525,6 +527,19 @@ set_target_properties(animus-migrate PROPERTIES
 
 if(ANIMUS_BUILD_TESTS)
     enable_testing()
+
+    add_executable(animus_migration_tests
+      tests/MigrationTests.cpp
+      src/Migration.cpp
+    )
+    target_link_libraries(animus_migration_tests PRIVATE animus_kernel)
+    target_include_directories(animus_migration_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(animus_migration_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME MigrationTests COMMAND animus_migration_tests)
 
     add_executable(animus_jobs_tests
       tests/JobsTests.cpp
@@ -707,6 +722,19 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME ConsolidationTests COMMAND animus_consolidation_tests)
+
+    add_executable(animus_tool_dispatch_tests
+      tests/ToolDispatchTests.cpp
+    )
+    target_link_libraries(animus_tool_dispatch_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_tool_dispatch_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_tool_dispatch_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME ToolDispatchTests COMMAND animus_tool_dispatch_tests)
 
     add_executable(animus_ontology_store_tests
       tests/OntologyStoreTests.cpp
@@ -894,6 +922,19 @@ if(ANIMUS_BUILD_TESTS)
     )
     add_test(NAME MemoryFileStoreTests COMMAND animus_memory_file_store_tests)
 
+    add_executable(animus_active_memory_tests
+      tests/ActiveMemoryProviderTests.cpp
+    )
+    target_link_libraries(animus_active_memory_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_active_memory_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_active_memory_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME ActiveMemoryProviderTests COMMAND animus_active_memory_tests)
+
     add_executable(animus_memory_search_tests
       tests/MemorySearchTests.cpp
     )
@@ -907,6 +948,31 @@ if(ANIMUS_BUILD_TESTS)
     )
     add_test(NAME MemorySearchTests COMMAND animus_memory_search_tests)
 
+    add_executable(animus_memory_store_layer_seeding_tests
+      tests/MemoryStoreLayerSeedingTests.cpp
+    )
+    target_link_libraries(animus_memory_store_layer_seeding_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_memory_store_layer_seeding_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_memory_store_layer_seeding_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME MemoryStoreLayerSeedingTests COMMAND animus_memory_store_layer_seeding_tests)
+    add_executable(animus_agent_deletion_cleanup_tests
+      tests/AgentManagerDeletionCleanupTests.cpp
+    )
+    target_link_libraries(animus_agent_deletion_cleanup_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_agent_deletion_cleanup_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_agent_deletion_cleanup_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME AgentManagerDeletionCleanupTests COMMAND animus_agent_deletion_cleanup_tests)
+
     add_executable(animus_lua_tests
       tests/LuaTests.cpp
     )
@@ -919,6 +985,19 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME LuaTests COMMAND animus_lua_tests)
+
+    add_executable(animus_irc_interface_tests
+      tests/IrcInterfaceTests.cpp
+    )
+    target_link_libraries(animus_irc_interface_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_irc_interface_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_irc_interface_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME IrcInterfaceTests COMMAND animus_irc_interface_tests)
 
     add_executable(animus_healer_tests
       tests/SharedScriptHealerTests.cpp
@@ -958,6 +1037,45 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME FileToolTests COMMAND animus_file_tool_tests)
+
+    add_executable(animus_media_outdir_tests
+      tests/MediaOutputDirTests.cpp
+    )
+    target_link_libraries(animus_media_outdir_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_media_outdir_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_media_outdir_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME MediaOutputDirTests COMMAND animus_media_outdir_tests)
+
+    add_executable(animus_admin_observation_tests
+      tests/AdminObservationTests.cpp
+    )
+    target_link_libraries(animus_admin_observation_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_admin_observation_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_admin_observation_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME AdminObservationTests COMMAND animus_admin_observation_tests)
+
+    add_executable(animus_embedding_sweep_tests
+      tests/EmbeddingSweepTests.cpp
+    )
+    target_link_libraries(animus_embedding_sweep_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_embedding_sweep_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_embedding_sweep_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME EmbeddingSweepTests COMMAND animus_embedding_sweep_tests)
 
     add_executable(animus_channel_helpers_tests
       tests/ChannelHelpersTests.cpp

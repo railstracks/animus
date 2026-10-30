@@ -85,6 +85,31 @@ void IrcAdapter::SendReply(const ChannelReplyTarget& target, const std::string& 
     }
 }
 
+void IrcAdapter::SendAction(const ChannelReplyTarget& target, const std::string& text) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_runtime) {
+        m_runtime->SendAction(target.irc_target, text);
+    }
+}
+
+// #205: forward to the runtime's validated wire builders. Return value
+// flows back to the agent (honest failure on invalid target / no socket).
+bool IrcAdapter::JoinChannel(const ChannelReplyTarget& target, const std::string& key) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_runtime) {
+        return m_runtime->Join(target.irc_target, key);
+    }
+    return false;
+}
+
+bool IrcAdapter::PartChannel(const ChannelReplyTarget& target, const std::string& reason) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_runtime) {
+        return m_runtime->Part(target.irc_target, reason);
+    }
+    return false;
+}
+
 bool IrcAdapter::IsConnected() const {
     // TODO: track connected state from OnStatus callback
     return m_runtime != nullptr;
@@ -144,7 +169,10 @@ void IrcAdapter::OnMessage(const std::string& sourceNick,
     // Channel-definition good form (#42): adapters state their delivery
     // semantics explicitly rather than relying on the kernel default.
     dispatchMeta["reply_instructions"] =
-        "Reply using the channels tool with action=reply (or action=post); "
+        "Reply using the channels tool with action=reply (or action=post; "
+        "action=send_action for /me-style emotes) and platform_id \"irc:" +
+        m_channelName +
+        "\"; "
         "the channel is provided by the arrival and filled automatically. "
         "Text replies are NOT delivered. In channels, if the message is not "
         "addressed to you, staying silent is correct.";

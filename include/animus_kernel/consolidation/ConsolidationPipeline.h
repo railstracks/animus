@@ -64,12 +64,15 @@ public:
 
         // LLM prompts (defaults, can be overridden per-layer)
         std::string intake_prompt{
-            "Review the following agent activity and extract lasting observations. "
-            "For each observation worth keeping, provide a JSON array where each element has: "
-            "\"text\" (the observation), \"tags\" (array of category strings), "
-            "\"weight\" (0.0-1.0 importance score). "
-            "Skip trivial, redundant, or already-known information. "
-            "If nothing is worth keeping, return an empty array []."};
+            "You are performing memory intake for an agent. Review the agent activity in "
+            "the user message and extract lasting observations. Do NOT return observations "
+            "as JSON or text \u2014 the pipeline discards the LLM's text return. Instead, for "
+            "each observation worth keeping, call the consolidation tool with action "
+            "\"create\" and a params object: {\"text\": string (the observation), "
+            "\"tags\": array of category strings, \"weight\": 0.0-1.0 importance score, "
+            "\"layer\": target memory layer (default \"day\")}. Create each observation "
+            "with its own tool call. Skip trivial, redundant, or already-known "
+            "information. If nothing is worth keeping, make no tool calls."};
         std::string ontology_prompt{
             "You are reconciling freshly extracted observations into ontology updates. "
             "Return JSON as {\"upserts\":[...]} where each upsert includes root_category, path, "
@@ -128,6 +131,13 @@ public:
     void Stop();
     bool IsRunning() const;
 
+    // #224: re-register the consolidation schedule set after a memory-layer
+    // change (create/update/delete/enable). Same clear-then-register sweep as
+    // Start — idempotent, safe to call repeatedly. No-op unless the pipeline
+    // is running. Intended to be wired to MemoryStore's layer-changed hook by
+    // the kernel (ChannelManager restart-hook pattern).
+    void RefreshSchedules();
+
     // Manual trigger (for admin API or testing)
     bool RunIntake(
         const std::string& agentId,
@@ -159,6 +169,9 @@ private:
 
     // Register cron schedules for enabled layers + intake
     void RegisterSchedules(Scheduler* scheduler);
+    // #224: clear stale consolidation schedules (all known agent ids + layer
+    // agent ids). Shared by Start and RefreshSchedules.
+    void ClearStaleConsolidationSchedules(Scheduler* scheduler);
 
     // Intake internals
     int64_t IntakeFromDiary(

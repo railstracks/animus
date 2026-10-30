@@ -23,6 +23,7 @@ struct ToolExecutionContext {
     std::string sessionKey;     ///< Session key string (for session-scoped tools)
     std::string agentId;        ///< Agent ID (for agent-scoped tools)
     std::string toolConfigs;    ///< Per-agent tool configs JSON (file policy, links, feeds)
+    std::string sessionType;    ///< Session type (#218 dispatch gate; "" = default semantics)
 };
 
 /// Result of executing a single tool call within a chain.

@@ -3,6 +3,7 @@
 #include "animus_kernel/OntologyStore.h"
 
 #include "animus_kernel/IDataStore.h"
+#include "animus_kernel/Log.h"
 
 #include <algorithm>
 #include <chrono>
@@ -134,6 +135,7 @@ OntologyProperty RowToProperty(IStatement* stmt) {
     }
     p.created_at_unix_ms = stmt->ColumnInt64(7);
     p.updated_at_unix_ms = stmt->ColumnInt64(8);
+    p.agent_id = stmt->ColumnText(9);
     return p;
 }
 
@@ -163,6 +165,7 @@ Json::Value PropertyToJson(const OntologyProperty& property) {
     out["value"] = property.value;
     out["value_type"] = static_cast<Json::Int>(PropertyTypeToInt(property.value_type));
     out["memory_state"] = static_cast<Json::Int>(MemoryStateToInt(property.memory_state));
+    out["agent_id"] = property.agent_id;
     if (property.linked_observation_id.has_value()) {
         out["linked_observation_id"] = static_cast<Json::Int64>(*property.linked_observation_id);
     } else {
@@ -196,9 +199,15 @@ void OntologyStore::EnsureSchema() {
         );
     )");
 
+    // #215: per-agent worldviews - path namespace scoped by owning agent.
+    // Dropping the legacy agent-blind index is safe: it guaranteed global
+    // path uniqueness, so (agent_id, root_category, full_path) is strictly
+    // more unique - no collision resolution needed on existing installs.
     m_store->Exec(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_ontology_entities_category_path "
-        "ON ontology_entities(root_category, full_path)");
+        "DROP INDEX IF EXISTS idx_ontology_entities_category_path");
+    m_store->Exec(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_ontology_entities_agent_category_path "
+        "ON ontology_entities(agent_id, root_category, full_path)");
     m_store->Exec(
         "CREATE INDEX IF NOT EXISTS idx_ontology_entities_parent "
         "ON ontology_entities(parent_id)");
@@ -273,9 +282,19 @@ void OntologyStore::EnsureSchema() {
         )");
 
         // Preserve property but orphan it when evidence is deleted.
+        // #189: this must run BEFORE the delete. The FK action on
+        // linked_observation_id (ON DELETE SET NULL, foreign_keys=ON)
+        // clears the link as part of the delete itself, so an AFTER
+        // DELETE trigger's WHERE linked_observation_id = OLD.id never
+        // matched — the link was already NULL. BEFORE fires while the
+        // link still resolves; nulling it here also makes the FK action
+        // a no-op. The unconditional DROP migrates existing installs off
+        // the defeated AFTER version (IF NOT EXISTS would keep it).
+        m_store->Exec(
+            "DROP TRIGGER IF EXISTS trg_ontology_orphan_property_on_observation_delete");
         m_store->Exec(R"(
-            CREATE TRIGGER IF NOT EXISTS trg_ontology_orphan_property_on_observation_delete
-            AFTER DELETE ON observations
+            CREATE TRIGGER trg_ontology_orphan_property_on_observation_delete
+            BEFORE DELETE ON observations
             BEGIN
                 UPDATE ontology_properties
                 SET linked_observation_id = NULL,
@@ -386,14 +405,21 @@ std::optional<OntologyEntity> OntologyStore::GetEntity(int64_t id) {
 }
 
 std::optional<OntologyEntity> OntologyStore::FindByPath(
-        RootCategory category, const std::string& full_path) {
-    auto stmt = m_store->Prepare(
-        "SELECT id, parent_id, root_category, name, full_path, sort_order, agent_id, "
-        "created_at_unix_ms, updated_at_unix_ms "
-        "FROM ontology_entities WHERE root_category=? AND full_path=?");
+        RootCategory category, const std::string& full_path,
+        const std::string& agent_id) {
+    // #215: empty agent_id = unscoped lookup (admin/migration paths).
+    const char* sql = agent_id.empty()
+        ? "SELECT id, parent_id, root_category, name, full_path, sort_order, agent_id, "
+          "created_at_unix_ms, updated_at_unix_ms "
+          "FROM ontology_entities WHERE root_category=? AND full_path=?"
+        : "SELECT id, parent_id, root_category, name, full_path, sort_order, agent_id, "
+          "created_at_unix_ms, updated_at_unix_ms "
+          "FROM ontology_entities WHERE root_category=? AND full_path=? AND agent_id=?";
+    auto stmt = m_store->Prepare(sql);
     if (!stmt) return std::nullopt;
     stmt->BindInt64(1, RootCategoryToInt(category));
     stmt->BindText(2, full_path);
+    if (!agent_id.empty()) stmt->BindText(3, agent_id);
     if (!stmt->Step()) return std::nullopt;
     return RowToEntity(stmt.get());
 }
@@ -419,7 +445,7 @@ OntologyEntity OntologyStore::CreateEntity(
     // #76: statement-scoped id via RETURNING. Failure (no row returned)
     // includes the unique-path conflict — resolve the existing entity.
     if (!stmt->Step()) {
-        auto existing = FindByPath(entity.root_category, entity.full_path);
+        auto existing = FindByPath(entity.root_category, entity.full_path, entity.agent_id);
         return existing.value_or(OntologyEntity{});
     }
 
@@ -530,7 +556,7 @@ std::vector<OntologyProperty> OntologyStore::ListProperties(int64_t entity_id) {
     std::vector<OntologyProperty> out;
     auto stmt = m_store->Prepare(
         "SELECT id, entity_id, key, value, value_type, memory_state, linked_observation_id, "
-        "created_at_unix_ms, updated_at_unix_ms "
+        "created_at_unix_ms, updated_at_unix_ms, agent_id "
         "FROM ontology_properties WHERE entity_id=? ORDER BY key ASC");
     if (!stmt) return out;
     stmt->BindInt64(1, entity_id);
@@ -544,7 +570,7 @@ std::optional<OntologyProperty> OntologyStore::GetProperty(
         int64_t entity_id, const std::string& key) {
     auto stmt = m_store->Prepare(
         "SELECT id, entity_id, key, value, value_type, memory_state, linked_observation_id, "
-        "created_at_unix_ms, updated_at_unix_ms "
+        "created_at_unix_ms, updated_at_unix_ms, agent_id "
         "FROM ontology_properties WHERE entity_id=? AND key=?");
     if (!stmt) return std::nullopt;
     stmt->BindInt64(1, entity_id);
@@ -592,8 +618,8 @@ OntologyProperty OntologyStore::SetProperty(const OntologyProperty& prop, const 
         auto stmt = m_store->Prepare(
             "INSERT INTO ontology_properties "
             "(entity_id, key, value, value_type, memory_state, linked_observation_id, "
-            "created_at_unix_ms, updated_at_unix_ms) "
-            "VALUES (?,?,?,?,?,?,?,?)");
+            "agent_id, created_at_unix_ms, updated_at_unix_ms) "
+            "VALUES (?,?,?,?,?,?,?,?,?)");
         if (!stmt) return {};
         stmt->BindInt64(1, prop.entity_id);
         stmt->BindText(2, prop.key);
@@ -602,8 +628,9 @@ OntologyProperty OntologyStore::SetProperty(const OntologyProperty& prop, const 
         stmt->BindInt64(5, MemoryStateToInt(effectiveState));
         if (prop.linked_observation_id.has_value()) stmt->BindInt64(6, *prop.linked_observation_id);
         else stmt->BindNull(6);
-        stmt->BindInt64(7, now);
+        stmt->BindText(7, prop.agent_id.empty() ? std::string("default") : prop.agent_id);
         stmt->BindInt64(8, now);
+        stmt->BindInt64(9, now);
         stmt->ExecDML();
         success = DidWriteRows(stmt.get());
     }
@@ -628,7 +655,7 @@ OntologyProperty OntologyStore::SetProperty(const OntologyProperty& prop, const 
 bool OntologyStore::DeleteProperty(int64_t id, const std::string& motivation) {
     auto stmtGet = m_store->Prepare(
         "SELECT id, entity_id, key, value, value_type, memory_state, linked_observation_id, "
-        "created_at_unix_ms, updated_at_unix_ms "
+        "created_at_unix_ms, updated_at_unix_ms, agent_id "
         "FROM ontology_properties WHERE id=?");
     if (!stmtGet) return false;
     stmtGet->BindInt64(1, id);
@@ -654,37 +681,103 @@ bool OntologyStore::DeleteProperty(int64_t id, const std::string& motivation) {
     return true;
 }
 
+// #219: the no-evidence exception path. Properties with no linked
+// observation have no evidence to derive state from — but post-#215
+// writers stamp the owning agent, and only pre-#215 writes landed under
+// the 'default' sentinel (see #214/#215 history). Promotion is therefore
+// scoped to legacy/'default'-sentinel rows: agent-stamped unlinked rows
+// stay New until the reconciler links them. Each promotion writes its own
+// audit row — the old bulk UPDATE promoted silently, which #219 exists to
+// fix. Returns rows affected.
+int64_t OntologyStore::PromoteUnlinkedNewProperties() {
+    auto selectStmt = m_store->Prepare(
+        "SELECT id, entity_id, key, value, value_type, memory_state, linked_observation_id, "
+        "created_at_unix_ms, updated_at_unix_ms, agent_id "
+        "FROM ontology_properties "
+        "WHERE linked_observation_id IS NULL AND memory_state=? AND agent_id='default'");
+    if (!selectStmt) return 0;
+    selectStmt->BindInt64(1, MemoryStateToInt(memory::MemoryState::New));
+    std::vector<OntologyProperty> rows;
+    while (selectStmt->Step()) {
+        rows.push_back(RowToProperty(selectStmt.get()));
+    }
+    if (rows.empty()) return 0;
+
+    const int64_t now = NowUnixMs();
+    int64_t promoted = 0;
+    for (const auto& row : rows) {
+        auto updateStmt = m_store->Prepare(
+            "UPDATE ontology_properties SET memory_state=?, updated_at_unix_ms=? WHERE id=?");
+        if (!updateStmt) continue;
+        updateStmt->BindInt64(1, MemoryStateToInt(memory::MemoryState::Current));
+        updateStmt->BindInt64(2, now);
+        updateStmt->BindInt64(3, row.id);
+        updateStmt->ExecDML();
+        if (updateStmt->RowsAffected() > 0) {
+            OntologyProperty after = row;
+            after.memory_state = memory::MemoryState::Current;
+            after.updated_at_unix_ms = now;
+            LogStateTransition(row, after,
+                "boot sync: promoted unlinked New->Current (legacy/no-evidence path)", now);
+            ++promoted;
+        }
+    }
+    return promoted;
+}
+
+void OntologyStore::LogStateTransition(const OntologyProperty& before,
+                                       const OntologyProperty& after,
+                                       const std::string& motivation,
+                                       int64_t unixMs) {
+    // #219: state transitions that bypass SetProperty (boot sync promotion,
+    // evidence sync) still get an ontology_mutations row, so memory_state
+    // transitions are auditable on every path — the orphan trigger writes
+    // none, and the pre-#219 boot pass promoted silently. Full property
+    // JSON before/after, same shape SetProperty writes.
+    if (before.id <= 0) return;
+    OntologyMutation m;
+    m.mutation_type = "state_transition";
+    m.target_type = "property";
+    m.target_id = before.id;
+    m.previous_state = JsonToString(PropertyToJson(before));
+    m.new_state = JsonToString(PropertyToJson(after));
+    m.motivation = motivation;
+    m.unix_ms = (unixMs != 0) ? unixMs : NowUnixMs();
+    LogMutation(m);
+}
+
 void OntologyStore::SyncPropertyStatesFromObservations(memory::MemoryStore* memoryStore) {
     if (!memoryStore) return;
     {
-        // Properties without a linked observation are standalone facts —
-        // they should be Current, not Deprecated. Only properties whose
-        // linked observation is deprecated should inherit that state.
-        // Exception: properties already explicitly retired stay deprecated.
-        auto orphanStateStmt = m_store->Prepare(
-            "UPDATE ontology_properties "
-            "SET memory_state=?, updated_at_unix_ms=? "
-            "WHERE linked_observation_id IS NULL "
-            "AND memory_state = ?");
-        if (orphanStateStmt) {
-            // Promote New (0) to Current (1). Don't touch Deprecated (2).
-            orphanStateStmt->BindInt64(1, MemoryStateToInt(memory::MemoryState::Current));
-            orphanStateStmt->BindInt64(2, NowUnixMs());
-            orphanStateStmt->BindInt64(3, MemoryStateToInt(memory::MemoryState::New));
-            orphanStateStmt->Step();
+        // #219: properties without a linked observation are the no-evidence
+        // exception path, not the default escalator. The reconciler now wires
+        // linked_observation_id on every property it promotes (production
+        // writer), so linked rows derive their state from evidence elsewhere
+        // in this function. This blanket pass is scoped to legacy/adopted
+        // rows: pre-#215 writes carried no agent identity and landed under
+        // the 'default' sentinel (see #214/#215 history). Post-#215 writers
+        // (ConsolidationTool::HandleOntologyUpsert, the pipeline reconciler)
+        // stamp the owning agent, so their rows are never touched here —
+        // a New property with real evidence pending reconciliation stays New
+        // until the reconciler links it.
+        // Promote New (0) to Current (1). Don't touch Deprecated (2).
+        const int64_t promoted = PromoteUnlinkedNewProperties();
+        if (promoted > 0) {
+            ALOG_INFO("ontology", "boot sync: promoted " << promoted
+                     << " unlinked New->Current ontology_properties (legacy/no-evidence path)");
         }
     }
 
     auto stmt = m_store->Prepare(
-        "SELECT id, linked_observation_id FROM ontology_properties "
-        "WHERE linked_observation_id IS NOT NULL");
+        "SELECT id, entity_id, key, value, value_type, memory_state, linked_observation_id, "
+        "created_at_unix_ms, updated_at_unix_ms, agent_id "
+        "FROM ontology_properties WHERE linked_observation_id IS NOT NULL");
     if (!stmt) return;
 
     const int64_t now = NowUnixMs();
     while (stmt->Step()) {
-        const int64_t propertyId = stmt->ColumnInt64(0);
-        const int64_t observationId = stmt->ColumnInt64(1);
-        auto obs = memoryStore->GetObservation(observationId);
+        const OntologyProperty before = RowToProperty(stmt.get());
+        auto obs = memoryStore->GetObservation(*before.linked_observation_id);
         if (!obs.has_value()) {
             auto orphanStmt = m_store->Prepare(
                 "UPDATE ontology_properties "
@@ -693,18 +786,39 @@ void OntologyStore::SyncPropertyStatesFromObservations(memory::MemoryStore* memo
             if (!orphanStmt) continue;
             orphanStmt->BindInt64(1, MemoryStateToInt(memory::MemoryState::Deprecated));
             orphanStmt->BindInt64(2, now);
-            orphanStmt->BindInt64(3, propertyId);
-            orphanStmt->Step();
+            orphanStmt->BindInt64(3, before.id);
+            orphanStmt->ExecDML();
+            if (orphanStmt->RowsAffected() > 0) {
+                // #219: the rescue-sync orphaning path is auditable too — the
+                // SQLite trigger handles delete-time orphaning; this sweep
+                // catches links that went stale some other way.
+                OntologyProperty after = before;
+                after.linked_observation_id.reset();
+                after.memory_state = memory::MemoryState::Deprecated;
+                after.updated_at_unix_ms = now;
+                LogStateTransition(before, after,
+                    "boot sync: linked observation missing — evidence orphaned", now);
+            }
             continue;
         }
 
+        if (obs->memory_state == before.memory_state) {
+            continue;  // #219: no transition, no write, no log row
+        }
         auto syncStmt = m_store->Prepare(
             "UPDATE ontology_properties SET memory_state=?, updated_at_unix_ms=? WHERE id=?");
         if (!syncStmt) continue;
         syncStmt->BindInt64(1, MemoryStateToInt(obs->memory_state));
         syncStmt->BindInt64(2, now);
-        syncStmt->BindInt64(3, propertyId);
-        syncStmt->Step();
+        syncStmt->BindInt64(3, before.id);
+        syncStmt->ExecDML();
+        if (syncStmt->RowsAffected() > 0) {
+            OntologyProperty after = before;
+            after.memory_state = obs->memory_state;
+            after.updated_at_unix_ms = now;
+            LogStateTransition(before, after,
+                "boot sync: property state synced from linked observation", now);
+        }
     }
 }
 
@@ -758,7 +872,7 @@ std::optional<OntologyEntity> OntologyStore::EnsureEntityPath(
 
     for (const auto& segment : parts) {
         std::string fullPath = prefix.empty() ? segment : (prefix + "/" + segment);
-        auto existing = FindByPath(category, fullPath);
+        auto existing = FindByPath(category, fullPath, agent_id);
         if (existing.has_value()) {
             last = *existing;
             parentId = last.id;

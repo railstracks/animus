@@ -1206,6 +1206,31 @@ bool IsCredentialHeaderName(const std::string& name) {
     return false;
 }
 
+// A credential value is acceptable only if templated entirely from the
+// runtime grammar — every {{…}} token rooted state.* / args.*, at least
+// one token, no malformed braces. Shared by the header rule (#23) and
+// the body/url/poll surfaces (#104).
+bool IsTemplatedFromStateOrArgs(const std::string& value) {
+    std::vector<std::string> tokens;
+    size_t pos = 0;
+    while (true) {
+        const size_t s = value.find("{{", pos);
+        if (s == std::string::npos) break;
+        const size_t e = value.find("}}", s + 2);
+        if (e == std::string::npos) return false;
+        tokens.push_back(value.substr(s + 2, e - s - 2));
+        pos = e + 2;
+    }
+    if (tokens.empty()) return false;
+    for (const auto& tok : tokens) {
+        const auto dot = tok.find('.');
+        if (dot == std::string::npos ||
+            (tok.substr(0, dot) != "state" && tok.substr(0, dot) != "args"))
+            return false;
+    }
+    return true;
+}
+
 void LintCredentialHeaders(const Json::Value& headers, const std::string& where, LintError& lint) {
     if (!headers.isObject()) return;
     for (const std::string& h : headers.getMemberNames()) {
@@ -1213,30 +1238,10 @@ void LintCredentialHeaders(const Json::Value& headers, const std::string& where,
         const Json::Value& v = headers[h];
         if (!v.isString()) continue;
         const std::string value = v.asString();
-        // Extract every {{...}} token; a credential header must be templated
-        // and every token must follow the runtime grammar (state.* / args.*
-        // dotted paths) — unknown roots like {{env.X}} or malformed braces
-        // fail here instead of exploding (or silently resolving) at runtime.
-        std::vector<std::string> tokens;
-        size_t pos = 0;
-        bool malformed = false;
-        while (true) {
-            const size_t s = value.find("{{", pos);
-            if (s == std::string::npos) break;
-            const size_t e = value.find("}}", s + 2);
-            if (e == std::string::npos) { malformed = true; break; }
-            tokens.push_back(value.substr(s + 2, e - s - 2));
-            pos = e + 2;
-        }
-        bool bad = malformed || tokens.empty();
-        for (const auto& tok : tokens) {
-            const auto dot = tok.find('.');
-            if (dot == std::string::npos ||
-                (tok.substr(0, dot) != "state" && tok.substr(0, dot) != "args")) {
-                bad = true;
-                break;
-            }
-        }
+        // Shared rule with the #104 surfaces: fully templated, every token
+        // rooted state.* / args.* (unknown roots like {{env.X}} or malformed
+        // braces fail here instead of exploding at runtime).
+        const bool bad = !IsTemplatedFromStateOrArgs(value);
         if (bad) {
             lint.Add(where + ": header '" + h + "' must template its value from "
                      "state.* / args.* ({{state.…}}) — literal or malformed "
@@ -1245,6 +1250,95 @@ void LintCredentialHeaders(const Json::Value& headers, const std::string& where,
     }
 }
 
+
+// --- #104: the same rule beyond headers ---------------------------------------
+// Query params add bare "key" (exact-name only — "keyword" etc. stay
+// untouched) and the underscore variants the header needles miss.
+bool IsCredentialQueryParamName(const std::string& name) {
+    std::string lower;
+    for (char c : name)
+        lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (lower == "key" || lower == "access_key" || lower == "access_token" ||
+        lower == "client_secret" || lower == "signature")
+        return true;
+    const std::array<std::string, 7> needles = {"api-key", "api_key", "apikey",
+                                                "token", "secret", "password", "passwd"};
+    for (const auto& n : needles)
+        if (lower.find(n) != std::string::npos) return true;
+    return false;
+}
+
+// Body/config keys: same families, bare "key" deliberately absent
+// (sort/cache keys are common); header exacts present so nested header-ish
+// config (e.g. poll.headers) lints under the same walk.
+bool IsCredentialConfigKey(const std::string& name) {
+    std::string lower;
+    for (char c : name)
+        lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (lower == "authorization" || lower == "proxy-authorization" || lower == "cookie")
+        return true;
+    const std::array<std::string, 7> needles = {"api-key", "api_key", "apikey",
+                                                "token", "secret", "password", "passwd"};
+    for (const auto& n : needles)
+        if (lower.find(n) != std::string::npos) return true;
+    return false;
+}
+
+void LintCredentialUrlParams(const std::string& url, const std::string& where, LintError& lint) {
+    const size_t q = url.find('?');
+    if (q == std::string::npos) return;
+    std::string query = url.substr(q + 1);
+    const size_t hash = query.find('#');
+    if (hash != std::string::npos) query = query.substr(0, hash);
+    size_t start = 0;
+    while (start < query.size()) {
+        size_t amp = query.find('&', start);
+        if (amp == std::string::npos) amp = query.size();
+        const std::string kv = query.substr(start, amp - start);
+        start = amp + 1;
+        if (kv.empty()) continue;
+        const size_t eq = kv.find('=');
+        const std::string name = (eq == std::string::npos) ? kv : kv.substr(0, eq);
+        const std::string value = (eq == std::string::npos) ? "" : kv.substr(eq + 1);
+        if (!IsCredentialQueryParamName(name)) continue;
+        if (!IsTemplatedFromStateOrArgs(value)) {
+            lint.Add(where + ": url query parameter '" + name + "' must template its value from "
+                     "state.* / args.* ({{state.…}}) — literal or malformed credentials are "
+                     "forbidden in package files (#104)");
+        }
+    }
+}
+
+void LintCredentialConfigWalk(const Json::Value& node, const std::string& where, LintError& lint) {
+    if (node.isObject()) {
+        for (const std::string& k : node.getMemberNames()) {
+            const Json::Value& v = node[k];
+            if (v.isString() && IsCredentialConfigKey(k) &&
+                !IsTemplatedFromStateOrArgs(v.asString())) {
+                lint.Add(where + ": field '" + k + "' must template its value from "
+                         "state.* / args.* ({{state.…}}) — literal or malformed credentials are "
+                         "forbidden in package files (#104)");
+            } else if (v.isObject() || v.isArray()) {
+                LintCredentialConfigWalk(v, where, lint);
+            }
+        }
+    } else if (node.isArray()) {
+        for (const auto& el : node)
+            if (el.isObject() || el.isArray()) LintCredentialConfigWalk(el, where, lint);
+    }
+}
+
+// Body templates: lint only what parses as a JSON object (form-encoded and
+// plain-text bodies are out of scope — the heuristic is key-name based).
+void LintCredentialBody(const Json::Value& body, const std::string& where, LintError& lint) {
+    Json::Value parsed = body;
+    if (body.isString()) {
+        std::string jerr;
+        if (!ParseJson(body.asString(), parsed, jerr) || !parsed.isObject()) return;
+    }
+    if (!parsed.isObject()) return;
+    LintCredentialConfigWalk(parsed, where, lint);
+}
 }  // namespace
 
 void ApiPackageStore::ValidateName(const std::string& name) {
@@ -1400,6 +1494,11 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
                         cmd.request = JsonCompact(c["request"]);
                         LintCredentialHeaders(c["request"].get("headers", Json::Value(Json::objectValue)),
                                               "action '" + cmd.name + "'", lint);
+                        // #104: same rule for url query params and body templates
+                        LintCredentialUrlParams(c["request"].get("url", Json::Value("")).asString(),
+                                                "action '" + cmd.name + "'", lint);
+                        LintCredentialBody(c["request"].get("body", Json::Value(Json::Value(""))),
+                                           "action '" + cmd.name + "'", lint);
                     }
                 }
                 cmd.event = "";
@@ -1442,6 +1541,12 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
                 conn.headers_template = JsonCompact(headers);
                 LintCredentialHeaders(headers, "connection '" + conn.name + "'", lint);
             }
+
+            // #104: connection url query params + poll config carry the same rule
+            LintCredentialUrlParams(conn.url_template, "connection '" + conn.name + "'", lint);
+            Json::Value pollCfg = c.get("poll", Json::Value(Json::objectValue));
+            if (pollCfg.isObject())
+                LintCredentialConfigWalk(pollCfg, "connection '" + conn.name + "'", lint);
 
             Json::Value hooks = c.get("hooks", Json::Value(Json::objectValue));
             if (!hooks.isObject()) {

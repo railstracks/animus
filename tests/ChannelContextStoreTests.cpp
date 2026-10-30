@@ -1,5 +1,9 @@
 #include "animus_kernel/ChannelContextStore.h"
 #include "animus_kernel/SqliteDataStore.h"
+#include "animus_kernel/context/ChannelContextProvider.h"
+#include "animus_kernel/Session.h"
+#include "animus_kernel/AgentStore.h"
+#include <memory>
 
 #include <iostream>
 #include <string>
@@ -215,6 +219,65 @@ int TestKeyFormSeam() {
 
 } // namespace
 
+// #56: webchat card shape — the admin UI chat arrival renders as a
+// first-class webchat card: "Source: webchat" with no internal jargon
+// fragment, session key + user identity present. Same origin-map
+// machinery as every migrated adapter (#15); token-path anonymity is
+// the service-side gate (isUserAuth), unchanged by this shape.
+void TestWebchatCardRender() {
+    std::cerr << "  [ChannelContext] webchat card render (#56)...\n";
+    const std::string dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    ChannelContextStore store(&dataStore);
+    ChannelContextProvider provider(&store);
+
+    // Session shaped like a live ws-chat session (key + bound agent).
+    auto session = std::make_shared<Session>(
+        1001, SessionKey{"admin", "ws_chat:42", ""});
+    session->SetAgentId("main");
+
+    // Arrival shaped as ChatSessionService records it post-#56.
+    ChannelArrival a;
+    a.session_key = session->Key().ToString();
+    a.agent_id = session->AgentId();
+    a.channel_type = "webchat";
+    a.platform_id = "webchat";
+    a.message_type = "chat";
+    a.delivery = "auto";
+    a.origin = "{\"user\":\"melvin\",\"user_id\":\"2\","
+               "\"session\":\"agent:main:admin:ws_chat:42\","
+               "\"auth\":\"session\",\"role\":\"owner\"}";
+    a.author_id = "2";
+    a.author_handle = "melvin";
+    store.AddArrival(a);
+
+    // Read path = the kernel's: Provide() fetches pending arrivals for the
+    // session and renders the card block (RenderArrival is private).
+    Agent agent;  // deliberately unused by Provide — queries by session id
+    SessionAccess access(session, SessionAccessMode::ReadOnly);
+    auto block = provider.Provide(agent, access);
+    Assert(block.has_value(), "webchat card rendered from pending arrival");
+    if (block.has_value()) {
+        Assert(block->name == "Channel Context" && block->priority == 90,
+               "provider block identity");
+        Assert(block->content.find("Source: webchat\n") != std::string::npos,
+               "card names webchat");
+        Assert(block->content.find(" / ") == std::string::npos,
+               "no jargon fragment appended to Source");
+        Assert(block->content.find(
+                   "Session: agent:main:admin:ws_chat:42\n")
+                   != std::string::npos, "session key in card");
+        Assert(block->content.find("User: melvin\n") != std::string::npos,
+               "username in card");
+        Assert(block->content.find("Role: owner\n") != std::string::npos,
+               "role in card");
+        Assert(block->content.find("delivered automatically")
+                   != std::string::npos,
+               "auto-delivery instruction present");
+    }
+    unlink(dbPath.c_str());
+}
+
 int main() {
     std::cerr << "[ChannelContextStoreTests]\n";
     TestAddAndPending();
@@ -223,6 +286,7 @@ int main() {
     TestSeenUris();
     TestReopenPersistence();
     TestKeyFormSeam();
+    TestWebchatCardRender();
     if (g_failures == 0) {
         std::cerr << "  ALL PASSED\n";
         return 0;

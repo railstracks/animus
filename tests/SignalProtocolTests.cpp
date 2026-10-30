@@ -318,7 +318,7 @@ void TestStubSignedPreKeyGeneration() {
     auto identity = SignalKeypair::generate();
     auto spk = generate_signed_pre_key(7, identity);
     Assert(spk.id == 7, "signed pre-key id");
-    Assert(spk.signature.size() == 32, "signature is 32 bytes (HMAC-SHA256)");
+    Assert(spk.signature.size() == 64, "signature is 64 bytes (Ed25519 R||S)");
 }
 
 // ============================================================================

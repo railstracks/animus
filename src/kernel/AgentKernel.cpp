@@ -24,6 +24,7 @@
 #include "animus_kernel/InMemorySessionStore.h"
 #include "animus_kernel/MemoryFileStore.h"
 #include "animus_kernel/EmbeddingService.h"
+#include "animus_kernel/memory/EmbeddingSweep.h"
 #include "animus_kernel/NodeManager.h"
 #include "animus_kernel/MemorySearch.h"
 #include "animus_kernel/MemoryStore.h"
@@ -149,6 +150,10 @@ AgentKernel::~AgentKernel() {
 
     delete m_channelManager; m_channelManager = nullptr;
     if (m_messageQueue) { m_messageQueue->Shutdown(); m_messageQueue.reset(); }
+    // #224: drop the layer-change hook before the pipeline it targets dies.
+    if (m_memoryStore) {
+        m_memoryStore->SetLayerChangedCallback(nullptr);
+    }
     delete m_consolidation; m_consolidation = nullptr;
     delete m_chainRunner;
     m_chainRunner = nullptr;
@@ -1310,6 +1315,20 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 return ResolveContextWindow(aid, providerId, model);
             });
         }
+        // #224: layer create/update/delete re-registers the consolidation
+        // schedule set live — no restart needed (ChannelManager restart-hook
+        // pattern). RefreshSchedules is a no-op unless the pipeline is
+        // running, so pre-Start seeding and post-Stop callbacks are inert.
+        // Pointer stability: both raw members are owned by the kernel and
+        // ~AgentKernel deletes m_consolidation before m_memoryStore, so the
+        // callback cannot dangle; after consolidation->Stop() the refresh
+        // guard keeps late fires harmless.
+        if (m_memoryStore && m_consolidation) {
+            m_memoryStore->SetLayerChangedCallback(
+                [consolidation = m_consolidation]() {
+                    consolidation->RefreshSchedules();
+                });
+        }
         {
             std::string consErr;
             if (!m_consolidation->Start(m_scheduler, &consErr)) {
@@ -2377,90 +2396,18 @@ void AgentKernel::LoadLuaScripts() {
 
 void AgentKernel::ComputePendingEmbeddings() {
     if (!m_embeddingService || !m_embeddingService->IsAvailable()) return;
-    if (!m_memoryFileStore || !m_agentStore) return;
+    if (!m_memoryFileStore) return;
 
-    auto agents = m_agentStore->List();
-    int totalChunked = 0, totalEmbedded = 0;
-
-    for (const auto& agent : agents) {
-        auto files = m_memoryFileStore->ListFiles(std::nullopt, 1000, 0);
-        ALOG_DEBUG("embedding", "Agent " << agent.id << " (numeric=" << agent.numeric_id
-                  << "): " << files.size() << " files total");
-
-        for (const auto& file : files) {
-            if (file.agent_id != agent.numeric_id) continue;
-            if (file.superseded) continue;
-
-            auto existingChunks = m_memoryFileStore->GetChunks(file.id);
-            bool needsRechunk = existingChunks.empty();
-
-            if (needsRechunk && !file.content.empty()) {
-                std::vector<memory::MemoryFileChunk> newChunks;
-                const std::string& content = file.content;
-                std::size_t pos = 0;
-                std::size_t lastHeader = 0;
-                bool foundAnyHeader = false;
-                int lineNum = 0;
-                int headerLine = 0;
-
-                while (pos < content.size()) {
-                    std::size_t nl = content.find('\n', pos);
-                    lineNum++;
-                    std::size_t lineEnd = (nl == std::string::npos) ? content.size() : nl;
-                    if (lineEnd > pos && content[pos] == '#') {
-                        if (foundAnyHeader) {
-                            memory::MemoryFileChunk chunk;
-                            chunk.source_path = file.source_path;
-                            chunk.content = content.substr(lastHeader, pos - lastHeader);
-                            chunk.start_line = headerLine;
-                            chunk.end_line = lineNum - 1;
-                            newChunks.push_back(std::move(chunk));
-                        }
-                        lastHeader = pos;
-                        headerLine = lineNum;
-                        foundAnyHeader = true;
-                    }
-                    pos = (nl == std::string::npos) ? content.size() : nl + 1;
-                }
-
-                if (foundAnyHeader) {
-                    memory::MemoryFileChunk chunk;
-                    chunk.source_path = file.source_path;
-                    chunk.content = content.substr(lastHeader);
-                    chunk.start_line = headerLine;
-                    chunk.end_line = lineNum;
-                    newChunks.push_back(std::move(chunk));
-                } else {
-                    memory::MemoryFileChunk chunk;
-                    chunk.source_path = file.source_path;
-                    chunk.content = content;
-                    chunk.start_line = 1;
-                    chunk.end_line = lineNum;
-                    newChunks.push_back(std::move(chunk));
-                }
-
-                m_memoryFileStore->ReplaceChunks(file.id, newChunks);
-                existingChunks = m_memoryFileStore->GetChunks(file.id);
-                totalChunked += static_cast<int>(newChunks.size());
-            }
-
-            for (const auto& chunk : existingChunks) {
-                if (chunk.embedding_dim > 0 && !chunk.embedding.empty()) continue;
-                if (chunk.content.empty()) continue;
-
-                auto emb = m_embeddingService->Embed(chunk.content);
-                if (emb.has_value()) {
-                    m_memoryFileStore->UpdateChunkEmbedding(chunk.id, *emb);
-                    totalEmbedded++;
-                }
-            }
-        }
-    }
-
-    if (totalChunked > 0 || totalEmbedded > 0) {
-        ALOG_INFO("embedding", "Computed " << totalChunked << " chunks, "
-                  << totalEmbedded << " embeddings for " << agents.size() << " agents");
-    }
+    // #232: sweep extracted to memory/EmbeddingSweep (testable, injectable
+    // embed callback). The old per-agent loop skipped global (agent_id=0)
+    // files entirely - globals were never chunked or embedded while the
+    // keyword fallback still surfaced them (#225's mode-dependent silent
+    // failure, one layer earlier). The sweep includes globals now, and
+    // no longer requires any agent to be registered.
+    memory::SweepPendingEmbeddings(m_memoryFileStore,
+        [this](const std::string& text) {
+            return m_embeddingService->Embed(text);
+        });
 }
 
 // ============================================================================

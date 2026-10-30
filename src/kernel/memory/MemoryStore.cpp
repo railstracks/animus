@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <json/json.h>
+#include <mutex>
 #include <utility>
 
 namespace animus::kernel::memory {
@@ -19,6 +21,29 @@ static int64_t NowUnixMs() {
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch())
             .count());
+}
+
+std::string ObservationToJson(const Observation& obs) {
+    // #221: full-row snapshot for memory_mutations.row_snapshot. Keep every
+    // column — the mutation log alone must reconstruct the departed row.
+    Json::Value out(Json::objectValue);
+    out["id"] = static_cast<Json::Int64>(obs.id);
+    out["layer_id"] = static_cast<Json::Int64>(obs.layer_id);
+    out["agent_id"] = obs.agent_id;
+    out["text"] = obs.text;
+    out["weight"] = obs.weight;
+    out["decay_rate"] = obs.decay_rate;
+    out["tags_json"] = obs.tags_json;
+    out["source"] = obs.source;
+    out["created_at_unix_ms"] = static_cast<Json::Int64>(obs.created_at_unix_ms);
+    out["updated_at_unix_ms"] = static_cast<Json::Int64>(obs.updated_at_unix_ms);
+    out["last_evaluated_at_ms"] = static_cast<Json::Int64>(obs.last_evaluated_at_ms);
+    out["next_review_at_ms"] = static_cast<Json::Int64>(obs.next_review_at_ms);
+    out["memory_state"] = static_cast<Json::Int64>(obs.memory_state);
+    out["superseded_by"] = static_cast<Json::Int64>(obs.superseded_by);
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    return Json::writeString(wb, out);
 }
 
 int64_t MemoryStateToInt(MemoryState state) {
@@ -41,6 +66,19 @@ MemoryState IntToMemoryState(int64_t value) {
 
 MemoryStore::MemoryStore(IDataStore* dataStore) : m_store(dataStore) {
     EnsureSchema();
+}
+
+void MemoryStore::NotifyLayerChanged() {
+    // #224: fire-and-forget hook so the consolidation pipeline can re-register
+    // its cron schedules without a restart. Copy under the guard: the callback
+    // itself may mutate the member (SetLayerChangedCallback(nullptr) during
+    // teardown) or re-enter the store.
+    LayerChangeCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        cb = m_layerChangedCallback;
+    }
+    if (cb) cb();
 }
 
 MemoryStore::~MemoryStore() = default;
@@ -174,8 +212,20 @@ void MemoryStore::EnsureSchema() {
             dupeIds.push_back(dupes->ColumnInt64(0));
         }
         for (int64_t dupeId : dupeIds) {
+            // #222: a dedupe retiree is a SUPERSESSION, not a value
+            // verdict — point it at the surviving twin (smallest live id).
+            // Otherwise the retiree (memory_state=2, superseded_by=0) is
+            // indistinguishable from a deliberate retirement tombstone and
+            // the #222 boot sweep would retire the survivor too, collapsing
+            // every duplicated text to zero live rows.
             auto retire = m_store->Prepare(
-                "UPDATE observations SET memory_state = 2, updated_at_unix_ms = ? "
+                "UPDATE observations SET memory_state = 2, updated_at_unix_ms = ?, "
+                "superseded_by = (SELECT MIN(o2.id) FROM observations o2 "
+                "WHERE o2.memory_state <> 2 AND o2.superseded_by = 0 "
+                "AND o2.layer_id = observations.layer_id "
+                "AND o2.agent_id = observations.agent_id "
+                "AND o2.text = observations.text "
+                "AND o2.id < observations.id) "
                 "WHERE id = ? AND memory_state <> 2");
             if (retire && retire->BindInt64(1, NowUnixMs())
                        && retire->BindInt64(2, dupeId)) {
@@ -188,6 +238,40 @@ void MemoryStore::EnsureSchema() {
         if (!dupeIds.empty()) {
             ALOG_INFO("memory", "retired " << dupeIds.size()
                    << " exact-duplicate observation(s) at schema init");
+        }
+    }
+
+    // #222: retired-wins-until-revised boot sweep. A live row whose text
+    // matches an ACTIVE tombstone (retired, never revised, same agent/
+    // layer/text) is a resurrection that slipped past the create-time
+    // check — pre-fix intake, restored backups, bypassing paths. Retire
+    // it with a mutation note. Revision chains stay untouched: a
+    // retired-then-revised original no longer counts as a tombstone
+    // (ReviseObservation lifts same-text tombstones alongside).
+    {
+        auto strays = m_store->Prepare(
+            "SELECT id FROM observations o "
+            "WHERE o.memory_state <> 2 AND o.superseded_by = 0 "
+            "AND EXISTS (SELECT 1 FROM observations r "
+            "WHERE r.memory_state = 2 AND r.superseded_by = 0 "
+            "AND r.layer_id = o.layer_id AND r.agent_id = o.agent_id "
+            "AND r.text = o.text AND r.id <> o.id)");
+        std::vector<int64_t> strayIds;
+        while (strays && strays->Step()) {
+            strayIds.push_back(strays->ColumnInt64(0));
+        }
+        int64_t swept = 0;
+        for (int64_t id : strayIds) {
+            auto row = GetObservation(id);
+            if (row && AutoDeprecateObservation(
+                    *row, "retired-wins-until-revised boot sweep: live twin of "
+                          "an active tombstone")) {
+                ++swept;
+            }
+        }
+        if (swept > 0) {
+            ALOG_INFO("memory", "swept " << swept
+                   << " tombstone-violating observation(s) at schema init");
         }
     }
 
@@ -214,12 +298,22 @@ void MemoryStore::EnsureSchema() {
             from_layer_id INTEGER,
             to_layer_id INTEGER,
             previous_state TEXT NOT NULL DEFAULT '',
+            row_snapshot TEXT NOT NULL DEFAULT '',
             motivation TEXT NOT NULL DEFAULT '',
             unix_ms INTEGER NOT NULL
         );
     )");
 
     // ── Migrations ──────────────────────────────────────────────────
+
+    // Migration (#221): memory_mutations.row_snapshot — full-row JSON
+    // snapshot captured before destructive mutations (archive, admin
+    // delete, retire, revise) so the mutation log alone can reconstruct
+    // the departed row. Dialect-agnostic: both SQLite and PostgreSQL
+    // stores may predate the column.
+    if (!schema::ColumnExists(m_store, "memory_mutations", "row_snapshot")) {
+        m_store->Exec("ALTER TABLE memory_mutations ADD COLUMN row_snapshot TEXT NOT NULL DEFAULT ''");
+    }
 
     // Migration: rename horizon_seconds → horizon (text), add sort_order
     // Only applies to SQLite — PostgreSQL tables start with correct schema
@@ -416,14 +510,26 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer, int64_t preset_id
     auto now = NowUnixMs();
     std::string agentId = layer.agent_id;
 
-    // #78 P2c deterministic defaults: a preset row that already exists (by
-    // id — replicated copy or reseed; or by name — legacy autoincrement
-    // defaults from a pre-P2c node) is KEPT, never duplicated.
+    // #78 P2c deterministic defaults: a preset row that already exists —
+    // replicated copy or reseed — is KEPT, never duplicated.
+    // #213: preset ids 1..7 are a single global id-space, so the by-id
+    // lookup is agent-qualified: a preset id counts as taken only if the
+    // row at that id BELONGS to the seeding agent (the replicated-copy /
+    // reseed case the pinning was built for). A row held by a different
+    // agent is not adopted — fall through to auto-id allocation below;
+    // unique(agent_id, name) remains the dedup for later-seeded agents.
+    // A genuinely absent preset id stays claimable (fresh store or a
+    // deleted slot), which keeps first-agent pinning and single-agent
+    // installs byte-identical.
+    bool claim_preset = preset_id > 0;
     if (preset_id > 0) {
         auto byId = m_store->Prepare(
-            "SELECT id FROM memory_layers WHERE id = ?");
+            "SELECT id, agent_id FROM memory_layers WHERE id = ?");
         if (byId && byId->BindInt64(1, preset_id) && byId->Step()) {
-            return GetLayer(preset_id).value_or(MemoryLayer{});
+            if (byId->ColumnText(1) == agentId) {
+                return GetLayer(preset_id).value_or(MemoryLayer{});
+            }
+            claim_preset = false;  // held by another agent (#213)
         }
         auto byName = m_store->Prepare(
             "SELECT id FROM memory_layers WHERE agent_id = ? AND name = ?");
@@ -433,7 +539,7 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer, int64_t preset_id
         }
     }
 
-    const bool fixed = preset_id > 0;
+    const bool fixed = claim_preset;
     auto stmt = m_store->Prepare(std::string(
         "INSERT INTO memory_layers (")
         + (fixed ? "id, " : "")
@@ -489,15 +595,22 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer, int64_t preset_id
 
     // Auto-create perspective row. #78 P2c: preset layers get a preset
     // perspective id (same value) — cross-apply converges on identical rows.
+    // #236: the forced id is legal ONLY for genuinely pinned layers. Post-#213
+    // fall-through layers (preset id held by another agent) take auto layer
+    // ids — forcing perspective id = layer id there writes into the same
+    // single id-space cross-apply replicates, and OR IGNORE silently drops
+    // the row on collision (layer left perspective-less, no error surfaced).
+    // Gate on the pinning OUTCOME (`fixed`), not on the request.
     if (result) {
-        std::string sql = (preset_id > 0)
+        const bool perspectivePinned = fixed;
+        std::string sql = perspectivePinned
             ? "INSERT OR IGNORE INTO layer_perspectives "
               "(id, layer_id, updated_at_unix_ms) VALUES (?,?,?)"
             : schema::InsertIgnoreSql(m_store,
               "layer_perspectives", "layer_id, updated_at_unix_ms", "layer_id");
         auto ps = m_store->Prepare(sql);
         if (ps) {
-            if (preset_id > 0) {
+            if (perspectivePinned) {
                 ps->BindInt64(1, result->id);   // id = layer_id (1:1)
                 ps->BindInt64(2, result->id);
                 ps->BindInt64(3, now);
@@ -506,8 +619,30 @@ MemoryLayer MemoryStore::CreateLayer(const MemoryLayer& layer, int64_t preset_id
                 ps->BindInt64(2, now);
             }
             ps->Step();
+            // #236: a swallowed forced insert (id squatted by a foreign
+            // row in a legacy/dirty store, or a replicated perspective
+            // that arrived ahead of its layer) must not leave the layer
+            // perspective-less — fall back to the auto path keyed on
+            // layer_id, which is a no-op when the row already exists.
+            if (perspectivePinned && !DidWriteRows(ps.get())) {
+                ALOG_WARNING("memory", "preset perspective id " << result->id
+                    << " collided with a foreign row; falling back to auto id "
+                    "for layer " << result->id);
+                auto fb = m_store->Prepare(schema::InsertIgnoreSql(m_store,
+                    "layer_perspectives", "layer_id, updated_at_unix_ms",
+                    "layer_id"));
+                if (fb) {
+                    fb->BindInt64(1, result->id);
+                    fb->BindInt64(2, now);
+                    fb->Step();
+                }
+            }
         }
     }
+
+    // #224: layer set changed — let the consolidation pipeline re-register
+    // its schedules without a restart. Fired only on success paths.
+    if (result) NotifyLayerChanged();
 
     return result.value_or(MemoryLayer{});
 }
@@ -667,7 +802,9 @@ bool MemoryStore::UpdateLayer(const MemoryLayer& layer) {
     stmt->BindInt64(12, layer.id);
 
     stmt->ExecDML();
-    return DidWriteRows(stmt.get());
+    const bool wrote = DidWriteRows(stmt.get());
+    if (wrote) NotifyLayerChanged();
+    return wrote;
 }
 
 bool MemoryStore::DeleteLayer(int64_t id) {
@@ -675,7 +812,9 @@ bool MemoryStore::DeleteLayer(int64_t id) {
     if (!stmt) return false;
     stmt->BindInt64(1, id);
     stmt->ExecDML();
-    return DidWriteRows(stmt.get());
+    const bool deleted = DidWriteRows(stmt.get());
+    if (deleted) NotifyLayerChanged();
+    return deleted;
 }
 
 int MemoryStore::DeleteLayersForAgent(const std::string& agent_id) {
@@ -783,6 +922,18 @@ std::optional<Observation> MemoryStore::GetObservation(int64_t id) {
 
 Observation MemoryStore::CreateObservation(const Observation& obs) {
     auto now = NowUnixMs();
+    // #226 (reopened, real root cause): honor caller-supplied timestamps
+    // when non-zero (backfill/import/tests preserving original times); the
+    // zero default stamps now exactly as before. The prior unconditional
+    // now-stamping made the perspective-revision staleness guard a
+    // millisecond-boundary coin flip: a caller seeding an observation
+    // "postdated" (e.g. +60s) had the override silently discarded, so the
+    // observation landed 0-2ms after the auto-created perspective row and
+    // the guard skipped ~50% of runs regardless of load.
+    const int64_t createdAt = (obs.created_at_unix_ms > 0)
+        ? obs.created_at_unix_ms : now;
+    const int64_t updatedAt = (obs.updated_at_unix_ms > 0)
+        ? obs.updated_at_unix_ms : now;
     int64_t nextReviewAt = obs.next_review_at_ms;
     if (nextReviewAt <= 0) {
         int64_t evalIntervalSeconds = 0;
@@ -807,8 +958,8 @@ Observation MemoryStore::CreateObservation(const Observation& obs) {
     stmt->BindDouble(5, obs.decay_rate);
     stmt->BindText(6, obs.tags_json);
     stmt->BindText(7, obs.source);
-    stmt->BindInt64(8, now);
-    stmt->BindInt64(9, now);
+    stmt->BindInt64(8, createdAt);
+    stmt->BindInt64(9, updatedAt);
     stmt->BindInt64(10, obs.last_evaluated_at_ms);
     stmt->BindInt64(11, nextReviewAt);
     stmt->BindInt64(12, MemoryStateToInt(obs.memory_state));
@@ -893,6 +1044,9 @@ bool MemoryStore::SetObservationMemoryState(
     m.target_type = "observation";
     m.target_id = obs_id;
     m.previous_state = std::to_string(static_cast<int>(existing->memory_state));
+    // #221: full-row snapshot — the log must reconstruct the row as it
+    // stood before the state change, not just the old state code.
+    m.row_snapshot = ObservationToJson(*existing);
     m.motivation = motivation;
     m.unix_ms = now;
     LogMutation(m);
@@ -944,6 +1098,9 @@ bool MemoryStore::MoveObservation(int64_t obs_id, int64_t to_layer_id,
     m.from_layer_id = from_layer;
     m.to_layer_id = to_layer_id;
     m.previous_state = obs->text.substr(0, 200);
+    // #221: full-row snapshot — previous_state truncates at 200 chars;
+    // the snapshot carries the whole row across the layer move.
+    m.row_snapshot = ObservationToJson(*obs);
     m.motivation = motivation;
     m.unix_ms = now;
     LogMutation(m);
@@ -975,7 +1132,8 @@ bool MemoryStore::TouchEvaluation(int64_t obs_id) {
 }
 
 Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& new_text,
-                                           double new_weight, const std::string& new_tags_json) {
+                                           double new_weight, const std::string& new_tags_json,
+                                           const std::string& source_override) {
     auto original = GetObservation(obs_id);
     if (!original) {
         ALOG_WARNING("memory", "ReviseObservation: observation " << obs_id << " not found");
@@ -992,7 +1150,9 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
     newVersion.weight = new_weight;
     newVersion.decay_rate = original->decay_rate;
     newVersion.tags_json = new_tags_json.empty() ? original->tags_json : new_tags_json;
-    newVersion.source = original->source;
+    // #223: provenance override — an admin edit is distinguishable from
+    // an agent's revision on the observation itself.
+    newVersion.source = source_override.empty() ? original->source : source_override;
     newVersion.memory_state = MemoryState::New;
     newVersion.superseded_by = 0;  // current version
 
@@ -1033,6 +1193,32 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
     supersede->BindInt64(3, obs_id);
     supersede->Step();
 
+    // #222: retired-wins-until-REVISED — an explicit revision of text X is
+    // the legitimate resurrection route, so it lifts every remaining
+    // same-text tombstone (retired, never-revised rows) by superseding
+    // them under the new version. Without this, a revision that keeps the
+    // retired text would itself be swept as a tombstone violation at the
+    // next schema init.
+    int64_t lifted = 0;
+    {
+        auto lift = m_store->Prepare(
+            "UPDATE observations SET superseded_by=?, updated_at_unix_ms=? "
+            "WHERE memory_state=2 AND superseded_by=0 "
+            "AND agent_id=? AND layer_id=? AND text=? AND id<>?");
+        if (lift) {
+            lift->BindInt64(1, newId);
+            lift->BindInt64(2, now);
+            lift->BindText(3, newVersion.agent_id);
+            lift->BindInt64(4, newVersion.layer_id);
+            lift->BindText(5, newVersion.text);
+            lift->BindInt64(6, newId);
+            lift->ExecDML();
+            if (DidWriteRows(lift.get())) {
+                lifted = schema::RowsAffected(m_store);
+            }
+        }
+    }
+
     // Log the mutation
     MemoryMutation m;
     m.mutation_type = "revise";
@@ -1040,7 +1226,18 @@ Observation MemoryStore::ReviseObservation(int64_t obs_id, const std::string& ne
     m.target_id = newId;
     m.from_layer_id = original->layer_id;
     m.to_layer_id = original->layer_id;
-    m.motivation = "Copy-on-write revision: old version " + std::to_string(obs_id) + " preserved as snapshot";
+    // #221: full-row snapshot of the pre-revision row — copy-on-write
+    // preserves the old version, and the log now does too.
+    m.row_snapshot = ObservationToJson(*original);
+    m.motivation = "Copy-on-write revision: old version " + std::to_string(obs_id) +
+                   " preserved as snapshot";
+    if (lifted > 0) {
+        m.motivation += " (lifted " + std::to_string(lifted) +
+                        " same-text tombstone(s): retired-wins-until-revised)";
+    }
+    if (!source_override.empty()) {
+        m.motivation += " [actor: " + source_override + "]";
+    }
     LogMutation(m);
 
     return GetObservation(newId).value_or(Observation{});
@@ -1197,10 +1394,14 @@ std::optional<LayerPerspective> MemoryStore::SetPerspective(const LayerPerspecti
 // ============================================================================
 
 void MemoryStore::LogMutation(const MemoryMutation& m) {
+    // #223: callers that omit unix_ms (pre-existing ReviseObservation did)
+    // would stamp rows with 0, making them invisible to QueryMutations
+    // (unix_ms > since). Default a zero stamp to now.
+    const int64_t ts = (m.unix_ms != 0) ? m.unix_ms : NowUnixMs();
     auto stmt = m_store->Prepare(
         "INSERT INTO memory_mutations (mutation_type, target_type, target_id, "
-        "from_layer_id, to_layer_id, previous_state, motivation, unix_ms) "
-        "VALUES (?,?,?,?,?,?,?,?)");
+        "from_layer_id, to_layer_id, previous_state, row_snapshot, motivation, unix_ms) "
+        "VALUES (?,?,?,?,?,?,?,?,?)");
     if (!stmt) return;
 
     stmt->BindText(1, m.mutation_type);
@@ -1211,8 +1412,9 @@ void MemoryStore::LogMutation(const MemoryMutation& m) {
     if (m.to_layer_id.has_value()) stmt->BindInt64(5, *m.to_layer_id);
     else stmt->BindNull(5);
     stmt->BindText(6, m.previous_state);
-    stmt->BindText(7, m.motivation);
-    stmt->BindInt64(8, m.unix_ms);
+    stmt->BindText(7, m.row_snapshot);
+    stmt->BindText(8, m.motivation);
+    stmt->BindInt64(9, ts);
 
     stmt->ExecDML();
     if (!DidWriteRows(stmt.get())) {
@@ -1224,7 +1426,7 @@ std::vector<MemoryMutation> MemoryStore::QueryMutations(int64_t since_unix_ms, i
     std::vector<MemoryMutation> result;
     auto stmt = m_store->Prepare(
         "SELECT id, mutation_type, target_type, target_id, from_layer_id, to_layer_id, "
-        "previous_state, motivation, unix_ms "
+        "previous_state, row_snapshot, motivation, unix_ms "
         "FROM memory_mutations WHERE unix_ms > ? ORDER BY unix_ms DESC LIMIT ?");
     if (!stmt) return result;
 
@@ -1240,8 +1442,9 @@ std::vector<MemoryMutation> MemoryStore::QueryMutations(int64_t since_unix_ms, i
         if (!stmt->IsColumnNull(4)) m.from_layer_id = stmt->ColumnInt64(4);
         if (!stmt->IsColumnNull(5)) m.to_layer_id = stmt->ColumnInt64(5);
         m.previous_state = stmt->ColumnText(6);
-        m.motivation = stmt->ColumnText(7);
-        m.unix_ms = stmt->ColumnInt64(8);
+        m.row_snapshot = stmt->ColumnText(7);
+        m.motivation = stmt->ColumnText(8);
+        m.unix_ms = stmt->ColumnInt64(9);
         result.push_back(std::move(m));
     }
     return result;
@@ -1289,7 +1492,65 @@ Observation MemoryStore::CreateObservationForAgent(
         const std::string& agent_id, const Observation& obs) {
     Observation agentObs = obs;
     agentObs.agent_id = agent_id;
-    return CreateObservation(agentObs);
+    Observation created = CreateObservation(agentObs);
+
+    // #222: retired-wins-until-revised. An active tombstone (retired,
+    // never-revised row with identical agent/layer/text) already rejected
+    // this value — silent re-derivation must not resurrect it. The
+    // newcomer still lands (intake stays autonomous) but arrives already
+    // Deprecated with a mutation note. The revise path is the legitimate
+    // resurrection route and never passes through here.
+    if (created.id > 0) {
+        auto twin = m_store->Prepare(
+            "SELECT id FROM observations "
+            "WHERE agent_id=? AND layer_id=? AND text=? "
+            "AND memory_state=2 AND superseded_by=0 AND id<>? LIMIT 1");
+        if (twin) {
+            twin->BindText(1, created.agent_id);
+            twin->BindInt64(2, created.layer_id);
+            twin->BindText(3, created.text);
+            twin->BindInt64(4, created.id);
+            if (twin->Step()) {
+                const int64_t twinId = twin->ColumnInt64(0);
+                AutoDeprecateObservation(
+                    created,
+                    "retired-wins-until-revised: identical to retired observation " +
+                        std::to_string(twinId) +
+                        " — silent re-derivation does not resurrect; use revise");
+                auto refreshed = GetObservation(created.id);
+                if (refreshed) return *refreshed;
+            }
+        }
+    }
+    return created;
+}
+
+bool MemoryStore::AutoDeprecateObservation(
+        const Observation& row, const std::string& reason) {
+    auto now = NowUnixMs();
+    auto stmt = m_store->Prepare(
+        "UPDATE observations SET memory_state=?, updated_at_unix_ms=? WHERE id=?");
+    if (!stmt) return false;
+    stmt->BindInt64(1, MemoryStateToInt(MemoryState::Deprecated));
+    stmt->BindInt64(2, now);
+    stmt->BindInt64(3, row.id);
+    stmt->ExecDML();
+    if (!DidWriteRows(stmt.get())) return false;
+
+    MemoryMutation m;
+    m.mutation_type = "observation_auto_deprecated";
+    m.target_type = "observation";
+    m.target_id = row.id;
+    m.from_layer_id = row.layer_id;
+    m.previous_state = std::to_string(static_cast<int>(row.memory_state));
+    // #221: full-row snapshot — what the row looked like on arrival.
+    m.row_snapshot = ObservationToJson(row);
+    m.motivation = reason;
+    m.unix_ms = now;
+    LogMutation(m);
+    ALOG_INFO("memory", "auto-deprecated observation " << row.id
+           << " (retired-wins-until-revised tombstone match)");
+    return true;
 }
 
 std::vector<Observation> MemoryStore::SearchObservationsForAgent(

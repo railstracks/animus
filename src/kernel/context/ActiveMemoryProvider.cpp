@@ -3,6 +3,7 @@
 #include <chrono>
 #include <ctime>
 #include <iostream>
+#include <iterator>
 #include <sstream>
 #include <algorithm>
 #include <map>
@@ -701,6 +702,17 @@ void ActiveMemoryProvider::AppendMemoryFiles(std::string& out,
     if (useEmbeddings) {
         std::cerr << "[active-memory] fetching cached chunks for agent.numeric_id=" << agent.numeric_id << std::endl;
         auto cachedChunks = store->GetChunksForAgent(agent.numeric_id);
+        // Global (operator-shared) memory files live at agent_id = 0 and must
+        // surface in every agent's context, matching the keyword fallback's
+        // (agent_id == 0 || agent_id == numeric_id) semantics. Fetch them too
+        // when the agent itself is not the global pseudo-agent.
+        // (Issue #225: without this, embedded mode silently hides globals.)
+        if (agent.numeric_id != 0) {
+            auto globalChunks = store->GetChunksForAgent(0);
+            cachedChunks.insert(cachedChunks.end(),
+                                std::make_move_iterator(globalChunks.begin()),
+                                std::make_move_iterator(globalChunks.end()));
+        }
         std::cerr << "[active-memory] cached chunks: " << cachedChunks.size() << "\n";
         if (!cachedChunks.empty()) {
             bool allHaveEmbeddings = true;

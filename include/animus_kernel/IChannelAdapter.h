@@ -92,6 +92,32 @@ public:
     virtual void SendReply(const ChannelReplyTarget& target,
                            const std::string& text) = 0;
 
+    /// Send a /me-style action message through this channel. Adapters
+    /// without action semantics fall back to a normal reply.
+    virtual void SendAction(const ChannelReplyTarget& target,
+                            const std::string& text) {
+        SendReply(target, text);
+    }
+
+    /// Join a channel (#205: dynamic membership). Returns false when the
+    /// adapter cannot join (unsupported, invalid target, no connection).
+    /// Adapters without channel-membership semantics report unsupported.
+    virtual bool JoinChannel(const ChannelReplyTarget& target,
+                             const std::string& key) {
+        (void)target;
+        (void)key;
+        return false;
+    }
+
+    /// Leave a channel with an optional farewell reason. Same contract
+    /// as JoinChannel.
+    virtual bool PartChannel(const ChannelReplyTarget& target,
+                             const std::string& reason) {
+        (void)target;
+        (void)reason;
+        return false;
+    }
+
     /// Check if the connector is currently connected/active.
     virtual bool IsConnected() const = 0;
 

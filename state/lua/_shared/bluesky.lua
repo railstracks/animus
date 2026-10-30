@@ -444,6 +444,156 @@ local function do_chat_messages(args)
 end
 
 --- Send a DM to a conversation.
+-- ---------------------------------------------------------------------------
+-- Rich-text facets (#36): ATProto links + hashtags as byte-range facets.
+--
+-- ATProto facet offsets are UTF-8 BYTE positions (byteStart inclusive,
+-- byteEnd exclusive, 0-based). Lua strings are byte arrays, so scanning is
+-- byte-native: span.s is 1-based inclusive, span.e is 1-based inclusive,
+-- and the facet index is { byteStart = s - 1, byteEnd = e }.
+--
+-- Deliberate deviations from the reference @atproto implementation:
+--   - ZWJ / VS16 do not terminate hashtag runs (rare inside tags; a facet
+--     spanning them is still accepted by the API).
+--   - A tag must contain at least one ASCII alnum OR any non-ASCII byte
+--     (keeps CJK tags working; may linkify pure-emoji tags the reference
+--     would skip — harmless and API-legal).
+-- ---------------------------------------------------------------------------
+
+local FACET_URL_TRAILING = {
+    [string.byte(".")] = true, [string.byte(",")] = true,
+    [string.byte(";")] = true, [string.byte(":")] = true,
+    [string.byte("!")] = true, [string.byte("?")] = true,
+    [string.byte(")")] = true, [string.byte("'")] = true,
+    [string.byte('"')] = true,
+}
+
+local function facet_is_space(b)
+    return b == 32 or b == 9 or b == 10 or b == 13
+end
+
+-- Bytes that continue a URL run: visible, not bracket, not quote.
+local function facet_url_byte(b)
+    if b == nil or b < 0x21 then return false end
+    return b ~= string.byte("<") and b ~= string.byte(">") and b ~= string.byte('"')
+end
+
+-- Bytes that continue a hashtag name: ASCII word chars or any UTF-8 byte.
+local function facet_tag_byte(b)
+    if b == nil then return false end
+    if b >= 0x80 then return true end
+    if b >= 0x30 and b <= 0x39 then return true end   -- 0-9
+    if b >= 0x41 and b <= 0x5a then return true end   -- A-Z
+    if b >= 0x61 and b <= 0x7a then return true end   -- a-z
+    return b == string.byte("_")
+end
+
+local function detect_url_spans(text)
+    local spans = {}
+    local i, n = 1, #text
+    while i <= n - 3 do
+        local rest
+        if text:sub(i, i + 7) == "https://" then
+            rest = i + 8
+        elseif text:sub(i, i + 6) == "http://" then
+            rest = i + 7
+        elseif text:sub(i, i + 3) == "www." then
+            rest = i + 4
+        end
+        if not rest then
+            i = i + 1
+        else
+            local boundary = (i == 1)
+            if not boundary then
+                local pb = text:byte(i - 1)
+                boundary = facet_is_space(pb) or FACET_URL_TRAILING[pb] or pb == string.byte("(")
+            end
+            if not boundary then
+                i = i + 1
+            else
+                local e = rest
+                while e <= n and facet_url_byte(text:byte(e)) do e = e + 1 end
+                while e > rest and FACET_URL_TRAILING[text:byte(e - 1)] do e = e - 1 end
+                if e > rest then
+                    table.insert(spans, { kind = "url", s = i, e = e - 1, value = text:sub(i, e - 1) })
+                    i = e
+                else
+                    i = i + 1
+                end
+            end
+        end
+    end
+    return spans
+end
+
+local function detect_tag_spans(text, url_spans)
+    local spans = {}
+    local i, n = 1, #text
+    while i <= n do
+        if text:byte(i) ~= string.byte("#") then
+            i = i + 1
+        else
+            local boundary = (i == 1)
+            if not boundary then
+                boundary = not facet_tag_byte(text:byte(i - 1))
+            end
+            if not boundary then
+                i = i + 1
+            else
+                local e = i + 1
+                while e <= n and facet_tag_byte(text:byte(e)) do e = e + 1 end
+                if e > i + 1 then
+                    local name = text:sub(i + 1, e - 1)
+                    local has_letter = name:match("%w") ~= nil or name:match("[\128-\255]") ~= nil
+                    local in_url = false
+                    for _, u in ipairs(url_spans) do
+                        if i >= u.s and i <= u.e then
+                            in_url = true
+                            break
+                        end
+                    end
+                    if has_letter and not in_url then
+                        table.insert(spans, { kind = "tag", s = i, e = e - 1, value = name })
+                    end
+                    i = e
+                else
+                    i = i + 1
+                end
+            end
+        end
+    end
+    return spans
+end
+
+local function build_facets(text)
+    if not text or text == "" then return {} end
+    local urls = detect_url_spans(text)
+    local tags = detect_tag_spans(text, urls)
+    local facets = {}
+    for _, sp in ipairs(urls) do
+        local uri = sp.value
+        if uri:sub(1, 4) == "www." then uri = "https://" .. uri end
+        table.insert(facets, {
+            index = { byteStart = sp.s - 1, byteEnd = sp.e },
+            features = { { ["$type"] = "app.bsky.richtext.facet#link", uri = uri } },
+        })
+    end
+    for _, sp in ipairs(tags) do
+        table.insert(facets, {
+            index = { byteStart = sp.s - 1, byteEnd = sp.e },
+            features = { { ["$type"] = "app.bsky.richtext.facet#tag", tag = sp.value } },
+        })
+    end
+    return facets
+end
+
+local function attach_facets(record, text)
+    local facets = build_facets(text)
+    if #facets > 0 then
+        record.facets = facets
+    end
+end
+
 local function do_chat_send(args)
     local pid = args.platform_id
     if not pid or pid == "" then
@@ -455,9 +605,11 @@ local function do_chat_send(args)
     if not args.content or args.content == "" then
         return { success = false, error = "content is required" }
     end
+    local message = { text = args.content }
+    attach_facets(message, args.content)
     local body = {
         convoId = args.convo_id,
-        message = { text = args.content }
+        message = message
     }
     local resp = auth_chat_post(pid, "/xrpc/chat.bsky.convo.sendMessage", body)
     if resp.status ~= 200 then
@@ -556,6 +708,8 @@ local function do_post(args)
         langs = args.langs or { "en" }
     }
 
+    attach_facets(record, args.content)
+
     local resp = auth_post(pid, "/xrpc/com.atproto.repo.createRecord", {
         repo = did,
         collection = "app.bsky.feed.post",
@@ -622,6 +776,8 @@ local function do_reply(args)
             parent = { uri = args.post_id, cid = parent_cid }
         }
     }
+
+    attach_facets(record, args.content)
 
     local resp = auth_post(pid, "/xrpc/com.atproto.repo.createRecord", {
         repo = did,

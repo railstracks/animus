@@ -259,6 +259,18 @@ int LuaToolProxyCall(lua_State* L) {
         argsJson = Json::objectValue; // empty args
     }
 
+    // #216: identity invariant — overwrite __agent_id with the VM's bound
+    // agent, mirroring ToolExecutionService::InjectContext on the model path.
+    // Scripts must not be able to impersonate another agent through the tool
+    // bridge (adapter-bug defense in depth). Applies to both the synchronous
+    // path and yielded coroutine calls.
+    if (argsJson.isObject()) {
+        const std::string boundAgent = g_activeState->GetConfig("agentId");
+        if (!boundAgent.empty()) {
+            argsJson["__agent_id"] = boundAgent;
+        }
+    }
+
     // Build the ToolCall
     static std::atomic<uint64_t> callCounter{0};
     std::string callId = "lua-" + std::to_string(callCounter.fetch_add(1));

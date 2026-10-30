@@ -93,10 +93,29 @@ int TestSeedNodeOne() {
                " err=" + err);
 
         // memory_layers + observations
+        // #78 P2c: default layers seed with deterministic preset ids
+        // 1..7 — BELOW every node's id range by design, so
+        // independently-booted nodes seed identical rows and cross-apply
+        // converges instead of colliding on unique(agent_id, name).
+        // (#188: the old 'layer id in node-1 range' assertion predated
+        // P2c and pinned the wrong contract for DEFAULTS.)
         stores.memory.CreateDefaultLayersForAgent("agent1");
         auto layers = stores.memory.ListLayersForAgent("agent1");
-        Assert(!layers.empty() && layers[0].id > (int64_t)kNode1Seed,
-               "layer id in node-1 range");
+        Assert(!layers.empty() && layers[0].id >= 1 && layers[0].id <= 7,
+               "default layer id is a deterministic preset (1..7), got " +
+               std::to_string(layers.empty() ? 0 : layers[0].id));
+        // The node-range contract applies to AUTO-ID allocations: a
+        // user-created layer (no preset) must allocate from the seeded
+        // node-1 sequence.
+        if (!layers.empty()) {
+            memory::MemoryLayer userLayer = layers[0];
+            userLayer.name = "user-layer-p1a";
+            userLayer.sort_order = 100;
+            auto createdLayer = stores.memory.CreateLayer(userLayer);
+            Assert(createdLayer.id > (int64_t)kNode1Seed,
+                   "user layer id in node-1 range, got " +
+                   std::to_string(createdLayer.id));
+        }
         if (!layers.empty()) {
             memory::Observation obs;
             obs.layer_id = layers[0].id;
@@ -173,20 +192,35 @@ int TestRaiseOnlyNeverLowers() {
         std::string err;
         SeedAgentGlobalIdRanges(&stores.dataStore, 2, &err);
 
+        // #78 P2c: defaults are deterministic presets (1..7), identical
+        // on every node (#188 triage) — the node-range contract applies
+        // to auto-id allocations:
         stores.memory.CreateDefaultLayersForAgent("agent1");
         auto layers = stores.memory.ListLayersForAgent("agent1");
         Assert(!layers.empty(), "layers created");
         int64_t firstLayerId = layers.empty() ? 0 : layers[0].id;
-        Assert(firstLayerId > (int64_t)kNode2Seed, "node-2 range id");
+        Assert(firstLayerId >= 1 && firstLayerId <= 7,
+               "default layer preset id (1..7), got " +
+               std::to_string(firstLayerId));
+        memory::MemoryLayer userLayer = layers[0];
+        userLayer.name = "user-layer-raise";
+        userLayer.sort_order = 100;
+        auto u1 = stores.memory.CreateLayer(userLayer);
+        Assert(u1.id > (int64_t)kNode2Seed, "node-2 range id, got " +
+               std::to_string(u1.id));
 
-        // Now seed node 1 (LOWER) — must be a no-op on the sequence.
+        // Now seed node 1 (LOWER) — must be a no-op on the sequence; the
+        // NEXT auto-id allocation must still land in node-2's range
+        // (contiguous), not restart from the node-1 seed.
         SeedAgentGlobalIdRanges(&stores.dataStore, 1, &err);
-        auto layers2 = stores.memory.ListLayersForAgent("agent1");
-        (void)layers2;
-
-        // Next allocation must still be in node-2's range (contiguous).
-        auto l3 = stores.memory.ListLayersForAgent("agent1");
-        (void)l3;
+        memory::MemoryLayer userLayer2 = layers[0];
+        userLayer2.name = "user-layer-raise-2";
+        auto u2 = stores.memory.CreateLayer(userLayer2);
+        Assert(u2.id > (int64_t)kNode2Seed,
+               "post-lower-seed id still in node-2 range, got " +
+               std::to_string(u2.id));
+        Assert(u2.id > u1.id, "ids stay contiguous after re-seed: " +
+               std::to_string(u1.id) + " then " + std::to_string(u2.id));
         // direct sequence check
         auto q = stores.dataStore.Prepare(
             "SELECT seq FROM sqlite_sequence WHERE name='memory_layers'");

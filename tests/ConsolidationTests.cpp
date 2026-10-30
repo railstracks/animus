@@ -10,6 +10,7 @@
 #include "animus_kernel/AgentStore.h"
 #include "animus_kernel/OntologyStore.h"
 #include "animus_kernel/MemoryFileStore.h"
+#include "animus_kernel/scheduler/Scheduler.h"
 #include "animus_kernel/tools/ConsolidationTool.h"
 
 #include <chrono>
@@ -18,6 +19,7 @@
 #include <iostream>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -258,6 +260,177 @@ int TestPipelineIntakeFromDiary() {
     std::filesystem::remove(dbPath);
     return 0;
 }
+// #220: the default intake prompt must instruct consolidation tool calls
+// (action "create") — the only path the pipeline honors — and must not
+// request a JSON array return, which IntakeFromDiary/IntakeFromSessions
+// discard (no return-value parsing; see the intake contract above).
+int TestDefaultIntakePromptToolContract() {
+    const std::string prompt = ConsolidationPipeline::Config{}.intake_prompt;
+
+    // Names the consolidation tool and the create action (the instructed path)
+    Assert(prompt.find("consolidation") != std::string::npos,
+           "default intake prompt must name the consolidation tool");
+    Assert(prompt.find("action \"create\"") != std::string::npos,
+           "default intake prompt must instruct action \"create\" tool calls");
+
+    // Does not request a JSON array (the old, never-parsed contract)
+    Assert(prompt.find("JSON array") == std::string::npos,
+           "default intake prompt must not request a JSON array");
+    Assert(prompt.find("empty array") == std::string::npos,
+           "default intake prompt must not request an empty-array return");
+    return 0;
+}
+
+// #219: wire the ontology reconciler. Intake must fill createdObservations
+// (the evidence set), and the reconciler pass must upsert properties with
+// linked_observation_id populated — the production writer for the evidence
+// column. Also covers: numeric-string link IDs, out-of-run ID rejection
+// (evidence poisoning guard), and the sole-evidence fallback.
+int TestReconcilerWiresEvidenceLinks() {
+    std::cerr << "  [#219] Reconciler links properties to fresh observations...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    ontology::OntologyStore ontologyStore(&dataStore);
+    DiaryStore diaryStore(&dataStore);
+
+    MemoryLayer layer;
+    layer.name = "day";
+    layer.agent_id = "agent1";
+    layer.horizon = "1 day";
+    layer.sort_order = 0;
+    layer.enabled = true;
+    memStore.CreateLayer(layer);
+
+    DiaryEntry entry;
+    entry.id = "e1-219";
+    entry.agent_id = "agent1";
+    entry.layer = "observation";
+    entry.content = "Kestrel runs the dispatch pipeline for railstracks";
+    entry.timestamp_unix_ms = 2000000;
+    diaryStore.Create(entry);
+
+    g_llmCallCount = 0;
+    int64_t obs1Id = 0;
+    int64_t obs2Id = 0;
+    auto callback = [&](const std::string&,
+                        const std::string&,
+                        const std::string& userPrompt) -> std::string {
+        g_llmCallCount++;
+        auto createObs = [&](const std::string& text) -> int64_t {
+            auto layers = memStore.ListLayersForAgent("agent1");
+            if (layers.empty()) return 0;
+            memory::Observation obs;
+            obs.agent_id = "agent1";
+            obs.layer_id = layers.front().id;
+            obs.text = text;
+            obs.weight = 0.8;
+            obs.created_at_unix_ms = 3000000;
+            obs.updated_at_unix_ms = 3000000;
+            return memStore.CreateObservationForAgent("agent1", obs).id;
+        };
+        if (userPrompt.find("diary entries") != std::string::npos) {
+            // Intake pass — create one observation via the tool-contract path.
+            if (obs1Id == 0) {
+                obs1Id = createObs("Kestrel runs the dispatch pipeline for railstracks");
+            } else {
+                obs2Id = createObs("Devex ships tickets through the dispatch pipeline");
+            }
+            return "[]";
+        }
+        if (userPrompt.find("Fresh observations") != std::string::npos) {
+            if (obs2Id == 0) {
+                // Run 1: numeric link ID naming the fresh observation.
+                return "{\"upserts\":[{\"root_category\":\"persons\",\"path\":\"kestrel\","
+                       "\"properties\":{\"role\":{\"value\":\"dispatch PM\","
+                       "\"value_type\":\"text\",\"linked_observation_id\":"
+                       + std::to_string(obs1Id) + "}}}]}";
+            }
+            // Run 2: one hallucinated link (999999 — not in this run's
+            // evidence set) and one numeric-string link.
+            return "{\"upserts\":[{\"root_category\":\"persons\",\"path\":\"kestrel\","
+                   "\"properties\":{\"clearance\":{\"value\":\"granted\","
+                   "\"linked_observation_id\":999999},"
+                   "\"level\":{\"value\":\"high\",\"value_type\":\"text\","
+                   "\"linked_observation_id\":\"" + std::to_string(obs2Id) + "\"}}}]}";
+        }
+        return "[]";
+    };
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, &ontologyStore, &diaryStore, nullptr, nullptr, callback);
+
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    std::string err;
+    Assert(pipeline.RunIntake("agent1", std::nullopt, &err),
+           "intake run 1 should succeed: " + err);
+    Assert(obs1Id > 0, "intake should have created observation 1");
+    Assert(g_llmCallCount == 2, "reconciler should run after intake creates observations (got "
+           + std::to_string(g_llmCallCount) + " LLM calls)");
+
+    auto entity = ontologyStore.FindByPath(
+        ontology::RootCategory::Persons, "persons/kestrel", "agent1");
+    Assert(entity.has_value(), "reconciler should have created the entity path");
+    if (entity.has_value()) {
+        auto role = ontologyStore.GetProperty(entity->id, "role");
+        Assert(role.has_value(), "reconciler should have upserted the role property");
+        if (role.has_value()) {
+            Assert(role->linked_observation_id.has_value()
+                       && *role->linked_observation_id == obs1Id,
+                   "property must carry linked_observation_id pointing at the fresh observation");
+            Assert(role->memory_state == MemoryState::New,
+                   "linked property state derives from its (New) evidence observation");
+        }
+        // Log parity: SetProperty writes the standard create_property row.
+        auto mutations = ontologyStore.QueryMutations(0, 100);
+        bool sawCreate = false;
+        for (const auto& m : mutations) {
+            if (m.mutation_type == "create_property" && m.target_id == role->id) {
+                sawCreate = true;
+            }
+        }
+        Assert(sawCreate, "reconciler promotion should leave an ontology_mutations row");
+    }
+
+    // Run 2 — hallucinated link rejection + numeric-string acceptance +
+    // sole-evidence fallback.
+    DiaryEntry entry2;
+    entry2.id = "e2-219";
+    entry2.agent_id = "agent1";
+    entry2.layer = "observation";
+    entry2.content = "Devex ships tickets through the dispatch pipeline";
+    entry2.timestamp_unix_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()
+        + 3600 * 1000;  // future — past the watermark
+    diaryStore.Create(entry2);
+
+    Assert(pipeline.RunIntake("agent1", std::nullopt, &err),
+           "intake run 2 should succeed: " + err);
+    Assert(obs2Id > 0, "intake run 2 should have created observation 2");
+    Assert(entity.has_value(), "entity should persist across runs");
+    if (entity.has_value()) {
+        auto clearance = ontologyStore.GetProperty(entity->id, "clearance");
+        Assert(clearance.has_value(), "hallucinated-link property should still be upserted");
+        if (clearance.has_value()) {
+            Assert(clearance->linked_observation_id.has_value()
+                       && *clearance->linked_observation_id == obs2Id,
+                   "out-of-run link must be dropped and re-attributed to the run's sole observation");
+        }
+        auto level = ontologyStore.GetProperty(entity->id, "level");
+        Assert(level.has_value(), "string-link property should be upserted");
+        if (level.has_value()) {
+            Assert(level->linked_observation_id.has_value()
+                       && *level->linked_observation_id == obs2Id,
+                   "numeric-string linked_observation_id must be accepted and validated");
+        }
+    }
+
+    std::filesystem::remove(dbPath);
+    return 0;
+}
 
 int TestPipelineLayerConsolidation() {
     std::cerr << "  [Pipeline] Layer consolidation (promote)...\n";
@@ -400,6 +573,35 @@ int TestPipelineDemoteToArchive() {
     auto stats = pipeline.GetStats();
     Assert(stats.observations_archived >= 1, "Stats should show 1+ archived");
 
+    // #221: the archive mutation's row_snapshot reconstructs the departed
+    // row — archive deletes from active layers, so the log is all that
+    // remains.
+    {
+        auto muts = memStore.QueryMutations(0, 1000);
+        const MemoryMutation* archiveMut = nullptr;
+        for (const auto& m : muts) {
+            if (m.mutation_type == "archive" && m.target_id == createdObsId) {
+                archiveMut = &m;
+            }
+        }
+        Assert(archiveMut != nullptr, "archive mutation row exists");
+        if (archiveMut) {
+            Json::CharReaderBuilder rb;
+            Json::Value snap;
+            std::string errs;
+            std::istringstream ss(archiveMut->row_snapshot);
+            Assert(Json::parseFromStream(rb, ss, &snap, &errs),
+                   "archive row_snapshot parses as JSON: " + errs);
+            Assert(snap["text"].asString() ==
+                       "Trivial observation that should be archived",
+                   "archive row_snapshot reconstructs text");
+            Assert(snap["weight"].asDouble() == 0.1,
+                   "archive row_snapshot reconstructs weight");
+            Assert(snap["source"].asString() == "intake:diary",
+                   "archive row_snapshot reconstructs source");
+        }
+    }
+
     std::filesystem::remove(dbPath);
     return 0;
 }
@@ -430,7 +632,7 @@ int TestPipelinePerspectiveRevision() {
     // auto-created perspective row (staleness guard).
     const int64_t obsTs =
         std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count() + 5000;
+            std::chrono::system_clock::now().time_since_epoch()).count() + 60000;
     memory::Observation seed;
     seed.agent_id = "agent1";
     seed.layer_id = layers.front().id;
@@ -583,6 +785,226 @@ int TestPipelineRunLog() {
     Assert(runs[0].phase == "intake", "Phase should be 'intake'");
     Assert(runs[0].status == "completed", "Status should be 'completed'");
 
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
+// ============================================================================
+// #224: live schedule refresh — layers created/updated/enabled after Start
+// must get their consolidation schedules without a restart.
+// ============================================================================
+
+static void MakeScheduleTestLayer(MemoryStore& memStore, const std::string& agentId,
+                                  const std::string& name, const char* cron,
+                                  bool enabled) {
+    MemoryLayer layer;
+    layer.agent_id = agentId;
+    layer.name = name;
+    layer.horizon = "test horizon";
+    layer.cron_expr = cron;
+    layer.evaluation_interval_seconds = 3600;
+    layer.token_budget = 4096;
+    layer.enabled = enabled;
+    memStore.CreateLayer(layer);
+}
+
+int TestRefreshSchedulesOnLayerCreate() {
+    std::cerr << "  [#224] Layer create during run registers schedule...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    Scheduler scheduler(&dataStore);
+
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, nullptr, nullptr, nullptr, nullptr, MockLLMCallback);
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    // Layer that exists before Start gets its schedule at Start.
+    MakeScheduleTestLayer(memStore, "agent1", "day", "0 */2 * * *", true);
+    std::string err;
+    Assert(pipeline.Start(&scheduler, &err), "Start should succeed: " + err);
+    // Wire the layer-change hook exactly as AgentKernel does (#224).
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+    Assert(scheduler.List("agent1", "consolidation").size() == 1,
+           "pre-existing enabled layer should have 1 schedule after Start");
+
+    // Wire the same hook AgentKernel wires (ChannelManager restart-hook
+    // pattern) — layer mutations now drive live refreshes.
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+
+    // Create an enabled layer while running — its schedule must appear
+    // without a restart (the acceptance criterion).
+    MakeScheduleTestLayer(memStore, "agent1", "week", "0 3 * * *", true);
+    Assert(scheduler.List("agent1", "consolidation").size() == 2,
+           "layer created during run should get a schedule without restart");
+
+    memStore.SetLayerChangedCallback(nullptr);
+    pipeline.Stop();
+    Assert(scheduler.List("agent1", "consolidation").empty(),
+           "Stop should cancel all pipeline schedules");
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
+int TestRefreshSchedulesOnLayerUpdate() {
+    std::cerr << "  [#224] Layer update during run re-registers schedule...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    Scheduler scheduler(&dataStore);
+
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, nullptr, nullptr, nullptr, nullptr, MockLLMCallback);
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    MakeScheduleTestLayer(memStore, "agent1", "day", "0 */2 * * *", true);
+    std::string err;
+    Assert(pipeline.Start(&scheduler, &err), "Start should succeed: " + err);
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+    const auto before = scheduler.List("agent1", "consolidation");
+    Assert(before.size() == 1, "expected 1 schedule after Start");
+
+    // Wire the same hook AgentKernel wires — layer mutations drive live refresh.
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+
+    // Change the layer's cron while running — the schedule set must follow.
+    auto layer = memStore.ListLayersForAgent("agent1").front();
+    layer.cron_expr = "15 */3 * * *";
+    Assert(memStore.UpdateLayer(layer), "UpdateLayer should succeed");
+
+    const auto after = scheduler.List("agent1", "consolidation");
+    Assert(after.size() == 1, "update should not duplicate schedules");
+    Assert(after[0].cron_expr == "15 */3 * * *",
+           "refresh should pick up the new cron, got: " + after[0].cron_expr);
+
+    pipeline.Stop();
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
+int TestRefreshSchedulesOnLayerDisable() {
+    std::cerr << "  [#224] Layer disable during run removes schedule...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    Scheduler scheduler(&dataStore);
+
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, nullptr, nullptr, nullptr, nullptr, MockLLMCallback);
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    MakeScheduleTestLayer(memStore, "agent1", "day", "0 */2 * * *", true);
+    std::string err;
+    Assert(pipeline.Start(&scheduler, &err), "Start should succeed: " + err);
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+    Assert(scheduler.List("agent1", "consolidation").size() == 1, "expected 1 schedule");
+
+    // Disable the layer — the schedule must be gone without a restart.
+    auto layer = memStore.ListLayersForAgent("agent1").front();
+    layer.enabled = false;
+    Assert(memStore.UpdateLayer(layer), "UpdateLayer should succeed");
+    Assert(scheduler.List("agent1", "consolidation").empty(),
+           "disabled layer's schedule should be removed without restart");
+
+    // Re-enable — schedule must come back.
+    layer.enabled = true;
+    Assert(memStore.UpdateLayer(layer), "UpdateLayer should succeed");
+    Assert(scheduler.List("agent1", "consolidation").size() == 1,
+           "re-enabled layer's schedule should be restored without restart");
+
+    pipeline.Stop();
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
+int TestRefreshNoDuplicateSchedules() {
+    std::cerr << "  [#224] Repeated refresh does not duplicate schedules...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    Scheduler scheduler(&dataStore);
+
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, nullptr, nullptr, nullptr, nullptr, MockLLMCallback);
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    MakeScheduleTestLayer(memStore, "agent1", "day", "0 */2 * * *", true);
+    std::string err;
+    Assert(pipeline.Start(&scheduler, &err), "Start should succeed: " + err);
+
+    // Hammer the refresh path — every layer mutation (callback-wired, as the
+    // kernel does) and explicit refreshes must leave exactly one schedule
+    // per scheduled layer.
+    memStore.SetLayerChangedCallback([&pipeline]() { pipeline.RefreshSchedules(); });
+    for (int i = 0; i < 5; ++i) {
+        MakeScheduleTestLayer(memStore, "agent1", "day", "0 */2 * * *", true);
+        auto layer = memStore.ListLayersForAgent("agent1").front();
+        layer.cron_expr = "0 */2 * * *";
+        memStore.UpdateLayer(layer);
+    }
+    pipeline.RefreshSchedules();
+    pipeline.RefreshSchedules();
+
+    Assert(scheduler.List("agent1", "consolidation").size() == 1,
+           "repeated refresh must not duplicate schedules");
+
+    memStore.SetLayerChangedCallback(nullptr);
+    pipeline.Stop();
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
+int TestSessionReportScheduleShifted() {
+    std::cerr << "  [#224] Session-report cron is shifted +30 min...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    AgentStore agentStore(&dataStore);
+    Scheduler scheduler(&dataStore);
+
+    // Agent-level intake cron drives the session-report registration.
+    Agent agent;
+    agent.id = "agent1";
+    agent.name = "Agent One";
+    agent.intake_interval = "0 * * * *";
+    auto created = agentStore.Create(agent);
+    Assert(!created.id.empty(), "agent create should succeed");
+
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, nullptr, nullptr, nullptr, &agentStore, MockLLMCallback);
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    std::string err;
+    Assert(pipeline.Start(&scheduler, &err), "Start should succeed: " + err);
+
+    // Intake schedule keeps the agent cron; session-report is shifted +30.
+    auto scheds = scheduler.List("agent1", "consolidation");
+    bool sawIntake = false, sawShifted = false;
+    for (const auto& s : scheds) {
+        if (s.message == "intake:day") {
+            sawIntake = true;
+            Assert(s.cron_expr == "0 * * * *", "intake cron should be unshifted");
+        }
+        if (s.message == "session_report") {
+            sawShifted = true;
+            Assert(s.cron_expr == "30 * * * *",
+                   "session-report cron should be shifted +30, got: " + s.cron_expr);
+        }
+    }
+    Assert(sawIntake, "intake schedule should exist");
+    Assert(sawShifted, "session_report schedule should exist");
+
+    pipeline.Stop();
     std::filesystem::remove(dbPath);
     return 0;
 }
@@ -978,6 +1400,8 @@ int main() {
     // Pipeline tests
     std::cerr << "\n-- Pipeline: Intake --\n";
     TestPipelineIntakeFromDiary();
+    TestDefaultIntakePromptToolContract();
+    TestReconcilerWiresEvidenceLinks();
 
     std::cerr << "\n-- Pipeline: Layer Consolidation --\n";
     TestPipelineLayerConsolidation();
@@ -991,6 +1415,12 @@ int main() {
     TestPipelineStats();
     TestPipelineRunLog();
 
+    std::cerr << "\n-- #224: Live schedule refresh --\n";
+    TestRefreshSchedulesOnLayerCreate();
+    TestRefreshSchedulesOnLayerUpdate();
+    TestRefreshSchedulesOnLayerDisable();
+    TestRefreshNoDuplicateSchedules();
+    TestSessionReportScheduleShifted();
 
     std::cerr << "\n";
     if (g_failures == 0) {

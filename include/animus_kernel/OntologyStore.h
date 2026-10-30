@@ -51,6 +51,7 @@ struct OntologyProperty {
     PropertyType value_type{PropertyType::Text};
     memory::MemoryState memory_state{memory::MemoryState::New};
     std::optional<int64_t> linked_observation_id;
+    std::string agent_id{"default"};
     int64_t created_at_unix_ms{0};
     int64_t updated_at_unix_ms{0};
 };
@@ -82,7 +83,8 @@ public:
         const std::string& agent_id = "");
     std::optional<OntologyEntity> GetEntity(int64_t id);
     std::optional<OntologyEntity> FindByPath(
-        RootCategory category, const std::string& full_path);
+        RootCategory category, const std::string& full_path,
+        const std::string& agent_id = "");
     OntologyEntity CreateEntity(const OntologyEntity& entity,
                                 const std::string& motivation = "");
     bool UpdateEntity(const OntologyEntity& entity,
@@ -96,6 +98,20 @@ public:
         int64_t entity_id, const std::string& key);
     OntologyProperty SetProperty(const OntologyProperty& prop,
                                  const std::string& motivation = "");
+
+    // #219: promote unlinked New->Current for legacy/'default'-sentinel rows
+    // only (the no-evidence exception path). Returns rows affected.
+    int64_t PromoteUnlinkedNewProperties();
+
+    // #219: audit row for memory_state transitions on paths that bypass
+    // SetProperty (boot sync promotion / evidence sync). Writes an
+    // ontology_mutations row of type "state_transition" carrying full
+    // property JSON before/after, so state changes stay auditable on
+    // every path, not just the tool-driven ones.
+    void LogStateTransition(const OntologyProperty& before,
+                            const OntologyProperty& after,
+                            const std::string& motivation,
+                            int64_t unixMs);
     bool DeleteProperty(int64_t id, const std::string& motivation = "");
 
     void SyncPropertyStatesFromObservations(memory::MemoryStore* memoryStore);

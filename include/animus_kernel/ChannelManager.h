@@ -163,6 +163,15 @@ public:
     // --- Send auto-reply via the right connector ---
     void SendReply(const ReplyTarget& target, const std::string& text);
 
+    /// Send a /me-style action (adapters without action semantics fall back
+    /// to a plain reply). Mirrors SendReply's adapter dispatch.
+    void SendAction(const ReplyTarget& target, const std::string& text);
+    // #205: dynamic channel membership. Returns false when no adapter is
+    // found for the instance or the adapter reports failure (invalid
+    // target / no connection) — callers surface that to the agent.
+    bool JoinChannel(const ReplyTarget& target, const std::string& key);
+    bool PartChannel(const ReplyTarget& target, const std::string& reason);
+
     // --- Migration ---
     // Migrate from legacy interfaces.json + social.* keys
     int MigrateFromLegacy();

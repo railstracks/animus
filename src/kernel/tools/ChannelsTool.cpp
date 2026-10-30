@@ -123,6 +123,46 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
     std::string action = GetStringField(preArgs, "action");
     std::string adapterType = ExtractAdapterType(platformId);
 
+    // #209: resolve platform_id BEFORE the C++ bridge checks. Models
+    // routinely omit it on minimal replies (the card names the action,
+    // not the id) — without this, IRC calls skip the bridge entirely and
+    // die in the Lua fallback as "unknown Lua handler error". Sources:
+    //   1. this session's latest arrival (the platform being replied on);
+    //   2. single-instance inference: exactly one IRC channel configured —
+    //      unambiguous by definition.
+    if (platformId.empty() && m_channelManager) {
+        if (m_channelContextStore) {
+            const std::string hoistSessionKey =
+                GetStringField(preArgs, "__session_key", "");
+            const std::string hoistAgentId =
+                GetStringField(preArgs, "__agent_id", "");
+            if (!hoistSessionKey.empty()) {
+                auto latest = m_channelContextStore->LatestArrival(
+                    hoistSessionKey, hoistAgentId);
+                if (latest && !latest->platform_id.empty()) {
+                    platformId = latest->platform_id;
+                }
+            }
+        }
+        if (platformId.empty()) {
+            int ircCount = 0;
+            std::string soleIrc;
+            for (const auto& ch : m_channelManager->ListChannels()) {
+                if (ch.type == "irc") {
+                    ++ircCount;
+                    soleIrc = ch.name;
+                }
+            }
+            if (ircCount == 1) {
+                platformId = "irc:" + soleIrc;
+            }
+        }
+        if (!platformId.empty()) {
+            preArgs["platform_id"] = platformId;
+            adapterType = ExtractAdapterType(platformId);
+        }
+    }
+
     // C++ bridge: WhatsApp reply/send — no HTTP API; sends go through the
     // gateway outbox via ChannelManager (same path as auto-replies).
     if (adapterType == "whatsapp" && m_channelManager &&
@@ -151,7 +191,7 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
     if (adapterType == "irc" && m_channelManager) {
         ToolResult result;
         result.call_id = call.id;
-        if (action == "post" || action == "reply") {
+        if (action == "post" || action == "reply" || action == "send_action") {
             // Channel: explicit arg wins; the reply-target resolution above
             // fills it from the latest arrival's peer_id when omitted (the
             // IRC adapter sets peer_id to the #channel or DM nick).
@@ -168,10 +208,55 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
             rt.channel_name = ExtractInstanceName(platformId);
             rt.channel_type = "irc";
             rt.irc_target = target;
-            m_channelManager->SendReply(rt, content);
-            result.success = true;
-            result.output = "Message sent to " + target + " on IRC";
+            if (action == "send_action") {
+                m_channelManager->SendAction(rt, content);
+                result.success = true;
+                result.output = "Action sent to " + target + " on IRC";
+            } else {
+                m_channelManager->SendReply(rt, content);
+                result.success = true;
+                result.output = "Message sent to " + target + " on IRC";
+            }
             result.call_id = call.id;
+            return result;
+        }
+        if (action == "join" || action == "part") {
+            // #205: opt-in gate — channel roaming must be enabled per
+            // instance (allow_join_part in the /channels admin form).
+            const std::string instance = ExtractInstanceName(platformId);
+            auto chState = m_channelManager->GetChannel(instance);
+            const bool allowed = chState.has_value()
+                && chState->config.get("allow_join_part", false).asBool();
+            if (!allowed) {
+                result.success = false;
+                result.error = "IRC channel joining is disabled on this instance. "
+                               "Ask the operator to enable it (allow_join_part in the /channels admin form).";
+                return result;
+            }
+            std::string channel = GetStringField(preArgs, "channel");
+            if (channel.empty()) channel = GetStringField(preArgs, "target");
+            if (channel.empty()) {
+                result.success = false;
+                result.error = "IRC " + action + " requires a 'channel' parameter";
+                return result;
+            }
+            ChannelManager::ReplyTarget rt;
+            rt.channel_name = instance;
+            rt.channel_type = "irc";
+            rt.irc_target = channel;
+            if (action == "join") {
+                const std::string key = GetStringField(preArgs, "key");
+                result.success = m_channelManager->JoinChannel(rt, key);
+                result.output = result.success
+                    ? "Joined " + channel + (key.empty() ? std::string() : " (with key)")
+                    : "Join failed: invalid channel name or no connection";
+            } else {
+                const std::string farewell = GetStringField(preArgs, "farewell");
+                result.success = m_channelManager->PartChannel(rt, farewell);
+                result.output = result.success
+                    ? "Left " + channel
+                    : "Part failed: invalid channel name or no connection";
+            }
             return result;
         }
         if (action == "list_channels") {

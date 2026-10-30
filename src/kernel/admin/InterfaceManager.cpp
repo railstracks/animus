@@ -691,6 +691,13 @@ bool InterfaceManager::ValidateIrcConfig(const Json::Value& config, std::string*
         }
         dmOnly = config["dm_only"].asBool();
     }
+    // #205: dynamic channel membership gate (exposed in the /channels
+    // admin form). Optional boolean; absent = disabled (safe default).
+    if (config.isMember("allow_join_part")) {
+        if (!config["allow_join_part"].isBool()) {
+            return fail("config.allow_join_part must be a boolean");
+        }
+    }
     const bool hasChannels = config.isMember("channels")
         && config["channels"].isArray()
         && config["channels"].size() > 0;
