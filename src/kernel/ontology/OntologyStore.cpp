@@ -3,6 +3,7 @@
 #include "animus_kernel/OntologyStore.h"
 
 #include "animus_kernel/IDataStore.h"
+#include "animus_kernel/Log.h"
 
 #include <algorithm>
 #include <chrono>
@@ -680,37 +681,103 @@ bool OntologyStore::DeleteProperty(int64_t id, const std::string& motivation) {
     return true;
 }
 
+// #219: the no-evidence exception path. Properties with no linked
+// observation have no evidence to derive state from — but post-#215
+// writers stamp the owning agent, and only pre-#215 writes landed under
+// the 'default' sentinel (see #214/#215 history). Promotion is therefore
+// scoped to legacy/'default'-sentinel rows: agent-stamped unlinked rows
+// stay New until the reconciler links them. Each promotion writes its own
+// audit row — the old bulk UPDATE promoted silently, which #219 exists to
+// fix. Returns rows affected.
+int64_t OntologyStore::PromoteUnlinkedNewProperties() {
+    auto selectStmt = m_store->Prepare(
+        "SELECT id, entity_id, key, value, value_type, memory_state, linked_observation_id, "
+        "created_at_unix_ms, updated_at_unix_ms, agent_id "
+        "FROM ontology_properties "
+        "WHERE linked_observation_id IS NULL AND memory_state=? AND agent_id='default'");
+    if (!selectStmt) return 0;
+    selectStmt->BindInt64(1, MemoryStateToInt(memory::MemoryState::New));
+    std::vector<OntologyProperty> rows;
+    while (selectStmt->Step()) {
+        rows.push_back(RowToProperty(selectStmt.get()));
+    }
+    if (rows.empty()) return 0;
+
+    const int64_t now = NowUnixMs();
+    int64_t promoted = 0;
+    for (const auto& row : rows) {
+        auto updateStmt = m_store->Prepare(
+            "UPDATE ontology_properties SET memory_state=?, updated_at_unix_ms=? WHERE id=?");
+        if (!updateStmt) continue;
+        updateStmt->BindInt64(1, MemoryStateToInt(memory::MemoryState::Current));
+        updateStmt->BindInt64(2, now);
+        updateStmt->BindInt64(3, row.id);
+        updateStmt->ExecDML();
+        if (updateStmt->RowsAffected() > 0) {
+            OntologyProperty after = row;
+            after.memory_state = memory::MemoryState::Current;
+            after.updated_at_unix_ms = now;
+            LogStateTransition(row, after,
+                "boot sync: promoted unlinked New->Current (legacy/no-evidence path)", now);
+            ++promoted;
+        }
+    }
+    return promoted;
+}
+
+void OntologyStore::LogStateTransition(const OntologyProperty& before,
+                                       const OntologyProperty& after,
+                                       const std::string& motivation,
+                                       int64_t unixMs) {
+    // #219: state transitions that bypass SetProperty (boot sync promotion,
+    // evidence sync) still get an ontology_mutations row, so memory_state
+    // transitions are auditable on every path — the orphan trigger writes
+    // none, and the pre-#219 boot pass promoted silently. Full property
+    // JSON before/after, same shape SetProperty writes.
+    if (before.id <= 0) return;
+    OntologyMutation m;
+    m.mutation_type = "state_transition";
+    m.target_type = "property";
+    m.target_id = before.id;
+    m.previous_state = JsonToString(PropertyToJson(before));
+    m.new_state = JsonToString(PropertyToJson(after));
+    m.motivation = motivation;
+    m.unix_ms = (unixMs != 0) ? unixMs : NowUnixMs();
+    LogMutation(m);
+}
+
 void OntologyStore::SyncPropertyStatesFromObservations(memory::MemoryStore* memoryStore) {
     if (!memoryStore) return;
     {
-        // Properties without a linked observation are standalone facts —
-        // they should be Current, not Deprecated. Only properties whose
-        // linked observation is deprecated should inherit that state.
-        // Exception: properties already explicitly retired stay deprecated.
-        auto orphanStateStmt = m_store->Prepare(
-            "UPDATE ontology_properties "
-            "SET memory_state=?, updated_at_unix_ms=? "
-            "WHERE linked_observation_id IS NULL "
-            "AND memory_state = ?");
-        if (orphanStateStmt) {
-            // Promote New (0) to Current (1). Don't touch Deprecated (2).
-            orphanStateStmt->BindInt64(1, MemoryStateToInt(memory::MemoryState::Current));
-            orphanStateStmt->BindInt64(2, NowUnixMs());
-            orphanStateStmt->BindInt64(3, MemoryStateToInt(memory::MemoryState::New));
-            orphanStateStmt->Step();
+        // #219: properties without a linked observation are the no-evidence
+        // exception path, not the default escalator. The reconciler now wires
+        // linked_observation_id on every property it promotes (production
+        // writer), so linked rows derive their state from evidence elsewhere
+        // in this function. This blanket pass is scoped to legacy/adopted
+        // rows: pre-#215 writes carried no agent identity and landed under
+        // the 'default' sentinel (see #214/#215 history). Post-#215 writers
+        // (ConsolidationTool::HandleOntologyUpsert, the pipeline reconciler)
+        // stamp the owning agent, so their rows are never touched here —
+        // a New property with real evidence pending reconciliation stays New
+        // until the reconciler links it.
+        // Promote New (0) to Current (1). Don't touch Deprecated (2).
+        const int64_t promoted = PromoteUnlinkedNewProperties();
+        if (promoted > 0) {
+            ALOG_INFO("ontology", "boot sync: promoted " << promoted
+                     << " unlinked New->Current ontology_properties (legacy/no-evidence path)");
         }
     }
 
     auto stmt = m_store->Prepare(
-        "SELECT id, linked_observation_id FROM ontology_properties "
-        "WHERE linked_observation_id IS NOT NULL");
+        "SELECT id, entity_id, key, value, value_type, memory_state, linked_observation_id, "
+        "created_at_unix_ms, updated_at_unix_ms, agent_id "
+        "FROM ontology_properties WHERE linked_observation_id IS NOT NULL");
     if (!stmt) return;
 
     const int64_t now = NowUnixMs();
     while (stmt->Step()) {
-        const int64_t propertyId = stmt->ColumnInt64(0);
-        const int64_t observationId = stmt->ColumnInt64(1);
-        auto obs = memoryStore->GetObservation(observationId);
+        const OntologyProperty before = RowToProperty(stmt.get());
+        auto obs = memoryStore->GetObservation(*before.linked_observation_id);
         if (!obs.has_value()) {
             auto orphanStmt = m_store->Prepare(
                 "UPDATE ontology_properties "
@@ -719,18 +786,39 @@ void OntologyStore::SyncPropertyStatesFromObservations(memory::MemoryStore* memo
             if (!orphanStmt) continue;
             orphanStmt->BindInt64(1, MemoryStateToInt(memory::MemoryState::Deprecated));
             orphanStmt->BindInt64(2, now);
-            orphanStmt->BindInt64(3, propertyId);
-            orphanStmt->Step();
+            orphanStmt->BindInt64(3, before.id);
+            orphanStmt->ExecDML();
+            if (orphanStmt->RowsAffected() > 0) {
+                // #219: the rescue-sync orphaning path is auditable too — the
+                // SQLite trigger handles delete-time orphaning; this sweep
+                // catches links that went stale some other way.
+                OntologyProperty after = before;
+                after.linked_observation_id.reset();
+                after.memory_state = memory::MemoryState::Deprecated;
+                after.updated_at_unix_ms = now;
+                LogStateTransition(before, after,
+                    "boot sync: linked observation missing — evidence orphaned", now);
+            }
             continue;
         }
 
+        if (obs->memory_state == before.memory_state) {
+            continue;  // #219: no transition, no write, no log row
+        }
         auto syncStmt = m_store->Prepare(
             "UPDATE ontology_properties SET memory_state=?, updated_at_unix_ms=? WHERE id=?");
         if (!syncStmt) continue;
         syncStmt->BindInt64(1, MemoryStateToInt(obs->memory_state));
         syncStmt->BindInt64(2, now);
-        syncStmt->BindInt64(3, propertyId);
-        syncStmt->Step();
+        syncStmt->BindInt64(3, before.id);
+        syncStmt->ExecDML();
+        if (syncStmt->RowsAffected() > 0) {
+            OntologyProperty after = before;
+            after.memory_state = obs->memory_state;
+            after.updated_at_unix_ms = now;
+            LogStateTransition(before, after,
+                "boot sync: property state synced from linked observation", now);
+        }
     }
 }
 
