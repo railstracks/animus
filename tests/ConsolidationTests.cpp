@@ -281,6 +281,157 @@ int TestDefaultIntakePromptToolContract() {
     return 0;
 }
 
+// #219: wire the ontology reconciler. Intake must fill createdObservations
+// (the evidence set), and the reconciler pass must upsert properties with
+// linked_observation_id populated — the production writer for the evidence
+// column. Also covers: numeric-string link IDs, out-of-run ID rejection
+// (evidence poisoning guard), and the sole-evidence fallback.
+int TestReconcilerWiresEvidenceLinks() {
+    std::cerr << "  [#219] Reconciler links properties to fresh observations...\n";
+    auto dbPath = MakeTempDbPath();
+    SqliteDataStore dataStore(dbPath);
+    MemoryStore memStore(&dataStore);
+    ontology::OntologyStore ontologyStore(&dataStore);
+    DiaryStore diaryStore(&dataStore);
+
+    MemoryLayer layer;
+    layer.name = "day";
+    layer.agent_id = "agent1";
+    layer.horizon = "1 day";
+    layer.sort_order = 0;
+    layer.enabled = true;
+    memStore.CreateLayer(layer);
+
+    DiaryEntry entry;
+    entry.id = "e1-219";
+    entry.agent_id = "agent1";
+    entry.layer = "observation";
+    entry.content = "Kestrel runs the dispatch pipeline for railstracks";
+    entry.timestamp_unix_ms = 2000000;
+    diaryStore.Create(entry);
+
+    g_llmCallCount = 0;
+    int64_t obs1Id = 0;
+    int64_t obs2Id = 0;
+    auto callback = [&](const std::string&,
+                        const std::string&,
+                        const std::string& userPrompt) -> std::string {
+        g_llmCallCount++;
+        auto createObs = [&](const std::string& text) -> int64_t {
+            auto layers = memStore.ListLayersForAgent("agent1");
+            if (layers.empty()) return 0;
+            memory::Observation obs;
+            obs.agent_id = "agent1";
+            obs.layer_id = layers.front().id;
+            obs.text = text;
+            obs.weight = 0.8;
+            obs.created_at_unix_ms = 3000000;
+            obs.updated_at_unix_ms = 3000000;
+            return memStore.CreateObservationForAgent("agent1", obs).id;
+        };
+        if (userPrompt.find("diary entries") != std::string::npos) {
+            // Intake pass — create one observation via the tool-contract path.
+            if (obs1Id == 0) {
+                obs1Id = createObs("Kestrel runs the dispatch pipeline for railstracks");
+            } else {
+                obs2Id = createObs("Devex ships tickets through the dispatch pipeline");
+            }
+            return "[]";
+        }
+        if (userPrompt.find("Fresh observations") != std::string::npos) {
+            if (obs2Id == 0) {
+                // Run 1: numeric link ID naming the fresh observation.
+                return "{\"upserts\":[{\"root_category\":\"persons\",\"path\":\"kestrel\","
+                       "\"properties\":{\"role\":{\"value\":\"dispatch PM\","
+                       "\"value_type\":\"text\",\"linked_observation_id\":"
+                       + std::to_string(obs1Id) + "}}}]}";
+            }
+            // Run 2: one hallucinated link (999999 — not in this run's
+            // evidence set) and one numeric-string link.
+            return "{\"upserts\":[{\"root_category\":\"persons\",\"path\":\"kestrel\","
+                   "\"properties\":{\"clearance\":{\"value\":\"granted\","
+                   "\"linked_observation_id\":999999},"
+                   "\"level\":{\"value\":\"high\",\"value_type\":\"text\","
+                   "\"linked_observation_id\":\"" + std::to_string(obs2Id) + "\"}}}]}";
+        }
+        return "[]";
+    };
+    ConsolidationPipeline pipeline(
+        &dataStore, &memStore, &ontologyStore, &diaryStore, nullptr, nullptr, callback);
+
+    ConsolidationPipeline::Config cfg;
+    cfg.intake_enabled = true;
+    pipeline.Configure(cfg);
+
+    std::string err;
+    Assert(pipeline.RunIntake("agent1", std::nullopt, &err),
+           "intake run 1 should succeed: " + err);
+    Assert(obs1Id > 0, "intake should have created observation 1");
+    Assert(g_llmCallCount == 2, "reconciler should run after intake creates observations (got "
+           + std::to_string(g_llmCallCount) + " LLM calls)");
+
+    auto entity = ontologyStore.FindByPath(
+        ontology::RootCategory::Persons, "persons/kestrel", "agent1");
+    Assert(entity.has_value(), "reconciler should have created the entity path");
+    if (entity.has_value()) {
+        auto role = ontologyStore.GetProperty(entity->id, "role");
+        Assert(role.has_value(), "reconciler should have upserted the role property");
+        if (role.has_value()) {
+            Assert(role->linked_observation_id.has_value()
+                       && *role->linked_observation_id == obs1Id,
+                   "property must carry linked_observation_id pointing at the fresh observation");
+            Assert(role->memory_state == MemoryState::New,
+                   "linked property state derives from its (New) evidence observation");
+        }
+        // Log parity: SetProperty writes the standard create_property row.
+        auto mutations = ontologyStore.QueryMutations(0, 100);
+        bool sawCreate = false;
+        for (const auto& m : mutations) {
+            if (m.mutation_type == "create_property" && m.target_id == role->id) {
+                sawCreate = true;
+            }
+        }
+        Assert(sawCreate, "reconciler promotion should leave an ontology_mutations row");
+    }
+
+    // Run 2 — hallucinated link rejection + numeric-string acceptance +
+    // sole-evidence fallback.
+    DiaryEntry entry2;
+    entry2.id = "e2-219";
+    entry2.agent_id = "agent1";
+    entry2.layer = "observation";
+    entry2.content = "Devex ships tickets through the dispatch pipeline";
+    entry2.timestamp_unix_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()
+        + 3600 * 1000;  // future — past the watermark
+    diaryStore.Create(entry2);
+
+    Assert(pipeline.RunIntake("agent1", std::nullopt, &err),
+           "intake run 2 should succeed: " + err);
+    Assert(obs2Id > 0, "intake run 2 should have created observation 2");
+    Assert(entity.has_value(), "entity should persist across runs");
+    if (entity.has_value()) {
+        auto clearance = ontologyStore.GetProperty(entity->id, "clearance");
+        Assert(clearance.has_value(), "hallucinated-link property should still be upserted");
+        if (clearance.has_value()) {
+            Assert(clearance->linked_observation_id.has_value()
+                       && *clearance->linked_observation_id == obs2Id,
+                   "out-of-run link must be dropped and re-attributed to the run's sole observation");
+        }
+        auto level = ontologyStore.GetProperty(entity->id, "level");
+        Assert(level.has_value(), "string-link property should be upserted");
+        if (level.has_value()) {
+            Assert(level->linked_observation_id.has_value()
+                       && *level->linked_observation_id == obs2Id,
+                   "numeric-string linked_observation_id must be accepted and validated");
+        }
+    }
+
+    std::filesystem::remove(dbPath);
+    return 0;
+}
+
 int TestPipelineLayerConsolidation() {
     std::cerr << "  [Pipeline] Layer consolidation (promote)...\n";
     auto dbPath = MakeTempDbPath();
@@ -1250,6 +1401,7 @@ int main() {
     std::cerr << "\n-- Pipeline: Intake --\n";
     TestPipelineIntakeFromDiary();
     TestDefaultIntakePromptToolContract();
+    TestReconcilerWiresEvidenceLinks();
 
     std::cerr << "\n-- Pipeline: Layer Consolidation --\n";
     TestPipelineLayerConsolidation();

@@ -1,5 +1,6 @@
 #include "animus_kernel/consolidation/ConsolidationPipeline.h"
 #include "animus_kernel/IDataStore.h"
+#include "animus_kernel/Log.h"
 #include "animus_kernel/SessionManager.h"
 #include "animus_kernel/MemoryFileStore.h"
 #include "animus_kernel/TokenEstimate.h"
@@ -9,6 +10,8 @@
 #include <chrono>
 #include <iostream>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <json/json.h>
 #include <json/reader.h>
@@ -21,6 +24,39 @@ namespace {
 int64_t NowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+// #219: capture the current observation population of a layer as
+// id -> Observation, for diffing before/after an LLM callback. The
+// intake functions already count created observations via a before/after
+// diff; this makes the created rows themselves capturable so the
+// reconciler receives the actual evidence it must link properties to.
+std::unordered_map<int64_t, memory::Observation> SnapshotLayerObservations(
+    memory::MemoryStore* memoryStore, int64_t layerId) {
+    std::unordered_map<int64_t, memory::Observation> out;
+    if (!memoryStore || layerId <= 0) return out;
+    for (const auto& obs : memoryStore->ListObservationsForLayer(layerId)) {
+        out.emplace(obs.id, obs);
+    }
+    return out;
+}
+
+// #219: push rows present after but absent before the callback window into
+// the reconciler's evidence vector. Returns the count pushed (the same
+// rows the intake functions already count as `created`).
+int64_t CollectCreatedObservations(
+    const std::unordered_map<int64_t, memory::Observation>& before,
+    const std::unordered_map<int64_t, memory::Observation>& after,
+    std::vector<memory::Observation>* out) {
+    if (!out) return 0;
+    int64_t pushed = 0;
+    for (const auto& [id, obs] : after) {
+        if (before.count(id) == 0) {
+            out->push_back(obs);
+            ++pushed;
+        }
+    }
+    return pushed;
 }
 
 // #224 drive-by: the session-report schedule is documented as staggered
@@ -553,9 +589,10 @@ int64_t ConsolidationPipeline::IntakeFromDiary(
         return 0;
     }
 
-    // Count observations before the LLM run
-    const int64_t obsBefore = static_cast<int64_t>(
-        m_memoryStore->ListObservationsForLayer(targetLayer->id).size());
+    // #219: snapshot the layer before the LLM run — the before/after diff
+    // yields both the created count and the created rows themselves
+    // (reconciler evidence).
+    const auto obsBefore = SnapshotLayerObservations(m_memoryStore, targetLayer->id);
 
     // Build the prompt
     std::ostringstream userPrompt;
@@ -594,9 +631,8 @@ int64_t ConsolidationPipeline::IntakeFromDiary(
     }
 
     // Count observations after — the agent created them via consolidation.create
-    const int64_t obsAfter = static_cast<int64_t>(
-        m_memoryStore->ListObservationsForLayer(targetLayer->id).size());
-    const int64_t created = std::max<int64_t>(0, obsAfter - obsBefore);
+    const auto obsAfter = SnapshotLayerObservations(m_memoryStore, targetLayer->id);
+    const int64_t created = CollectCreatedObservations(obsBefore, obsAfter, createdObservations);
 
     // Update watermark
     ConsolidationWatermark wm;
@@ -693,10 +729,10 @@ int64_t ConsolidationPipeline::IntakeFromSessions(
                    << "call the consolidation tool with action \"create\" and provide "
                    << "params: {text, tags, weight, layer, agent_id}.\n";
 
-        // Count observations before the LLM run
-        const int64_t obsBefore = targetLayer
-            ? static_cast<int64_t>(m_memoryStore->ListObservationsForLayer(targetLayer->id).size())
-            : 0;
+        // #219: snapshot before the LLM run — the batch diff yields both
+        // the created count and the created rows (reconciler evidence).
+        const auto obsBefore = SnapshotLayerObservations(
+            m_memoryStore, targetLayer ? targetLayer->id : 0);
 
         // Send batch to LLM
         std::string llmResponse;
@@ -708,11 +744,11 @@ int64_t ConsolidationPipeline::IntakeFromSessions(
             break;
         }
 
-        // Count observations created by this batch
-        const int64_t obsAfter = targetLayer
-            ? static_cast<int64_t>(m_memoryStore->ListObservationsForLayer(targetLayer->id).size())
-            : 0;
-        totalCreated += std::max<int64_t>(0, obsAfter - obsBefore);
+        // Count observations created by this batch — the diff against the
+        // pre-callback snapshot yields both the count and the created rows.
+        const auto obsAfter = SnapshotLayerObservations(
+            m_memoryStore, targetLayer ? targetLayer->id : 0);
+        totalCreated += CollectCreatedObservations(obsBefore, obsAfter, createdObservations);
 
         // Mark this batch's turns as processed
         m_sessionManager->MarkTurnsProcessed(batchIds);
@@ -741,6 +777,16 @@ int64_t ConsolidationPipeline::ReconcileOntologyFromObservations(
         const std::vector<memory::Observation>& observations,
         std::string* error) {
     if (!m_ontologyStore || observations.empty()) return 0;
+
+    // #219: the evidence set — observation IDs this run may link against.
+    // The model may echo an ID verbatim, hallucinate one, or emit it as a
+    // string; anything that doesn't resolve to a real observation must not
+    // reach SetProperty (a missing observation deprecates the property —
+    // evidence poisoning).
+    std::unordered_set<int64_t> validObservationIds;
+    for (const auto& obs : observations) {
+        validObservationIds.insert(obs.id);
+    }
 
     std::ostringstream userPrompt;
     userPrompt << "Agent: " << agentId << "\n\n";
@@ -817,6 +863,39 @@ int64_t ConsolidationPipeline::ReconcileOntologyFromObservations(
                     || property["linked_observation_id"].isInt()
                     || property["linked_observation_id"].isUInt())) {
                 p.linked_observation_id = property["linked_observation_id"].asInt64();
+            } else if (property.isMember("linked_observation_id")
+                       && property["linked_observation_id"].isString()) {
+                // #219: numeric-string fallback — models emit IDs as strings
+                // ("42") as often as numbers (42). Guarded stoll.
+                try {
+                    std::size_t pos = 0;
+                    const std::string raw = property["linked_observation_id"].asString();
+                    const long long parsed = std::stoll(raw, &pos);
+                    if (pos == raw.size()) {
+                        p.linked_observation_id = static_cast<int64_t>(parsed);
+                    }
+                } catch (...) {
+                    // leave unset — handled by validation below
+                }
+            }
+            // #219: link validation — the link must resolve to an observation
+            // this run created. A hallucinated or out-of-run ID reaches
+            // SetProperty and its missing-observation path deprecates the
+            // property (evidence poisoning). Drop the link, keep the upsert.
+            if (p.linked_observation_id.has_value()
+                && validObservationIds.count(*p.linked_observation_id) == 0) {
+                ALOG_WARNING("consolidation",
+                             "ontology reconciler: dropping linked_observation_id "
+                             << *p.linked_observation_id << " — not in this run's evidence set");
+                p.linked_observation_id.reset();
+            }
+            // #219: sole-evidence fallback — when the run produced exactly one
+            // observation and the model upserts a property without naming its
+            // evidence, the property cannot be state-driven without a link.
+            // Attribute it to that observation rather than shipping an
+            // unlinked row.
+            if (!p.linked_observation_id.has_value() && observations.size() == 1) {
+                p.linked_observation_id = observations.front().id;
             }
             const std::string motivation = property.isMember("motivation")
                 ? property["motivation"].asString()

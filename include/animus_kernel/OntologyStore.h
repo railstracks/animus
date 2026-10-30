@@ -98,6 +98,20 @@ public:
         int64_t entity_id, const std::string& key);
     OntologyProperty SetProperty(const OntologyProperty& prop,
                                  const std::string& motivation = "");
+
+    // #219: promote unlinked New->Current for legacy/'default'-sentinel rows
+    // only (the no-evidence exception path). Returns rows affected.
+    int64_t PromoteUnlinkedNewProperties();
+
+    // #219: audit row for memory_state transitions on paths that bypass
+    // SetProperty (boot sync promotion / evidence sync). Writes an
+    // ontology_mutations row of type "state_transition" carrying full
+    // property JSON before/after, so state changes stay auditable on
+    // every path, not just the tool-driven ones.
+    void LogStateTransition(const OntologyProperty& before,
+                            const OntologyProperty& after,
+                            const std::string& motivation,
+                            int64_t unixMs);
     bool DeleteProperty(int64_t id, const std::string& motivation = "");
 
     void SyncPropertyStatesFromObservations(memory::MemoryStore* memoryStore);
