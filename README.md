@@ -25,7 +25,7 @@ Animus is a **C++ agent framework** — a modular, efficient runtime for AI agen
 
 ## Current Status
 
-**v0.4.6** — Active development. Core kernel, admin server, LLM pipeline, tool system, **API packages**, **verified-node federation** (multi-master config replication), **secrets vault**, egress control, multi-tenant architecture, channel system, Lua scripting, memory system, social adapters, **attribution** (author metadata across channels and sessions), authentication, scheduled tasks, external nodes, agent export/import, and diffusion are all operational.
+**v0.4.7** — Active development. Core kernel, admin server, LLM pipeline, tool system, **API packages**, **verified-node federation** (multi-master config replication), **secrets vault**, egress control, multi-tenant architecture, channel system, Lua scripting, memory system (hardened by the v0.4.7 audit arc: full-row mutation audit trail, durable retirement semantics), social adapters, **attribution** (author metadata across channels and sessions), authentication, scheduled tasks, external nodes, agent export/import, and diffusion are all operational.
 
 | Area | Status |
 |------|--------|
@@ -38,12 +38,13 @@ Animus is a **C++ agent framework** — a modular, efficient runtime for AI agen
 | Animus Registry integration (browse, fetch, re-hash, loud-reject on mismatch) | ✅ Live |
 | Multi-tenant (agent CRUD, per-agent config) | ✅ Complete |
 | Channel architecture (12 adapters) | ✅ Live |
-| Lua scripting (sandboxed runtime, tool bridge, admin CRUD) | ✅ Live |
+| Lua scripting (sandboxed runtime, tool bridge, admin CRUD, ctx.crypto primitives) | ✅ Live |
 | Memory layers (configurable temporal model) | ✅ Live |
 | Consolidation pipeline (intake + review + perspectives) | ✅ Live |
-| Ontology (tree-structured semantic memory) | ✅ Live |
+| Ontology (tree-structured semantic memory, per-agent worldviews, evidence-linked reconciler) | ✅ Live |
 | MemoryFiles (raw artifacts + chunking + embeddings) | ✅ Live |
 | Unified memory search (FTS5 / tsvector) | ✅ Live |
+| Memory mutation audit trail (full-row snapshots on every destructive path) | ✅ Live |
 | Active memory (context provider injection) | ✅ Live |
 | Session compaction (LLM-summarized, triggered at 80%) | ✅ Live |
 | Session reports (temporal summaries + embeddings) | ✅ Live |
@@ -211,15 +212,17 @@ Multi-component memory system:
 
 - **Episodic Memory Layers (`MemoryStore`)**
   - Observations stored per layer, scoped by agent
-  - Observation lifecycle: `new` → `current` → `deprecated`
+  - Observation lifecycle: `new` → `current` → `deprecated`, with durable retirement (tombstones) — a retired observation is never resurrected by background processes; revision is the explicit revival route
+  - Mutation log with full-row snapshots — archived, deleted, and revised rows can be reconstructed from the audit trail alone
   - Review cadence per observation via `next_review_at_ms`
   - Per-layer perspective triad: retrospective, current, future
   - Scheduler-triggered consolidation jobs
 
 - **Semantic Ontology (`OntologyStore`)**
   - Structured entity/property memory (persons, concepts, procedures, events, locations, organizations, projects)
+  - Per-agent worldviews — agent-scoped namespaces with scoped search
   - Evidence-driven property state linked to observations
-  - Mutation logging for audit trail
+  - Mutation logging with full-row snapshots for audit trail
 
 - **Raw Memory Artifacts (`MemoryFileStore`)**
   - Verbatim documents, transcripts, notes
@@ -453,26 +456,7 @@ The migration tool reads all tables from SQLite and inserts them into PostgreSQL
 cd build && ctest --output-on-failure
 ```
 
-**Test suite (16 targets):**
-
-| # | Name | Status |
-|---|------|--------|
-| 1 | JobsTests | ✅ Pass |
-| 2 | ModuleLoaderTests | ✅ Pass |
-| 3 | SessionTests | ✅ Pass |
-| 4 | AdminServerTests | ✅ Pass |
-| 5 | AdminServerDisabledTests | ✅ Pass |
-| 6 | AgentConfigReloadTests | ✅ Pass |
-| 7 | LLMProviderTests | ✅ Pass |
-| 8 | DiaryManagerTests | ✅ Pass |
-| 9 | ConsolidationTests | ✅ Pass |
-| 10 | OntologyStoreTests | ✅ Pass |
-| 11 | MemoryFileStoreTests | ✅ Pass |
-| 12 | MemorySearchTests | ✅ Pass |
-| 13 | SchedulerTests | ✅ Pass |
-| 14 | LuaTests | ✅ Pass |
-| 15 | ChannelsToolTests | ✅ Pass |
-| 16 | SignalProtocolTests | ✅ Pass |
+**Test suite: 45 targets, 48 ctest cases — all green.** Coverage spans the kernel core (jobs, sessions, modules), admin server (routes, auth, observation administration, agent deletion cleanup), the memory family (store, search, consolidation, ontology, layer seeding, active memory, concurrency), channels and social (manager, context, helpers, IRC interface, reply resolution), tools (file, dispatch, social, media output), Lua runtime and API packages (sandbox, runtime, registry client), federation (peer sync, outbox, node ids, node manager), and infrastructure (migration, secrets vault, scheduler, connection supervisor, healer, embedding sweep, signal protocol).
 
 ## Project Structure
 
