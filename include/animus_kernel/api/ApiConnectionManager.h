@@ -31,6 +31,10 @@ struct ApiPackageConnection;
 //     for pull-drain transports that need a request body), parse the
 //     response, extract the cursor via poll.cursor_path, and hand the
 //     parsed body to the connection's on_message hook (ApiRuntime::RunHook).
+//     poll.body_format "raw" (default "json") skips the JSON gate and the
+//     dot-path cursor: the response TEXT reaches on_message as a string-
+//     valued ctx.event (#253) — raw feeds (Atom/RSS/text) cursor in the hook
+//     via package state.
 //   - websocket: not driven here yet (longpoll lands first; ws arrives with
 //     channel-grade supervisor reuse).
 //

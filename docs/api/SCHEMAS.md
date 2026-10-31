@@ -97,7 +97,7 @@ CREATE TABLE api_package_connections (
   enabled          BOOLEAN NOT NULL DEFAULT TRUE,
   url_template     TEXT NOT NULL,       -- interpolated from state
   headers_template JSONB NOT NULL DEFAULT '{}',
-  poll             JSONB,               -- longpoll only: {method, params_template, cursor_path, interval_s}
+  poll             JSONB,               -- longpoll only: {method, params_template, cursor_path, interval_s, body_format}
   hooks            JSONB NOT NULL DEFAULT '{}',  -- {on_connect: "<cmd name>", on_message: "...", ...}
   UNIQUE (package_id, name)
 );

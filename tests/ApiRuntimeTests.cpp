@@ -53,6 +53,7 @@ struct HttpServer {
     std::mutex mutex;
     std::atomic<bool> running{false};
     std::map<std::string, std::string> redirects;  // path -> Location (302)
+    std::map<std::string, std::string> rawBodies;   // path -> canned raw (non-JSON) body (#253)
 
     uint16_t Start() {
         int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -117,6 +118,18 @@ struct HttpServer {
                     const std::string resp =
                         "HTTP/1.1 302 Found\r\nLocation: " + rit->second +
                         "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    send(c, resp.data(), resp.size(), 0);
+                    close(c);
+                    continue;
+                }
+                // #253: canned raw (non-JSON) bodies, keyed by path —
+                // raw-feed tests serve Content-Type application/atom+xml.
+                auto raw = rawBodies.find(pathOnly);
+                if (raw != rawBodies.end()) {
+                    const std::string resp =
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/atom+xml\r\n"
+                        "Content-Length: " + std::to_string(raw->second.size()) +
+                        "\r\nConnection: close\r\n\r\n" + raw->second;
                     send(c, resp.data(), resp.size(), 0);
                     close(c);
                     continue;
@@ -1274,6 +1287,89 @@ int TestLongpollPostBody() {
     return 0;
 }
 
+// #253: poll.body_format "raw" — non-JSON feeds (arXiv Atom XML is the
+// witness case) reach on_message as a string-valued ctx.event; the JSON
+// gate and dot-path cursor are skipped (raw hooks cursor via package
+// state). Also pins the lint contract: raw connections install WITHOUT
+// cursor_path, and json-mode connections still never see a non-JSON body.
+int TestLongpollRawBody() {
+    std::cerr << "  [runtime] longpoll raw body (body_format:raw)...\n";
+    const std::string atom =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>q-fin.CP</title>"
+        "<entry><id>urn:arxiv:2510.00001</id></entry></feed>";
+
+    // 1) raw connection: hook parses the XML text out of ctx.event
+    {
+        Fixture fx;
+        fx.server.rawBodies["/feed.xml"] = atom;
+        std::string manifest = R"({
+          "kind": "api_package", "name": "rawfeed", "version": "0.0.1",
+          "description": "xml feed watcher",
+          "state_schema": {"base_url": {"type": "string", "default": "http://127.0.0.1:PORT"}},
+          "commands": [
+            {"name": "on message", "kind": "hook", "event": "on_message",
+             "description": "xml digest",
+             "script": "function run(ctx) if type(ctx.event) ~= 'string' then return {success = false, error = 'ctx.event is ' .. type(ctx.event) .. ', expected string'} end local id = string.match(ctx.event, 'urn:arxiv:(%d+%.%d+)') if not id then return {success = false, error = 'no entry id in raw body'} end return {dispatches = {{reason = 'new_paper', prompt = 'arxiv ' .. id}}} end"}
+          ],
+          "connections": [
+            {"name": "watch", "type": "longpoll",
+             "url_template": "{{state.base_url}}/feed.xml",
+             "hooks": {"on_message": "on message"},
+             "poll": {"interval_s": 15, "body_format": "raw"}}
+          ]
+        })";
+        size_t p;
+        while ((p = manifest.find("PORT")) != std::string::npos)
+            manifest.replace(p, 4, std::to_string(fx.port));
+        auto pkg = fx.store.InstallFromManifest(manifest, "", "", true);
+        fx.store.SetPackageEnabled(pkg.id, true);
+        fx.store.ApprovePackage(pkg.id);
+
+        ApiConnectionManager mgr(&fx.store, fx.runtime.get(), &fx.http);
+        std::vector<ApiConnectionManager::Dispatch> got;
+        mgr.SetDispatchCallback(
+            [&](const ApiConnectionManager::Dispatch& d) { got.push_back(d); });
+
+        Assert(mgr.PollOnce() == 1, "raw connection polled");
+        Assert(got.size() == 1 && got[0].reason == "new_paper" &&
+                   got[0].prompt == "arxiv 2510.00001",
+               "raw XML reached the hook as a ctx.event string and dispatched");
+        Assert(got[0].connectionName == "watch", "dispatch carries the connection");
+    }
+
+    // 2) json gate preserved: the same XML never reaches a json-mode hook
+    {
+        Fixture fx2;
+        fx2.server.rawBodies["/feed.xml"] = atom;
+        std::string m2 = R"({
+          "kind": "api_package", "name": "jsonfeed", "version": "0.0.1",
+          "description": "d",
+          "state_schema": {"base_url": {"type": "string", "default": "http://127.0.0.1:PORT"}},
+          "commands": [{"name": "on message", "kind": "hook", "event": "on_message",
+                        "description": "d",
+                        "script": "function run(ctx) return {dispatches = {{reason = 'poll', prompt = 'should not fire'}}} end"}],
+          "connections": [{"name": "c", "type": "longpoll",
+                           "url_template": "{{state.base_url}}/feed.xml",
+                           "hooks": {"on_message": "on message"},
+                           "poll": {"interval_s": 15, "cursor_path": "next"}}]
+        })";
+        size_t p;
+        while ((p = m2.find("PORT")) != std::string::npos)
+            m2.replace(p, 4, std::to_string(fx2.port));
+        auto pkg2 = fx2.store.InstallFromManifest(m2, "", "", true);
+        fx2.store.SetPackageEnabled(pkg2.id, true);
+        fx2.store.ApprovePackage(pkg2.id);
+        ApiConnectionManager mgr2(&fx2.store, fx2.runtime.get(), &fx2.http);
+        std::vector<ApiConnectionManager::Dispatch> got2;
+        mgr2.SetDispatchCallback(
+            [&](const ApiConnectionManager::Dispatch& d) { got2.push_back(d); });
+        Assert(mgr2.PollOnce() == 1, "json connection polled");
+        Assert(got2.empty(), "non-JSON body still never reaches a json-mode hook");
+    }
+    return 0;
+}
+
 }  // namespace
 
 int TestCryptoPrimitives() {
@@ -1326,6 +1422,7 @@ int main() {
     TestHttpTimeoutOption();
     TestWritesGate();
     TestLongpollPostBody();
+    TestLongpollRawBody();
     TestCryptoPrimitives();
     if (g_failures == 0) std::cerr << "All api runtime tests passed.\n";
     else std::cerr << g_failures << " failures.\n";
