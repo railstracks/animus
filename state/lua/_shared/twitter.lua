@@ -66,7 +66,10 @@ end
 -- Returns reads_used, writes_used (after potential reset).
 local function monthly_reset_check(platform_id)
     local now = os.time()
-    local reset_ts = tonumber(config.get(cfg_key(platform_id, "counter_reset")) or "0")
+    -- #255: config.get returns "" for unset keys (never nil) — `or "0"`
+    -- never fires on ""; tonumber("") is nil and the comparison below
+    -- crashed the whole post path on fresh instances. Nil-floored form.
+    local reset_ts = tonumber(config.get(cfg_key(platform_id, "counter_reset"))) or 0
 
     -- Simple month rollover: if current month != stored month
     -- os.date with ! prefix gives UTC
@@ -80,8 +83,8 @@ local function monthly_reset_check(platform_id)
         return 0, 0
     end
 
-    local reads_used  = tonumber(config.get(cfg_key(platform_id, "reads_used"))  or "0")
-    local writes_used = tonumber(config.get(cfg_key(platform_id, "writes_used")) or "0")
+    local reads_used  = tonumber(config.get(cfg_key(platform_id, "reads_used")))  or 0
+    local writes_used = tonumber(config.get(cfg_key(platform_id, "writes_used"))) or 0
     return reads_used, writes_used
 end
 
@@ -143,7 +146,7 @@ local refresh_token_fn
 -- Checks cache first; if expired, attempts refresh.
 local function get_token(platform_id)
     local token  = config.get(cfg_key(platform_id, "access_token"))
-    local expires = tonumber(config.get(cfg_key(platform_id, "token_expires")) or "0")
+    local expires = tonumber(config.get(cfg_key(platform_id, "token_expires"))) or 0
     local now = os.time()
 
     -- Token present and not expiring within 5 minutes
