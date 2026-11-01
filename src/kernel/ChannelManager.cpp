@@ -1946,6 +1946,25 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             if (isGroupConvo && !groupOthersLabel.empty())
                 origin["channel"] = "group chat with " + groupOthersLabel;
             meta["origin"] = origin;
+            // #46: participants — presence for group convos, from the members
+            // map already built for this poll cycle (zero extra calls — the
+            // issue's near-free case). Excludes us; DID canonical, handle/
+            // display display-only (#42 rule). 1-1 convos omit the line —
+            // the author card already identifies the peer.
+            if (isGroupConvo) {
+                Json::Value members(Json::arrayValue);
+                for (const auto& [memberDid, handle] : didToHandle) {
+                    if (memberDid == state->bsky_did) continue;  // us
+                    Json::Value m;
+                    m["id"] = memberDid;
+                    m["handle"] = handle;
+                    auto dit = didToDisplay.find(memberDid);
+                    if (dit != didToDisplay.end())
+                        m["display"] = dit->second;
+                    members.append(m);
+                }
+                meta["participants"] = members;
+            }
             if (!rev.empty()) {
                 meta["source_message_id"] = rev;
                 Json::Value revs(Json::arrayValue);

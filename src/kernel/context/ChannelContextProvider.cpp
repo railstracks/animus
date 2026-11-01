@@ -90,6 +90,45 @@ std::string ChannelContextProvider::RenderArrival(const ChannelArrival& a) const
         ss << "\n";
     }
 
+    // ── Participants (#46): who is present in this conversation ──
+    // Adapter-supplied presence list (compact JSON array of {id, handle?,
+    // display?}), sourced from data already in the poll cycle — no
+    // per-message API calls. Stable ids are canonical and stay in stored
+    // metadata; the card renders resolved names (handle -> display -> id
+    // fallback). Large conversations cap: first 12 + count tail — the agent
+    // learns presence, not a directory.
+    if (!a.participants.empty()) {
+        Json::Value parts;
+        Json::CharReaderBuilder rb;
+        std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+        std::string errs;
+        if (reader->parse(a.participants.data(),
+                          a.participants.data() + a.participants.size(),
+                          &parts, &errs) && parts.isArray()) {
+            std::vector<std::string> names;
+            for (const auto& p : parts) {
+                if (!p.isObject()) continue;
+                std::string label = p.get("handle", Json::Value("")).asString();
+                if (label.empty()) label = p.get("display", Json::Value("")).asString();
+                if (label.empty()) label = p.get("id", Json::Value("")).asString();
+                if (!label.empty()) names.push_back(label);
+            }
+            constexpr std::size_t kMaxShown = 12;
+            if (!names.empty()) {
+                ss << "Participants: ";
+                const std::size_t shown = std::min(names.size(), kMaxShown);
+                for (std::size_t i = 0; i < shown; ++i) {
+                    if (i) ss << ", ";
+                    ss << names[i];
+                }
+                if (names.size() > kMaxShown)
+                    ss << " (+" << (names.size() - kMaxShown) << " more, "
+                       << names.size() << " present)";
+                ss << "\n";
+            }
+        }
+    }
+
     // ── Reply target (server-resolved, trusted) ──
     // These IDs come from the ReplyTarget built by the dispatch layer,
     // never from message text. The model does NOT need to echo them —
