@@ -278,6 +278,140 @@ void TestWebchatCardRender() {
     unlink(dbPath.c_str());
 }
 
+// ---------------------------------------------------------------------------
+// #173: the dispatch-metadata emission contract, driven with the REAL emit
+// shapes from every adapter's dispatch site (audit Nov 1). The parse seam
+// is what stands between adapter emission and the author/speaker-header
+// lane — this pins each adapter's actual shape + the fallback/priority
+// rules. Audit correction vs the Oct 13 table: discord, bluesky (wall +
+// chat pollers), irc, vk, whatsapp, telegram now emit; twitter/mastodon
+// are tool-browse only (no inbound push lane — emission N/A).
+// ---------------------------------------------------------------------------
+void TestDispatchMetadataEmission() {
+    std::cerr << "  [ChannelContext] #173 dispatch metadata emission...\n";
+
+    auto parse = [](const std::string& meta, const std::string& dflt) {
+        ChannelArrival a;
+        a.delivery = "auto";
+        ParseDispatchMetadata(meta, dflt, a);
+        return a;
+    };
+
+    // bluesky wall (ChannelManager notif poller): @handle + DID
+    {
+        auto a = parse(R"({"message_type":"wall","origin":{"user":"@mrsommer","user_id":"did:plc:abc","channel":"thread"},"post_id":"at://did:plc:abc/app.bsky.feed.post/3k","thread_root_id":"at://did:plc:abc/app.bsky.feed.post/3k"})",
+                       "wall");
+        Assert(a.author_handle == "@mrsommer" && a.author_id == "did:plc:abc",
+               "#173 bluesky wall: handle + DID land");
+        Assert(a.message_type == "wall" && a.thread_root_id == "at://did:plc:abc/app.bsky.feed.post/3k",
+               "#173 bluesky wall: type + thread root preserved (post_id/peer_id come "
+               "from the server-resolved replyTarget, not metadata — unchanged by #173)");
+    }
+    // bluesky chat: delivery override "tool" sticks (groups — silence first-class)
+    {
+        auto a = parse(R"({"message_type":"chat","delivery":"tool","origin":{"user":"@sofia","user_id":"did:plc:sof","channel":"group chat with @a, @b"}})",
+                       "chat");
+        Assert(a.delivery == "tool", "#173 bluesky chat: tool delivery override");
+        Assert(a.author_handle == "@sofia", "#173 bluesky chat: handle lands");
+    }
+    // discord (gateway): username + snowflake + display
+    {
+        auto a = parse(R"({"origin":{"user":"kestrel","user_id":"111222333","user_display":"Kestrel","channel":"Direct Message"}})",
+                       "chat");
+        Assert(a.author_handle == "kestrel" && a.author_id == "111222333",
+               "#173 discord: username + snowflake land");
+        Assert(a.author_handle != "Kestrel", "#173 discord: user wins over user_display");
+        Assert(a.message_type == "chat", "#173 discord: default type applied");
+    }
+    // irc: soft identity — nick, no stable id (author_id stays empty)
+    {
+        auto a = parse(R"({"origin":{"user":"sofia","channel":"#animus"}})", "chat");
+        Assert(a.author_handle == "sofia" && a.author_id.empty(),
+               "#173 irc: nick lands, no fabricated id");
+    }
+    // vk: display name + stable fromId (#42 person-graph key)
+    {
+        auto a = parse(R"({"message_type":"chat","delivery":"tool","origin":{"user":"Ivan","user_id":"42"}})",
+                       "chat");
+        Assert(a.author_handle == "Ivan" && a.author_id == "42",
+               "#173 vk: display name + stable id land");
+    }
+    // whatsapp: push name (JID fallback) + bare JID
+    {
+        auto a = parse(R"({"message_type":"chat","delivery":"tool","origin":{"user":"Melvin","user_display":"Melvin","user_id":"491511234567890"}})",
+                       "chat");
+        Assert(a.author_handle == "Melvin" && a.author_id == "491511234567890",
+               "#173 whatsapp: push name + jid land");
+    }
+    // email: sender address is the identity
+    {
+        auto a = parse(R"({"message_type":"email","delivery":"tool","origin":{"user":"devex@agentmail.to","user_id":"devex@agentmail.to","channel":"report"}})",
+                       "wall");
+        Assert(a.author_handle == "devex@agentmail.to",
+               "#173 email: sender address lands");
+    }
+    // slack (socket mode): userName + userId
+    {
+        auto a = parse(R"({"message_type":"chat","delivery":"tool","origin":{"user":"sofia","user_id":"U0123","channel":"general"}})",
+                       "chat");
+        Assert(a.author_handle == "sofia" && a.author_id == "U0123",
+               "#173 slack: userName + userId land");
+    }
+    // nextcloud: actor name + actor id
+    {
+        auto a = parse(R"({"origin":{"user":"thomas","user_id":"thomas","channel":"Team talk"}})", "chat");
+        Assert(a.author_handle == "thomas" && a.author_id == "thomas",
+               "#173 nextcloud: actor lands");
+    }
+    // moltbook: from + from_agent id; "unknown" fallback is adapter-supplied
+    {
+        auto a = parse(R"({"message_type":"wall","delivery":"tool","origin":{"user":"buffett","user_display":"buffett","user_id":"agent:buffett"},"post_id":"p1","thread_root_id":"p1"})",
+                       "wall");
+        Assert(a.author_handle == "buffett" && a.author_id == "agent:buffett",
+               "#173 moltbook: from + agent id land");
+    }
+    // telegram (post-#173 emit): @username preferred, DisplayName fallback
+    {
+        auto a = parse(R"({"message_type":"chat","delivery":"tool","origin":{"user":"@mrsommer","user_display":"Melvin Sommer","user_id":"12345"}})",
+                       "chat");
+        Assert(a.author_handle == "@mrsommer" && a.author_id == "12345",
+               "#173 telegram: @username + numeric id land");
+        auto b = parse(R"({"origin":{"user":"Melvin Sommer","user_display":"Melvin Sommer","user_id":"12345"}})",
+                       "chat");
+        Assert(b.author_handle == "Melvin Sommer",
+               "#173 telegram: DisplayName fallback when no username");
+    }
+    // priority + fallback rules
+    {
+        // top-level author_handle wins over origin.user
+        auto a = parse(R"({"author_handle":"explicit","origin":{"user":"implicit"}})", "chat");
+        Assert(a.author_handle == "explicit", "#173: top-level author_handle wins");
+        // top-level author alias also works
+        auto b = parse(R"({"author":"alias-only"})", "chat");
+        Assert(b.author_handle == "alias-only", "#173: author alias maps");
+        // empty metadata: defaults, no author
+        auto c = parse("", "chat");
+        Assert(c.message_type == "chat" && c.author_handle.empty() &&
+                   c.author_id.empty() && c.delivery == "auto",
+               "#173: empty metadata → defaults, no fabricated author");
+        // message_id alias for source_message_id
+        auto d = parse(R"({"message_id":"mid-1"})", "wall");
+        Assert(d.source_message_id == "mid-1", "#173: message_id alias maps");
+        // root_id alias for thread_root_id
+        auto e = parse(R"({"root_id":"r1"})", "wall");
+        Assert(e.thread_root_id == "r1", "#173: root_id alias maps");
+    }
+    // queue-aggregate sender label (AuthorLabelFromMetadata)
+    {
+        Assert(AuthorLabelFromMetadata(R"({"author_handle":"@mrsommer"})") == "@mrsommer",
+               "#173 sender: top-level handle");
+        Assert(AuthorLabelFromMetadata(R"({"origin":{"user":"sofia"}})") == "sofia",
+               "#173 sender: origin.user fallback");
+        Assert(AuthorLabelFromMetadata("").empty(),
+               "#173 sender: empty metadata → empty label (bare concatenation)");
+    }
+}
+
 int main() {
     std::cerr << "[ChannelContextStoreTests]\n";
     TestAddAndPending();
@@ -287,6 +421,7 @@ int main() {
     TestReopenPersistence();
     TestKeyFormSeam();
     TestWebchatCardRender();
+    TestDispatchMetadataEmission();
     if (g_failures == 0) {
         std::cerr << "  ALL PASSED\n";
         return 0;
