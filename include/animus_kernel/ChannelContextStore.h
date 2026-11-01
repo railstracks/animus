@@ -49,6 +49,17 @@ struct ChannelArrival {
                                      // to the channel (operator-configured),
                                      // never to content self-description.
 
+    std::string participants;        // #46: presence list for the conversation
+                                     // (compact JSON array: [{id, handle?,
+                                     // display?}, …]) — adapter-supplied from
+                                     // data already in the poll cycle, never
+                                     // a per-message API call. Stable ids are
+                                     // canonical, names display-only (#42
+                                     // rule); the card renders resolved names
+                                     // (capped for large conversations) with
+                                     // ids retained here. Absent feed = absent
+                                     // card line (present-keys-only).
+
     // --- Targeting (server-resolved ReplyTarget snapshot) ---------------------
     std::string delivery;            // "auto" (Chat: text reply auto-sent) | "tool" (must use channels tool)
     std::string peer_id;             // Chat targets

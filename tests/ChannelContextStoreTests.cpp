@@ -6,6 +6,7 @@
 #include <memory>
 
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 
@@ -412,6 +413,147 @@ void TestDispatchMetadataEmission() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// #46: participants — presence in the context card. Store round-trip incl.
+// the guarded migration from a pre-#46 schema, seam parse, card render with
+// the large-conversation cap, and absent-feed = absent-line. Feed shipped:
+// bluesky group chats (members map already in the poll cycle); other
+// adapters feed as follow-ups (present-keys-only — no feed, no line).
+// ---------------------------------------------------------------------------
+void TestParticipantsCard() {
+    std::cerr << "  [ChannelContext] #46 participants card...\n";
+
+    // 1) migration: pre-#46 table (no participants column) gains it at store
+    //    construction via the guarded ALTER; all three readers round-trip it.
+    const auto dbPath = MakeTempDbPath();
+    {
+        SqliteDataStore dataStore(dbPath);
+        dataStore.Exec(
+            "CREATE TABLE channel_arrivals ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "session_key TEXT NOT NULL, agent_id TEXT NOT NULL, "
+            "channel_type TEXT NOT NULL DEFAULT '', "
+            "channel_name TEXT NOT NULL DEFAULT '', "
+            "platform_id TEXT NOT NULL DEFAULT '', "
+            "message_type TEXT NOT NULL DEFAULT '', "
+            "author_id TEXT NOT NULL DEFAULT '', "
+            "author_handle TEXT NOT NULL DEFAULT '', "
+            "delivery TEXT NOT NULL DEFAULT '', "
+            "peer_id TEXT NOT NULL DEFAULT '', "
+            "post_id TEXT NOT NULL DEFAULT '', "
+            "group_id TEXT NOT NULL DEFAULT '', "
+            "email_thread_id TEXT NOT NULL DEFAULT '', "
+            "source_message_id TEXT NOT NULL DEFAULT '', "
+            "reply_parent_id TEXT NOT NULL DEFAULT '', "
+            "thread_root_id TEXT NOT NULL DEFAULT '', "
+            "origin TEXT NOT NULL DEFAULT '', "
+            "reply_instructions TEXT NOT NULL DEFAULT '', "
+            "created_at_unix_ms INTEGER NOT NULL, "
+            "consumed INTEGER NOT NULL DEFAULT 0)");
+        ChannelContextStore store(&dataStore);  // EnsureSchema -> ALTER fires
+        ChannelArrival a = MakeArrival("channel:chat:bluesky:1", "agent-a", "m1");
+        a.participants =
+            R"([{"id":"did:plc:a","handle":"@sofia"},{"id":"did:plc:b","handle":"@devex","display":"Devex"}])";
+        store.AddArrival(a);
+        auto pending = store.PendingArrivals("channel:chat:bluesky:1", "agent-a");
+        Assert(pending.size() == 1 &&
+                   pending[0].participants.find("@sofia") != std::string::npos,
+               "#46 migration: guarded ALTER + PendingArrivals round-trip");
+        auto latest = store.LatestArrival("channel:chat:bluesky:1", "agent-a");
+        Assert(latest.has_value() &&
+                   latest->participants.find("@devex") != std::string::npos,
+               "#46 LatestArrival carries participants");
+        auto recent = store.RecentArrivals("channel:chat:bluesky:1", "agent-a", 5);
+        Assert(recent.size() == 1 &&
+                   recent[0].participants.find("Devex") != std::string::npos,
+               "#46 RecentArrivals carries participants");
+    }
+    unlink(dbPath.c_str());
+
+    // 2) seam parse: meta["participants"] array -> compact JSON on the arrival
+    {
+        ChannelArrival a;
+        a.delivery = "auto";
+        ParseDispatchMetadata(
+            R"({"message_type":"chat","participants":[{"id":"did:plc:a","handle":"@sofia"},{"id":"did:plc:b","handle":"@devex","display":"Devex"}]})",
+            "chat", a);
+        Assert(a.participants.find("@sofia") != std::string::npos &&
+                   a.participants.find("Devex") != std::string::npos,
+               "#46 seam: participants parsed to compact JSON");
+        ChannelArrival b;
+        b.delivery = "auto";
+        ParseDispatchMetadata(R"({"message_type":"chat"})", "chat", b);
+        Assert(b.participants.empty(), "#46 seam: absent key -> empty field");
+    }
+
+    // 3) card render: own line, resolved names; cap for large conversations;
+    //    absent feed = absent line
+    Agent agent;
+    {
+        const auto dbPath2 = MakeTempDbPath();
+        SqliteDataStore dataStore(dbPath2);
+        ChannelContextStore store(&dataStore);
+        ChannelContextProvider provider(&store);
+        auto session = std::make_shared<Session>(
+            1001, SessionKey{"admin", "chat:bluesky:1", ""});
+        session->SetAgentId("main");
+        ChannelArrival small = MakeArrival(session->Key().ToString(), "main", "p1");
+        small.participants =
+            R"([{"id":"did:plc:a","handle":"@sofia"},{"id":"did:plc:b","handle":"@devex"}])";
+        store.AddArrival(small);
+        SessionAccess access(session, SessionAccessMode::ReadOnly);
+        auto block = provider.Provide(agent, access);
+        Assert(block.has_value() && block->content.find(
+                   "Participants: @sofia, @devex\n") != std::string::npos,
+               "#46 small list rendered in full on its own line");
+        unlink(dbPath2.c_str());
+    }
+    {
+        std::ostringstream pj;
+        pj << "[";
+        for (int i = 1; i <= 13; ++i) {
+            if (i > 1) pj << ",";
+            pj << R"({"id":"u)" << i << R"(", "handle":"@user)" << i << R"("})";
+        }
+        pj << "]";
+        const auto dbPath3 = MakeTempDbPath();
+        SqliteDataStore dataStore(dbPath3);
+        ChannelContextStore store(&dataStore);
+        ChannelContextProvider provider(&store);
+        auto session = std::make_shared<Session>(
+            1002, SessionKey{"admin", "chat:bluesky:2", ""});
+        session->SetAgentId("main");
+        ChannelArrival big = MakeArrival(session->Key().ToString(), "main", "p2");
+        big.participants = pj.str();
+        store.AddArrival(big);
+        SessionAccess access(session, SessionAccessMode::ReadOnly);
+        auto block = provider.Provide(agent, access);
+        Assert(block.has_value() && block->content.find(
+                   "(+1 more, 13 present)") != std::string::npos,
+               "#46 large list capped: 12 shown + count tail");
+        Assert(block.has_value() &&
+                   block->content.find("@user13,") == std::string::npos,
+               "#46 capped: the 13th member is not listed");
+        unlink(dbPath3.c_str());
+    }
+    {
+        const auto dbPath4 = MakeTempDbPath();
+        SqliteDataStore dataStore(dbPath4);
+        ChannelContextStore store(&dataStore);
+        ChannelContextProvider provider(&store);
+        auto session = std::make_shared<Session>(
+            1003, SessionKey{"admin", "chat:bluesky:3", ""});
+        session->SetAgentId("main");
+        store.AddArrival(MakeArrival(session->Key().ToString(), "main", "p3"));
+        SessionAccess access(session, SessionAccessMode::ReadOnly);
+        auto block = provider.Provide(agent, access);
+        Assert(block.has_value() && block->content.find("Participants:") ==
+                   std::string::npos,
+               "#46 absent feed -> no card line");
+        unlink(dbPath4.c_str());
+    }
+}
+
 int main() {
     std::cerr << "[ChannelContextStoreTests]\n";
     TestAddAndPending();
@@ -422,6 +564,7 @@ int main() {
     TestKeyFormSeam();
     TestWebchatCardRender();
     TestDispatchMetadataEmission();
+    TestParticipantsCard();
     if (g_failures == 0) {
         std::cerr << "  ALL PASSED\n";
         return 0;

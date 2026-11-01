@@ -48,6 +48,14 @@ void ParseDispatchMetadata(const std::string& metadata,
                 arrival.author_id =
                     meta["origin"].get("user_id", "").asString();
         }
+        // #46: participants array (presence list) — compact JSON, same
+        // convention as origin. Adapters that don't source presence simply
+        // omit the key (absent = absent card line).
+        if (meta.isMember("participants") && meta["participants"].isArray()) {
+            Json::StreamWriterBuilder pb;
+            pb["indentation"] = "";
+            arrival.participants = Json::writeString(pb, meta["participants"]);
+        }
     }
     if (arrival.message_type.empty())
         arrival.message_type = defaultMessageType;
@@ -97,6 +105,7 @@ void ChannelContextStore::EnsureSchema() {
             reply_parent_id TEXT NOT NULL DEFAULT '',
             thread_root_id TEXT NOT NULL DEFAULT '',
             origin TEXT NOT NULL DEFAULT '',
+            participants TEXT NOT NULL DEFAULT '',
             reply_instructions TEXT NOT NULL DEFAULT '',
             created_at_unix_ms INTEGER NOT NULL,
             consumed INTEGER NOT NULL DEFAULT 0
@@ -109,6 +118,12 @@ void ChannelContextStore::EnsureSchema() {
     }
     if (!schema::ColumnExists(m_store, "channel_arrivals", "reply_instructions")) {
         m_store->Exec("ALTER TABLE channel_arrivals ADD COLUMN reply_instructions TEXT NOT NULL DEFAULT ''");
+    }
+    // Migration: participants column (#46) for pre-#46 schemas. Appends after
+    // consumed on migrated DBs — physical order differs from fresh CREATEs,
+    // but every reader uses named-column SQL, so position is invisible.
+    if (!schema::ColumnExists(m_store, "channel_arrivals", "participants")) {
+        m_store->Exec("ALTER TABLE channel_arrivals ADD COLUMN participants TEXT NOT NULL DEFAULT ''");
     }
 
     m_store->Exec(
@@ -142,8 +157,8 @@ ChannelArrival ChannelContextStore::AddArrival(const ChannelArrival& arrival) {
         "channel_name, platform_id, message_type, author_id, author_handle, "
         "delivery, peer_id, post_id, group_id, email_thread_id, "
         "source_message_id, reply_parent_id, thread_root_id, origin, "
-        "reply_instructions, created_at_unix_ms, consumed) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) RETURNING id");
+        "participants, reply_instructions, created_at_unix_ms, consumed) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) RETURNING id");
     if (!stmt) return {};
 
     stmt->BindText(1, NormalizeSessionKey(arrival.session_key));
@@ -163,8 +178,9 @@ ChannelArrival ChannelContextStore::AddArrival(const ChannelArrival& arrival) {
     stmt->BindText(15, arrival.reply_parent_id);
     stmt->BindText(16, arrival.thread_root_id);
     stmt->BindText(17, arrival.origin);
-    stmt->BindText(18, arrival.reply_instructions);
-    stmt->BindInt64(19, now);
+    stmt->BindText(18, arrival.participants);
+    stmt->BindText(19, arrival.reply_instructions);
+    stmt->BindInt64(20, now);
     // #76: statement-scoped id via RETURNING.
     int64_t newArrivalId = stmt->Step() ? stmt->ColumnInt64(0) : 0;
     stmt->Finalize();
@@ -183,7 +199,7 @@ std::vector<ChannelArrival> ChannelContextStore::PendingArrivals(
         "platform_id, message_type, author_id, author_handle, delivery, "
         "peer_id, post_id, group_id, email_thread_id, source_message_id, "
         "reply_parent_id, thread_root_id, origin, "
-        "reply_instructions, created_at_unix_ms, consumed "
+        "participants, reply_instructions, created_at_unix_ms, consumed "
         "FROM channel_arrivals "
         "WHERE session_key = ? AND agent_id = ? AND consumed = 0 "
         "ORDER BY id ASC");
@@ -213,9 +229,10 @@ std::vector<ChannelArrival> ChannelContextStore::PendingArrivals(
         a.reply_parent_id = stmt->ColumnText(15);
         a.thread_root_id = stmt->ColumnText(16);
         a.origin = stmt->ColumnText(17);
-        a.reply_instructions = stmt->ColumnText(18);
-        a.created_at_unix_ms = stmt->ColumnInt64(19);
-        a.consumed = stmt->ColumnInt64(20) != 0;
+        a.participants = stmt->ColumnText(18);
+        a.reply_instructions = stmt->ColumnText(19);
+        a.created_at_unix_ms = stmt->ColumnInt64(20);
+        a.consumed = stmt->ColumnInt64(21) != 0;
         arrivals.push_back(std::move(a));
     }
     return arrivals;
@@ -228,7 +245,7 @@ std::optional<ChannelArrival> ChannelContextStore::LatestArrival(
         "platform_id, message_type, author_id, author_handle, delivery, "
         "peer_id, post_id, group_id, email_thread_id, source_message_id, "
         "reply_parent_id, thread_root_id, origin, "
-        "reply_instructions, created_at_unix_ms, consumed "
+        "participants, reply_instructions, created_at_unix_ms, consumed "
         "FROM channel_arrivals "
         "WHERE session_key = ? AND agent_id = ? "
         "ORDER BY id DESC LIMIT 1");
@@ -258,9 +275,10 @@ std::optional<ChannelArrival> ChannelContextStore::LatestArrival(
     a.reply_parent_id = stmt->ColumnText(15);
     a.thread_root_id = stmt->ColumnText(16);
     a.origin = stmt->ColumnText(17);
-    a.reply_instructions = stmt->ColumnText(18);
-    a.created_at_unix_ms = stmt->ColumnInt64(19);
-    a.consumed = stmt->ColumnInt64(20) != 0;
+    a.participants = stmt->ColumnText(18);
+    a.reply_instructions = stmt->ColumnText(19);
+    a.created_at_unix_ms = stmt->ColumnInt64(20);
+    a.consumed = stmt->ColumnInt64(21) != 0;
     return a;
 }
 
@@ -272,7 +290,7 @@ std::vector<ChannelArrival> ChannelContextStore::RecentArrivals(
         "platform_id, message_type, author_id, author_handle, delivery, "
         "peer_id, post_id, group_id, email_thread_id, source_message_id, "
         "reply_parent_id, thread_root_id, origin, "
-        "reply_instructions, created_at_unix_ms, consumed "
+        "participants, reply_instructions, created_at_unix_ms, consumed "
         "FROM channel_arrivals "
         "WHERE session_key = ? AND agent_id = ? "
         "ORDER BY id DESC LIMIT ?");
@@ -303,9 +321,10 @@ std::vector<ChannelArrival> ChannelContextStore::RecentArrivals(
         a.reply_parent_id = stmt->ColumnText(15);
         a.thread_root_id = stmt->ColumnText(16);
         a.origin = stmt->ColumnText(17);
-        a.reply_instructions = stmt->ColumnText(18);
-        a.created_at_unix_ms = stmt->ColumnInt64(19);
-        a.consumed = stmt->ColumnInt64(20) != 0;
+        a.participants = stmt->ColumnText(18);
+        a.reply_instructions = stmt->ColumnText(19);
+        a.created_at_unix_ms = stmt->ColumnInt64(20);
+        a.consumed = stmt->ColumnInt64(21) != 0;
         arrivals.push_back(std::move(a));
     }
     return arrivals;
