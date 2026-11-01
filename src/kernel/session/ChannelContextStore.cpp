@@ -2,8 +2,72 @@
 #include "animus_kernel/SchemaHelpers.h"
 
 #include <chrono>
+#include <memory>
+
+#include <json/json.h>
 
 namespace animus::kernel {
+
+// ---------------------------------------------------------------------------
+// #173: dispatch-metadata parse seam — behavior-identical extraction of the
+// former inline blocks in AgentKernel::ExecuteChannelDispatch (arrival
+// fields) and the queue-flush lane (aggregate sender label).
+// ---------------------------------------------------------------------------
+void ParseDispatchMetadata(const std::string& metadata,
+                           const std::string& defaultMessageType,
+                           ChannelArrival& arrival) {
+    Json::Value meta;
+    Json::CharReaderBuilder rb;
+    std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+    std::string errs;
+    if (reader->parse(metadata.data(), metadata.data() + metadata.size(),
+                      &meta, &errs) && meta.isObject()) {
+        arrival.message_type = meta.get("message_type", "").asString();
+        arrival.author_id = meta.get("author_id", "").asString();
+        arrival.author_handle = meta.get("author_handle",
+                                         meta.get("author", "").asString()).asString();
+        arrival.source_message_id = meta.get("source_message_id",
+                                             meta.get("message_id", "").asString()).asString();
+        arrival.reply_parent_id = meta.get("reply_parent_id", "").asString();
+        arrival.thread_root_id = meta.get("thread_root_id",
+                                          meta.get("root_id", "").asString()).asString();
+        arrival.reply_instructions = meta.get("reply_instructions", "").asString();
+        // Adapter-declared delivery override (#42: adapters state their
+        // channel's semantics): "tool" suppresses Chat-target auto-delivery.
+        arrival.delivery = meta.get("delivery", arrival.delivery).asString();
+        if (meta.isMember("origin") && meta["origin"].isObject()) {
+            Json::StreamWriterBuilder wb;
+            wb["indentation"] = "";
+            arrival.origin = Json::writeString(wb, meta["origin"]);
+            // Conventional origin keys map into typed fields when the
+            // adapter doesn't set them explicitly.
+            if (arrival.author_handle.empty())
+                arrival.author_handle =
+                    meta["origin"].get("user", "").asString();
+            if (arrival.author_id.empty())
+                arrival.author_id =
+                    meta["origin"].get("user_id", "").asString();
+        }
+    }
+    if (arrival.message_type.empty())
+        arrival.message_type = defaultMessageType;
+}
+
+std::string AuthorLabelFromMetadata(const std::string& metadata) {
+    Json::Value qmeta;
+    Json::CharReaderBuilder qrb;
+    std::unique_ptr<Json::CharReader> qreader(qrb.newCharReader());
+    std::string qerrs;
+    if (qreader->parse(metadata.data(), metadata.data() + metadata.size(),
+                       &qmeta, &qerrs) && qmeta.isObject()) {
+        std::string sender = qmeta.get("author_handle",
+                                       qmeta.get("author", "").asString()).asString();
+        if (sender.empty() && qmeta.isMember("origin") && qmeta["origin"].isObject())
+            sender = qmeta["origin"].get("user", "").asString();
+        return sender;
+    }
+    return "";
+}
 
 ChannelContextStore::ChannelContextStore(IDataStore* store)
     : m_store(store) {

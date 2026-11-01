@@ -1528,27 +1528,11 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             }
 
             if ((interval > 0 || aggregationWindowMs > 0) && m_messageQueue) {
-                // Sender label for queued aggregates (#150): derived from the
-                // dispatch metadata the adapter already supplies — same
-                // conventions as the arrival parse in ExecuteChannelDispatch
-                // (top-level author_handle/author, then origin.user). Empty
-                // metadata → empty label → bare concatenation, unchanged for
-                // adapters that don't (yet) emit origin.
-                std::string sender;
-                {
-                    Json::Value qmeta;
-                    Json::CharReaderBuilder qrb;
-                    std::unique_ptr<Json::CharReader> qreader(qrb.newCharReader());
-                    std::string qerrs;
-                    if (qreader->parse(metadata.data(), metadata.data() + metadata.size(),
-                                       &qmeta, &qerrs) && qmeta.isObject()) {
-                        sender = qmeta.get("author_handle",
-                                           qmeta.get("author", "").asString()).asString();
-                        if (sender.empty() && qmeta.isMember("origin")
-                            && qmeta["origin"].isObject())
-                            sender = qmeta["origin"].get("user", "").asString();
-                    }
-                }
+                // Sender label for queued aggregates (#150/#173): the shared
+                // parse seam (top-level author_handle/author, then
+                // origin.user). Empty metadata → empty label → bare
+                // concatenation, unchanged for adapters that don't emit.
+                std::string sender = AuthorLabelFromMetadata(metadata);
 
                 // Check if a chain is currently active on this session
                 std::string queueKey = "channel:" + sessionKey;
@@ -1828,49 +1812,14 @@ void AgentKernel::ExecuteChannelDispatch(
         arrival.post_id = replyTarget.post_id;
         arrival.group_id = replyTarget.group_id;
         arrival.email_thread_id = replyTarget.email_thread_id;
-        // message_type / author_* / source_message_id: adapters will supply
-        // via metadata as #15 firms the schema up; parse what's there now.
-        {
-            Json::Value meta;
-            Json::CharReaderBuilder rb;
-            std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
-            std::string errs;
-            if (reader->parse(metadata.data(), metadata.data() + metadata.size(),
-                              &meta, &errs) && meta.isObject()) {
-                arrival.message_type = meta.get("message_type", "").asString();
-                arrival.author_id = meta.get("author_id", "").asString();
-                arrival.author_handle = meta.get("author_handle",
-                                                 meta.get("author", "").asString()).asString();
-                arrival.source_message_id = meta.get("source_message_id",
-                                                     meta.get("message_id", "").asString()).asString();
-                arrival.reply_parent_id = meta.get("reply_parent_id", "").asString();
-                arrival.thread_root_id = meta.get("thread_root_id",
-                                                  meta.get("root_id", "").asString()).asString();
-                arrival.reply_instructions = meta.get("reply_instructions", "").asString();
-                // Adapter-declared delivery override (#42: adapters state their
-                // channel's semantics): "tool" suppresses Chat-target
-                // auto-delivery — Bluesky chats are tool-only (groups exist,
-                // silence must be first-class).
-                arrival.delivery = meta.get("delivery", arrival.delivery).asString();
-                if (meta.isMember("origin") && meta["origin"].isObject()) {
-                    Json::StreamWriterBuilder wb;
-                    wb["indentation"] = "";
-                    arrival.origin = Json::writeString(wb, meta["origin"]);
-                    // Conventional origin keys map into typed fields when the
-                    // adapter doesn't set them explicitly.
-                    if (arrival.author_handle.empty())
-                        arrival.author_handle =
-                            meta["origin"].get("user", "").asString();
-                    if (arrival.author_id.empty())
-                        arrival.author_id =
-                            meta["origin"].get("user_id", "").asString();
-                }
-            }
-        }
-        if (arrival.message_type.empty()) {
-            arrival.message_type = (replyTarget.type == ChannelManager::ReplyTarget::Chat)
-                                       ? "chat" : "wall";
-        }
+        // message_type / author_* / ids: adapter-supplied dispatch metadata,
+        // parsed through the shared seam (#173 — was inline here AND in the
+        // queue-flush lane; behavior-identical extraction, and the emission
+        // contract is now testable without a live kernel).
+        ParseDispatchMetadata(
+            metadata,
+            (replyTarget.type == ChannelManager::ReplyTarget::Chat) ? "chat" : "wall",
+            arrival);
         dispatchAuthor = arrival.author_handle;  // #133: capture final value (post origin-fallback)
         m_channelContextStore->AddArrival(arrival);
         m_channelContextStore->Prune(arrival.session_key, arrival.agent_id);

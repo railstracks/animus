@@ -65,6 +65,22 @@ struct ChannelArrival {
     bool consumed{false};            // provider rendered it / chain consumed it
 };
 
+// ---------------------------------------------------------------------------
+// #173: dispatch-metadata parse seam — shared by the direct-dispatch and
+// queue-flush lanes in AgentKernel (was inline in both, untestable without
+// a live kernel). Adapters emit metadata JSON at dispatch; these parse the
+// settled conventions into typed fields: top-level author_handle (or
+// author) with origin.user fallback, origin.user_id -> author_id, typed
+// reply/thread ids, delivery override (#42). Free functions so the
+// emission contract is directly testable.
+void ParseDispatchMetadata(const std::string& metadata,
+                           const std::string& defaultMessageType,
+                           ChannelArrival& arrival);
+
+/// #173: author label from dispatch metadata alone (top-level
+/// author_handle/author, then origin.user) — the queue-aggregate sender.
+std::string AuthorLabelFromMetadata(const std::string& metadata);
+
 // ============================================================================
 // ChannelContextStore — per-session trusted channel context side-store
 //
