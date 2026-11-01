@@ -700,6 +700,124 @@ void TestMemoryLimit() {
 // in the createRecord / sendMessage payloads. One Eval chunk per case:
 // prelude (stubs) + adapter source + driver, sharing chunk-local scope.
 // ============================================================================
+// ---------------------------------------------------------------------------
+// #255: tonumber(config.get(...) or "0") crash family. config.get returns ""
+// for unset keys; "" is truthy so `or "0"` never fires; tonumber("") is nil,
+// and the first comparison crashed. The twitter post path had never worked
+// on a fresh instance: the first write died in monthly_reset_check before
+// any auth. Red witness (pristine adapters): pcall(handler) returned
+// "attempt to compare number with nil".
+// ---------------------------------------------------------------------------
+
+const char* kTwitterFreshPrelude = R"lua(
+local calls = {}
+local captured = nil
+local function stub_reply(url)
+    if string.find(url, "/2/users/me", 1, true) then
+        return { status = 200, body = json.encode({ data = { id = "2244994945", username = "tester" } }) }
+    end
+    if string.find(url, "/2/tweets", 1, true) then
+        return { status = 201, body = json.encode({ data = { id = "1234567890", text = "hello" } }) }
+    end
+    return { status = 200, body = "{}" }
+end
+animus.register_channel = function(t) captured = t end
+animus.http_post = function(url, opts)
+    table.insert(calls, { url = url, body = (opts and opts.body) or "" })
+    return stub_reply(url)
+end
+animus.http_get = function(url, opts)
+    table.insert(calls, { url = url, body = "" })
+    return stub_reply(url)
+end
+-- FRESH INSTANCE: only tier-less identity keys absent by design.
+-- No counter_reset / reads_used / writes_used / token keys set at all.
+)lua";
+
+const char* kTwitterFreshDriver = R"lua(
+local function post(content)
+    local ok, r = pcall(captured.handler, { action = "post", platform_id = "twitter:test", content = content })
+    return ok, r
+end
+-- 1) fresh instance, no tokens: must fail LOUDLY (auth), never crash
+local ok1, r1 = post("one")
+-- 2) operator-fresh tokens: the full post path must work
+config.set("channels.twitter:test.access_token", "tok-A")
+config.set("channels.twitter:test.token_expires", tostring(os.time() + 7200))
+local ok2, r2 = post("two")
+local n_tweets = 0
+for _, c in ipairs(calls) do
+    if string.find(c.url, "/2/tweets", 1, true) then n_tweets = n_tweets + 1 end
+end
+return json.encode({
+    ran1 = (ok1 == true),
+    loud1 = (ok1 and r1 and r1.success == false and tostring(r1.error):find("authentication", 1, true) ~= nil),
+    err1 = ok1 and tostring(r1 and r1.error) or tostring(r1),
+    ran2 = (ok2 == true),
+    ok2 = (ok2 and r2 and r2.success == true),
+    err2 = ok2 and tostring(r2 and r2.error) or tostring(r2),
+    tweets = n_tweets,
+    counter_reset_written = (config.get("channels.twitter:test.counter_reset") ~= "")
+})
+)lua";
+
+void TestTwitterFreshInstance() {
+    std::cerr << "  TestTwitterFreshInstance (#255)...\n";
+    // inline source read (no file-scope helper; #48's block adds one)
+    std::string src;
+    {
+        char exe[4096];
+        const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+        std::vector<std::string> candidates;
+        if (n > 0) {
+            exe[n] = '\0';
+            std::string dir(exe);
+            const auto slash = dir.rfind('/');
+            if (slash != std::string::npos)
+                candidates.push_back(dir.substr(0, slash) + "/../../state/lua/_shared/twitter.lua");
+        }
+        candidates.push_back("state/lua/_shared/twitter.lua");
+        candidates.push_back("../../state/lua/_shared/twitter.lua");
+        for (const auto& c : candidates) {
+            std::ifstream f(c);
+            if (!f) continue;
+            std::stringstream ss;
+            ss << f.rdbuf();
+            std::string s = ss.str();
+            if (!s.empty()) { src = s; break; }
+        }
+    }
+    Assert(!src.empty(), "twitter.lua source found");
+
+    ToolRegistry tools;
+    HttpClient http;
+    LuaState::Config lc;
+    lc.agentId = "test";
+    lc.instructionLimit = 5'000'000;
+    LuaState lua(lc, tools, http);
+
+    std::string out;
+    try {
+        out = lua.Eval(std::string(kTwitterFreshPrelude) + "\n" + src + "\n" +
+                       kTwitterFreshDriver, "tw-fresh");
+    } catch (const std::exception& e) {
+        Assert(false, std::string("Eval threw: ") + e.what());
+        return;
+    }
+    Json::Value v;
+    Assert(Json::Reader().parse(out, v), "fresh-case output should be JSON, got: " + out.substr(0, 200));
+    if (v.isString()) {
+        const std::string inner = v.asString();
+        Assert(Json::Reader().parse(inner, v), "unwrapped fresh-case output should be JSON");
+    }
+    Assert(v["ran1"].asBool(), "#255 fresh: handler ran without crashing (no number-vs-nil)");
+    Assert(v["loud1"].asBool(), "#255 fresh: no-token post fails loudly via auth, err=" + v["err1"].asString());
+    Assert(v["ran2"].asBool(), "#255 fresh: tokened post ran without crashing");
+    Assert(v["ok2"].asBool(), "#255 fresh: tokened post succeeded, err=" + v["err2"].asString());
+    Assert(v["tweets"].asInt() == 1, "#255 fresh: exactly one /2/tweets call");
+    Assert(v["counter_reset_written"].asBool(), "#255 fresh: monthly reset path completed and wrote its state");
+}
+
 std::string ReadIrcAdapterSrc() {
     char exe[4096];
     const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
@@ -1177,6 +1295,7 @@ int main() {
     TestBlueskyFacets();
     TestIrcAdapterSendAction();
     TestIrcAdapterJoinPartSchema();
+    TestTwitterFreshInstance();
 
     if (g_failures > 0) {
         std::cerr << "\nFAILED: " << g_failures << " assertions failed\n";

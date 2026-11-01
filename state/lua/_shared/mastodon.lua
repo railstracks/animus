@@ -223,7 +223,9 @@ local function auth_get(platform_id, endpoint, query)
     update_rate_limits(platform_id, resp)
 
     if resp.status == 429 or resp.status == 503 then
-        local consecutive = tonumber(config.get(cfg_key(platform_id, "consecutive_errors")) or "0") + 1
+        -- #255: nil-floored form (see twitter.lua) — "" from config.get
+        -- defeated the old `or "0"` guard on fresh instances.
+        local consecutive = (tonumber(config.get(cfg_key(platform_id, "consecutive_errors"))) or 0) + 1
         config.set(cfg_key(platform_id, "consecutive_errors"), tostring(consecutive))
         local seconds = compute_backoff(platform_id, resp, consecutive)
         log.warn("[mastodon] rate limited (" .. tostring(resp.status)
@@ -260,7 +262,7 @@ local function auth_post(platform_id, endpoint, body_table, idem_suffix)
     update_rate_limits(platform_id, resp)
 
     if resp.status == 429 or resp.status == 503 then
-        local consecutive = tonumber(config.get(cfg_key(platform_id, "consecutive_errors")) or "0") + 1
+        local consecutive = (tonumber(config.get(cfg_key(platform_id, "consecutive_errors"))) or 0) + 1
         config.set(cfg_key(platform_id, "consecutive_errors"), tostring(consecutive))
         local seconds = compute_backoff(platform_id, resp, consecutive)
         log.warn("[mastodon] rate limited (" .. tostring(resp.status)
