@@ -11,6 +11,7 @@
 -- Internal cached state (auto-managed):
 --   config.get("channels.bluesky:personal.access_jwt")
 --   config.get("channels.bluesky:personal.did")
+--   config.get("channels.bluesky:personal.cred_stamp")    -- #48 credential-lineage key
 -- ============================================================================
 
 local DEFAULT_PDS = "https://bsky.social"
@@ -95,6 +96,48 @@ local function get_pds(platform_id)
     return DEFAULT_PDS
 end
 
+--- Credential-lineage stamp (#48): a cheap digest of the CURRENT credential
+--- material (handle|app_password|pds). Token caches carry the stamp they were
+--- minted under; a credential rotation changes the stamp and cached tokens
+--- from the old lineage are dropped before any use. Pure-Lua djb2 — the
+--- channel-Lua sandbox has no crypto primitive, and the stamp lives in the
+--- same config store as the secret it derives from (it unlocks nothing on
+--- its own). Incident (Aug 31): a rotated app password left an old-identity
+--- refresh token live, and refreshSession kept minting fresh ACCESS tokens
+--- for the OLD identity — the cache never re-derived identity from current
+--- credentials.
+local function cred_stamp(platform_id)
+    local mat = tostring(config.get(cfg_key(platform_id, "handle")) or "") .. "|" ..
+        tostring(config.get(cfg_key(platform_id, "app_password")) or "") .. "|" ..
+        tostring(get_pds(platform_id) or "")
+    local h = 5381
+    for i = 1, #mat do
+        h = (h * 33 + string.byte(mat, i)) % 4294967296
+    end
+    return string.format("%08x", h)
+end
+
+--- Drop cached tokens minted under a different credential lineage (#48).
+--- Un-stamped caches (pre-#48) drop once on first contact — a one-time
+--- migration; this adapter recovers transparently via createSession.
+local function cache_lineage_check(platform_id)
+    local stamp_key = cfg_key(platform_id, "cred_stamp")
+    local stored = config.get(stamp_key)
+    local current = cred_stamp(platform_id)
+    if stored and stored ~= "" then
+        if stored == current then return end
+        log.warn("[bluesky] credential rotation detected for " .. platform_id ..
+            " — dropping cached tokens from the old lineage (#48)")
+    else
+        log.info("[bluesky] no lineage stamp on cached tokens for " .. platform_id ..
+            " — dropping them once (one-time #48 migration)")
+    end
+    config.set(cfg_key(platform_id, "access_jwt"), "")
+    config.set(cfg_key(platform_id, "refresh_jwt"), "")
+    config.set(cfg_key(platform_id, "did"), "")
+    config.set(stamp_key, current)
+end
+
 --- Forward declaration (refresh_auth defined below).
 local refresh_auth
 
@@ -129,6 +172,23 @@ local function try_refresh_session(platform_id)
         return nil
     end
 
+    -- #48: refresh mints tokens for whatever identity owns the refresh
+    -- token. If the session DID no longer matches the cached one, the
+    -- refresh is renewing a DIFFERENT account (the Aug 31 cross-account
+    -- posting path) — refuse, drop the cache, fall through to full re-auth
+    -- from current credentials.
+    if data.did then
+        local cached_did = config.get(cfg_key(platform_id, "did"))
+        if cached_did and cached_did ~= "" and cached_did ~= data.did then
+            log.error("[bluesky] refreshSession minted tokens for a different identity ("
+                .. tostring(data.did) .. " != cached " .. cached_did
+                .. ") — dropping cache, re-authenticating (#48)")
+            config.set(cfg_key(platform_id, "access_jwt"), "")
+            config.set(cfg_key(platform_id, "refresh_jwt"), "")
+            config.set(cfg_key(platform_id, "did"), "")
+            return nil
+        end
+    end
     -- Update cached tokens
     config.set(cfg_key(platform_id, "access_jwt"), data.accessJwt or "")
     config.set(cfg_key(platform_id, "refresh_jwt"), data.refreshJwt or "")
@@ -143,6 +203,7 @@ end
 -- Returns the accessJwt string on success, nil + error on failure.
 -- Tries: cached token → refresh session → full re-auth.
 local function authenticate(platform_id)
+    cache_lineage_check(platform_id)  -- #48: rotation guard before any cache use
     local jwt_key = cfg_key(platform_id, "access_jwt")
     local jwt = config.get(jwt_key)
     if jwt and jwt ~= "" and not is_jwt_expired(jwt) then
