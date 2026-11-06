@@ -1,6 +1,10 @@
 -- ============================================================================
 -- Mastodon Social Adapter for Animus
 -- Issue #135 — Phase 1: Lua REST + polling
+-- Issue #145 — Tier 1 discovery: search (v2, WebFinger resolve for remote
+-- handles), account_statuses (per-account reads), public_timeline with
+-- typed-422 handling (nodes that reject timelines get a classified error
+-- with account_statuses as the guided fallback — never a generic failure).
 --
 -- Registers via animus.register_channel() as a stateless adapter.
 -- Auth: static user access token (Mastodon "user token", scope read+write).
@@ -193,6 +197,65 @@ end
 -- HTTP primitives
 -- ---------------------------------------------------------------------------
 
+--- Percent-encode a query VALUE. Keys are adapter-controlled (safe
+--- charset); values may carry arbitrary text — search q especially —
+--- and must not leak spaces/&/# raw into the URL.
+local function url_encode(v)
+    return (tostring(v):gsub("[^%w%-._~]", function(c)
+        return string.format("%%%02X", string.byte(c))
+    end))
+end
+
+-- Typed 422 classification (#145). Fediverse servers diverge on surface
+-- availability (live case: Buffett's node 422s public timelines while
+-- per-account reads work — Akkoma/GoToSocial-family divergence or
+-- instance policy). auth_get stamps machine-readable error_type/advice
+-- on 422s so actions surface a capability divergence as classified
+-- guidance, never as a generic failure string.
+local TYPED_422 = {
+    {
+        pattern = "^/api/v1/timelines/",
+        error_type = "timeline_unavailable",
+        advice = "public timelines are unavailable on this node — commonly "
+            .. "the endpoint is auth-gated (flagship Mastodon 422s "
+            .. "unauthenticated reads; an invalid token looks the same), or "
+            .. "the server family/policy rejects it (Akkoma/GoToSocial); "
+            .. "use account_statuses for per-account reads"
+    }
+}
+
+local function classify_422(endpoint)
+    for _, spec in ipairs(TYPED_422) do
+        if endpoint:match(spec.pattern) then return spec end
+    end
+    return {
+        error_type = "unsupported_query",
+        advice = "the server rejected this query as unprocessable — "
+            .. "it may be unsupported on this node"
+    }
+end
+
+--- Uniform action-failure shaping: 422-classified responses carry
+--- error_type + advice (plus http_status); everything else keeps the
+--- classic loud (status + body excerpt) format.
+local function fail_for(action, resp)
+    if resp.error_type then
+        return {
+            success = false,
+            error = action .. " failed (" .. tostring(resp.status) .. ", "
+                .. resp.error_type .. "): " .. tostring(resp.error_advice),
+            http_status = resp.status,
+            error_type = resp.error_type
+        }
+    end
+    return {
+        success = false,
+        error = action .. " failed (" .. tostring(resp.status) .. "): "
+            .. truncate(tostring(resp.body), 500),
+        http_status = resp.status
+    }
+end
+
 --- Authenticated GET. Returns resp table with status, body, headers.
 --- Returns { status = 0, body = backoff message } while in backoff.
 local function auth_get(platform_id, endpoint, query)
@@ -208,7 +271,7 @@ local function auth_get(platform_id, endpoint, query)
     if query and next(query) then
         local parts = {}
         for k, v in pairs(query) do
-            parts[#parts + 1] = tostring(k) .. "=" .. tostring(v)
+            parts[#parts + 1] = tostring(k) .. "=" .. url_encode(v)
         end
         url = url .. "?" .. table.concat(parts, "&")
     end
@@ -221,6 +284,13 @@ local function auth_get(platform_id, endpoint, query)
     })
 
     update_rate_limits(platform_id, resp)
+
+    -- Typed classification (read path only: a POST 422 is caller error)
+    if resp.status == 422 then
+        local cls = classify_422(endpoint)
+        resp.error_type = cls.error_type
+        resp.error_advice = cls.advice
+    end
 
     if resp.status == 429 or resp.status == 503 then
         -- #255: nil-floored form (see twitter.lua) — "" from config.get
@@ -427,6 +497,48 @@ local function html_to_text(html)
     return (s:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
+--- Attribution-spine (#133) mapper for status entities in discovery
+--- surfaces — same field contract as poll mentions, so agents read one
+--- shape everywhere (status_url matches the poll contract).
+local function shape_status(s)
+    local account = s.account or {}
+    return {
+        id = s.id or "",
+        author = account.acct or "",
+        author_display = account.display_name or "",
+        author_url = account.url or "",
+        created_at = s.created_at or "",
+        text = html_to_text(s.content),
+        content_html = s.content or "",
+        status_url = s.url or "",
+        in_reply_to_id = s.in_reply_to_id or "",
+        visibility = s.visibility or ""
+    }
+end
+
+--- Parse a Mastodon Link pagination header → the next-page max_id.
+--- Only an actual rel="next" segment counts; a prev-only header (last
+--- page) must NOT yield a phantom cursor.
+local function link_next_max_id(link_header)
+    if not link_header then return nil end
+    local next_url = link_header:match("<([^>]+)>%s*;%s*rel=\"next\"")
+    if not next_url then return nil end
+    return next_url:match("max_id=(%d+)")
+end
+
+--- Shared tail for status-page reads: shape every status onto the spine
+--- and extract the next-page cursor from the response.
+local function statuses_result(data, resp)
+    local statuses = {}
+    for _, s in ipairs(data) do
+        statuses[#statuses + 1] = shape_status(s)
+    end
+    local headers = resp.headers or {}
+    local link = headers["link"] or headers["Link"]
+    local next_max_id = link and link_next_max_id(link) or nil
+    return statuses, next_max_id
+end
+
 -- ---------------------------------------------------------------------------
 -- Actions
 -- ---------------------------------------------------------------------------
@@ -457,11 +569,7 @@ local function do_poll(args)
     local resp = auth_get(platform_id, "/api/v1/notifications", query)
 
     if resp.status ~= 200 then
-        return {
-            success = false,
-            error = "poll failed (" .. tostring(resp.status) .. "): "
-                .. truncate(tostring(resp.body), 500)
-        }
+        return fail_for("poll", resp)
     end
 
     local data, err = json_decode_safe(resp.body)
@@ -646,8 +754,7 @@ local function do_get_status(args)
 
     local resp = auth_get(platform_id, "/api/v1/statuses/" .. tostring(status_id), nil)
     if resp.status ~= 200 then
-        return { success = false, error = "get_status failed (" .. tostring(resp.status) .. "): "
-            .. truncate(tostring(resp.body), 500) }
+        return fail_for("get_status", resp)
     end
 
     local data = json_decode_safe(resp.body)
@@ -684,8 +791,7 @@ local function do_get_context(args)
 
     local resp = auth_get(platform_id, "/api/v1/statuses/" .. tostring(status_id) .. "/context", nil)
     if resp.status ~= 200 then
-        return { success = false, error = "get_context failed (" .. tostring(resp.status) .. "): "
-            .. truncate(tostring(resp.body), 500) }
+        return fail_for("get_context", resp)
     end
 
     local data = json_decode_safe(resp.body)
@@ -717,6 +823,214 @@ local function do_get_context(args)
     }
 end
 
+--- Search accounts/statuses/hashtags (GET /api/v2/search). With a user
+--- token: offset pagination works and resolve=true WebFingers remote
+--- handles / status URLs into numeric IDs — the entry primitive for
+--- account_statuses. Honest-capability contract (#145): full-text STATUS
+--- search requires server-side ElasticSearch; accounts/hashtags always
+--- search. An empty statuses result carries an explicit caveat instead
+--- of a confident empty.
+local function do_search(args)
+    local platform_id = args.platform_id
+    local q = args.q
+    if not q or q == "" or tostring(q):match("^%s*$") then
+        return { success = false, error = "q is required (query text, or a "
+            .. "user@instance handle / status URL with resolve=true)" }
+    end
+    q = tostring(q)
+
+    local stype = args.type
+    if stype and stype ~= "accounts" and stype ~= "statuses" and stype ~= "hashtags" then
+        return { success = false, error = "invalid type: " .. tostring(stype)
+            .. " (accounts|statuses|hashtags, or omit for all)" }
+    end
+
+    local limit = tonumber(args.limit) or 20
+    if limit < 1 then limit = 1 elseif limit > 40 then limit = 40 end
+
+    local query = { q = q, limit = tostring(limit) }
+    if stype then query.type = stype end
+    if args.resolve == true or args.resolve == "true" then query.resolve = "true" end
+    if args.following == true or args.following == "true" then query.following = "true" end
+    if args.account_id and tostring(args.account_id) ~= "" then
+        query.account_id = tostring(args.account_id)
+    end
+    local offset = tonumber(args.offset)
+    if offset and offset > 0 then query.offset = tostring(math.floor(offset)) end
+
+    local resp = auth_get(platform_id, "/api/v2/search", query)
+    if resp.status ~= 200 then
+        return fail_for("search", resp)
+    end
+
+    local data, err = json_decode_safe(resp.body)
+    if not data or type(data) ~= "table" then
+        return { success = false, error = "search: " .. tostring(err or "non-object body") }
+    end
+
+    local accounts, statuses, hashtags = {}, {}, {}
+    if data.accounts then
+        for _, a in ipairs(data.accounts) do
+            accounts[#accounts + 1] = {
+                id = a.id or "", acct = a.acct or "",
+                display_name = a.display_name or "",
+                url = a.url or "",
+                followers_count = a.followers_count,
+                note_text = html_to_text(a.note)
+            }
+        end
+    end
+    if data.statuses then
+        for _, s in ipairs(data.statuses) do
+            statuses[#statuses + 1] = shape_status(s)
+        end
+    end
+    if data.hashtags then
+        for _, h in ipairs(data.hashtags) do
+            hashtags[#hashtags + 1] = { name = h.name or "", url = h.url or "" }
+        end
+    end
+
+    local statuses_note
+    if (not stype or stype == "statuses") and #statuses == 0 then
+        statuses_note = "no status results — this node may not serve full-text "
+            .. "status search (server-side ElasticSearch required, and often "
+            .. "auth-gated even where present); account and hashtag "
+            .. "search always work"
+        if args.resolve ~= true and args.resolve ~= "true"
+            and (q:find("@", 1, true) or q:find("http", 1, true)) then
+            statuses_note = statuses_note
+                .. "; q looks like a handle or URL — retry with resolve=true"
+        end
+    end
+
+    return {
+        success = true,
+        output = "search '" .. truncate(q, 60) .. "': " .. #accounts
+            .. " account(s), " .. #statuses .. " status(es), " .. #hashtags
+            .. " hashtag(s)" .. (statuses_note and (" — " .. statuses_note) or ""),
+        accounts = accounts,
+        statuses = statuses,
+        hashtags = hashtags,
+        statuses_note = statuses_note
+    }
+end
+
+--- Read one account's statuses (GET /api/v1/accounts/:id/statuses).
+--- Confirmed working from nodes where public timelines 422 — this is the
+--- discovery workhorse. Requires the NUMERIC id; resolve handles via
+--- search first. Link-header pagination surfaced as next_max_id.
+local function do_account_statuses(args)
+    local platform_id = args.platform_id
+    local account_id = args.account_id
+    if not account_id or tostring(account_id) == "" then
+        return { success = false, error = "account_id is required (NUMERIC id — "
+            .. "resolve a user@instance handle via search with resolve=true first)" }
+    end
+    if not tostring(account_id):match("^%d+$") then
+        return { success = false, error = "account_id must be the NUMERIC account id, got '"
+            .. tostring(account_id) .. "' — run search with q=<handle> and "
+            .. "resolve=true to get the numeric id" }
+    end
+
+    local limit = tonumber(args.limit) or 20
+    if limit < 1 then limit = 1 elseif limit > 40 then limit = 40 end
+
+    local query = { limit = tostring(limit) }
+    if args.exclude_replies == true or args.exclude_replies == "true" then
+        query.exclude_replies = "true"
+    end
+    if args.only_media == true or args.only_media == "true" then
+        query.only_media = "true"
+    end
+    if args.pinned == true or args.pinned == "true" then
+        query.pinned = "true"
+    end
+    if args.tagged and tostring(args.tagged) ~= "" then
+        local tag = tostring(args.tagged)
+        if tag:sub(1, 1) == "#" then tag = tag:sub(2) end
+        query.tagged = tag
+    end
+    for _, cursor in ipairs({ "max_id", "since_id", "min_id" }) do
+        local v = args[cursor]
+        if v and tostring(v) ~= "" then query[cursor] = tostring(v) end
+    end
+
+    local endpoint = "/api/v1/accounts/" .. tostring(account_id) .. "/statuses"
+    local resp = auth_get(platform_id, endpoint, query)
+    if resp.status ~= 200 then
+        return fail_for("account_statuses", resp)
+    end
+
+    local data, err = json_decode_safe(resp.body)
+    if not data or type(data) ~= "table" then
+        return { success = false, error = "account_statuses: "
+            .. tostring(err or "non-array body") }
+    end
+
+    local statuses, next_max_id = statuses_result(data, resp)
+    return {
+        success = true,
+        output = #statuses .. " status(es) for account " .. tostring(account_id)
+            .. (next_max_id and (" (more available — pass max_id=" .. next_max_id .. ")")
+                or " (end of timeline)"),
+        statuses = statuses,
+        count = #statuses,
+        next_max_id = next_max_id,
+        has_more = next_max_id ~= nil
+    }
+end
+
+--- Read the public timeline (local or federated). This is the surface
+--- some nodes reject (live case: 422 on Buffett's node) — those get a
+--- typed timeline_unavailable error with account_statuses as the guided
+--- fallback, exercising the #145 classification end-to-end.
+local function do_public_timeline(args)
+    local platform_id = args.platform_id
+
+    local limit = tonumber(args.limit) or 20
+    if limit < 1 then limit = 1 elseif limit > 40 then limit = 40 end
+
+    local query = { limit = tostring(limit) }
+    if args["local"] == true or args["local"] == "true" then
+        query["local"] = "true"
+    end
+    if args.remote == true or args.remote == "true" then
+        query.remote = "true"
+    end
+    if args.only_media == true or args.only_media == "true" then
+        query.only_media = "true"
+    end
+    for _, cursor in ipairs({ "max_id", "since_id", "min_id" }) do
+        local v = args[cursor]
+        if v and tostring(v) ~= "" then query[cursor] = tostring(v) end
+    end
+
+    local endpoint = "/api/v1/timelines/public"
+    local resp = auth_get(platform_id, endpoint, query)
+    if resp.status ~= 200 then
+        return fail_for("public_timeline", resp)
+    end
+
+    local data, err = json_decode_safe(resp.body)
+    if not data or type(data) ~= "table" then
+        return { success = false, error = "public_timeline: "
+            .. tostring(err or "non-array body") }
+    end
+
+    local statuses, next_max_id = statuses_result(data, resp)
+    return {
+        success = true,
+        output = #statuses .. " status(es) on the public timeline"
+            .. (next_max_id and (" (more available — pass max_id=" .. next_max_id .. ")")
+                or " (end of timeline)"),
+        statuses = statuses,
+        count = #statuses,
+        next_max_id = next_max_id,
+        has_more = next_max_id ~= nil
+    }
+end
+
 --- Get the configured poll interval for this instance (min 15s).
 local function get_poll_interval(platform_id)
     local n = tonumber(config.get(cfg_key(platform_id, "poll_interval")))
@@ -730,8 +1044,7 @@ local function do_verify(args)
 
     local resp = auth_get(platform_id, "/api/v1/accounts/verify_credentials", nil)
     if resp.status ~= 200 then
-        return { success = false, error = "verify failed (" .. tostring(resp.status) .. "): "
-            .. truncate(tostring(resp.body), 500) }
+        return fail_for("verify", resp)
     end
 
     local data = json_decode_safe(resp.body)
@@ -760,7 +1073,8 @@ animus.register_channel({
     capabilities = {"read", "write"},
     actions = {
         "poll", "post", "reply", "get_status",
-        "get_context", "verify"
+        "get_context", "verify",
+        "search", "account_statuses", "public_timeline"
     },
     schema = {
         poll = {
@@ -781,6 +1095,31 @@ animus.register_channel({
         get_context = {
             { name = "status_id", type = "string", required = true, description = "Status ID to fetch thread context around" }
         },
+        search = {
+            { name = "q", type = "string", required = true, description = "Query: text, user@instance handle, or status URL (use resolve for the latter two)" },
+            { name = "type", type = "string", required = false, description = "accounts | statuses | hashtags (omit for all). NOTE: full-text status search needs server-side ElasticSearch" },
+            { name = "resolve", type = "boolean", required = false, description = "WebFinger-resolve remote handles/URLs to numeric IDs" },
+            { name = "following", type = "boolean", required = false, description = "Limit account results to accounts you follow" },
+            { name = "account_id", type = "string", required = false, description = "Restrict status search to this account (numeric id)" },
+            { name = "limit", type = "number", required = false, description = "1-40 per type (default 20)" },
+            { name = "offset", type = "number", required = false, description = "Skip results (user-token pagination)" }
+        },
+        account_statuses = {
+            { name = "account_id", type = "string", required = true, description = "NUMERIC account id (resolve handles via search first)" },
+            { name = "limit", type = "number", required = false, description = "1-40 (default 20)" },
+            { name = "exclude_replies", type = "boolean", required = false, description = "Skip replies" },
+            { name = "only_media", type = "boolean", required = false, description = "Only statuses with media" },
+            { name = "pinned", type = "boolean", required = false, description = "Only pinned statuses" },
+            { name = "tagged", type = "string", required = false, description = "Only statuses with this hashtag (leading # stripped)" },
+            { name = "max_id", type = "string", required = false, description = "Pagination cursor from next_max_id" }
+        },
+        public_timeline = {
+            { name = "local", type = "boolean", required = false, description = "This instance only (default: federated)" },
+            { name = "remote", type = "boolean", required = false, description = "Remote-origin statuses only" },
+            { name = "only_media", type = "boolean", required = false, description = "Only statuses with media" },
+            { name = "limit", type = "number", required = false, description = "1-40 (default 20)" },
+            { name = "max_id", type = "string", required = false, description = "Pagination cursor from next_max_id" }
+        },
         verify = {
             -- No required params
         }
@@ -796,6 +1135,9 @@ animus.register_channel({
         elseif action == "reply" then return do_reply(args)
         elseif action == "get_status" then return do_get_status(args)
         elseif action == "get_context" then return do_get_context(args)
+        elseif action == "search" then return do_search(args)
+        elseif action == "account_statuses" then return do_account_statuses(args)
+        elseif action == "public_timeline" then return do_public_timeline(args)
         elseif action == "verify" then return do_verify(args)
         else return { success = false, error = "unknown action: " .. tostring(action) }
         end
