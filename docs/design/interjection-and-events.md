@@ -19,6 +19,10 @@ Give the kernel one first-class mechanism for inserting an inbound event into a
 - **Cortex:** a camera motion event, a geofence arrival, an obstacle threshold —
   device events must reach the agent the same way speech does: inserted
   mid-chain, visible at the next step, actionable by the running chain.
+- **Every session, every channel (decided 2026-11-06):** interjection is a
+  property of sessions broadly — webchat and all channel adapters included.
+  The primitive lives at the promptchain/channel-adapter level; the cortex
+  uses the same protocol by sending channel messages.
 
 The deep claim of this document: **these are not two features.** A mid-chain
 speech insertion and a mid-chain device event have identical delivery semantics.
@@ -49,18 +53,26 @@ voice is its first fully-streaming consumer.
 }
 ```
 
-### Delivery
+### Delivery (decided 2026-11-06: promptchain/channel-adapter level)
 
-- Events queue per-session and are delivered **between chain steps**: after a
-  tool-call round-trip resolves, before the next model invocation.
+- An interjection is a **new user message appended to the session's message
+  thread**; the running prompt chain picks it up **when assembling its next
+  turn step** — after the current tool-call round-trip resolves, before the
+  next model invocation. The message thread is the queue; there is no
+  separate delivery lane.
+- This is a property of **sessions broadly**, not a voice/cortex feature:
+  webchat and every channel adapter get the same treatment, and the cortex
+  speaks the identical protocol by sending channel messages.
 - Ordering is preserved **per source**; cross-source ordering is by arrival.
-- Delivered events are marked as interjections in the transcript so the model
-  can see "this arrived while you were working." Framing matters: the model
-  should treat an interjection as new information that may supersede the
-  in-flight plan, not as a queue of unanswered turns.
-- Interjections persist in history like any inbound message — context coherence
-  requires the transcript to reflect what actually happened, including the
-  timing.
+- **Framing: regular user messages** (decided). No dedicated role, no special
+  marker — the chain simply sees the new messages that arrived while it
+  worked; transcript order carries the timing.
+- Interjections do **not** affect turn/timeout accounting for the receiving
+  chain — that is the benefit: it arrives whenever it arrives, matching
+  responsiveness to developing conditions (best possible when TTS responses
+  are per-phrase too).
+- A finished session is just a passive session: an arriving message is a
+  fresh message like any other. No special wake semantics.
 
 ### Cancellation
 
@@ -71,7 +83,8 @@ voice is its first fully-streaming consumer.
 - **Exception — `priority: "critical"`:** synchronous, kernel-level, never
   model-mediated. This is the lane the actuator kill-switch rides (see
   [Cortex → Safety](cortex.md#safety)). A critical event preempts at the next
-  safe kernel point, not the next inference step.
+  safe kernel point, not the next inference step. Critical events are
+  kernel-internal — never model-facing, never on the message thread.
 
 ### Flood control
 
@@ -82,22 +95,39 @@ session, drop-oldest with a loud marker when exceeded. Context is a budget.
 
 ## Audit: current kernel state (critical-path ticket #1)
 
-What exists today for messages arriving during an active chain must be mapped
-before any stub work:
+Owner hypothesis (2026-11-06), to verify first: **this may already functionally
+exist in Animus.** IRC and Discord adapters plausibly already interject —
+messages arriving mid-chain land in the thread and join at the next turn-step
+assembly — and webchat would too, **if the webchat UI didn't actively block
+the send mechanism while a prompt chain is active.**
 
-- Where do channel messages currently land while a chain runs? Queued to turn
-  end? Visible between steps?
-- Is there an existing notion of step boundaries we can hook delivery onto?
-- Does the transcript distinguish mid-chain arrivals today?
+If the audit confirms this, the first implementation ticket shrinks to:
 
-This audit produces the first implementation ticket. If mid-chain visibility
-already exists in some form, this document shrinks to naming and hardening it.
+1. Un-block webchat send during active chains (UI and/or adapter).
+2. Formalize what the adapters already do, so the cortex rides the identical
+   protocol instead of a parallel mechanism.
 
-## Open questions
+Audit checklist:
 
-- Should normal-priority interjections wake a *completed* session the way a new
-  message does? (Presumably yes — that is just a message.)
-- Do interjections affect turn/timeout accounting for the receiving chain?
-- Visibility of interjection framing: one system prompt convention, or a
-  dedicated message role?
-- Rate limits: per-source caps beyond the cortex's own debounce?
+- IRC/Discord adapter behavior for messages arriving during an active chain —
+  queued to turn end, or visible at next step assembly?
+- Webchat: confirm the send-block; UI-only (button state) or adapter-enforced?
+- Where per-turn assembly happens — the point delivery formalizes onto.
+
+## Decisions (owner red-line, 2026-11-06)
+
+- **Placement:** the primitive lives at the promptchain/channel-adapter level;
+  interjection applies to sessions broadly (webchat + all adapters), and the
+  cortex uses the same protocol by sending channel messages.
+- **Framing:** regular user messages, added to the prompt chain at per-turn
+  assembly. No dedicated role.
+- **Turn/timeout accounting:** unaffected by interjections — deliberate.
+- **Completed sessions:** an arriving message is a fresh message hitting a
+  passive session; no special wake semantics.
+
+## Open questions (remaining)
+
+- Per-source rate caps for channel adapters (cortex sources resolved to
+  per-device-interface configuration — see cortex doc).
+- Critical lane: confirm the kernel-internal kill-switch path never needs to
+  be expressed as (or blocked by) message-thread insertion.

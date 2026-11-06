@@ -22,6 +22,10 @@ The destination this serves: Animus installed into a robotic frame, perhaps
 powered by a self-contained inference unit — a proper body, not a chat window.
 The 0.5 deliverable is a stub shaped by that destination, not the destination.
 
+Protocol note (decided 2026-11-06): the cortex speaks into sessions through
+the **same channel-message protocol** the interjection primitive defines — the
+cortex is another channel producer, not a parallel event system.
+
 ## The four planes
 
 Every device, whatever it is, meets the cortex through the same four planes:
@@ -29,13 +33,25 @@ Every device, whatever it is, meets the cortex through the same four planes:
 | Plane | Direction | What it is |
 |---|---|---|
 | **Registration** | owner → cortex | lifecycle: declare device + capability record |
-| **Hooks** | device → agent | predicate over an observable; fires as an [interjection](interjection-and-events.md) |
+| **Hooks** | device → agent | predicate over an observable; fires as a channel message via the [interjection protocol](interjection-and-events.md) |
 | **Commands** | agent → device | actuation: set LED, play frames, start motion |
 | **Queries** | agent ← device | current state: coordinates, distance, acceleration |
 
 **Registration is the trust boundary.** A registered actuator is a physical
 write path into the world — registration belongs behind the owner approval
 surface (same posture as package approval), not free agent self-service.
+
+Capability records are **reconfigurable** (decided 2026-11-06): settings vary
+with the environment, and the Animus instance actively curates its cortex
+stack post-registration. The trust boundary governs what a registration
+*enables* (actuation, events into sessions); within an approved registration,
+curation adjusts how devices behave.
+
+**Hot-plug (decided):** capabilities pull **dynamically at cortex
+invocation** — the registry is a live view, not a registration-time snapshot.
+A vanished device (USB unplugged, Talk call ended) fails loudly at the next
+invocation against current reality; stale registry state never commands a
+ghost device.
 
 ## Three interface archetypes — the answer to "what is and isn't variable"
 
@@ -90,6 +106,8 @@ Policy from day one:
   a gait mid-walk; swapping controllers is an owner-visible action.
 - Verification as part of generation: assemblies prove themselves against
   recorded traces before deployment (the project's own standing rule).
+- Prior art: the Midas/Steadyfort FANN work is the in-house reference for
+  trace formats and acceptance thresholds (owner pointer, 2026-11-06).
 
 ## Component inventory (0.5 landscape, mapped)
 
@@ -124,12 +142,18 @@ Day-one rules, not later hardening:
    cortex loses supervision, actuators stop. Default state of hardware is
    *stopped*, not *running*.
 
-## Connection mechanisms
+## Connection mechanisms (decided 2026-11-06: sidecar drivers)
 
+- **Drivers live in sidecar processes** talking to the cortex over a local
+  socket — chosen for modularity. Driver crashes are contained away from the
+  kernel, drivers are language-free, and per-subsystem sidecars fit the ARM
+  deployment story. The local-socket protocol is therefore a first-class
+  interface to spec — and should be the **same channel-message protocol** the
+  cortex speaks into sessions (one protocol end to end).
 - Host OS devices via USB — enumerated through the host, capability-recorded at
   registration.
-- GPIO/I2C outbound — **feasibility to be evaluated** (library choice, kernel
-  hosting, permissions). Explicit open question below; no commitment yet.
+- GPIO/I2C outbound — feasibility to be evaluated on the components on hand
+  (library choice, permissions). No commitment yet.
 
 ## Context-card integration
 
@@ -172,18 +196,23 @@ loop).
 - RTOS-class hard real-time guarantees (soft real-time loops only)
 - Autonomous retraining or self-modifying controllers
 
-## Open questions
+## Decisions (owner red-line, 2026-11-06)
 
-- Driver hosting model: in-kernel-process drivers vs sidecar processes talking
-  to the cortex over a local socket — what isolation and failure-containment
-  does each buy?
-- GPIO/I2C library and permissions on target boards (evaluate first on the
-  components on hand)
-- Capability record schema — what a device must declare at registration
-- Tool ergonomics: one `cortex` tool with subcommands (api-package style) vs
-  per-function kernel tools — model reliability should decide
-- Hot-plug lifecycle: device disappears mid-goal (USB unplugged, Talk call
-  ends) — rollback semantics for in-flight commands
-- Hook flood budget per device class beyond predicate debounce
-- FANN training harness: trace recording format, acceptance thresholds per
-  assembly
+- **Driver hosting: sidecars** — modularity; the local-socket protocol becomes
+  first-class, unified with the channel-message protocol into sessions.
+- **Capability records: reconfigurable**, environment-dependent; the instance
+  actively curates its cortex stack.
+- **Hot-plug: dynamic capability pull at cortex invocation** — registry is a
+  live view.
+- **Hook/rate budgets: configured per device interface** (many hooks ride the
+  *current* reading).
+- **Tool surface: one cortex tool with subcommands** (api-package style),
+  leaning decided — validate with model-reliability tests before committing.
+
+## Open questions (remaining)
+
+- GPIO/I2C library and permissions — evaluate on the components on hand
+- Capability record schema — now shaped by the reconfiguration requirement:
+  what is fixed at registration vs. curatable afterward
+- FANN training harness — experimental; mine the Midas/Steadyfort FANN work
+  for trace formats and acceptance thresholds

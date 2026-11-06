@@ -59,6 +59,10 @@ channel adapters          cortex                     agent thread
   big blob. Chunking is what makes barge-in cheap: when new speech arrives, the
   next chain step cancels the remaining playback queue and emits a revised
   utterance instead.
+- **Enforced per-yield limit (decided 2026-11-06):** say() carries a maximum
+  phrase length per call. The constraint is deliberate: it fits TTS, and it is
+  what lets an interjection arrive *mid-response* and change what gets said
+  next.
 - **Cancel and priority semantics from day one.** `say()` enqueues;
   `audio.cancel()` drops the queue. These are actuator-class commands on the
   audio_output device.
@@ -127,14 +131,24 @@ Nextcloud in the stub. The kernel dependency is the interjection audit ticket.
 - Multimodal audio-in-prompt (transcripts only, by design — listed here so the
   exclusion is a decision, not an omission)
 
-## Open questions
+## Decisions (owner red-line, 2026-11-06)
 
-- STT/TTS providers: cloud APIs vs local (whisper/piper class) — and what runs
-  on ARM when the self-contained-inference endgame arrives
-- Streaming TTS (synthesizing partial sentences as they render) vs chunked
-  `say()` — streaming is lower-latency but complicates cancel semantics
-- Voice selection & consistency per agent persona
-- Utterance-event thresholds: VAD sensitivity vs. clipped speech, per-device
-- Should `say()` be a kernel tool or a cortex tool surface? (Leaning cortex —
-  it is an actuator-class command on audio_output — but kernel-owned ergonomics
-  matter for model reliability)
+- **Providers:** cloud and local STT/TTS behind one **unified provider
+  protocol, local by default** (whisper/piper class as candidates). ARM
+  compatibility is a requirement of the local default, not a later migration.
+- **Emission granularity:** responses yield via tool calls with an **enforced
+  maximum phrase length per say()** — chosen over streaming synthesis of
+  partial sentences: the limit fits TTS constraints *and* lets interjections
+  meaningfully arrive mid-response with developing context. Streaming TTS is
+  rejected.
+- **say() surface:** cortex tool surface (decided).
+
+## Open questions (remaining)
+
+- **Voice settings (Kestrel to propose — owner wants guidance here).** Initial
+  sketch to red-line: a named-voice registry owned by the cortex (per
+  instance), a default voice id on the agent persona config, and a
+  per-utterance override parameter on say(). Consistency rule: same agent,
+  same voice, across threads and channels.
+- VAD/segmentation thresholds: implementation tuning, folded into
+  per-device-interface configuration (see cortex doc) — no design fork.
