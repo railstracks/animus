@@ -51,6 +51,11 @@ bool IrcAdapter::Start(const ChannelState& state, std::string* error) {
 
     m_channelName = state.name;
     m_botNick = ircCfg.nick;
+    // #262: store the dispatch identity at Start() — the config's agent_id
+    // was dropped at dispatch (empty agentId -> 'default' sentinel -> the
+    // channel's configured agent, its model/system prompt/budget, never
+    // applied on the IRC lane).
+    m_agentId = GetString(cfg, "agent_id");
 
     m_runtime = std::make_shared<IrcInterfaceRuntime>(
         state.name, ircCfg,
@@ -139,7 +144,9 @@ void IrcAdapter::OnMessage(const std::string& sourceNick,
     std::string conversationId = channelMessage
         ? ("channel:" + target) : ("dm:" + sourceNick);
 
-    std::string agentId; // TODO: read from stored config
+    // #262: dispatch with the configured agent identity (stored at Start()),
+    // matching the poller adapters (rt->agent_id).
+    const std::string& agentId = m_agentId;
     std::string sessionType = "irc";
     std::string sessionKey = sessionType + ":" + m_channelName + ":" + conversationId;
 
