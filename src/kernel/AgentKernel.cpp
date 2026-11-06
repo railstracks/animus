@@ -1784,6 +1784,17 @@ void AgentKernel::ExecuteChannelDispatch(
     }
     std::size_t contextWindow = ResolveContextWindow(session->AgentId(), providerId, model);
     if (model.empty()) {
+        // #262: resolution fell through everything — the bound agent has no
+        // default_model (or the session rides the 'default' sentinel) and the
+        // provider has none either. This hardcoded guess masked live
+        // misconfiguration for months (HTTP 404s wherever the model doesn't
+        // exist on the provider). Keep the guess for compatibility, but make
+        // every occurrence loud and actionable.
+        ALOG_ERROR("channels:dispatch", "Model resolution fell through to the hardcoded fallback"
+                  << " — provider=" << providerId << " has no default_model,"
+                  << " agentId=" << session->AgentId() << " has none either;"
+                  << " guessing model gpt-4o for sessionKey=" << sessionKey
+                  << ". Fix: set the agent's default_model or the provider's.");
         model = "gpt-4o";
     }
 

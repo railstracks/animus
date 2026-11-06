@@ -79,6 +79,7 @@ private:
     mutable std::mutex m_mutex;
     std::string m_channelName;
     std::string m_botNick;
+    std::string m_agentId;      // #262: config agent_id, stored at Start()
 
     void OnMessage(const std::string& sourceNick,
                    const std::string& target,
