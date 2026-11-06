@@ -9,6 +9,7 @@ from design through implementation, and tickets are cut from them.
 | [Interjection & Device Events](interjection-and-events.md) | The shared kernel primitive: inbound events inserted into running prompt chains | Draft (v0.5) |
 | [Voice](voice.md) | Bidirectional voice — voice as a regular agent thread | Draft (v0.5) |
 | [Cortex](cortex.md) | Unifying device & connection layer — registration, hooks, commands, queries | Draft (v0.5) |
+| [Federation Secrets](federation-secrets.md) | Encrypted replication with per-node envelope keys — replaces the #93 manual master-key stopgap | Draft (#182, decided core) |
 
 **Reading order:** interjection first — the voice and cortex documents both
 consume that primitive and assume its vocabulary.
