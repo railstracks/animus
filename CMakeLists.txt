@@ -1114,6 +1114,12 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME SignalProtocolTests COMMAND animus_signal_protocol_tests)
+
+    # #265: fail if scripts/*.lua drifts from state/lua/_shared/*.lua —
+    # the runtime ships _shared/, feature work lands in scripts/; the two
+    # trees diverged silently three times before this guard.
+    add_test(NAME LuaAdapterSyncGuard
+      COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/lua_adapter_sync_guard.cmake")
 endif()
 
 # ============================================================================
