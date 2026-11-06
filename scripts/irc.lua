@@ -38,11 +38,13 @@ function actions.post(args)
     -- The C++ bridge in ChannelsTool intercepts irc post/reply before this
     -- handler runs, so reaching here means no channel instance matched —
     -- advise the standard reply path.
+    local err = "IRC send not available for this instance (no C++ bridge match). " ..
+                "Check the platform_id with channels list, or use the configured " ..
+                "IRC instance."
     return {
         success = false,
-        output = "IRC send not available for this instance (no C++ bridge match). " ..
-                 "Check the platform_id with channels list, or use the configured " ..
-                 "IRC instance.",
+        error = err,   -- #209: dispatcher reads error, not output, on failure
+        output = err,  -- kept for readers of output
         target = target,
     }
 end
@@ -50,6 +52,11 @@ end
 -- reply shares post's send path in the C++ bridge (same SendReply route);
 -- the Lua handler mirrors the same limitation and error text.
 actions.reply = actions.post
+
+-- send_action routes through the C++ bridge's SendAction path, which wraps
+-- the text in a CTCP ACTION frame (\001ACTION text\001) — a /me on the wire.
+-- The Lua handler mirrors post/reply's fallback error for unmatched instances.
+actions.send_action = actions.post
 
 function actions.list_channels(args)
     local platform_id = args.platform_id or ""
@@ -76,16 +83,21 @@ function actions.list_channels(args)
     }
 end
 
+-- #205: join/part are intercepted by the C++ bridge on live instances
+-- (gated per-instance by the allow_join_part toggle in the /channels
+-- admin form). These fallbacks run only when no bridge is present.
 function actions.join(args)
+    local err = "IRC join is available on live instances with channel roaming " ..
+                "enabled (allow_join_part in the admin UI)."
     return {
         success = false,
-        output = "IRC join/part requires C++ bridge access (not yet implemented). " ..
-                 "Configure channels in the admin UI.",
+        error = err,   -- #209: dispatcher reads error, not output, on failure
+        output = err,
     }
 end
 
 function actions.part(args)
-    return actions.join(args)  -- same limitation
+    return actions.join(args)  -- same limitation, same message shape
 end
 
 function actions.get_channel(args)
@@ -127,7 +139,7 @@ animus.register_channel({
     id = "irc",
     name = "IRC",
     capabilities = {"read", "write"},
-    actions = {"post", "reply", "list_channels", "join", "part", "get_channel"},
+    actions = {"post", "reply", "send_action", "list_channels", "join", "part", "get_channel"},
     schema = {
         post = {
             { name = "channel", type = "string", required = true, description = "Target channel (e.g. #steadyfort)" },
@@ -137,12 +149,18 @@ animus.register_channel({
             { name = "channel", type = "string", required = false, description = "Target channel (e.g. #steadyfort); filled automatically from the arrival when omitted" },
             { name = "content", type = "string", required = true, description = "Message text" },
         },
+        send_action = {
+            { name = "channel", type = "string", required = false, description = "Target channel (e.g. #steadyfort); filled automatically from the arrival when omitted" },
+            { name = "content", type = "string", required = true, description = "Action text for a /me-style emote (e.g. 'leans over the console') — sent as a CTCP ACTION; do NOT prefix with /me" },
+        },
         list_channels = {},
         join = {
-            { name = "channel", type = "string", required = true, description = "Channel to join" },
+            { name = "channel", type = "string", required = true, description = "Channel to join (e.g. #campaign-night)" },
+            { name = "key", type = "string", required = false, description = "Channel key (password) for keyed channels" },
         },
         part = {
             { name = "channel", type = "string", required = true, description = "Channel to leave" },
+            { name = "farewell", type = "string", required = false, description = "Optional part reason shown to the channel" },
         },
         get_channel = {
             { name = "channel", type = "string", required = false, description = "Channel name" },
