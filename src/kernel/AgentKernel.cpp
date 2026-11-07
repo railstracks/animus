@@ -3,6 +3,7 @@
 #include "animus_kernel/PeerSyncService.h"
 #include "animus_kernel/AgentKernel.h"
 #include "animus_kernel/lua/SharedScriptHealer.h"
+#include "animus_kernel/DispatchAgentBinding.h"
 #include "animus_kernel/Log.h"
 
 #include <cstdlib>
@@ -1584,11 +1585,12 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             auto session = m_sessionManager->GetOrCreate(key);
             if (!session) return;
 
-            if (session->AgentId().empty()) {
-                session->SetAgentId(agentId);
-            } else if (session->Turns().empty()) {
-                session->SetAgentId(agentId);
-            }
+            // #268: adopt-on-dispatch — empty and 'default' (sentinel)
+            // bindings follow the dispatching agent. The old turns-empty
+            // override is retired with this change: it re-bound sessions
+            // already owned by a real agent — the misbinding mechanism,
+            // not a feature. Real bindings never re-bind.
+            TryAdoptDispatchAgent(*session, agentId, sessionKey);
             if (m_agentStore && !session->AgentId().empty()
                 && !m_agentStore->GetById(session->AgentId()).has_value()) {
                 ALOG_DEBUG("kernel", "session references unknown agent: "
@@ -1608,9 +1610,10 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             auto session = m_sessionManager->GetOrCreate(key);
             if (!session) return;
 
-            if (!agentId.empty() && session->AgentId().empty()) {
-                session->SetAgentId(agentId);
-            }
+            // #268: same adoption policy on the log-only path, so history
+            // appends heal sentinel bindings too — otherwise a log-only
+            // arrival keeps the session invisible to its owning agent.
+            TryAdoptDispatchAgent(*session, agentId, sessionKey);
 
             auto now = std::chrono::system_clock::now();
             auto unixMs = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1721,6 +1724,23 @@ int AgentKernel::GetChannelInterval(const std::string& channelName) const {
     return ch->config.get("min_response_interval", 0).asInt();
 }
 
+void AgentKernel::TryAdoptDispatchAgent(
+    Session& session,
+    const std::string& dispatchAgentId,
+    const std::string& sessionKeyForLog) {
+    if (dispatchAgentId.empty()) return;
+    const bool configured =
+        m_agentStore && m_agentStore->GetById(dispatchAgentId).has_value();
+    const std::string before = session.AgentId();
+    const std::string binding =
+        ResolveDispatchAgentBinding(before, dispatchAgentId, configured);
+    if (binding == before) return;
+    ALOG_INFO("channels:dispatch",
+              "agent adoption (#268): session " << sessionKeyForLog
+              << " rebinding agent '" << before << "' -> '" << binding << "'");
+    session.SetAgentId(binding);
+}
+
 void AgentKernel::ExecuteChannelDispatch(
         const std::string& sessionKey,
         const std::string& message,
@@ -1739,6 +1759,11 @@ void AgentKernel::ExecuteChannelDispatch(
     if (session->AgentId().empty()) {
         session->SetAgentId(agentId.empty() ? "default" : agentId);
     }
+    // #268: heal sentinel-bound sessions — legacy pre-#262 channel
+    // sessions (e.g. #2450) stay 'default'-bound forever otherwise:
+    // chains run under the sentinel and the owning agent's id/key/search
+    // probes all miss (ownership wall / false not-found).
+    TryAdoptDispatchAgent(*session, agentId, sessionKey);
 
     // Resolve provider
     std::string providerId = session->ProviderId();
