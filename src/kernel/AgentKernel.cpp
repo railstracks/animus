@@ -444,6 +444,24 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // Admin routes expose the outbox/handshake/status on every node;
         // the pull loop runs only when peers are configured.
         m_adminServer->SetSyncStore(m_syncStore);
+
+        // --- Node identity (#182 federation secrets) ---
+        // Raw 0600 key file alongside api-vault.key — same discipline
+        // (design decision: raw v1; passphrase-wrapping deferred). Load
+        // failure is loud and fail-closed — never silently regenerate: a
+        // fresh private key would orphan every envelope sealed to the old
+        // public key.
+        {
+            std::string idErr;
+            if (LoadOrCreateNodeIdentity((m_config.dataDir / "node-identity.key").string(),
+                                         m_nodeIdentity, idErr)) {
+                m_nodeIdentityOk = true;
+                m_adminServer->SetNodeIdentity(&m_nodeIdentity);
+            } else {
+                ALOG_ERROR("federation", "[identity] load/create failed: " << idErr
+                           << " — federation key ceremonies unavailable until fixed");
+            }
+        }
         if (m_config.node.id > 0 && !m_config.node.peers.empty()) {
             m_peerSyncService = new PeerSyncService(
                 m_syncStore, m_config.node.peers, m_config.node.syncToken);

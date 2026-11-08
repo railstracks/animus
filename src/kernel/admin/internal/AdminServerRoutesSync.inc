@@ -154,4 +154,96 @@
             callback(drogon::HttpResponse::newHttpJsonResponse(out));
         },
         {drogon::Get});
+
+    // ------------------------------------------------------------------
+    // Federation identity + peer public-key exchange (#182, #273)
+    // ------------------------------------------------------------------
+    // GET /api/v1/sync/identity — this node's id + X25519 public key.
+    drogon::app().registerHandler(
+        "/api/v1/sync/identity",
+        [](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            (void)req;
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            if (!srv->m_nodeIdentity) {
+                SendJsonError(callback, "node identity not available (load failed at boot?)",
+                              drogon::k503ServiceUnavailable);
+                return;
+            }
+            Json::Value out(Json::objectValue);
+            if (srv->m_syncStore)
+                out["node_id"] = Json::UInt64(srv->m_syncStore->LocalNodeId());
+            out["public_key"] = BytesToHex(srv->m_nodeIdentity->public_key.data(), 32);
+            callback(drogon::HttpResponse::newHttpJsonResponse(out));
+        },
+        {drogon::Get});
+
+    // GET /api/v1/sync/peers/keys — all ingested peer public keys.
+    drogon::app().registerHandler(
+        "/api/v1/sync/peers/keys",
+        [](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            (void)req;
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            if (!srv->m_configStore) {
+                SendJsonError(callback, "config store not available",
+                              drogon::k503ServiceUnavailable);
+                return;
+            }
+            Json::Value list(Json::arrayValue);
+            const std::string prefix = "federation.node_keys.";
+            for (const auto& [key, value] : srv->m_configStore->GetAll("")) {
+                if (key.rfind(prefix, 0) != 0) continue;
+                Json::Value j(Json::objectValue);
+                j["node_id"] = key.substr(prefix.size());
+                j["public_key"] = value;
+                list.append(j);
+            }
+            Json::Value out(Json::objectValue);
+            out["peers"] = list;
+            callback(drogon::HttpResponse::newHttpJsonResponse(out));
+        },
+        {drogon::Get});
+
+    // POST /api/v1/sync/peers/keys — ingest one peer public key
+    // body: { "node_id": "...", "public_key": "<64 hex>" }.
+    drogon::app().registerHandler(
+        "/api/v1/sync/peers/keys",
+        [](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            if (!srv->m_configStore) {
+                SendJsonError(callback, "config store not available",
+                              drogon::k503ServiceUnavailable);
+                return;
+            }
+            auto body = req->getJsonObject();
+            if (!body || !body->isMember("node_id") || !body->isMember("public_key")) {
+                SendJsonError(callback, "body must hold node_id and public_key",
+                              drogon::k400BadRequest);
+                return;
+            }
+            const std::string nodeId = (*body)["node_id"].asString();
+            const std::string pubHex = (*body)["public_key"].asString();
+            std::array<unsigned char, 32> pub{};
+            if (nodeId.empty() || !HexToBytes32(pubHex, pub)) {
+                SendJsonError(callback,
+                              "node_id must be non-empty; public_key must be 64 hex chars",
+                              drogon::k400BadRequest);
+                return;
+            }
+            std::string err;
+            if (!StorePeerNodeKey(*srv->m_configStore, nodeId, pub, err)) {
+                SendJsonError(callback, err, drogon::k400BadRequest);
+                return;
+            }
+            Json::Value out(Json::objectValue);
+            out["stored"] = true;
+            out["node_id"] = nodeId;
+            callback(drogon::HttpResponse::newHttpJsonResponse(out));
+        },
+        {drogon::Post});
 }

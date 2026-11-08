@@ -16,6 +16,7 @@
 #include "animus_kernel/lua/ScriptStore.h"
 #include "animus_kernel/lua/FilesystemScriptLoader.h"
 #include "animus_kernel/AgentConfigStore.h"
+#include "animus_kernel/NodeIdentity.h"
 #include "animus_kernel/ChannelManager.h"
 #include "animus_kernel/MessageQueue.h"
 #include "animus_kernel/tools/ProjectTool.h"
@@ -175,6 +176,9 @@ private:
     SessionTagsStore* m_sessionTagsStore{nullptr}; // session tag keywords
     PromptLogStore* m_promptLogStore{nullptr}; // LLM call logging
     SyncStore* m_syncStore{nullptr};
+    NodeIdentity m_nodeIdentity;                  // #182 fed-secrets X25519 identity
+    bool m_nodeIdentityOk{false};
+    const NodeIdentity& GetNodeIdentity() const { return m_nodeIdentity; }
     PeerSyncService* m_peerSyncService{nullptr};   // #78 P1c pull loop
     Scheduler* m_scheduler{nullptr};              // cron-like schedule subsystem
     ConsolidationPipeline* m_consolidation{nullptr}; // memory consolidation pipeline
