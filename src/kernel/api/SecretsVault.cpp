@@ -303,6 +303,19 @@ bool SecretsVault::Open(const std::string& envelopeHex, std::string& plaintext,
     return crypto::Aes256GcmOpen(m_key, envelopeHex, plaintext, error);
 }
 
+void SecretsVault::SetFederationDek(int64_t epoch, const unsigned char* dek32, size_t len) {
+    // #274: boot-path activation. #275's versioned-ciphertext migration
+    // consumes this; the master-key path stays authoritative until then.
+    if (!dek32 || len != 32) {
+        ALOG_ERROR("api", "[vault] refusing federation DEK — expected 32 bytes, got "
+                   << len);
+        return;
+    }
+    m_fedEpoch = epoch;
+    m_fedDek.assign(dek32, dek32 + 32);
+    ALOG_INFO("api", "[vault] federation epoch " << epoch << " DEK armed");
+}
+
 bool SecretsVault::Set(const std::string& packageId, const std::string& name,
                        const std::string& value, std::string& error) {
     if (!m_store) { error = "vault has no store"; return false; }

@@ -155,12 +155,24 @@ public:
     bool Seal(const std::string& plaintext, std::string& envelopeHex, std::string& error) const;
     bool Open(const std::string& envelopeHex, std::string& plaintext, std::string& error) const;
 
+    // ── #274/#275: federation epoch DEK ────────────────────────────────────
+    // Set by AgentKernel at boot when this node's key envelope unwraps.
+    // #275's versioned-ciphertext migration consumes it (re-seal sweep);
+    // a peer-held epoch with no local envelope is a LOUD kernel-level
+    // lockout, never a silent empty key.
+    void SetFederationDek(int64_t epoch, const unsigned char* dek32, size_t len);
+    bool HasFederationDek() const { return !m_fedDek.empty(); }
+    int64_t FederationEpoch() const { return m_fedEpoch; }
+
 private:
     bool LoadOrCreateKey(std::string& error);
 
     IDataStore* m_store;
     std::string m_keyPath;
     std::vector<unsigned char> m_key;
+
+    int64_t m_fedEpoch{0};
+    std::vector<unsigned char> m_fedDek;   // #274: unwrapped epoch DEK
 };
 
 }  // namespace animus::kernel

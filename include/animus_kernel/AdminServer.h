@@ -59,6 +59,7 @@ namespace ontology { class OntologyStore; }
 class SessionManager;
 class GallivantingStore;
 class NodeManager;
+class FederationKeys;
 class ScriptStore;
 class FilesystemScriptLoader;
 struct DiscoveredScript;
@@ -180,6 +181,7 @@ public:
     AgentStore* m_agentStore{nullptr};
     NodeManager* m_nodeManager{nullptr};
     SyncStore* m_syncStore{nullptr};            // #78 P1b outbox/LWW
+    FederationKeys* m_federationKeys{nullptr};  // #274 epoch DEK envelopes
     NodeIdentity* m_nodeIdentity{nullptr};      // #182 fed-secrets X25519 identity
     PeerSyncService* m_peerSyncService{nullptr};     // #78 P1c pull loop (may be null)
     ToolRegistry* m_toolRegistry{nullptr};
@@ -220,6 +222,7 @@ public:
     void SetToolRegistry(ToolRegistry* reg) { m_toolRegistry = reg; }
     void SetNodeManager(NodeManager* nm) { m_nodeManager = nm; }
     void SetSyncStore(SyncStore* store) { m_syncStore = store; }
+    void SetFederationKeys(FederationKeys* keys) { m_federationKeys = keys; }
     void SetNodeIdentity(NodeIdentity* id) { m_nodeIdentity = id; }
     void SetPeerSyncService(PeerSyncService* svc) { m_peerSyncService = svc; }
     void SetScheduler(Scheduler* scheduler) { m_scheduler = scheduler; }
