@@ -117,6 +117,13 @@ public:
     ChannelManager(const ChannelManager&) = delete;
     ChannelManager& operator=(const ChannelManager&) = delete;
 
+    /// #181: (re)load channel configs from the store — also the scrub
+    /// seam: migrates embedded credentials out of stored
+    /// channel.<name>.config rows into vaulted mirror rows (the structural
+    /// row replicates across peers; secrets never do) and merges them back
+    /// into the in-memory states.
+    void LoadChannelsFromConfigStore();
+
     // Send-failure sink (#30): adapters report yielded replies that did not
     // land; the kernel writes a session-visible witness. Safe to call after
     // construction (read at failure time, not captured at adapter start).
@@ -307,7 +314,6 @@ private:
     void ProcessPendingRestarts();
 
     // --- Config helpers ---
-    void LoadChannelsFromConfigStore();
     void StartChannel(const ChannelState& state);
     void StopChannel(const std::string& name);
     std::string GetConfigString(const std::string& name,
