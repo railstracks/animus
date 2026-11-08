@@ -45,6 +45,45 @@ bool Resolve(const std::string& argsJson, const std::string& anchorJson,
     return EmailTool::ResolveReplyRecipient(args, anchor, fetched, self, out, err);
 }
 
+// #212: pure send-attachment builder tests (no HTTP).
+void TestBuildSendAttachments() {
+    std::cerr << "[A] #212 attachments: absent / null / valid pass through\n";
+    Json::Value atts;
+    std::string err;
+    Assert(EmailTool::BuildSendAttachments(Parse("{}"), atts, err) && atts.isNull(),
+           "absent attachments: no error, no payload");
+    Assert(EmailTool::BuildSendAttachments(Parse("{\"attachments\":null}"), atts, err) &&
+           atts.isNull(), "null attachments: no error");
+    Assert(EmailTool::BuildSendAttachments(
+               Parse(R"({"attachments":[{"filename":"a.txt","content":"aGVsbG8="}]})"),
+               atts, err) && atts.isArray() && atts.size() == 1 &&
+           atts[0]["filename"].asString() == "a.txt" &&
+           atts[0]["content"].asString() == "aGVsbG8=",
+           "valid attachment passes through: " + err);
+    Assert(EmailTool::BuildSendAttachments(
+               Parse(R"({"attachments":[{"filename":"x","content":"eA=="},
+                                    {"filename":"y","content":"eQ=="}]})"),
+               atts, err) && atts.size() == 2 && atts[1]["filename"].asString() == "y",
+           "multiple attachments preserve order");
+
+    std::cerr << "[B] #212 attachments: shape errors are precise\n";
+    Assert(!EmailTool::BuildSendAttachments(Parse("{\"attachments\":[]}"), atts, err) &&
+           err.find("non-empty") != std::string::npos, "empty array rejected");
+    Assert(!EmailTool::BuildSendAttachments(Parse("{\"attachments\":\"x\"}"), atts, err) &&
+           err.find("non-empty array") != std::string::npos, "non-array rejected");
+    Assert(!EmailTool::BuildSendAttachments(
+               Parse(R"({"attachments":[{"content":"aGVsbG8="}]})"), atts, err) &&
+           err.find("filename") != std::string::npos, "missing filename rejected");
+    Assert(!EmailTool::BuildSendAttachments(
+               Parse(R"({"attachments":[{"filename":"a.txt"}]})"), atts, err) &&
+           err.find("a.txt") != std::string::npos,
+           "missing content error names the file: " + err);
+    Assert(!EmailTool::BuildSendAttachments(
+               Parse(R"({"attachments":[{"filename":"b.txt","content":""}]})"),
+               atts, err) && err.find("b.txt") != std::string::npos,
+           "empty content rejected");
+}
+
 const char* kNoArgs = "{}";
 const char* kSentAnchor =
     R"({"labels":["sent"],"to":["buffett@agentmail.to"],
@@ -149,6 +188,7 @@ void TestEmptySelfIdSkipsSelfFilter() {
 } // namespace
 
 int main() {
+    TestBuildSendAttachments();
     TestOwnSentAnchorResolvesToOriginalRecipient();
     TestDisplayNameFormsBare();
     TestExplicitToWins();

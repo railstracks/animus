@@ -44,6 +44,15 @@ public:
                                       std::string& outRecipient,
                                       std::string& outError);
 
+    // #212: pure send-attachment payload builder — validates the args'
+    // "attachments" array (each item needs filename + base64 content) and
+    // produces the AgentMail send payload's attachments member. Server-side
+    // base64 validation is the backstop; this catches the shape errors
+    // client-side with precise messages. Pure: unit-testable.
+    static bool BuildSendAttachments(const Json::Value& args,
+                                     Json::Value& outAttachments,
+                                     std::string& outError);
+
 private:
     // --- AgentMail REST API helpers ---
     HttpClient::Response AgentMailGet(const std::string& inboxId,
@@ -83,6 +92,7 @@ private:
     std::string HandleGetThread(const Json::Value& args);
     std::string HandleGetMessage(const Json::Value& args);
     std::string HandleGetAttachment(const Json::Value& args);
+    std::string HandleListAttachments(const Json::Value& args);
     std::string HandleSearch(const Json::Value& args);
     std::string HandleSend(const Json::Value& args);
     std::string HandleReply(const Json::Value& args);
