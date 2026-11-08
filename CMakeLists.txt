@@ -328,6 +328,7 @@ add_library(animus_kernel
   src/kernel/api/ApiRuntime.cpp
   src/kernel/api/ManifestV1.cpp
   src/kernel/api/RegistryClient.cpp
+  src/kernel/NodeIdentity.cpp
   src/kernel/api/SecretsVault.cpp
   src/kernel/api/ApiConnectionManager.cpp
   src/kernel/PromptLogStore.cpp
@@ -1114,6 +1115,18 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME CryptoUtilsTests COMMAND animus_crypto_utils_tests)
+
+    add_executable(animus_node_identity_tests
+      tests/NodeIdentityTests.cpp
+    )
+    target_link_libraries(animus_node_identity_tests PRIVATE animus_kernel OpenSSL::Crypto)
+    target_include_directories(animus_node_identity_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(animus_node_identity_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME NodeIdentityTests COMMAND animus_node_identity_tests)
 
     add_executable(animus_signal_protocol_tests
       tests/SignalProtocolTests.cpp
