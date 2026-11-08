@@ -442,6 +442,19 @@ local function split_for_limit(text, limit)
     return chunks
 end
 
+-- Canonical Markdown -> Discord-native (#156). scripts/markdown.lua is
+-- Eval'd into the same per-agent VM and sets the `markdown` global;
+-- referenced at SEND time so standalone harnesses (which load only this
+-- adapter) keep working through the raw fallback.
+local function render_content(content)
+    if type(markdown) == "table" and type(markdown.render_discord) == "function" then
+        local ok, out = pcall(markdown.render_discord, content)
+        if ok and type(out) == "string" and out ~= "" then return out end
+        if log and log.warn then log.warn("[discord] markdown render failed; sending raw content") end
+    end
+    return content
+end
+
 --- POST /channels/{channel_id}/messages
 local function do_post(args)
     local platform_id = args.platform_id
@@ -456,7 +469,9 @@ local function do_post(args)
     end
 
     -- Auto-split at natural boundaries instead of truncating: the yielded
-    -- text is the contract with the reader (#30).
+    -- text is the contract with the reader (#30). Render canonical
+    -- Markdown to Discord-native BEFORE splitting so chunks stay <= 2000 (#156).
+    content = render_content(content)
     local chunks = split_for_limit(content, 2000)
     local first_id
     for idx, chunk in ipairs(chunks) do

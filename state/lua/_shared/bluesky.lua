@@ -648,6 +648,20 @@ local function build_facets(text)
     return facets
 end
 
+-- Canonical Markdown -> Bluesky plain text (#156). scripts/markdown.lua
+-- is Eval'd into the same per-agent VM and sets the `markdown` global;
+-- referenced at SEND time so standalone harnesses (which load only this
+-- adapter) keep working through the raw fallback. Facets attach to the
+-- RENDERED text — byte offsets must index the final string (#36).
+local function render_content(content)
+    if type(markdown) == "table" and type(markdown.render_bluesky) == "function" then
+        local ok, out = pcall(markdown.render_bluesky, content)
+        if ok and type(out) == "string" and out ~= "" then return out end
+        if log and log.warn then log.warn("[bluesky] markdown render failed; sending raw content") end
+    end
+    return content
+end
+
 local function attach_facets(record, text)
     local facets = build_facets(text)
     if #facets > 0 then
@@ -666,8 +680,9 @@ local function do_chat_send(args)
     if not args.content or args.content == "" then
         return { success = false, error = "content is required" }
     end
-    local message = { text = args.content }
-    attach_facets(message, args.content)
+    local rendered = render_content(args.content)
+    local message = { text = rendered }
+    attach_facets(message, rendered)
     local body = {
         convoId = args.convo_id,
         message = message
@@ -762,14 +777,16 @@ local function do_post(args)
         return { success = false, error = err }
     end
 
+    local rendered = render_content(args.content)
+
     local record = {
         ["$type"] = "app.bsky.feed.post",
-        text = args.content,
+        text = rendered,
         createdAt = iso_now(),
         langs = args.langs or { "en" }
     }
 
-    attach_facets(record, args.content)
+    attach_facets(record, rendered)
 
     local resp = auth_post(pid, "/xrpc/com.atproto.repo.createRecord", {
         repo = did,
@@ -827,9 +844,11 @@ local function do_reply(args)
         end
     end
 
+    local rendered = render_content(args.content)
+
     local record = {
         ["$type"] = "app.bsky.feed.post",
-        text = args.content,
+        text = rendered,
         createdAt = iso_now(),
         langs = args.langs or { "en" },
         reply = {
@@ -838,7 +857,7 @@ local function do_reply(args)
         }
     }
 
-    attach_facets(record, args.content)
+    attach_facets(record, rendered)
 
     local resp = auth_post(pid, "/xrpc/com.atproto.repo.createRecord", {
         repo = did,

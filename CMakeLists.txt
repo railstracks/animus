@@ -1174,6 +1174,22 @@ if(ANIMUS_BUILD_TESTS)
 endif()
 
 # ============================================================================
+# Markdown renderer tests (#156) — golden/degrade/hostile, plain lua.
+# Needs the lua interpreter; hosts without it skip the suite (the golden
+# files and corpus are committed, so any lua-equipped host runs it).
+# ============================================================================
+
+find_program(LUA_EXECUTABLE lua)
+if(LUA_EXECUTABLE)
+    add_test(NAME MarkdownRendererTests
+      COMMAND ${LUA_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/markdown-renderer-test.lua")
+    set_tests_properties(MarkdownRendererTests PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+else()
+    message(STATUS "lua not found — MarkdownRendererTests skipped")
+endif()
+
+# ============================================================================
 # Example module (smoke test for the module loader)
 # ============================================================================
 
