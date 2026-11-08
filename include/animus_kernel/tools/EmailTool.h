@@ -30,6 +30,20 @@ public:
     ToolDefinition GetDefinition() const override;
     ToolResult Execute(const ToolCall& call) override;
 
+    // #211: pure client-side reply-recipient resolution — explicit `to`
+    // arg wins; otherwise the anchor's envelope decides (own-sent anchor
+    // -> its To:, the original recipient; received anchor -> its From:).
+    // Returns false + error when unresolvable — never guesses. The old
+    // server-side thread-ownership path silently self-addressed replies
+    // anchored on the sender's own sent messages.
+    // Pure: no HTTP, unit-testable against anchor JSON fixtures.
+    static bool ResolveReplyRecipient(const Json::Value& args,
+                                      const Json::Value& anchor,
+                                      bool anchorFetched,
+                                      const std::string& selfInboxId,
+                                      std::string& outRecipient,
+                                      std::string& outError);
+
 private:
     // --- AgentMail REST API helpers ---
     HttpClient::Response AgentMailGet(const std::string& inboxId,

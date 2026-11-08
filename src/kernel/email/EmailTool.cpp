@@ -163,7 +163,9 @@ ToolDefinition EmailTool::GetDefinition() const {
     // Send/reply/forward parameters
     def.parameters.push_back({
         "to", "string",
-        "Recipient address (for send, forward). Multiple addresses comma-separated.",
+        "Recipient address (for send, reply, forward). Multiple addresses comma-separated. "
+        "For reply: overrides the anchor-derived recipient; omit to reply to the "
+        "original correspondent (resolved from the anchor's envelope).",
         false
     });
     def.parameters.push_back({
@@ -822,6 +824,93 @@ std::string EmailTool::HandleSend(const Json::Value& args) {
     return OkResult(result);
 }
 
+// --- #211: pure reply-recipient resolution (unit-testable) ----------------
+
+bool EmailTool::ResolveReplyRecipient(const Json::Value& args,
+                                      const Json::Value& anchor,
+                                      bool anchorFetched,
+                                      const std::string& selfInboxId,
+                                      std::string& outRecipient,
+                                      std::string& outError) {
+    outRecipient.clear();
+    outError.clear();
+
+    // 1. Explicit to: honored in all cases (acceptance #2).
+    const std::string explicitTo = GetString(args, "to");
+    if (!explicitTo.empty()) {
+        outRecipient = explicitTo;
+        return true;
+    }
+
+    // 2. No explicit to: the anchor's envelope decides.
+    if (!anchorFetched) {
+        outError = "reply: cannot resolve recipient — anchor message not "
+                   "fetchable and no explicit 'to' provided; refusing to "
+                   "send rather than risk misdelivery";
+        return false;
+    }
+
+    // "Name <addr>" -> bare address; bare passes through.
+    auto bareAddr = [](const std::string& v) -> std::string {
+        const auto lt = v.rfind('<');
+        const auto gt = v.rfind('>');
+        if (lt != std::string::npos && gt != std::string::npos && gt > lt)
+            return v.substr(lt + 1, gt - lt - 1);
+        return v;
+    };
+    auto labelContains = [&anchor](const char* needle) {
+        if (!anchor.isMember("labels") || !anchor["labels"].isArray()) return false;
+        for (const auto& l : anchor["labels"])
+            if (l.isString() && l.asString() == needle) return true;
+        return false;
+    };
+
+    if (labelContains("sent")) {
+        // Own-sent anchor (#211's exact signature): the original
+        // correspondent is the anchor's envelope To: — thread ownership
+        // would otherwise resolve the reply to ourselves. A self-only
+        // envelope (the self-addressed original this bug produced) is
+        // unresolvable — error, never another silent self-delivery.
+        if (!anchor.isMember("to") || !anchor["to"].isArray() ||
+            anchor["to"].empty()) {
+            outError = "reply: own-sent anchor carries no envelope recipient "
+                       "('to' empty) and no explicit 'to' provided — cannot "
+                       "resolve recipient";
+            return false;
+        }
+        std::string joined;
+        bool anyNonSelf = false;
+        for (const auto& t : anchor["to"]) {
+            if (!t.isString()) continue;
+            const std::string addr = bareAddr(t.asString());
+            if (addr.empty()) continue;
+            if (!selfInboxId.empty() && addr == selfInboxId) continue;  // self drops out
+            anyNonSelf = true;
+            if (!joined.empty()) joined += ",";
+            joined += addr;
+        }
+        if (joined.empty()) {
+            outError = "reply: own-sent anchor's envelope recipient is this "
+                       "inbox itself (self-addressed original) and no "
+                       "explicit 'to' provided — refusing to send to self";
+            return false;
+        }
+        (void)anyNonSelf;
+        outRecipient = joined;
+        return true;
+    }
+
+    // Received anchor: reply to its sender.
+    if (!anchor.isMember("from") || !anchor["from"].isString() ||
+        anchor["from"].asString().empty()) {
+        outError = "reply: anchor carries no sender ('from' empty) and no "
+                   "explicit 'to' provided — cannot resolve recipient";
+        return false;
+    }
+    outRecipient = bareAddr(anchor["from"].asString());
+    return true;
+}
+
 std::string EmailTool::HandleReply(const Json::Value& args) {
     std::string messageId = GetString(args, "message_id");
     if (messageId.empty()) return ErrResult(400, "message_id is required");
@@ -838,7 +927,34 @@ std::string EmailTool::HandleReply(const Json::Value& args) {
         }
     }
 
+    // #211: resolve the recipient client-side. The server-side /reply
+    // resolves from thread ownership, which self-addresses on own-sent
+    // anchors — 200-confirmed, never delivered (six live incidents on
+    // Buffett). We fetch the anchor's envelope and pass an explicit to:
+    // so the server's ownership resolution never decides the recipient.
+    // Explicit to: skips the fetch — the server validates the anchor
+    // itself on the /reply call.
+    Json::Value anchor;
+    bool anchorFetched = false;
+    if (GetString(args, "to").empty()) {
+        auto resp = AgentMailGet(inboxId,
+            "/v0/inboxes/" + UrlEncodePathSegment(inboxId) + "/messages/" +
+                UrlEncodePathSegment(messageId),
+            apiKey);
+        if (resp.status_code == 200) {
+            anchor = ParseArgs(resp.body);
+            anchorFetched = !anchor.isNull();
+        }
+    }
+
+    std::string recipient, resolveErr;
+    if (!ResolveReplyRecipient(args, anchor, anchorFetched, inboxId,
+                               recipient, resolveErr)) {
+        return ErrResult(400, resolveErr);
+    }
+
     Json::Value payload(Json::objectValue);
+    payload["to"] = recipient;
     payload["text"] = body;
 
     Json::StreamWriterBuilder wb;
@@ -855,7 +971,13 @@ std::string EmailTool::HandleReply(const Json::Value& args) {
     }
 
     auto result = ParseArgs(resp.body);
-    return OkResult(result);
+
+    // #211 verification discipline: 200 != delivered. Echo the resolved
+    // recipient so the caller can cross-check (and so a self-addressed
+    // resolution would be visible in the tool result, not silent).
+    Json::Value verified = result.isNull() ? Json::Value(Json::objectValue) : result;
+    verified["reply_to"] = recipient;
+    return OkResult(verified);
 }
 
 std::string EmailTool::HandleForward(const Json::Value& args) {
