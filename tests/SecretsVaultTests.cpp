@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <array>
 #include <iostream>
 #include <string>
 
@@ -815,6 +816,79 @@ void TestDisabledVaultPassthrough() {
            "no vault -> plaintext round-trip (legacy)");
 }
 
+// ---------------------------------------------------------------------------
+// #275: federation epoch-DEK era — version dispatch + re-seal sweep
+// ---------------------------------------------------------------------------
+
+std::string RawCipher(Fixture& fx, const char* name) {
+    auto q = fx.db.Prepare(
+        "SELECT ciphertext FROM api_package_secrets WHERE name = ?");
+    if (!q) return "";
+    q->BindText(1, name);
+    return q->Step() ? q->ColumnText(0) : "";
+}
+
+int TestEpochDekEra() {
+    std::cerr << "  [vault] #275 epoch-DEK era: version dispatch + re-seal sweep...\n";
+    std::string err;
+
+    // Pre-ceremony: master-key era writes carry the 01 prefix.
+    {
+        Fixture fx;
+        Assert(fx.vault.Set("pkg", "legacy", "legacy-value", err), "legacy row stored");
+        Assert(RawCipher(fx, "legacy").compare(0, 2, "01") == 0,
+               "pre-ceremony ciphertext is version 01");
+        Assert(fx.vault.Get("pkg", "legacy").value_or("") == "legacy-value",
+               "legacy readable pre-ceremony");
+
+        // Sweep without an armed DEK fails classified, migrates nothing.
+        Assert(fx.vault.MigrateToEpochDek(err) == -1,
+               "sweep without DEK fails");
+        Assert(!err.empty(), "sweep-no-DEK error present");
+
+        // Arm the epoch DEK: new writes seal under it (02).
+        std::array<unsigned char, 32> dek{};
+        dek[0] = 0x5a; dek[31] = 0xa5;
+        fx.vault.SetFederationDek(1, dek.data(), dek.size());
+        Assert(fx.vault.HasFederationDek() && fx.vault.FederationEpoch() == 1,
+               "DEK armed, epoch reported");
+        Assert(fx.vault.Set("pkg", "fresh", "fresh-value", err), "fresh row stored");
+        Assert(RawCipher(fx, "fresh").compare(0, 2, "02") == 0,
+               "epoch-era ciphertext is version 02");
+        Assert(fx.vault.Get("pkg", "fresh").value_or("") == "fresh-value",
+               "fresh readable (02 dispatch)");
+
+        // Mixed era: the unswept v01 row still reads via master-key dispatch.
+        Assert(fx.vault.Get("pkg", "legacy").value_or("") == "legacy-value",
+               "v01 row still readable after arming (pre-sweep)");
+
+        // Classified rejection: a vault with no armed DEK refuses v02 rows
+        // with the ceremony error — never garbage, never empty.
+        {
+            Fixture stranger;
+            std::string sErr, out;
+            Assert(!stranger.vault.Open(RawCipher(fx, "fresh"), out, sErr),
+                   "v02 without DEK rejected");
+            Assert(sErr.find("awaiting key ceremony") != std::string::npos,
+                   "classified ceremony error: " + sErr);
+        }
+
+        // Re-seal sweep: v01 rows migrate to 02, v02 untouched, idempotent.
+        const int migrated = fx.vault.MigrateToEpochDek(err);
+        Assert(migrated == 1, "sweep migrated exactly the v01 row: " +
+               std::to_string(migrated) + " (" + err + ")");
+        Assert(RawCipher(fx, "legacy").compare(0, 2, "02") == 0,
+               "legacy row re-sealed to 02");
+        Assert(fx.vault.Get("pkg", "legacy").value_or("") == "legacy-value",
+               "legacy value intact after sweep");
+        Assert(fx.vault.Get("pkg", "fresh").value_or("") == "fresh-value",
+               "fresh value intact after sweep");
+        const int again = fx.vault.MigrateToEpochDek(err);
+        Assert(again == 0, "sweep idempotent (0 on re-run)");
+    }
+    return 0;
+}
+
 int main() {
     std::cerr << "SecretsVault tests:\n";
     TestCrypto();
@@ -832,6 +906,7 @@ int main() {
     TestAuditF3GetAllResolves();
     TestAuditMigrationJsonObject();
     TestDisabledVaultPassthrough();
+    TestEpochDekEra();
     if (g_failures == 0) {
         std::cerr << "SecretsVault tests: ALL PASSED\n";
         return 0;

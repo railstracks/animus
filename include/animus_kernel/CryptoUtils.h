@@ -77,9 +77,16 @@ inline std::string Sha256Hex(const std::string& data) {
 //   [13..]   ciphertext || 16-byte GCM tag
 // AAD is empty; the vault binds entries to packages by row, not by ciphertext.
 // ---------------------------------------------------------------------------
-inline std::string Aes256GcmSeal(const std::vector<unsigned char>& key32,
-                                 const std::string& plaintext,
-                                 std::string& error) {
+// ---------------------------------------------------------------------------
+// #275: version-parameterized seal/open. Version byte 0x01 = vault
+// master-key era; 0x02 = federation epoch-DEK era. Old (v01-only) kernels
+// fail CLASSIFIED on 0x02 rows ("unsupported envelope version"), never as
+// garbage GCM auth errors — mixed-version deferral per the #182 design.
+// ---------------------------------------------------------------------------
+inline std::string Aes256GcmSealVersion(const std::vector<unsigned char>& key32,
+                                        const std::string& plaintext,
+                                        unsigned char version,
+                                        std::string& error) {
     error.clear();
     if (key32.size() != 32) { error = "seal: key must be 32 bytes"; return {}; }
     unsigned char nonce[12];
@@ -113,7 +120,8 @@ inline std::string Aes256GcmSeal(const std::vector<unsigned char>& key32,
         }
         static const char* hex = "0123456789abcdef";
         envelope.reserve(2 + 2 * (sizeof(nonce) + total + sizeof(tag)));
-        envelope += "01";
+        envelope += hex[version >> 4];
+        envelope += hex[version & 0xF];
         for (unsigned char b : nonce) { envelope += hex[b >> 4]; envelope += hex[b & 0xF]; }
         for (int i = 0; i < total; ++i) { envelope += hex[ct[i] >> 4]; envelope += hex[ct[i] & 0xF]; }
         for (unsigned char b : tag) { envelope += hex[b >> 4]; envelope += hex[b & 0xF]; }
@@ -122,11 +130,19 @@ inline std::string Aes256GcmSeal(const std::vector<unsigned char>& key32,
     return envelope;
 }
 
-inline bool Aes256GcmOpen(const std::vector<unsigned char>& key32,
-                          const std::string& envelopeHex,
-                          std::string& plaintext,
-                          std::string& error) {
+inline std::string Aes256GcmSeal(const std::vector<unsigned char>& key32,
+                                 const std::string& plaintext,
+                                 std::string& error) {
+    return Aes256GcmSealVersion(key32, plaintext, 0x01, error);
+}
+
+inline bool Aes256GcmOpenVersioned(const std::vector<unsigned char>& key32,
+                                   const std::string& envelopeHex,
+                                   std::string& plaintext,
+                                   std::string& error,
+                                   unsigned char& versionOut) {
     error.clear();
+    versionOut = 0;
     plaintext.clear();
     if (key32.size() != 32) { error = "open: key must be 32 bytes"; return false; }
     auto hexVal = [](char c) -> int {
@@ -151,9 +167,10 @@ inline bool Aes256GcmOpen(const std::vector<unsigned char>& key32,
         if (hi < 0 || lo < 0) { error = "open: malformed envelope"; return false; }
         raw.push_back(static_cast<unsigned char>((hi << 4) | lo));
     }
-    if (raw[0] != 0x01 || raw.size() < 1 + 12 + 16) {
+    if ((raw[0] != 0x01 && raw[0] != 0x02) || raw.size() < 1 + 12 + 16) {
         error = "open: unsupported envelope version or truncated"; return false;
     }
+    versionOut = raw[0];
     const unsigned char* nonce = raw.data() + 1;
     const unsigned char* ct = raw.data() + 13;
     const size_t ctLen = raw.size() - 13 - 16;
@@ -267,6 +284,14 @@ inline bool X25519SharedSecret(const std::array<unsigned char, 32>& own_private,
     EVP_PKEY_free(peer);
     EVP_PKEY_free(own);
     return ok;
+}
+
+inline bool Aes256GcmOpen(const std::vector<unsigned char>& key32,
+                          const std::string& envelopeHex,
+                          std::string& plaintext,
+                          std::string& error) {
+    unsigned char version = 0;
+    return Aes256GcmOpenVersioned(key32, envelopeHex, plaintext, error, version);
 }
 
 // HKDF-SHA256 (extract+expand, RFC 5869). Empty salt means the RFC zero

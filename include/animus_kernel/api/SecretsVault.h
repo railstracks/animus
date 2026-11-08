@@ -164,6 +164,13 @@ public:
     bool HasFederationDek() const { return !m_fedDek.empty(); }
     int64_t FederationEpoch() const { return m_fedEpoch; }
 
+    // #275: idempotent re-seal sweep — every master-key-era (v01) row is
+    // opened with the master key and re-sealed under the armed epoch DEK
+    // (v02). Boot-invoked after SetFederationDek. Returns migrated count,
+    // or -1 with error (disabled / no DEK / open failure — loud stop; a
+    // re-run skips rows the interrupted pass already moved).
+    int MigrateToEpochDek(std::string& error);
+
 private:
     bool LoadOrCreateKey(std::string& error);
 
