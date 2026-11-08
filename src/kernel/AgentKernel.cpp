@@ -535,6 +535,18 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
                 m_secretsVault->SetFederationDek(epoch, dek.data(), dek.size());
                 ALOG_INFO("federation", "[keys] epoch " << epoch
                           << " DEK unwrapped — federated secrets readable");
+                // #275: re-seal master-key-era rows under the epoch DEK —
+                // idempotent, safe to repeat every boot.
+                {
+                    std::string sweepErr;
+                    const int migrated = m_secretsVault->MigrateToEpochDek(sweepErr);
+                    if (migrated < 0)
+                        ALOG_ERROR("federation", "[vault] epoch re-seal sweep "
+                                   "failed: " << sweepErr);
+                    else if (migrated > 0)
+                        ALOG_INFO("federation", "[vault] re-sealed " << migrated
+                                  << " secret(s) under epoch " << epoch);
+                }
             } else {
                 int64_t maxEpoch = 0;
                 if (m_federationKeys->MaxEpoch(&maxEpoch)) {
