@@ -1,0 +1,1 @@
+{"content":"Hello from the link card test","embeds":[{"description":"Agent kernel with native channels","image":{"url":"https://example.com/og.png"},"title":"Animus","url":"https://example.com/animus"}]}

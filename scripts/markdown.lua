@@ -562,6 +562,49 @@ M.parse_inline = parse_inline
 M.esc_html = esc_html
 
 -- ---------------------------------------------------------------------------
+-- #157: outbound link cards. The kernel concept is one uniform card
+-- {url, title?, description?, image?}; each adapter maps it to a native
+-- embed or degrades to a plain URL. These are the pure, shared halves —
+-- validation, canonical markdown form, and url-presence guarantee.
+-- ---------------------------------------------------------------------------
+
+--- Validate + normalize a link-card arg. Returns the card table, or nil
+--- + reason. url is required and must be http(s) — non-http schemes never
+--- emit (same rule as the droplink). Optional strings survive only when
+--- non-empty.
+function M.normalize_card(card)
+    if type(card) ~= "table" then
+        return nil, "link_card must be a table {url, title?, description?, image?}"
+    end
+    if type(card.url) ~= "string" or card.url == "" then
+        return nil, "link_card.url is required"
+    end
+    if not card.url:match("^https?://") then
+        return nil, "link_card.url must be http(s): " .. card.url
+    end
+    local t = { url = card.url }
+    for _, k in ipairs({ "title", "description", "image" }) do
+        local v = card[k]
+        if type(v) == "string" and v ~= "" then t[k] = v end
+    end
+    return t
+end
+
+--- Canonical markdown form of a card: [title](url) — rides every platform
+--- renderer downstream (mastodon anchor, bluesky facet, discord/slack link).
+function M.card_md(card)
+    local label = (card.title and card.title ~= "") and card.title or card.url
+    return "[" .. label .. "](" .. card.url .. ")"
+end
+
+--- Guarantee the card URL rides the text: append the canonical markdown
+--- form when the url is not already present verbatim.
+function M.append_card(text, card)
+    if text:find(card.url, 1, true) then return text end
+    return text .. "\n\n" .. M.card_md(card)
+end
+
+-- ---------------------------------------------------------------------------
 -- sanitize_mastodon_html — defense-in-depth allowlist walker. The render
 -- path already constructs escaped, allowlisted HTML; this re-validates any
 -- tag-shaped sequence that survived, so a hostile string can never smuggle

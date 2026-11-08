@@ -669,6 +669,32 @@ local function attach_facets(record, text)
     end
 end
 
+--- #157: link card helpers — markdown module guarded the same way as
+--- render_content. Degrade path: plain URL append.
+local function get_link_card(card_arg)
+    if not card_arg then return nil end
+    if type(markdown) == "table" and type(markdown.normalize_card) == "function" then
+        local ok, card, reason = pcall(markdown.normalize_card, card_arg)
+        if not ok then return nil, "link_card validation failed" end
+        if not card then return nil, reason end
+        return card
+    end
+    if type(card_arg) ~= "table" or type(card_arg.url) ~= "string"
+        or not card_arg.url:match("^https?://") then
+        return nil, "link_card.url is required and must be http(s)"
+    end
+    return card_arg
+end
+
+local function append_card_url(content, card)
+    if content:find(card.url, 1, true) then return content end
+    if type(markdown) == "table" and type(markdown.append_card) == "function" then
+        local ok, out = pcall(markdown.append_card, content, card)
+        if ok and type(out) == "string" and out ~= "" then return out end
+    end
+    return content .. "\n\n" .. card.url
+end
+
 local function do_chat_send(args)
     local pid = args.platform_id
     if not pid or pid == "" then
@@ -680,6 +706,13 @@ local function do_chat_send(args)
     if not args.content or args.content == "" then
         return { success = false, error = "content is required" }
     end
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    -- #157: chat messages degrade to URL-in-text (no external embed on the
+    -- chat surface); the URL facet auto-attaches from the rendered text.
+    if card then args.content = append_card_url(args.content, card) end
     local rendered = render_content(args.content)
     local message = { text = rendered }
     attach_facets(message, rendered)
@@ -772,11 +805,18 @@ local function do_post(args)
         return do_reply(args)
     end
 
+    -- #157: validate + attach the card before any auth I/O (loud input
+    -- errors win over transport errors).
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card then args.content = append_card_url(args.content, card) end
+
     local did, err = ensure_auth(pid)
     if not did then
         return { success = false, error = err }
     end
-
     local rendered = render_content(args.content)
 
     local record = {
@@ -787,6 +827,20 @@ local function do_post(args)
     }
 
     attach_facets(record, rendered)
+    if card then
+        -- #157: app.bsky.embed.external rides the post record; the URL
+        -- facet attaches from the rendered text above. card.image (thumb)
+        -- needs a blob upload — #159's outbound-media lane; documented
+        -- degradation.
+        record.embed = {
+            ["$type"] = "app.bsky.embed.external",
+            external = {
+                uri = card.url,
+                title = card.title or "",
+                description = card.description or "",
+            },
+        }
+    end
 
     local resp = auth_post(pid, "/xrpc/com.atproto.repo.createRecord", {
         repo = did,
@@ -824,6 +878,13 @@ local function do_reply(args)
         return { success = false, error = "content is required for reply" }
     end
 
+    -- #157: validate + attach the card before any auth/parent-resolve I/O.
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card then args.content = append_card_url(args.content, card) end
+
     local did, err = ensure_auth(pid)
     if not did then
         return { success = false, error = err }
@@ -858,6 +919,17 @@ local function do_reply(args)
     }
 
     attach_facets(record, rendered)
+    if card then
+        -- #157: same external embed on replies.
+        record.embed = {
+            ["$type"] = "app.bsky.embed.external",
+            external = {
+                uri = card.url,
+                title = card.title or "",
+                description = card.description or "",
+            },
+        }
+    end
 
     local resp = auth_post(pid, "/xrpc/com.atproto.repo.createRecord", {
         repo = did,
@@ -1287,12 +1359,14 @@ animus.register_channel({
         post = {
             { name = "content", type = "string", required = true, description = "Create a new root-level post (NOT a reply). Use 'reply' action to respond to another post." },
             { name = "visibility", type = "string", required = false, description = "Not used by Bluesky (always public)" },
-            { name = "langs", type = "array", required = false, description = "BCP-47 language codes (default: ['en'])" }
+            { name = "langs", type = "array", required = false, description = "BCP-47 language codes (default: ['en'])" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — app.bsky.embed.external on the post; image (thumb) degrades until #159's media lane" }
         },
         reply = {
             { name = "post_id", type = "string", required = true, description = "AT-URI of the direct parent post you are replying to" },
             { name = "root_id", type = "string", required = true, description = "AT-URI of the thread root post (top-level post that started the thread)" },
-            { name = "content", type = "string", required = true, description = "Reply text (max 300 graphemes)" }
+            { name = "content", type = "string", required = true, description = "Reply text (max 300 graphemes)" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — external embed on the reply" }
         },
         like = {
             { name = "post_id", type = "string", required = true, description = "AT-URI of the post to like" }
@@ -1333,7 +1407,8 @@ animus.register_channel({
         chat_send = {
             { name = "platform_id", type = "string", required = true, description = "Platform instance ID" },
             { name = "convo_id", type = "string", required = true, description = "Conversation ID" },
-            { name = "content", type = "string", required = true, description = "Message text (max 10k chars)" }
+            { name = "content", type = "string", required = true, description = "Message text (max 10k chars)" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — chat degrades to url-in-text" }
         },
         chat_get_convo = {
             { name = "platform_id", type = "string", required = true, description = "Platform instance ID" },

@@ -647,6 +647,66 @@ local function render_content(content)
     return content
 end
 
+--- #157: link card helpers — markdown module guarded the same way as
+--- render_content. Degrade path: plain URL append.
+local function get_link_card(card_arg)
+    if not card_arg then return nil end
+    if type(markdown) == "table" and type(markdown.normalize_card) == "function" then
+        local ok, card, reason = pcall(markdown.normalize_card, card_arg)
+        if not ok then return nil, "link_card validation failed" end
+        if not card then return nil, reason end
+        return card
+    end
+    if type(card_arg) ~= "table" or type(card_arg.url) ~= "string"
+        or not card_arg.url:match("^https?://") then
+        return nil, "link_card.url is required and must be http(s)"
+    end
+    return card_arg
+end
+
+local function append_card_url(content, card)
+    if content:find(card.url, 1, true) then return content end
+    if type(markdown) == "table" and type(markdown.append_card) == "function" then
+        local ok, out = pcall(markdown.append_card, content, card)
+        if ok and type(out) == "string" and out ~= "" then return out end
+    end
+    return content .. "\n\n" .. card.url
+end
+
+--- #157: Mastodon counts every link as 23 chars against the toot limit,
+--- regardless of URL length, plus the anchor label's real bytes. Mask each
+--- rendered anchor as ONE space-free word of exactly that weighted size —
+--- \1%04d + \2 padding — split, then restore the original anchors. No
+--- spaces anywhere means the boundary matcher can never break inside a
+--- token and a label can never separate from its URL; while masked, the
+--- byte budget equals the weighted budget. \1/\2 never occur in rendered
+--- HTML, so token bytes are unambiguous; any fragment surviving an
+--- ultra-rare fallback mid-word break is stripped as debris. Bare
+--- (unlinked) URLs stay conservative: full length counted.
+local LINK_WEIGHT = 23
+
+local function weighted_split(rendered, limit)
+    local anchors = {}
+    local masked = rendered:gsub('<a href="[^"]+"[^>]*>.-</a>', function(m)
+        local label = m:match(">(.-)</a>$") or ""
+        local i = #anchors + 1
+        anchors[i] = { full = m, pad = LINK_WEIGHT - 6 + #label }
+        return "\1" .. string.format("%04d", i) .. string.rep("\2", anchors[i].pad)
+    end)
+    local chunks = split_for_limit(masked, limit)
+    local out = {}
+    for ci, chunk in ipairs(chunks) do
+        local c = chunk
+        for i = 1, #anchors do
+            local a = anchors[i]
+            local tok = "\1" .. string.format("%04d", i) .. string.rep("\2", a.pad)
+            c = c:gsub(tok, function() return a.full end)
+        end
+        out[ci] = c:gsub("[\1\2]", "")
+    end
+    return out
+end
+
 local function do_post(args)
     local platform_id = args.platform_id
     local content = args.content
@@ -662,9 +722,15 @@ local function do_post(args)
             .. " (public|unlisted|private|direct)" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card then content = append_card_url(content, card) end
+
     content = render_content(content)
     local limit = get_char_limit(platform_id)
-    local chunks = split_for_limit(content, limit)
+    local chunks = weighted_split(content, limit)
 
     local first_id, first_url
     for idx, chunk in ipairs(chunks) do
@@ -719,9 +785,15 @@ local function do_reply(args)
         return { success = false, error = "content is required" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card then content = append_card_url(content, card) end
+
     content = render_content(content)
     local limit = get_char_limit(platform_id)
-    local chunks = split_for_limit(content, limit)
+    local chunks = weighted_split(content, limit)
 
     local reply_id, reply_url
     for idx, chunk in ipairs(chunks) do
@@ -1098,12 +1170,14 @@ animus.register_channel({
         },
         post = {
             { name = "content", type = "string", required = true, description = "Toot text (auto-split into a thread if over the instance limit)" },
-            { name = "visibility", type = "string", required = false, description = "public (default), unlisted, private, direct" }
+            { name = "visibility", type = "string", required = false, description = "public (default), unlisted, private, direct" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — url rides the toot text (server-side preview); links count 23 chars against the instance limit" }
         },
         reply = {
             { name = "status_id", type = "string", required = true, description = "Status ID to reply to" },
             { name = "content", type = "string", required = true, description = "Reply text (auto-split if over limit)" },
-            { name = "visibility", type = "string", required = false, description = "public (default), unlisted, private, direct" }
+            { name = "visibility", type = "string", required = false, description = "public (default), unlisted, private, direct" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — url rides the toot text (server-side preview); links count 23 chars against the instance limit" }
         },
         get_status = {
             { name = "status_id", type = "string", required = true, description = "Status ID to fetch" }
