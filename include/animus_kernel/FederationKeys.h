@@ -10,6 +10,9 @@
 
 namespace animus::kernel {
 
+class AgentConfigStore;
+class SecretsVault;
+
 // ============================================================================
 // FederationKeys — epoch DEK envelopes (#274, fed-secrets 3/5; #182 design).
 //
@@ -62,6 +65,40 @@ public:
                       std::string& error) const;
 
     bool ListEnvelopes(std::vector<EnvelopeRow>& out, std::string& error) const;
+
+    // #276: drop every envelope addressed to a node (revocation) — its
+    // remaining copies on the revoked member's own DB are useless against
+    // the post-rotation epoch's ciphertext.
+    bool DeleteEnvelopesFor(const std::string& targetNode, std::string& error);
+
+    // --- #276: owner-triggered ceremonies (v1, per the design) -------------
+
+    struct CeremonyContext {
+        FederationKeys* keys{nullptr};
+        SecretsVault* vault{nullptr};          // member holding the DEK
+        AgentConfigStore* registry{nullptr};   // federation.node_keys.<id> rows
+        NodeIdentity* self{nullptr};
+        std::string selfNodeId;
+    };
+
+    // Approve-node: register the new member's public key; if no epoch exists
+    // yet (first ceremony anywhere) generate the epoch-1 DEK and rotate the
+    // vault to it (re-sealing every master-key-era row), then seal the
+    // current-epoch DEK to self + every member. Returns the epoch, or -1.
+    int64_t RunApproveNodeCeremony(const CeremonyContext& ctx,
+                                   const std::string& newNodeId,
+                                   const std::array<unsigned char, 32>& newPub,
+                                   std::string& error);
+
+    // Revoke-node: delete the member's registry row + envelopes, rotate to
+    // epoch N+1 with a fresh DEK (re-sealing every vault row), seal only to
+    // self + remaining members. The revoked node's stored envelopes and old
+    // ciphertexts both fail against epoch N+1. Honest boundary: rotation
+    // restores exclusivity going forward — it does not un-read what the
+    // revoked node already read. Returns the new epoch, or -1.
+    int64_t RunRevokeNodeCeremony(const CeremonyContext& ctx,
+                                  const std::string& revokedNodeId,
+                                  std::string& error);
 
     // Max epoch across ALL targets — the lockout probe: peers hold an epoch
     // this node has no envelope for. False when no rows exist at all.

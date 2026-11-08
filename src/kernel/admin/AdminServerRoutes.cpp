@@ -6,6 +6,7 @@
 #include "animus_kernel/api/ApiRuntime.h"
 #include "animus_kernel/api/RegistryClient.h"
 #include "animus_kernel/api/SecretsVault.h"
+#include "animus_kernel/FederationKeys.h"
 #include "animus_kernel/ChainRunner.h"
 #include "animus_kernel/CompactionService.h"
 #include "animus_kernel/SessionManager.h"

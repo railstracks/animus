@@ -171,6 +171,21 @@ public:
     // re-run skips rows the interrupted pass already moved).
     int MigrateToEpochDek(std::string& error);
 
+    // #276: epoch rotation. Re-seals EVERY row (era-dispatched open: 01 via
+    // master key, 02 via the currently-armed DEK) under `newDek` as 02,
+    // then arms (newEpoch, newDek). The revoked member keeps its old
+    // envelope and old ciphertexts — both fail against the new DEK. Returns
+    // rows re-sealed, or -1 with error. Loud stop; idempotent re-run is a
+    // plain MigrateToEpochDek (01 rows) + no-op (02 rows already new-era).
+    int RotateToNewDek(int64_t newEpoch, const unsigned char* newDek32,
+                      size_t len, std::string& error);
+
+    // #276: ceremony read access to the armed DEK — the owner-authenticated
+    // approve-node route seals it to a new member's public key. Same trust
+    // boundary as the vault's admin set-secret routes (which accept
+    // plaintext values); empty when no DEK is armed.
+    const std::vector<unsigned char>& FederationDekRef() const { return m_fedDek; }
+
 private:
     bool LoadOrCreateKey(std::string& error);
 
