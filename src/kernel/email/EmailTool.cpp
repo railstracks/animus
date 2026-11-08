@@ -132,8 +132,9 @@ ToolDefinition EmailTool::GetDefinition() const {
         "Email operation to perform",
         true, "",
         {"list_inboxes", "list_threads", "get_thread", "get_message",
-         "get_attachment", "search", "send", "reply", "forward",
-         "mark_read", "delete", "list_drafts", "create_draft", "send_draft"}
+         "get_attachment", "list_attachments", "search", "send", "reply",
+         "forward", "mark_read", "delete", "list_drafts", "create_draft",
+         "send_draft"}
     });
 
     // Account selection
@@ -186,6 +187,20 @@ ToolDefinition EmailTool::GetDefinition() const {
     def.parameters.push_back({
         "bcc", "string",
         "BCC recipients (comma-separated, optional for send)",
+        false
+    });
+    def.parameters.push_back({
+        "attachments", "array",
+        "Attachments for send: [{filename, content (base64), content_type?}]. "
+        "After sending, the thread is fetched to confirm the server-side "
+        "attachment count (attachments_confirmed in the result)",
+        false
+    });
+    def.parameters.push_back({
+        "include_blocked", "boolean",
+        "Include server-side blocked/quarantined mail (list_threads). Blocked "
+        "mail fires no events, so periodic explicit sweeps are the only "
+        "visibility path",
         false
     });
 
@@ -263,6 +278,9 @@ ToolResult EmailTool::Execute(const ToolCall& call) {
     } else if (action == "get_attachment") {
         result.success = true;
         result.output = HandleGetAttachment(args);
+    } else if (action == "list_attachments") {
+        result.success = true;
+        result.output = HandleListAttachments(args);
     } else if (action == "search") {
         result.success = true;
         result.output = HandleSearch(args);
@@ -602,6 +620,12 @@ std::string EmailTool::HandleListThreads(const Json::Value& args) {
     std::string after = GetString(args, "after");
     if (!after.empty()) query["after"] = after;
 
+    // #212: surface server-side blocked/quarantined mail on request (the
+    // Oct 11 Soddu blind spot — blocked mail fires no events otherwise).
+    if (GetBool(args, "include_blocked", false)) {
+        query["include_blocked"] = "true";
+    }
+
     auto resp = AgentMailGet(inboxId, "/v0/inboxes/" + UrlEncodePathSegment(inboxId) + "/threads", apiKey, query);
     if (resp.status_code != 200) {
         return ErrResult(resp.status_code,
@@ -714,14 +738,63 @@ std::string EmailTool::HandleGetAttachment(const Json::Value& args) {
             resp.error.empty() ? (ParseArgs(resp.body).isMember("message") ? ParseArgs(resp.body)["message"].asString() : std::string("Attachment not found")) : resp.error);
     }
 
-    // Attachment content is binary — return metadata + base64 content
+    // The attachment endpoint returns a JSON envelope with signed CDN URLs
+    // (live-verified 2026-10-22): download_url + text_url, ~1h expiry.
+    // The URLs ARE the deliverable — return them.
+    auto envelope = ParseArgs(resp.body);
+    if (envelope.isObject() &&
+        (envelope.isMember("download_url") || envelope.isMember("text_url"))) {
+        Json::Value data(envelope);
+        data["attachment_id"] = attachmentId;
+        data["note"] = "download_url/text_url are signed CDN links valid ~1 hour; "
+                       "fetch promptly";
+        return OkResult(data);
+    }
+
+    // Non-envelope body: metadata only, loud that the URLs are missing.
     Json::Value data(Json::objectValue);
     data["attachment_id"] = attachmentId;
     data["content_type"] = resp.content_type;
     data["size"] = static_cast<int>(resp.body.size());
-    // For now, return metadata only. Full content download can be added later.
-    data["note"] = "Attachment content available but not included for size. "
-                   "Use the URL directly if needed.";
+    data["warning"] = "Attachment endpoint returned no signed URL envelope "
+                      "(download_url/text_url missing)";
+    return OkResult(data);
+}
+
+std::string EmailTool::HandleListAttachments(const Json::Value& args) {
+    // #212: discoverable attachment surface — GET the message, surface its
+    // attachments array (entries carry attachment_id, NOT id — live 2026-10-22).
+    std::string messageId = GetString(args, "message_id");
+    if (messageId.empty()) {
+        return ErrResult(400, "message_id is required");
+    }
+
+    std::string inboxId = GetString(args, "inbox_id");
+    std::string apiKey;
+    if (!ResolveAccount(inboxId, inboxId, apiKey)) {
+        if (!ResolveAccountByInboxId(inboxId, inboxId, apiKey)) {
+            if (!FindFirstAgentMailAccount(inboxId, apiKey)) {
+                return ErrResult(400, "No email accounts configured");
+            }
+        }
+    }
+
+    auto resp = AgentMailGet(inboxId,
+        "/v0/inboxes/" + UrlEncodePathSegment(inboxId) + "/messages/" +
+        UrlEncodePathSegment(messageId), apiKey);
+    if (resp.status_code != 200) {
+        return ErrResult(resp.status_code,
+            resp.error.empty() ? "Message not found" : resp.error);
+    }
+
+    auto body = ParseArgs(resp.body);
+    Json::Value data(Json::objectValue);
+    data["message_id"] = messageId;
+    if (body.isMember("thread_id")) data["thread_id"] = body["thread_id"];
+    data["attachments"] = body.isMember("attachments")
+        ? body["attachments"]
+        : Json::Value(Json::arrayValue);
+    data["count"] = static_cast<int>(data["attachments"].size());
     return OkResult(data);
 }
 
@@ -808,6 +881,16 @@ std::string EmailTool::HandleSend(const Json::Value& args) {
     std::string bcc = GetString(args, "bcc");
     if (!bcc.empty()) payload["bcc"] = bcc;
 
+    // #212: attachments — [{filename, content(base64), content_type?}]
+    Json::Value attachments(Json::arrayValue);
+    {
+        std::string attachmentsErr;
+        if (!NormalizeAttachments(args, attachments, attachmentsErr)) {
+            return ErrResult(400, attachmentsErr);
+        }
+    }
+    if (attachments.size() > 0) payload["attachments"] = attachments;
+
     Json::StreamWriterBuilder wb;
     wb.settings_["indentation"] = "";
     std::string bodyStr = Json::writeString(wb, payload);
@@ -821,7 +904,78 @@ std::string EmailTool::HandleSend(const Json::Value& args) {
     }
 
     auto result = ParseArgs(resp.body);
+
+    // #212: send-200 can lie — the response can echo "attachments": 0
+    // despite success (observed live 2026-10-22). When attachments were
+    // sent, verify against the thread: the server-side receipt that matters.
+    if (attachments.size() > 0) {
+        const std::string threadId =
+            result.isMember("thread_id") ? result["thread_id"].asString() : "";
+        const std::string sentMessageId =
+            result.isMember("message_id") ? result["message_id"].asString() : "";
+        if (!threadId.empty() && !sentMessageId.empty()) {
+            auto threadResp = AgentMailGet(inboxId,
+                "/v0/inboxes/" + UrlEncodePathSegment(inboxId) + "/threads/" +
+                UrlEncodePathSegment(threadId), apiKey);
+            if (threadResp.status_code == 200) {
+                result["attachments_confirmed"] =
+                    CountConfirmedAttachments(ParseArgs(threadResp.body), sentMessageId);
+            } else {
+                result["attachments_confirmed"] = -1;
+                result["attachments_confirmed_note"] =
+                    "send accepted but thread receipt unavailable; verify via get_thread";
+            }
+        }
+    }
     return OkResult(result);
+}
+
+// --- #212: pure attachment helpers (unit-testable) -------------------------
+
+bool EmailTool::NormalizeAttachments(const Json::Value& args,
+                                     Json::Value& outAttachments,
+                                     std::string& outError) {
+    outAttachments = Json::Value(Json::arrayValue);
+    outError.clear();
+    if (!args.isMember("attachments")) return true;  // none requested
+
+    const Json::Value& in = args["attachments"];
+    if (!in.isArray()) {
+        outError = "attachments must be an array of {filename, content} objects";
+        return false;
+    }
+    for (Json::ArrayIndex i = 0; i < in.size(); ++i) {
+        const Json::Value& entry = in[i];
+        if (!entry.isObject() ||
+            !entry.isMember("filename") || !entry.isMember("content") ||
+            entry["filename"].asString().empty() ||
+            entry["content"].asString().empty()) {
+            outError = "attachments[" + std::to_string(i) +
+                       "] must carry non-empty filename and base64 content";
+            return false;
+        }
+        Json::Value normalized(Json::objectValue);
+        normalized["filename"] = entry["filename"].asString();
+        normalized["content"] = entry["content"].asString();
+        if (entry.isMember("content_type") && !entry["content_type"].asString().empty())
+            normalized["content_type"] = entry["content_type"].asString();
+        outAttachments.append(normalized);
+    }
+    return true;
+}
+
+int EmailTool::CountConfirmedAttachments(const Json::Value& threadBody,
+                                         const std::string& messageId) {
+    if (!threadBody.isObject() || !threadBody.isMember("messages")) return -1;
+    const Json::Value& messages = threadBody["messages"];
+    if (!messages.isArray()) return -1;
+    for (const auto& msg : messages) {
+        if (!msg.isObject() || !msg.isMember("message_id")) continue;
+        if (msg["message_id"].asString() != messageId) continue;
+        if (!msg.isMember("attachments") || !msg["attachments"].isArray()) return 0;
+        return static_cast<int>(msg["attachments"].size());
+    }
+    return -1;
 }
 
 // --- #211: pure reply-recipient resolution (unit-testable) ----------------

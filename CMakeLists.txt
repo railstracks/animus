@@ -1154,6 +1154,19 @@ if(ANIMUS_BUILD_TESTS)
     )
     add_test(NAME EmailToolReplyTests COMMAND animus_email_tool_reply_tests)
 
+    add_executable(animus_email_attachment_tests
+      tests/EmailToolAttachmentTests.cpp
+    )
+    target_link_libraries(animus_email_attachment_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_email_attachment_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_email_attachment_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME EmailToolAttachmentTests COMMAND animus_email_attachment_tests)
+
     add_executable(animus_signal_protocol_tests
       tests/SignalProtocolTests.cpp
     )
