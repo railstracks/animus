@@ -1,8 +1,10 @@
 #include "animus_kernel/FederationKeys.h"
 
+#include "animus_kernel/AgentConfigStore.h"
 #include "animus_kernel/CryptoUtils.h"
 #include "animus_kernel/Log.h"
 #include "animus_kernel/SchemaHelpers.h"
+#include "animus_kernel/api/SecretsVault.h"
 
 #include <chrono>
 #include <cstring>
@@ -270,6 +272,175 @@ bool FederationKeys::MaxEpoch(int64_t* epochOut) const {
     if (has && epochOut) *epochOut = stmt->ColumnInt64(0);
     stmt->Finalize();
     return has;
+}
+
+bool FederationKeys::DeleteEnvelopesFor(const std::string& targetNode, std::string& error) {
+    if (!m_store) { error = "federation keys have no store"; return false; }
+    auto stmt = m_store->Prepare(
+        "DELETE FROM federation_key_envelopes WHERE target_node = ?");
+    if (!stmt) { error = "prepare failed: " + m_store->ErrMsg(); return false; }
+    stmt->BindText(1, targetNode);
+    if (!stmt->ExecDML()) { error = "delete failed: " + m_store->ErrMsg(); return false; }
+    return true;
+}
+
+namespace {
+
+// Members = self (explicit) + every registry row. Malformed rows fail the
+// ceremony loudly — the operator fixes the registry and retries; a silent
+// skip would strand that member in a lockout the ceremony was supposed to
+// prevent.
+struct MemberKey {
+    std::string nodeId;
+    std::array<unsigned char, 32> pub{};
+};
+
+bool GatherMembers(const FederationKeys::CeremonyContext& ctx,
+                   std::vector<MemberKey>& members, std::string& error) {
+    members.clear();
+    if (!ctx.self) { error = "ceremony: this node's identity unavailable"; return false; }
+    members.push_back({ctx.selfNodeId, ctx.self->public_key});
+    if (!ctx.registry) { error = "ceremony: peer-key registry unavailable"; return false; }
+    const std::string prefix = "federation.node_keys.";
+    for (const auto& [key, value] : ctx.registry->GetAll("")) {
+        if (key.rfind(prefix, 0) != 0) continue;
+        MemberKey m;
+        m.nodeId = key.substr(prefix.size());
+        if (m.nodeId == ctx.selfNodeId) continue;   // self already present
+        if (!HexToBytes32(value, m.pub)) {
+            error = "ceremony: malformed public key in registry for node '" +
+                    m.nodeId + "' — fix the registry and retry";
+            return false;
+        }
+        members.push_back(std::move(m));
+    }
+    return true;
+}
+
+bool FreshDek(std::array<unsigned char, 32>& dek, std::string& error) {
+    if (RAND_bytes(dek.data(), 32) != 1) {
+        error = "ceremony: DEK generation failed";
+        return false;
+    }
+    return true;
+}
+
+// Seal `dek` to self + every member. Upserts by (epoch, target), so a
+// partially-failed ceremony can simply be re-run.
+bool SealToAllMembers(FederationKeys* keys,
+                      const FederationKeys::CeremonyContext& ctx,
+                      int64_t epoch,
+                      const std::array<unsigned char, 32>& dek,
+                      std::string& error) {
+    std::vector<MemberKey> members;
+    if (!GatherMembers(ctx, members, error)) return false;
+    for (const auto& m : members) {
+        std::string sealErr;
+        if (!keys->SealEpochDek(epoch, m.nodeId, ctx.selfNodeId, m.pub, dek, sealErr)) {
+            error = "ceremony: cannot seal epoch " + std::to_string(epoch) +
+                    " for node '" + m.nodeId + "': " + sealErr;
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+int64_t FederationKeys::RunApproveNodeCeremony(const CeremonyContext& ctx,
+                                               const std::string& newNodeId,
+                                               const std::array<unsigned char, 32>& newPub,
+                                               std::string& error) {
+    if (!ctx.vault) { error = "ceremony: vault unavailable"; return -1; }
+    if (!ctx.registry) { error = "ceremony: registry unavailable"; return -1; }
+    if (newNodeId.empty()) { error = "ceremony: node id required"; return -1; }
+
+    std::string regErr;
+    if (!StorePeerNodeKey(*ctx.registry, newNodeId, newPub, regErr)) {
+        error = "ceremony: cannot register new member: " + regErr;
+        return -1;
+    }
+
+    int64_t epoch = 0;
+    std::array<unsigned char, 32> dek{};
+    if (ctx.vault->HasFederationDek()) {
+        // Established member: seal the DEK we already hold.
+        epoch = ctx.vault->FederationEpoch();
+        const auto& held = ctx.vault->FederationDekRef();
+        if (held.size() != 32) { error = "ceremony: armed DEK malformed"; return -1; }
+        std::memcpy(dek.data(), held.data(), 32);
+    } else {
+        // First ceremony — valid only when NO epoch exists anywhere this
+        // node can see. Envelopes exist but we hold no DEK = this node is
+        // locked out; minting a fresh epoch-1 DEK would regress the network.
+        int64_t seenEpoch = 0;
+        if (MaxEpoch(&seenEpoch)) {
+            error = "ceremony: envelopes for epoch " + std::to_string(seenEpoch) +
+                    " exist but this node holds no DEK (locked out) — run "
+                    "approve on an established member holding the current epoch";
+            return -1;
+        }
+        // First ceremony anywhere: generate epoch 1 and rotate the vault's
+        // rows to it (master-key-era rows re-seal as 02).
+        if (!FreshDek(dek, error)) return -1;
+        std::string rotErr;
+        const int resealed = ctx.vault->RotateToNewDek(1, dek.data(), dek.size(), rotErr);
+        if (resealed < 0) {
+            error = "ceremony: epoch-1 rotation failed: " + rotErr;
+            return -1;
+        }
+        epoch = 1;
+        ALOG_INFO("federation", "[ceremony] epoch 1 established — " << resealed
+                  << " vault row(s) re-sealed; DEK sealed to members next");
+    }
+
+    if (!SealToAllMembers(this, ctx, epoch, dek, error)) return -1;
+    ALOG_INFO("federation", "[ceremony] node " << newNodeId << " approved — "
+              << "epoch " << epoch << " DEK sealed to all members");
+    return epoch;
+}
+
+int64_t FederationKeys::RunRevokeNodeCeremony(const CeremonyContext& ctx,
+                                              const std::string& revokedNodeId,
+                                              std::string& error) {
+    if (!ctx.vault) { error = "ceremony: vault unavailable"; return -1; }
+    if (!ctx.registry) { error = "ceremony: registry unavailable"; return -1; }
+    if (revokedNodeId.empty()) { error = "ceremony: node id required"; return -1; }
+    if (!ctx.vault->HasFederationDek()) {
+        error = "ceremony: no federation DEK armed on this node — run the "
+                "revoke on a member holding the current epoch's DEK";
+        return -1;
+    }
+
+    const int64_t currentEpoch = ctx.vault->FederationEpoch();
+    const int64_t newEpoch = currentEpoch + 1;
+
+    // Drop the member: registry row first, then its envelopes. Its remaining
+    // copies (on the revoked node's own DB) are useless against epoch N+1.
+    ctx.registry->Delete("", PeerNodeKeyRow(revokedNodeId));
+    std::string delErr;
+    if (!DeleteEnvelopesFor(revokedNodeId, delErr)) {
+        error = "ceremony: cannot drop envelopes for revoked node: " + delErr;
+        return -1;
+    }
+
+    // Rotate: fresh DEK, every vault row re-sealed under epoch N+1.
+    std::array<unsigned char, 32> newDek{};
+    if (!FreshDek(newDek, error)) return -1;
+    std::string rotErr;
+    const int resealed = ctx.vault->RotateToNewDek(newEpoch, newDek.data(), newDek.size(), rotErr);
+    if (resealed < 0) {
+        error = "ceremony: rotation to epoch " + std::to_string(newEpoch) +
+                " failed: " + rotErr;
+        return -1;
+    }
+
+    // Seal only to self + remaining members.
+    if (!SealToAllMembers(this, ctx, newEpoch, newDek, error)) return -1;
+    ALOG_INFO("federation", "[ceremony] node " << revokedNodeId << " revoked — "
+              << "epoch rotated " << currentEpoch << " -> " << newEpoch
+              << ", " << resealed << " row(s) re-sealed to remaining members");
+    return newEpoch;
 }
 
 } // namespace animus::kernel
