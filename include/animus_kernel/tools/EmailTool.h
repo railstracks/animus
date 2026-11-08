@@ -44,6 +44,20 @@ public:
                                       std::string& outRecipient,
                                       std::string& outError);
 
+    // --- #212: attachment support (pure, unit-testable) ---
+    // Normalizes the optional attachments param for send: array of
+    // {filename, content(base64), content_type?}. Rejects malformed
+    // entries loudly. Absent param -> empty array, no error.
+    static bool NormalizeAttachments(const Json::Value& args,
+                                     Json::Value& outAttachments,
+                                     std::string& outError);
+
+    // Counts attachments on the sent message inside a thread-GET body.
+    // Send responses can echo "attachments": 0 despite success (observed
+    // live 2026-10-22) — the thread is the receipt. -1 = message absent.
+    static int CountConfirmedAttachments(const Json::Value& threadBody,
+                                         const std::string& messageId);
+
 private:
     // --- AgentMail REST API helpers ---
     HttpClient::Response AgentMailGet(const std::string& inboxId,
@@ -83,6 +97,7 @@ private:
     std::string HandleGetThread(const Json::Value& args);
     std::string HandleGetMessage(const Json::Value& args);
     std::string HandleGetAttachment(const Json::Value& args);
+    std::string HandleListAttachments(const Json::Value& args);
     std::string HandleSearch(const Json::Value& args);
     std::string HandleSend(const Json::Value& args);
     std::string HandleReply(const Json::Value& args);
