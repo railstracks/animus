@@ -633,6 +633,20 @@ end
 
 --- Post a new toot. Auto-splits over-limit content into a thread
 --- (first toot, then replies to it). NO byte-trim sends (#131 family).
+-- Canonical Markdown -> Mastodon allowlist HTML (#156). scripts/markdown.lua
+-- is Eval'd into the same per-agent VM and sets the `markdown` global;
+-- referenced at SEND time so standalone harnesses (which load only this
+-- adapter) keep working through the raw fallback. Rendered BEFORE chunk
+-- splitting so every chunk stays <= limit on the FINAL text.
+local function render_content(content)
+    if type(markdown) == "table" and type(markdown.render_mastodon) == "function" then
+        local ok, out = pcall(markdown.render_mastodon, content)
+        if ok and type(out) == "string" and out ~= "" then return out end
+        if log and log.warn then log.warn("[mastodon] markdown render failed; sending raw content") end
+    end
+    return content
+end
+
 local function do_post(args)
     local platform_id = args.platform_id
     local content = args.content
@@ -648,6 +662,7 @@ local function do_post(args)
             .. " (public|unlisted|private|direct)" }
     end
 
+    content = render_content(content)
     local limit = get_char_limit(platform_id)
     local chunks = split_for_limit(content, limit)
 
@@ -704,6 +719,7 @@ local function do_reply(args)
         return { success = false, error = "content is required" }
     end
 
+    content = render_content(content)
     local limit = get_char_limit(platform_id)
     local chunks = split_for_limit(content, limit)
 

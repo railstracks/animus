@@ -299,6 +299,19 @@ end
 -- Action implementations
 -- ---------------------------------------------------------------------------
 
+-- Canonical Markdown -> Slack mrkdwn (#156). scripts/markdown.lua is
+-- Eval'd into the same per-agent VM and sets the `markdown` global;
+-- referenced at SEND time so standalone harnesses (which load only this
+-- adapter) keep working through the raw fallback.
+local function render_content(content)
+    if type(markdown) == "table" and type(markdown.render_slack) == "function" then
+        local ok, out = pcall(markdown.render_slack, content)
+        if ok and type(out) == "string" and out ~= "" then return out end
+        if log and log.warn then log.warn("[slack] markdown render failed; sending raw content") end
+    end
+    return content
+end
+
 --- chat.postMessage
 local function do_post(args)
     local pid = args.platform_id
@@ -314,7 +327,7 @@ local function do_post(args)
 
     local body = {
         channel = channel,
-        text = content
+        text = render_content(content)
     }
 
     -- Thread reply support
@@ -364,7 +377,7 @@ local function do_reply(args)
     -- (threaded_replies=false); present = reply inside that thread.
     local body = {
         channel = channel,
-        text = content
+        text = render_content(content)
     }
     if thread_ts and thread_ts ~= "" then
         body.thread_ts = thread_ts
@@ -709,7 +722,7 @@ local function do_edit(args)
     local body = {
         channel = channel,
         ts = timestamp,
-        text = content
+        text = render_content(content)
     }
 
     local resp = api_post_json(pid, "chat.update", body)

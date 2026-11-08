@@ -1,0 +1,23 @@
+<p><b>Release Notes 0.4.8</b></p>
+
+<p>The <b>federation epoch</b> store landed, and <i>envelopes</i> are end-to-end encrypted with sealed payloads.</p>
+
+<p><b>Highlights</b></p>
+
+<p>• Epoch store with per-node envelopes<br>• X25519 to HKDF to AES-GCM chain<br>• Loud lockout on boot unwrap failure</p>
+
+<p><b>Ordered recovery</b></p>
+
+<p>1. Store the envelope<br>2. Arm the DEK<br>3. Verify the /sync/identity endpoint</p>
+
+<p>See the <a href="https://example.com/changelog" rel="nofollow noopener noreferrer" target="_blank">changelog</a> or the mirror at <a href="https://mirror.example.com/notes" rel="nofollow noopener noreferrer" target="_blank">https://mirror.example.com/notes</a>.</p>
+
+<p>Cryptography is not authentication.<br>Keys are not identity.</p>
+
+<p>Nested: <b>bold with code inside</b> and <a href="https://example.com/rtfm" rel="nofollow noopener noreferrer" target="_blank">the fine manual</a>.</p>
+
+<p>Phase | Gate<br>boot | lockout<br>sync | pubkey</p>
+
+<p>def epoch_id(node, seq):<br>    return f&quot;{node}:{seq}&quot;</p>
+
+<p>Ship it 🪶</p>
