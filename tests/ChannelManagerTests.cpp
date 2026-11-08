@@ -23,9 +23,14 @@
 
 #include "animus_kernel/ChannelManager.h"
 #include "animus_kernel/ChannelState.h"
+#include "animus_kernel/AgentConfigStore.h"
+#include "animus_kernel/SqliteDataStore.h"
 #include "animus_kernel/tools/HttpClient.h"
 
 #include <json/value.h>
+#include <json/writer.h>
+
+#include <cstdio>
 
 #include <iostream>
 #include <sstream>
@@ -163,6 +168,92 @@ void TestProbelessManagerWarnsOnUnknownType() {
            "WARN must name the channel type");
 }
 
+// ============================================================================
+// #181: channel config secret strip — credential-shaped fields must not
+// persist in the replicated channel.<name>.config row; they mirror to
+// channels.<type:name>.<key> rows (vaulted by the config store's
+// interception in production) and merge back on load. Legacy rows with
+// embedded secrets are scrubbed on load (migrate-then-strip).
+// ============================================================================
+void TestChannelConfigSecretStrip() {
+    std::cout << "[5/5] #181 secret strip: config row structural-only\n";
+    HttpClient http;
+    std::remove("/tmp/animus_channel_mgr_tests_181.db");
+    SqliteDataStore dataStore("/tmp/animus_channel_mgr_tests_181.db");
+    AgentConfigStore configStore(&dataStore);
+    ChannelManager manager(http, &configStore, {}, {});
+
+    Json::Value cfg;
+    cfg["host"] = "irc.libera.chat";
+    cfg["nick"] = "buffett";
+    cfg["agent_id"] = "buffett";
+    cfg["server_password"] = "s3cret-hunter2";
+    ChannelState st;
+    st.name = "main";
+    st.type = "irc";
+    st.enabled = false;
+    st.config = cfg;
+    std::string err;
+    Assert(manager.CreateChannel(st, &err), "create should succeed: " + err);
+
+    // 1. Stored row is structural-only.
+    const std::string stored = configStore.GetRaw("", "channel.main.config");
+    Assert(stored.find("s3cret-hunter2") == std::string::npos,
+           "stored config row must not embed the credential");
+    Assert(stored.find("irc.libera.chat") != std::string::npos,
+           "structural field (host) must persist");
+    Assert(stored.find("buffett") != std::string::npos,
+           "structural field (nick/agent_id) must persist");
+
+    // 2. Mirror rows: channel namespace + agent namespace.
+    Assert(configStore.GetRaw("", "channels.irc:main.server_password") ==
+               "s3cret-hunter2",
+           "channel-namespace mirror row holds the credential");
+    Assert(configStore.GetRaw("buffett", "channels.irc:main.server_password") ==
+               "s3cret-hunter2",
+           "agent-namespace mirror row holds the credential");
+
+    // 3. In-memory state keeps the full config (adapter path unchanged).
+    auto state = manager.GetChannel("main");
+    Assert(state.has_value() &&
+               state->config["server_password"].asString() == "s3cret-hunter2",
+           "in-memory config keeps the credential for adapters");
+
+    // 4. Load: a legacy embedded-secret row gets scrubbed (migrate-then-
+    //    strip); the credential survives via mirror rows; structural
+    //    config is untouched.
+    Json::Value legacy;
+    legacy["host"] = "irc.old.net";
+    legacy["nick"] = "oldbird";
+    legacy["access_token"] = "legacy-tok-99";
+    Json::StreamWriterBuilder wb;
+    wb.settings_["indentation"] = "";
+    configStore.Set("", "channel.legacy.config",
+                    Json::writeString(wb, legacy));
+    configStore.Set("", "channel.legacy.type", "irc");
+    configStore.Set("", "channel.legacy.enabled", "false");
+
+    manager.LoadChannelsFromConfigStore();
+
+    const std::string scrubbed =
+        configStore.GetRaw("", "channel.legacy.config");
+    Assert(scrubbed.find("legacy-tok-99") == std::string::npos,
+           "legacy row must be scrubbed structural-only");
+    Assert(scrubbed.find("irc.old.net") != std::string::npos,
+           "legacy structural config survives the scrub");
+    auto merged = manager.GetChannel("legacy");
+    Assert(merged.has_value() &&
+               merged->config["access_token"].asString() == "legacy-tok-99",
+           "legacy credential merges back from the mirror row");
+    Assert(merged.has_value() &&
+               merged->config["host"].asString() == "irc.old.net",
+           "legacy structural fields load normally");
+    auto remerged = manager.GetChannel("main");
+    Assert(remerged.has_value() &&
+               remerged->config["server_password"].asString() == "s3cret-hunter2",
+           "stripped channel re-merges its credential on load");
+}
+
 } // namespace
 
 int main() {
@@ -170,6 +261,7 @@ int main() {
     TestPluginBackedTypeWithPluginRegisteredIsQuiet();
     TestPluginBackedTypeWithPluginAbsentWarns();
     TestProbelessManagerWarnsOnUnknownType();
+    TestChannelConfigSecretStrip();
 
     if (g_failures == 0) {
         std::cout << "ChannelManagerTests: ALL PASSED\n";

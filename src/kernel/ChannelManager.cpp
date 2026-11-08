@@ -179,6 +179,64 @@ ChannelManager::~ChannelManager() {
 }
 
 // ============================================================================
+// ============================================================================
+// #181: channel config secret discipline.
+//
+// The persisted channel.<name>.config row replicates across peers
+// (agent_config is in the synced set). Credential-shaped fields must not
+// ride that row: they are mirrored to their own
+// channels.<type:name>.<key> rows, where the config store's
+// credential-suffix interception vaults them (secret_ref values replicate;
+// plaintext never does). Structural fields (nick, host, instance_url, ...)
+// stay in the config row — they are the non-secret surface #181 replicates.
+// ============================================================================
+
+static const std::vector<std::string>& ChannelCredentialKeys() {
+    // Keys synced from ChannelState.config to AgentConfigStore — the
+    // credential fields Lua adapters read via config.get(). Superset of the
+    // secret fields: identifiers like nick/host/tier are mirrored for
+    // adapter access but are structural, not secret.
+    static const std::vector<std::string> keys = {
+        // Common
+        "api_key", "access_token", "bot_token", "app_token", "app_password",
+        "client_id", "client_secret", "refresh_token",
+        // Base-URL overrides read by Lua adapters (moltbook mock harness;
+        // any adapter whose api_base can be overridden needs it mirrored)
+        "api_base_url",
+        // Bluesky
+        "handle", "pds", "access_jwt", "refresh_jwt", "did",
+        // VK
+        "group_id",
+        // Twitter
+        "tier",
+        // Discord
+        "application_id",
+        // IRC
+        "nick", "host", "server_password",
+        // Moltbook
+        "agent_name",
+        // Email
+        "inbox_id", "backend",
+        // Mastodon
+        "instance_url", "poll_interval",
+        // Nextcloud Talk
+        "server_url", "username",
+    };
+    return keys;
+}
+
+static bool IsSecretChannelField(const std::string& field) {
+    return AgentConfigStore::IsCredentialKey(field);
+}
+
+static Json::Value StripSecretChannelFields(const Json::Value& config) {
+    Json::Value out = config;
+    for (const auto& member : out.getMemberNames()) {
+        if (IsSecretChannelField(member)) out.removeMember(member);
+    }
+    return out;
+}
+
 // Channel CRUD
 // ============================================================================
 
@@ -229,8 +287,11 @@ bool ChannelManager::CreateChannel(const ChannelState& state, std::string* error
                            state.enabled ? "true" : "false");
         Json::StreamWriterBuilder wb;
         wb.settings_["indentation"] = "";
+        // #181: persist the structural config only — credential-shaped
+        // fields are mirrored to vaulted rows and merged back on load;
+        // they must not ride the replicated config row.
         m_configStore->Set("", "channel." + state.name + ".config",
-                           Json::writeString(wb, state.config));
+                           Json::writeString(wb, StripSecretChannelFields(state.config)));
     }
 
     {
@@ -272,8 +333,9 @@ bool ChannelManager::UpdateChannelConfig(const std::string& name,
     if (m_configStore) {
         Json::StreamWriterBuilder wb;
         wb.settings_["indentation"] = "";
+        // #181: structural config only (see CreateChannel).
         m_configStore->Set("", "channel." + name + ".config",
-                           Json::writeString(wb, config));
+                           Json::writeString(wb, StripSecretChannelFields(config)));
     }
 
     {
@@ -1033,6 +1095,36 @@ void ChannelManager::LoadChannelsFromConfigStore() {
         Json::Value config = ParseJson(configStr);
         if (config.isNull()) config = Json::objectValue;
 
+        // #181: legacy rows may still embed credential fields. Migrate
+        // them into vaulted mirror rows first, then rewrite the stored row
+        // structural-only — idempotent, self-heals pre-#181 rows on boot
+        // (MigrateFromLegacy's writes land here too: it runs before this
+        // load in Initialize()).
+        bool hadSecrets = false;
+        for (const auto& member : config.getMemberNames()) {
+            if (IsSecretChannelField(member)) { hadSecrets = true; break; }
+        }
+        if (hadSecrets) {
+            SyncChannelCredentialsToConfigStore(name, type, config);
+            Json::StreamWriterBuilder wb;
+            wb.settings_["indentation"] = "";
+            m_configStore->Set("", prefix + "config",
+                               Json::writeString(wb, StripSecretChannelFields(config)));
+            ALOG_INFO("channels", "#181 scrub: stripped embedded credentials"
+                      " from " << prefix << "config (mirrored to vaulted rows)");
+        }
+
+        // #181: merge credentials back from the channel-namespace mirror
+        // rows — the in-memory config is the adapters' source; the
+        // persisted row stays structural-only.
+        for (const auto& key : ChannelCredentialKeys()) {
+            if (!IsSecretChannelField(key)) continue;
+            if (config.isMember(key)) continue;
+            const std::string v =
+                m_configStore->Get("", "channels." + type + ":" + name + "." + key);
+            if (!v.empty()) config[key] = v;
+        }
+
         ChannelState state;
         state.name = name;
         state.type = type;
@@ -1078,39 +1170,17 @@ void ChannelManager::SyncChannelCredentialsToConfigStore(
     // must be stored under the same agent_id to be found.
     std::string agentId = config.get("agent_id", "").asString();
 
-    std::vector<std::string> agentIds;
+    // #181: mirror under the channel namespace ("") ALWAYS — it is the
+    // merge-back source on load — plus the configured agent's namespace
+    // when set (Lua adapters read config.get() under their agent_id).
+    // Credential-suffixed rows are vaulted by the config store's
+    // interception either way; only secret_ref values replicate.
+    std::vector<std::string> agentIds{""};
     if (!agentId.empty()) {
         agentIds.push_back(agentId);
     }
 
-    // Keys that should be synced from ChannelState.config to AgentConfigStore
-    // These are the credential fields that Lua adapters read via config.get()
-    static const std::vector<std::string> credentialKeys = {
-        // Common
-        "api_key", "access_token", "bot_token", "app_token", "app_password",
-        "client_id", "client_secret", "refresh_token",
-        // Base-URL overrides read by Lua adapters (moltbook mock harness;
-        // any adapter whose api_base can be overridden needs it mirrored)
-        "api_base_url",
-        // Bluesky
-        "handle", "pds", "access_jwt", "refresh_jwt", "did",
-        // VK
-        "group_id",
-        // Twitter
-        "tier",
-        // Discord
-        "application_id",
-        // IRC
-        "nick", "host",
-        // Moltbook
-        "agent_name",
-        // Email
-        "inbox_id", "backend",
-        // Mastodon
-        "instance_url", "poll_interval",
-        // Nextcloud Talk
-        "server_url", "username", "app_password",
-    };
+    const std::vector<std::string>& credentialKeys = ChannelCredentialKeys();
 
     for (const auto& key : credentialKeys) {
         if (config.isMember(key)) {
