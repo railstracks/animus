@@ -58,6 +58,7 @@
 #include "animus_kernel/tools/LuaTool.h"
 #include "animus_kernel/lua/ScriptStore.h"
 #include "animus_kernel/AgentConfigStore.h"
+#include "animus_kernel/FederationKeys.h"
 #include "animus_kernel/tools/MemoryTool.h"
 #include "kernel/admin/TemplateResources.h"
 #include <filesystem>
@@ -174,6 +175,7 @@ AgentKernel::~AgentKernel() {
     delete m_providerThrottle; m_providerThrottle = nullptr;
     delete m_peerSyncService; m_peerSyncService = nullptr;
     delete m_syncStore; m_syncStore = nullptr;
+    delete m_federationKeys; m_federationKeys = nullptr;
     delete m_scheduler; m_scheduler = nullptr;
     delete m_sessionNotesStore; m_sessionNotesStore = nullptr;
     delete m_channelContextStore; m_channelContextStore = nullptr;
@@ -412,6 +414,10 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             AgentConfigStore configPre(m_dataStore);
             SecretsVault vaultPre(m_dataStore, "");
             vaultPre.EnsureSchema();     // table only — empty key path = no key file
+            // #274: federation DEK envelopes sync as data — pre-create so
+            // the table gets triggers on THIS boot, not the next one.
+            FederationKeys fedPre(m_dataStore);
+            fedPre.EnsureSchema();
         }
 
         // --- #78 P1a: node-scoped id ranges (federation identity) ---
@@ -508,6 +514,40 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             const int migrated = m_secretsVault->MigrateLegacyStateSecrets(*m_apiPackageStore, migErr);
             if (migrated < 0)
                 ALOG_ERROR("api", "[vault] legacy secret migration failed: " << migErr);
+        }
+
+        // --- #274: federation epoch DEK envelopes (boot path) ---
+        // Unwrap the newest envelope addressed to this node's key. Three
+        // outcomes, all loud where it matters:
+        //   unwrapped          -> epoch DEK active in the vault (#275 consumes)
+        //   no rows at all     -> single-node / pre-ceremony: normal, quiet
+        //   rows exist but none addressed to us (or newest epoch is sealed
+        //      only to others) -> LOUD lockout: awaiting key ceremony.
+        m_federationKeys = new FederationKeys(m_dataStore);
+        m_adminServer->SetFederationKeys(m_federationKeys);
+        if (m_nodeIdentityOk) {
+            int64_t epoch = 0;
+            std::array<unsigned char, 32> dek{};
+            std::string dekErr;
+            if (m_federationKeys->OpenEpochDek(
+                    m_nodeIdentity, std::to_string(m_config.node.id),
+                    epoch, dek, dekErr)) {
+                m_secretsVault->SetFederationDek(epoch, dek.data(), dek.size());
+                ALOG_INFO("federation", "[keys] epoch " << epoch
+                          << " DEK unwrapped — federated secrets readable");
+            } else {
+                int64_t maxEpoch = 0;
+                if (m_federationKeys->MaxEpoch(&maxEpoch)) {
+                    ALOG_ERROR("federation", "[keys] LOCKED OUT of federation epoch "
+                               << maxEpoch << " — envelopes exist but none unwrap for "
+                               << "this node (" << dekErr << "). Run the key "
+                               << "ceremony (approve-node) to receive the DEK; "
+                               << "federated secrets stay unreadable until then.");
+                } else {
+                    ALOG_INFO("federation", "[keys] no key envelopes — single-node "
+                              << "or pre-ceremony; nothing to unwrap");
+                }
+            }
         }
 
         // --- Agenda Store (per-agent calendar/agenda events) ---

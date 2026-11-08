@@ -32,6 +32,7 @@ class ChainRunner;
 class CompactionService;
 class SecretsVault;
 class SyncStore;
+class FederationKeys;
 class PeerSyncService;
 class Scheduler;
 class ConsolidationPipeline;
@@ -176,6 +177,7 @@ private:
     SessionTagsStore* m_sessionTagsStore{nullptr}; // session tag keywords
     PromptLogStore* m_promptLogStore{nullptr}; // LLM call logging
     SyncStore* m_syncStore{nullptr};
+    FederationKeys* m_federationKeys{nullptr};         // #274 epoch DEK envelopes
     NodeIdentity m_nodeIdentity;                  // #182 fed-secrets X25519 identity
     bool m_nodeIdentityOk{false};
     const NodeIdentity& GetNodeIdentity() const { return m_nodeIdentity; }

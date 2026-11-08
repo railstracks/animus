@@ -329,6 +329,7 @@ add_library(animus_kernel
   src/kernel/api/ManifestV1.cpp
   src/kernel/api/RegistryClient.cpp
   src/kernel/NodeIdentity.cpp
+  src/kernel/FederationKeys.cpp
   src/kernel/api/SecretsVault.cpp
   src/kernel/api/ApiConnectionManager.cpp
   src/kernel/PromptLogStore.cpp
@@ -675,7 +676,7 @@ if(ANIMUS_BUILD_TESTS)
     add_executable(animus_outbox_sync_tests
       tests/OutboxSyncTests.cpp
     )
-    target_link_libraries(animus_outbox_sync_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_link_libraries(animus_outbox_sync_tests PRIVATE animus_kernel jsoncpp_lib OpenSSL::Crypto)
     target_include_directories(animus_outbox_sync_tests PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src
       ${JSONCPP_INCLUDE_DIRS}
@@ -1127,6 +1128,18 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME NodeIdentityTests COMMAND animus_node_identity_tests)
+
+    add_executable(animus_federation_keys_tests
+      tests/FederationKeysTests.cpp
+    )
+    target_link_libraries(animus_federation_keys_tests PRIVATE animus_kernel OpenSSL::Crypto)
+    target_include_directories(animus_federation_keys_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(animus_federation_keys_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME FederationKeysTests COMMAND animus_federation_keys_tests)
 
     add_executable(animus_signal_protocol_tests
       tests/SignalProtocolTests.cpp

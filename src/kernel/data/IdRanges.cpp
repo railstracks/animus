@@ -39,6 +39,10 @@ const std::vector<std::string>& AgentGlobalTables() {
         // key distribution is manual for now, decided on #93).
         "agent_config",
         "api_package_secrets",
+        // #274: federation epoch DEK envelopes — sync as data (a node can
+        // only unwrap the row addressed to its own key). TEXT PK
+        // "<epoch>:<target_node>" rides the plain NEW.id trigger path.
+        "federation_key_envelopes",
     };
     return tables;
 }
