@@ -446,6 +446,32 @@ end
 -- Eval'd into the same per-agent VM and sets the `markdown` global;
 -- referenced at SEND time so standalone harnesses (which load only this
 -- adapter) keep working through the raw fallback.
+--- #157: link card helpers — markdown module guarded the same way as
+--- render_content. Degrade path: plain URL append.
+local function get_link_card(card_arg)
+    if not card_arg then return nil end
+    if type(markdown) == "table" and type(markdown.normalize_card) == "function" then
+        local ok, card, reason = pcall(markdown.normalize_card, card_arg)
+        if not ok then return nil, "link_card validation failed" end
+        if not card then return nil, reason end
+        return card
+    end
+    if type(card_arg) ~= "table" or type(card_arg.url) ~= "string"
+        or not card_arg.url:match("^https?://") then
+        return nil, "link_card.url is required and must be http(s)"
+    end
+    return card_arg
+end
+
+local function append_card_url(content, card)
+    if content:find(card.url, 1, true) then return content end
+    if type(markdown) == "table" and type(markdown.append_card) == "function" then
+        local ok, out = pcall(markdown.append_card, content, card)
+        if ok and type(out) == "string" and out ~= "" then return out end
+    end
+    return content .. "\n\n" .. card.url
+end
+
 local function render_content(content)
     if type(markdown) == "table" and type(markdown.render_discord) == "function" then
         local ok, out = pcall(markdown.render_discord, content)
@@ -468,6 +494,17 @@ local function do_post(args)
         return { success = false, error = "content is required" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    -- #157: a card with no title AND no description has nothing visible to
+    -- embed — degrade to a plain link appended to the text.
+    if card and not card.title and not card.description then
+        content = append_card_url(content, card)
+        card = nil
+    end
+
     -- Auto-split at natural boundaries instead of truncating: the yielded
     -- text is the contract with the reader (#30). Render canonical
     -- Markdown to Discord-native BEFORE splitting so chunks stay <= 2000 (#156).
@@ -476,7 +513,21 @@ local function do_post(args)
     local first_id
     for idx, chunk in ipairs(chunks) do
         local body = { content = chunk }
-        if args.embeds and idx == 1 then body.embeds = args.embeds end
+        if idx == 1 then
+            -- #157: link card → native embed first; user-provided embeds follow.
+            local embeds = {}
+            if card then
+                local e = { url = card.url }
+                if card.title then e.title = card.title end
+                if card.description then e.description = card.description end
+                if card.image then e.image = { url = card.image } end
+                embeds[#embeds + 1] = e
+            end
+            if args.embeds then
+                for _, ue in ipairs(args.embeds) do embeds[#embeds + 1] = ue end
+            end
+            if #embeds > 0 then body.embeds = embeds end
+        end
 
         local resp = auth_post(platform_id, "/channels/" .. channel_id .. "/messages", body)
 
@@ -524,6 +575,20 @@ local function do_reply(args)
         return { success = false, error = "content is required" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card and not card.title and not card.description then
+        content = append_card_url(content, card)
+        card = nil
+    end
+
+    -- Render canonical Markdown to Discord-native BEFORE splitting — the
+    -- same seam as do_post (#156); #157 needed it here so card links render
+    -- in replies too (previously replies sent raw canonical Markdown).
+    content = render_content(content)
+
     -- Auto-split at natural boundaries instead of truncating (#30). The
     -- first chunk carries the reply reference; the rest follow in-channel.
     local chunks = split_for_limit(content, 2000)
@@ -535,6 +600,19 @@ local function do_reply(args)
                 message_id = message_id,
                 channel_id = channel_id
             }
+            -- #157: card embed rides the first reply chunk.
+            local embeds = {}
+            if card then
+                local e = { url = card.url }
+                if card.title then e.title = card.title end
+                if card.description then e.description = card.description end
+                if card.image then e.image = { url = card.image } end
+                embeds[#embeds + 1] = e
+            end
+            if args.embeds then
+                for _, ue in ipairs(args.embeds) do embeds[#embeds + 1] = ue end
+            end
+            if #embeds > 0 then body.embeds = embeds end
         end
 
         local resp = auth_post(platform_id, "/channels/" .. channel_id .. "/messages", body)
@@ -953,12 +1031,14 @@ animus.register_channel({
         post = {
             { name = "channel_id", type = "string", required = true, description = "Channel snowflake ID" },
             { name = "content", type = "string", required = true, description = "Message text (max 2000 chars)" },
-            { name = "embeds", type = "array", required = false, description = "Embed objects" }
+            { name = "embeds", type = "array", required = false, description = "Embed objects" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — first chunk carries it as a native embed; url-only degrades to a plain link" }
         },
         reply = {
             { name = "channel_id", type = "string", required = true, description = "Channel snowflake ID" },
             { name = "message_id", type = "string", required = true, description = "Message snowflake ID to reply to" },
-            { name = "content", type = "string", required = true, description = "Reply text" }
+            { name = "content", type = "string", required = true, description = "Reply text" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — native embed on the first reply chunk" }
         },
         browse = {
             { name = "channel_id", type = "string", required = true, description = "Channel snowflake ID" },

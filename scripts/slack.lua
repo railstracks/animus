@@ -303,6 +303,32 @@ end
 -- Eval'd into the same per-agent VM and sets the `markdown` global;
 -- referenced at SEND time so standalone harnesses (which load only this
 -- adapter) keep working through the raw fallback.
+--- #157: link card helpers — markdown module guarded the same way as
+--- render_content. Degrade path: plain URL append.
+local function get_link_card(card_arg)
+    if not card_arg then return nil end
+    if type(markdown) == "table" and type(markdown.normalize_card) == "function" then
+        local ok, card, reason = pcall(markdown.normalize_card, card_arg)
+        if not ok then return nil, "link_card validation failed" end
+        if not card then return nil, reason end
+        return card
+    end
+    if type(card_arg) ~= "table" or type(card_arg.url) ~= "string"
+        or not card_arg.url:match("^https?://") then
+        return nil, "link_card.url is required and must be http(s)"
+    end
+    return card_arg
+end
+
+local function append_card_url(content, card)
+    if content:find(card.url, 1, true) then return content end
+    if type(markdown) == "table" and type(markdown.append_card) == "function" then
+        local ok, out = pcall(markdown.append_card, content, card)
+        if ok and type(out) == "string" and out ~= "" then return out end
+    end
+    return content .. "\n\n" .. card.url
+end
+
 local function render_content(content)
     if type(markdown) == "table" and type(markdown.render_slack) == "function" then
         local ok, out = pcall(markdown.render_slack, content)
@@ -325,6 +351,16 @@ local function do_post(args)
         return { success = false, error = "content is required" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    -- #157: url-only card has nothing to build a block from — plain link.
+    if card and not card.title and not card.description then
+        content = append_card_url(content, card)
+        card = nil
+    end
+
     local body = {
         channel = channel,
         text = render_content(content)
@@ -333,6 +369,19 @@ local function do_post(args)
     -- Thread reply support
     if args.thread_ts and args.thread_ts ~= "" then
         body.thread_ts = args.thread_ts
+    end
+
+    -- #157: link card as Block Kit — deterministic card rendering instead
+    -- of a server unfurl. Explicit args.blocks wins over the card.
+    if card and not args.blocks then
+        local md_txt = "<" .. card.url .. "|" .. (card.title or card.url) .. ">"
+        if card.description then
+            md_txt = md_txt .. "\n" .. truncate(card.description, 280)
+        end
+        body.blocks = {
+            { type = "section", text = { type = "mrkdwn", text = md_txt } },
+        }
+        body.unfurl_links = false
     end
 
     -- Block Kit support (Phase 3 — pass through if provided)
@@ -373,6 +422,15 @@ local function do_reply(args)
         return { success = false, error = "content is required" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card and not card.title and not card.description then
+        content = append_card_url(content, card)
+        card = nil
+    end
+
     -- thread_ts optional: absent = top-level response in the channel
     -- (threaded_replies=false); present = reply inside that thread.
     local body = {
@@ -386,6 +444,18 @@ local function do_reply(args)
     -- Broadcast to channel (not just thread) if requested
     if args.broadcast then
         body.reply_broadcast = true
+    end
+
+    -- #157: link card as Block Kit (same mapping as post).
+    if card then
+        local md_txt = "<" .. card.url .. "|" .. (card.title or card.url) .. ">"
+        if card.description then
+            md_txt = md_txt .. "\n" .. truncate(card.description, 280)
+        end
+        body.blocks = {
+            { type = "section", text = { type = "mrkdwn", text = md_txt } },
+        }
+        body.unfurl_links = false
     end
 
     local resp = api_post_json(pid, "chat.postMessage", body)
@@ -797,13 +867,15 @@ animus.register_channel({
             { name = "channel_id", type = "string", required = true, description = "Channel ID (e.g. C01234567)" },
             { name = "content", type = "string", required = true, description = "Message text" },
             { name = "thread_ts", type = "string", required = false, description = "Parent message timestamp (for threaded reply)" },
-            { name = "blocks", type = "array", required = false, description = "Block Kit payload (Phase 3)" }
+            { name = "blocks", type = "array", required = false, description = "Block Kit payload (Phase 3)" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — rendered as a Block Kit card (explicit blocks wins); url-only degrades to a plain link" }
         },
         reply = {
             { name = "channel_id", type = "string", required = true, description = "Channel ID" },
             { name = "thread_ts", type = "string", required = false, description = "Timestamp of the message to reply to (thread reply); omit for a top-level response" },
             { name = "content", type = "string", required = true, description = "Reply text" },
-            { name = "broadcast", type = "boolean", required = false, description = "Show reply in channel (not just thread)" }
+            { name = "broadcast", type = "boolean", required = false, description = "Show reply in channel (not just thread)" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — rendered as a Block Kit card; url-only degrades to a plain link" }
         },
         browse = {
             { name = "channel_id", type = "string", required = true, description = "Channel ID" },

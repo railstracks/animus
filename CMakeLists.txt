@@ -1198,6 +1198,10 @@ if(LUA_EXECUTABLE)
       COMMAND ${LUA_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/markdown-renderer-test.lua")
     set_tests_properties(MarkdownRendererTests PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME LinkCardTests
+      COMMAND ${LUA_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/link-card-test.lua")
+    set_tests_properties(LinkCardTests PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 else()
     message(STATUS "lua not found — MarkdownRendererTests skipped")
 endif()
