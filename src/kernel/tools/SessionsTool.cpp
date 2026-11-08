@@ -441,6 +441,14 @@ ToolResult SessionsTool::HandleHistory(const std::string& agentId,
             }
         } else {
             target = store.FindByConversationId(sessionKey);
+            if (!target) {
+                // #268: channel session keys (e.g. channel:irc:irc:dm:Petrel)
+                // carry the visible key in the connector column —
+                // conversation_id stays empty. Try the connector column
+                // before reporting "session not found": the bare-key probe
+                // must reach the ownership verdict, not a false miss.
+                target = store.FindByKey(SessionKey{sessionKey, "", ""});
+            }
             fromDatabase = (target != nullptr);
             if (!target && IsAllDigits(sessionKey)) {
                 target = store.GetById(

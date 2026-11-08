@@ -13,6 +13,7 @@
 #include "animus_kernel/SessionNotesStore.h"
 #include "animus_kernel/SessionTagsStore.h"
 #include "animus_kernel/tools/SessionsTool.h"
+#include "animus_kernel/DispatchAgentBinding.h"
 #include "animus_kernel/SessionManager.h"
 #include "animus_kernel/SqliteDataStore.h"
 #include "animus_kernel/SqliteSessionStore.h"
@@ -435,6 +436,110 @@ int TestSessionsToolHistoryFallback() {
     return 0;
 }
 
+// ============================================================================
+// #268: dispatch agent binding adoption — pure decision table.
+// ============================================================================
+int TestDispatchAgentBinding() {
+    struct Case {
+        std::string current;
+        std::string dispatch;
+        bool configured;
+        std::string expected;
+        std::string label;
+    };
+    const Case cases[] = {
+        {"", "buffett", true, "buffett",
+         "unbound follows dispatcher"},
+        {"", "buffett", false, "buffett",
+         "unbound follows dispatcher even when unconfigured (pre-existing claim semantics)"},
+        {"", "", true, "",
+         "no dispatcher: no change"},
+        {"default", "buffett", true, "buffett",
+         "sentinel adopts configured dispatcher (#268 — the live #2450 case)"},
+        {"default", "buffett", false, "default",
+         "unknown dispatcher never hijacks a sentinel binding"},
+        {"default", "", true, "default",
+         "empty dispatcher: sentinel stays"},
+        {"petrel", "buffett", true, "petrel",
+         "real binding never re-binds (cross-agent isolation)"},
+        {"petrel", "buffett", false, "petrel",
+         "real binding immune to unconfigured dispatcher"},
+    };
+    for (const auto& c : cases) {
+        const std::string got =
+            ResolveDispatchAgentBinding(c.current, c.dispatch, c.configured);
+        if (got != c.expected) {
+            return Fail(1, "binding case failed (" + c.label +
+                        "): expected '" + c.expected + "' got '" + got + "'");
+        }
+    }
+    return 0;
+}
+
+// ============================================================================
+// #268: sessions:history bare-key fallback — channel session keys carry the
+// visible key in the connector column (conversation_id stays empty); a bare
+// key must resolve via the connector column and reach the ownership verdict
+// instead of a false "session not found" (live case: #2450).
+// ============================================================================
+int TestSessionsToolBareKeyFallback() {
+    namespace fs = std::filesystem;
+    const std::string dbPath = "/tmp/animus_session_tests_268.db";
+    std::error_code ec;
+    fs::remove(dbPath, ec);
+
+    SqliteDataStore dataStore(dbPath);
+    SessionNotesStore notesStore(&dataStore);
+    SessionTagsStore tagsStore(&dataStore);
+    SessionManager manager(
+        std::make_unique<SqliteSessionStore>(&dataStore),
+        std::make_unique<DefaultSessionRouter>());
+    SessionsTool tool(&manager, &notesStore, &tagsStore, nullptr);
+
+    auto session = manager.GetOrCreate(
+        SessionKey{"channel:irc:irc:dm:Petrel", "", ""});
+    session->SetAgentId("buffett");
+    SessionTurn turn;
+    turn.role = "user";
+    turn.content = "Petrel: margin call mechanics question";
+    turn.unix_ms = 1794001195993ULL;
+    session->AddTurn(std::move(turn));
+    manager.GetStore().FlushSession(session->Id());
+
+    int failures = 0;
+
+    // 1. Bare channel key resolves via the connector column.
+    {
+        ToolCall call;
+        call.id = "t-268-owner";
+        call.arguments = HistoryArgs("buffett", "channel:irc:irc:dm:Petrel");
+        auto result = tool.Execute(call);
+        if (!result.success)
+            return Fail(1, "bare channel key should resolve via connector column");
+        auto body = ParseJsonOr(result.output, failures);
+        if (body["messages"].size() != 1 ||
+            body["messages"][0]["content"].asString().find("margin call") ==
+                std::string::npos)
+            return Fail(2, "bare-key history should return the persisted turn");
+    }
+
+    // 2. Foreign agent gets the honest verdict — ownership, not not-found.
+    {
+        ToolCall call;
+        call.id = "t-268-foreign";
+        call.arguments = HistoryArgs("petrel", "channel:irc:irc:dm:Petrel");
+        auto result = tool.Execute(call);
+        if (result.success)
+            return Fail(3, "foreign agent must not read the session");
+        if (result.error.find("belong") == std::string::npos)
+            return Fail(4, "foreign bare-key lookup should hit the ownership "
+                           "wall, not a false 'session not found'");
+    }
+
+    if (failures) return Fail(5, "json parse failures in bare-key asserts");
+    return 0;
+}
+
 int TestSessionsToolSearchRecency() {
     namespace fs = std::filesystem;
     const std::string dbPath = "/tmp/animus_session_tests_77b.db";
@@ -649,6 +754,14 @@ int main() {
     }
 
     if (const int rc = TestSessionsToolHistoryFallback(); rc != 0) {
+        return rc;
+    }
+
+    if (const int rc = TestDispatchAgentBinding(); rc != 0) {
+        return rc;
+    }
+
+    if (const int rc = TestSessionsToolBareKeyFallback(); rc != 0) {
         return rc;
     }
 

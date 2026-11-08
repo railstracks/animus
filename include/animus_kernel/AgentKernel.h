@@ -24,6 +24,7 @@ namespace animus::kernel {
 
 class IDataStore;
 class AdminServer;
+class Session;
 class ProviderThrottle;
 class SessionManager;
 class ChainRunner;
@@ -119,6 +120,13 @@ private:
 
     /// Read min_response_interval from a channel's config. Returns 0 if not set.
     int GetChannelInterval(const std::string& channelName) const;
+
+    /// #268: re-bind empty/sentinel-bound channel sessions to the
+    /// dispatching agent when that agent is actually configured. Sessions
+    /// bound to a real agent never re-bind (cross-agent isolation).
+    void TryAdoptDispatchAgent(Session& session,
+                               const std::string& dispatchAgentId,
+                               const std::string& sessionKeyForLog);
 
     /// Resolve the effective context window for an agent: provider window
     /// clamped to the agent's configured context_window if set.
