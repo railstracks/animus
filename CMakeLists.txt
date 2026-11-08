@@ -1103,6 +1103,18 @@ if(ANIMUS_BUILD_TESTS)
     )
     add_test(NAME ChannelManagerTests COMMAND animus_channel_manager_tests)
 
+    add_executable(animus_crypto_utils_tests
+      tests/CryptoUtilsTests.cpp
+    )
+    target_link_libraries(animus_crypto_utils_tests PRIVATE animus_kernel OpenSSL::Crypto)
+    target_include_directories(animus_crypto_utils_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(animus_crypto_utils_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME CryptoUtilsTests COMMAND animus_crypto_utils_tests)
+
     add_executable(animus_signal_protocol_tests
       tests/SignalProtocolTests.cpp
     )
