@@ -10,6 +10,7 @@ namespace animus::kernel {
 class AgentConfigStore;
 class ChannelManager;
 class ChannelContextStore;
+class MediaVault;
 
 // ============================================================================
 // ChannelsTool — composite tool for channel integrations
@@ -38,6 +39,12 @@ public:
     /// When set, reply actions with missing target IDs are auto-filled
     /// from the store's LatestArrival for the current session.
     void SetChannelContextStore(ChannelContextStore* store) { m_channelContextStore = store; }
+
+    // #158: pull-mode media vaulting. Push lanes vault at dispatch;
+    // agent-driven polls (Mastodon) vault here — attachment descriptors in
+    // the poll digest are rewritten into media:// refs before the agent
+    // reads the output.
+    void SetMediaVault(MediaVault* vault) { m_mediaVault = vault; }
 
     /// Set the current agent ID for schema filtering.
     /// When set, GetDefinition() only includes adapters for channels
@@ -85,9 +92,17 @@ protected:
     ToolResult HandleCompositeAction(const ToolCall& call,
                                       const std::string& action) override;
 
+    /// #158 pull-mode: vault attachment descriptors in a poll digest into
+    /// media:// refs (scope: the instance's host + operator media_hosts).
+    /// Unparseable/non-digest output passes through untouched.
+    std::string VaultPollAttachments(const std::string& output,
+                                     const std::string& platformId,
+                                     const std::string& agentId);
+
     AgentConfigStore* m_configStore{nullptr};
     ChannelManager* m_channelManager{nullptr};
     ChannelContextStore* m_channelContextStore{nullptr};
+    MediaVault* m_mediaVault{nullptr};
     std::string m_currentAgentId;
     PostCreatedCallback m_postCreatedCb;
 };

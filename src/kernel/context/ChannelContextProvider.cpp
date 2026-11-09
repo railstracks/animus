@@ -129,6 +129,73 @@ std::string ChannelContextProvider::RenderArrival(const ChannelArrival& a) const
         }
     }
 
+    // ── Attachments (#158): vaulted inbound media ──
+    // Refs, never bytes. Each entry names the vault object, its declared
+    // kind/mime, size, filename, platform alt text. Failed acquisitions
+    // render loud "(unavailable: reason)" — the agent learns media existed
+    // and why it was refused, instead of silence.
+    if (!a.attachments.empty()) {
+        Json::Value atts;
+        Json::CharReaderBuilder arb;
+        std::unique_ptr<Json::CharReader> areader(arb.newCharReader());
+        std::string aerrs;
+        if (areader->parse(a.attachments.data(),
+                           a.attachments.data() + a.attachments.size(),
+                           &atts, &aerrs) && atts.isArray() && !atts.empty()) {
+            auto humanSize = [](std::uint64_t b) {
+                char buf[32];
+                if (b >= 1024ull * 1024 * 1024)
+                    std::snprintf(buf, sizeof(buf), "%.1f GB",
+                                  b / 1073741824.0);
+                else if (b >= 1024ull * 1024)
+                    std::snprintf(buf, sizeof(buf), "%.1f MB", b / 1048576.0);
+                else if (b >= 1024ull)
+                    std::snprintf(buf, sizeof(buf), "%.1f KB", b / 1024.0);
+                else
+                    std::snprintf(buf, sizeof(buf), "%llu B",
+                                  static_cast<unsigned long long>(b));
+                return std::string(buf);
+            };
+            ss << "Attachments:\n";
+            for (const auto& at : atts) {
+                if (!at.isObject()) continue;
+                if (at.isMember("error")) {
+                    ss << "  (unavailable: "
+                       << at.get("error", "").asString();
+                    const std::string u = at.get("url", "").asString();
+                    if (!u.empty()) ss << " [" << u << "]";
+                    ss << ")\n";
+                    continue;
+                }
+                ss << "  " << at.get("ref", "").asString();
+                std::vector<std::string> parts;
+                const std::string mime = at.get("mime", "").asString();
+                if (!mime.empty()) parts.push_back(mime);
+                const std::string kind = at.get("kind", "").asString();
+                if (!kind.empty()) parts.push_back(kind);
+                if (at.isMember("size"))
+                    parts.push_back(humanSize(
+                        at.get("size", Json::UInt64(0)).asUInt64()));
+                const std::string fn = at.get("filename", "").asString();
+                if (!fn.empty()) parts.push_back(fn);
+                const std::string dim = at.get("dimensions", "").asString();
+                if (!dim.empty()) parts.push_back(dim);
+                if (!parts.empty()) {
+                    ss << " — ";
+                    for (std::size_t i = 0; i < parts.size(); ++i) {
+                        if (i) ss << ", ";
+                        ss << parts[i];
+                    }
+                }
+                const std::string alt = at.get("alt_text", "").asString();
+                if (!alt.empty()) ss << ", alt: \"" << alt << "\"";
+                const std::string dur = at.get("duration", "").asString();
+                if (!dur.empty()) ss << ", " << dur << "s";
+                ss << "\n";
+            }
+        }
+    }
+
     // ── Reply target (server-resolved, trusted) ──
     // These IDs come from the ReplyTarget built by the dispatch layer,
     // never from message text. The model does NOT need to echo them —

@@ -3,6 +3,7 @@
 #include "animus_kernel/ChannelManager.h"
 #include "animus_kernel/ChannelState.h"
 #include "animus_kernel/ChannelContextStore.h"
+#include "animus_kernel/MediaVault.h"
 
 #include <json/json.h>
 #include <json/writer.h>
@@ -442,6 +443,17 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
 
     auto result = CompositeTool::Execute(resolvedCall);
 
+    // #158 pull-mode: vault attachments surfacing in poll digests. Push
+    // lanes (Discord/Slack/Bluesky) vault at dispatch; agent-driven polls
+    // (Mastodon) carry raw descriptors in their digest — rewrite them into
+    // media:// refs here, before the agent reads the output.
+    if (action == "poll" && result.success && m_mediaVault &&
+        !result.output.empty() && result.output.front() == '{') {
+        result.output = VaultPollAttachments(
+            result.output, platformId,
+            GetStringField(preArgs, "__agent_id", m_currentAgentId));
+    }
+
     // If the agent just created a post, register the post_id for session routing
     if (result.success && m_postCreatedCb &&
         (action == "post" || action == "reply") &&
@@ -749,6 +761,90 @@ ToolDefinition ChannelsTool::BuildMergedDefinition() const {
 // ============================================================================
 // Composite actions (list, describe)
 // ============================================================================
+
+std::string ChannelsTool::VaultPollAttachments(const std::string& output,
+                                               const std::string& platformId,
+                                               const std::string& agentId) {
+    Json::Value digest;
+    Json::CharReaderBuilder rb;
+    std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+    std::string errs;
+    if (!reader->parse(output.data(), output.data() + output.size(),
+                       &digest, &errs) ||
+        !digest.isObject() || !digest.isMember("mentions") ||
+        !digest["mentions"].isArray()) {
+        return output;   // not a mention digest — pass through untouched
+    }
+
+    // Scope: the instance's own host (Mastodon media URLs are
+    // instance-hosted proxies) + operator media_hosts when configured.
+    std::vector<std::string> scope;
+    if (m_configStore && !platformId.empty()) {
+        const std::string instanceUrl = m_configStore->Get(
+            agentId, "channels." + platformId + ".instance_url");
+        const size_t sep = instanceUrl.find("://");
+        std::string host = (sep == std::string::npos)
+                               ? instanceUrl : instanceUrl.substr(sep + 3);
+        const size_t slash = host.find('/');
+        if (slash != std::string::npos) host = host.substr(0, slash);
+        if (!host.empty()) scope.push_back(host);
+    }
+    if (m_channelManager) {
+        auto ch = m_channelManager->GetChannel(ExtractInstanceName(platformId));
+        if (ch && ch->config.isObject()) {
+            const Json::Value extra =
+                ch->config.get("media_hosts", Json::Value());
+            if (extra.isArray()) {
+                for (const auto& h : extra) {
+                    const std::string s = h.asString();
+                    if (!s.empty()) scope.push_back(s);
+                }
+            }
+        }
+    }
+
+    for (auto& mention : digest["mentions"]) {
+        if (!mention.isObject() || !mention.isMember("attachments") ||
+            !mention["attachments"].isArray())
+            continue;
+        for (auto& e : mention["attachments"]) {
+            if (!e.isObject()) continue;
+            MediaVault::Request req;
+            req.url = e.get("url", "").asString();
+            if (req.url.empty()) continue;
+            req.kind = e.get("kind", "file").asString();
+            req.filename = e.get("filename", "").asString();
+            req.mime = e.get("mime", "").asString();
+            req.dedupe_key =
+                e.get("dedupe_key", e.get("id", "").asString()).asString();
+            req.alt_text = e.get("alt_text", "").asString();
+            req.dimensions = e.get("dimensions", "").asString();
+            req.duration = e.get("duration", "").asString();
+            req.scope_hosts = scope;
+            const MediaVault::Result r = m_mediaVault->Acquire(req);
+            Json::Value o;
+            if (r.ok) {
+                o["ref"] = r.ref;
+                o["sha256"] = r.sha256;
+                o["kind"] = req.kind;
+                o["mime"] = r.mime;
+                o["filename"] = r.filename;
+                o["size"] = static_cast<Json::UInt64>(r.size);
+                if (r.deduped) o["deduped"] = true;
+                if (!req.alt_text.empty()) o["alt_text"] = req.alt_text;
+                if (!req.dimensions.empty()) o["dimensions"] = req.dimensions;
+                if (!req.duration.empty()) o["duration"] = req.duration;
+            } else {
+                o["url"] = req.url;
+                o["error"] = r.error;   // loud: the digest shows the refusal
+            }
+            e = o;
+        }
+    }
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    return Json::writeString(wb, digest);
+}
 
 ToolResult ChannelsTool::HandleCompositeAction(const ToolCall& call,
                                               const std::string& action) {

@@ -613,6 +613,38 @@ local function do_poll(args)
                     in_reply_to_id = status.in_reply_to_id or "",
                     visibility = status.visibility or "public"
                 }
+                -- #158: media attachments on the mention (raw descriptors).
+                -- The kernel's post-poll pass vaults them (scope: this
+                -- instance's host) and rewrites to media:// refs before the
+                -- agent reads the digest. gifv counts as video; unknown as file.
+                local atts = {}
+                if type(status.media_attachments) == "table" then
+                    for _, m in ipairs(status.media_attachments) do
+                        if type(m) == "table" then
+                            local a_url = m.url or m.remote_url or ""
+                            if a_url ~= "" then
+                                local a_kind = m.type or "file"
+                                if a_kind == "gifv" then a_kind = "video" end
+                                if a_kind == "unknown" then a_kind = "file" end
+                                local a = {
+                                    url = a_url,
+                                    kind = a_kind,
+                                    dedupe_key = "mastodon:" .. tostring(m.id or ""),
+                                    mime = m.mime_type or ""
+                                }
+                                if m.description and m.description ~= "" then
+                                    a.alt_text = m.description
+                                end
+                                local om = type(m.meta) == "table" and m.meta.original or nil
+                                if type(om) == "table" and om.width and om.height then
+                                    a.dimensions = tostring(om.width) .. "x" .. tostring(om.height)
+                                end
+                                atts[#atts + 1] = a
+                            end
+                        end
+                    end
+                end
+                if #atts > 0 then entry.attachments = atts end
                 mentions[#mentions + 1] = entry
             end
         end
@@ -623,9 +655,16 @@ local function do_poll(args)
         config.set(cfg_key(platform_id, "last_notif_id"), tostring(max_id))
     end
 
+    -- #158: output is a JSON DIGEST object (not a plain string) — the
+    -- handler serializes non-string output as JSON, so the agent sees the
+    -- mentions themselves, and the kernel's post-poll pass can rewrite
+    -- attachment entries into vault refs in place.
     return {
         success = true,
-        output = #mentions .. " new mention(s); watermark=" .. tostring(max_id),
+        output = {
+            summary = #mentions .. " new mention(s); watermark=" .. tostring(max_id),
+            mentions = mentions
+        },
         mentions = mentions,
         count = #mentions
     }

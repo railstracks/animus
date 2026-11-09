@@ -3,6 +3,7 @@
 #include "animus_kernel/ChannelAdapters.h"
 #include "animus_kernel/ChannelContext.h"
 #include "animus_kernel/ChannelHelpers.h"
+#include "animus_kernel/MediaVault.h"
 
 #include <iostream>
 
@@ -696,7 +697,14 @@ void SlackAdapter::SocketModeLoop() {
                     std::string ts = GetString(event, "ts");
                     std::string threadTs = GetString(event, "thread_ts");
 
-                    if (text.empty() || channel.empty() || ts.empty()) return;
+                    // #158: file-only messages carry no text but must
+                    // still arrive — their whole content is the attachment.
+                    const bool hasFiles = event.isMember("files")
+                        && event["files"].isArray()
+                        && !event["files"].empty();
+                    if (((text.empty() && !hasFiles) || channel.empty()
+                         || ts.empty()))
+                        return;
 
                     // Mention filtering
                     bool respondToAll = GetString(rt->config, "respond_to_all_messages") == "true";
@@ -718,6 +726,8 @@ void SlackAdapter::SocketModeLoop() {
                         while (!cleanText.empty() && (cleanText.back() == ' ' || cleanText.back() == '\n'))
                             cleanText.pop_back();
                     }
+                    if (cleanText.empty() && hasFiles)
+                        cleanText = "(file attachment)";
 
                     bool threaded = (GetString(rt->config, "threaded_replies") == "true");
                     std::string routingKey = "chat:slack:" + channel;
@@ -788,6 +798,33 @@ void SlackAdapter::SocketModeLoop() {
                               "in which case reply in that thread).";
                     }
                     meta["reply_instructions"] = instructions;
+                    // #158: attachments — Slack files on the message.
+                    // url_private downloads need the bot token; the kernel
+                    // resolves it from channel config at vault time —
+                    // credentials never ride dispatch metadata.
+                    if (hasFiles) {
+                        Json::Value atts(Json::arrayValue);
+                        for (const auto& f : event["files"]) {
+                            if (!f.isObject()) continue;
+                            const std::string url =
+                                f.get("url_private", "").asString();
+                            if (url.empty()) continue;
+                            Json::Value e;
+                            e["url"] = url;
+                            e["dedupe_key"] =
+                                "slack:" + f.get("id", "").asString();
+                            const std::string fn =
+                                f.get("name",
+                                      f.get("title", "").asString()).asString();
+                            if (!fn.empty()) e["filename"] = fn;
+                            const std::string mime =
+                                f.get("mimetype", "").asString();
+                            if (!mime.empty()) e["mime"] = mime;
+                            e["kind"] = MediaVault::KindFromMime(mime);
+                            atts.append(e);
+                        }
+                        if (!atts.empty()) meta["attachments"] = atts;
+                    }
                     Json::StreamWriterBuilder wb;
                     wb["indentation"] = "";
                     std::string metadata = Json::writeString(wb, meta);

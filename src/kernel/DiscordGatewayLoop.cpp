@@ -15,6 +15,7 @@
 // ============================================================================
 
 #include "animus_kernel/ChannelManager.h"
+#include "animus_kernel/MediaVault.h"
 #include "animus_kernel/tools/HttpClient.h"
 
 #include <drogon/WebSocketClient.h>
@@ -606,6 +607,38 @@ void ChannelManager::DiscordGatewayLoop(PollerState* state) {
                     meta["reply_instructions"] = isDm
                         ? "Your text replies are delivered automatically; do NOT use the channels tool to send your reply"
                         : "Reply using the channels tool with action=reply; channel_id and message_id are provided by the reply target and filled automatically. Text replies are NOT delivered.";
+                    // #158: attachments — Discord CDN media on the message.
+                    // Raw descriptors only; the kernel's dispatch path
+                    // vaults them (scope: Discord CDNs) and stores refs on
+                    // the arrival. Bytes never ride dispatch.
+                    if (data.isMember("attachments") &&
+                        data["attachments"].isArray() &&
+                        !data["attachments"].empty()) {
+                        Json::Value atts(Json::arrayValue);
+                        for (const auto& a : data["attachments"]) {
+                            if (!a.isObject()) continue;
+                            const std::string url =
+                                a.get("url", "").asString();
+                            if (url.empty()) continue;
+                            Json::Value e;
+                            e["url"] = url;
+                            e["dedupe_key"] =
+                                "discord:" + a.get("id", "").asString();
+                            const std::string fn =
+                                a.get("filename", "").asString();
+                            if (!fn.empty()) e["filename"] = fn;
+                            const std::string mime =
+                                a.get("content_type", "").asString();
+                            if (!mime.empty()) e["mime"] = mime;
+                            e["kind"] = MediaVault::KindFromMime(mime);
+                            if (a.isMember("width") && a.isMember("height"))
+                                e["dimensions"] =
+                                    std::to_string(a["width"].asInt()) + "x" +
+                                    std::to_string(a["height"].asInt());
+                            atts.append(e);
+                        }
+                        if (!atts.empty()) meta["attachments"] = atts;
+                    }
                     Json::StreamWriterBuilder wb;
                     wb["indentation"] = "";
                     std::string metadata = Json::writeString(wb, meta);

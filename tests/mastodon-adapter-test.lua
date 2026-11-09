@@ -358,6 +358,47 @@ r = call("poll")
 check("no-watermark first poll surfaces both mentions", r.count == 2, tostring(r.count))
 
 -- ---------------------------------------------------------------------------
+print("== poll: media attachments emission (#158) ==")
+config_store["channels." .. PID .. ".last_notif_id"] = nil
+local media_notif_body = json.encode({
+    { id = "130", type = "mention", created_at = "2026-10-10T16:00:00.000Z",
+      status = { id = "9003", created_at = "2026-10-10T16:00:00.000Z",
+        content = "<p>look at this</p>", url = "https://mastodon.social/@peer/9003",
+        visibility = "public", in_reply_to_id = nil,
+        account = { acct = "peer@inst.example", display_name = "Peer Person" },
+        media_attachments = {
+          { id = "501", type = "image", url = "https://mastodon.social/media/501.png",
+            mime_type = "image/png", description = "a cat",
+            meta = { original = { width = 640, height = 480 } } },
+          { id = "502", type = "gifv", url = "https://mastodon.social/media/502.mp4",
+            mime_type = "video/mp4" },
+          { id = "503", type = "unknown", remote_url = "https://files.example.com/503.bin",
+            mime_type = "application/octet-stream" }
+        } } }
+})
+mock_add({
+    matcher = function(url) return url:find("/api/v1/notifications", 1, true) ~= nil end,
+    respond = function() return { status = 200, headers = {}, body = media_notif_body } end
+})
+r = call("poll")
+check("media poll success", r.success == true and r.count == 1, r.error)
+local mm = r.mentions[1]
+check("attachments emitted", mm.attachments ~= nil and #mm.attachments == 3,
+    tostring(mm.attachments and #mm.attachments))
+local a1 = mm.attachments[1]
+check("attachment url surfaced", a1.url == "https://mastodon.social/media/501.png", tostring(a1.url))
+check("attachment kind image", a1.kind == "image", tostring(a1.kind))
+check("dedupe key stable (mastodon:<id>)", a1.dedupe_key == "mastodon:501", tostring(a1.dedupe_key))
+check("mime surfaced", a1.mime == "image/png", tostring(a1.mime))
+check("alt text rides (description)", a1.alt_text == "a cat", tostring(a1.alt_text))
+check("dimensions from meta.original", a1.dimensions == "640x480", tostring(a1.dimensions))
+local a2 = mm.attachments[2]
+check("gifv normalized to video", a2.kind == "video", tostring(a2.kind))
+local a3 = mm.attachments[3]
+check("unknown kind normalized to file", a3.kind == "file", tostring(a3.kind))
+check("remote_url fallback", a3.url == "https://files.example.com/503.bin", tostring(a3.url))
+
+-- ---------------------------------------------------------------------------
 print("== post/reply: chunk discipline (no byte-trim) ==")
 mock_clear()
 posted = {}

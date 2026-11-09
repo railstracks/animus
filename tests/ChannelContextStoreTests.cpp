@@ -554,6 +554,83 @@ void TestParticipantsCard() {
     }
 }
 
+void TestAttachmentsMetadata() {
+    std::cerr << "  [ChannelContext] attachments metadata (#158)...\n";
+    // Parse: attachments array in dispatch metadata lands on the arrival
+    {
+        ChannelArrival a = MakeArrival("channel:chat:discord:9", "agent-a", "m9");
+        ParseDispatchMetadata(
+            "{\"attachments\":[{\"url\":\"https://cdn.example.com/x.png\","
+            "\"kind\":\"image\",\"dedupe_key\":\"discord:1\"}]}",
+            "mention", a);
+        Assert(!a.attachments.empty(), "#158 attachments parsed to arrival");
+        Assert(a.attachments.find("cdn.example.com/x.png") != std::string::npos,
+               "attachment url preserved");
+        Assert(a.attachments.find("discord:1") != std::string::npos,
+               "dedupe key preserved");
+    }
+    // Round-trip: AddArrival -> PendingArrivals preserves attachments
+    {
+        const auto dbPath = MakeTempDbPath();
+        SqliteDataStore dataStore(dbPath);
+        ChannelContextStore store(&dataStore);
+        ChannelArrival a = MakeArrival("channel:chat:discord:10", "agent-a", "m10");
+        a.attachments = "[{\"ref\":\"media://abc123\",\"sha256\":\"abc123\","
+                        "\"kind\":\"image\",\"mime\":\"image/png\","
+                        "\"filename\":\"cat.png\",\"size\":1024}]";
+        store.AddArrival(a);
+        auto pending = store.PendingArrivals(a.session_key, a.agent_id);
+        Assert(!pending.empty(), "arrival pending");
+        Assert(pending[0].attachments == a.attachments,
+               "attachments round-trip preserved");
+        unlink(dbPath.c_str());
+    }
+    // Card render: refs + metadata render; failed acquisition renders loud
+    // (through the real read path: Provide() on a bound session —
+    // RenderArrival is private by design)
+    {
+        const auto dbPath = MakeTempDbPath();
+        SqliteDataStore dataStore(dbPath);
+        ChannelContextStore store(&dataStore);
+        ChannelContextProvider provider(&store);
+
+        auto session = std::make_shared<Session>(
+            1002, SessionKey{"admin", "ws_chat:43", ""});
+        session->SetAgentId("main");
+
+        ChannelArrival a = MakeArrival(session->Key().ToString(),
+                                      session->AgentId(), "m11");
+        a.attachments = "[{\"ref\":\"media://abc123\",\"kind\":\"image\","
+                        "\"mime\":\"image/png\",\"filename\":\"cat.png\","
+                        "\"size\":1048576,\"alt_text\":\"a cat\"},"
+                        "{\"url\":\"https://cdn.example.com/big.png\","
+                        "\"error\":\"size cap exceeded: 9999999 bytes > 10485760\"}]";
+        store.AddArrival(a);
+
+        Agent agent;
+        SessionAccess access(session, SessionAccessMode::ReadOnly);
+        auto block = provider.Provide(agent, access);
+        Assert(block.has_value(), "card rendered from pending arrival");
+        if (block.has_value()) {
+            Assert(block->content.find("Attachments:") != std::string::npos,
+                   "card shows attachments block");
+            Assert(block->content.find("media://abc123") != std::string::npos,
+                   "card shows ref");
+            Assert(block->content.find("image/png") != std::string::npos,
+                   "card shows mime");
+            Assert(block->content.find("cat.png") != std::string::npos,
+                   "card shows filename");
+            Assert(block->content.find("a cat") != std::string::npos,
+                   "card shows alt text");
+            Assert(block->content.find("(unavailable:") != std::string::npos,
+                   "card shows failure loud");
+            Assert(block->content.find("size cap exceeded") != std::string::npos,
+                   "failure reason named");
+        }
+        unlink(dbPath.c_str());
+    }
+}
+
 int main() {
     std::cerr << "[ChannelContextStoreTests]\n";
     TestAddAndPending();
@@ -565,6 +642,7 @@ int main() {
     TestWebchatCardRender();
     TestDispatchMetadataEmission();
     TestParticipantsCard();
+    TestAttachmentsMetadata();
     if (g_failures == 0) {
         std::cerr << "  ALL PASSED\n";
         return 0;

@@ -1,5 +1,6 @@
 #include "animus_kernel/Log.h"
 #include "animus_kernel/ChannelManager.h"
+#include "animus_kernel/MediaVault.h"
 
 #include <iostream>
 #include <memory>
@@ -1723,6 +1724,51 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                 Json::Value uris(Json::arrayValue);
                 uris.append(postUri);
                 meta["bluesky_post_uris"] = uris; // session-level dedup
+                // #158: attachments — embedded post media (images/video) as
+                // PDS getBlob URLs. Raw descriptors only; the dispatch path
+                // vaults them (scope: configured PDS host) and stores refs on
+                // the arrival. Alt text rides when the author provided it.
+                {
+                    Json::Value atts(Json::arrayValue);
+                    auto blobAtt = [&atts, &pds, &authorDid](
+                                       const Json::Value& blob,
+                                       const std::string& alt) {
+                        if (!blob.isObject() || !blob.isMember("ref")) return;
+                        const std::string cid =
+                            blob["ref"].get("$link", "").asString();
+                        const std::string mime =
+                            blob.get("mimeType", "").asString();
+                        if (cid.empty() || mime.empty()) return;
+                        Json::Value e;
+                        e["url"] = pds +
+                                   "/xrpc/com.atproto.sync.getBlob?did=" +
+                                   authorDid + "&cid=" + cid;
+                        e["dedupe_key"] = "bsky:" + cid;
+                        e["mime"] = mime;
+                        e["kind"] = MediaVault::KindFromMime(mime);
+                        if (!alt.empty()) e["alt_text"] = alt;
+                        atts.append(e);
+                    };
+                    if (n.isMember("record") && n["record"].isObject() &&
+                        n["record"].isMember("embed") &&
+                        n["record"]["embed"].isObject()) {
+                        const auto& embed = n["record"]["embed"];
+                        const std::string etype =
+                            embed.get("$type", "").asString();
+                        if (etype == "app.bsky.embed.images" &&
+                            embed.isMember("images") &&
+                            embed["images"].isArray()) {
+                            for (const auto& im : embed["images"]) {
+                                blobAtt(im.get("image", Json::Value()),
+                                        im.get("alt", "").asString());
+                            }
+                        } else if (etype == "app.bsky.embed.video" &&
+                                   embed.isMember("video")) {
+                            blobAtt(embed["video"], "");
+                        }
+                    }
+                    if (!atts.empty()) meta["attachments"] = atts;
+                }
                 Json::StreamWriterBuilder wb;
                 wb["indentation"] = "";
                 std::string metadata = Json::writeString(wb, meta);
@@ -1912,6 +1958,7 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
         std::vector<std::string> newSenders;   // sender DIDs
         std::vector<std::string> newHandles;   // sender handles
         std::vector<std::string> newDisplays;  // sender display names
+        std::vector<Json::Value> newEmbeds;     // #158: record embeds per message
 
         for (int i = static_cast<int>(messages.size()) - 1; i >= 0; --i) {
             const auto& msg = messages[i];
@@ -1938,7 +1985,19 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
 
             std::string text;
             if (msg.isMember("text")) text = GetString(msg, "text");
-            if (text.empty()) continue;
+            // #158: embeds ride both shapes (flattened on the view, nested
+            // in record); a media-only message still arrives with placeholder
+            // text — its content is the attachment.
+            Json::Value embeds;
+            if (msg.isMember("embeds") && msg["embeds"].isArray())
+                embeds = msg["embeds"];
+            else if (msg.isMember("record") && msg["record"].isObject() &&
+                     msg["record"].isMember("embeds") &&
+                     msg["record"]["embeds"].isArray())
+                embeds = msg["record"]["embeds"];
+            const bool hasEmbeds = !embeds.empty();
+            if (text.empty() && !hasEmbeds) continue;
+            if (text.empty()) text = "(media attachment)";
 
             // Resolve sender identity: members map first (getMessages
             // senders carry only a DID), sender fields as fallback.
@@ -1978,6 +2037,7 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
                 newSenders.push_back(senderDid);
                 newHandles.push_back(senderHandle);
                 newDisplays.push_back(senderDisplay);
+                newEmbeds.push_back(embeds);
             }
         }
 
@@ -2046,6 +2106,46 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
                 "provided by the reply target and filled automatically. Text "
                 "replies are NOT delivered. If the message is not addressed to "
                 "you, staying silent is correct.";
+            // #158: attachments — embedded chat media as getBlob URLs
+            // (chatHost serves the blobs; did = the sender).
+            if (i < newEmbeds.size() && !newEmbeds[i].empty()) {
+                Json::Value atts(Json::arrayValue);
+                const std::string& blobDid = newSenders[i];
+                auto blobAtt = [&atts, &chatHost, &blobDid](
+                                   const Json::Value& blob,
+                                   const std::string& alt) {
+                    if (!blob.isObject() || !blob.isMember("ref")) return;
+                    const std::string cid =
+                        blob["ref"].get("$link", "").asString();
+                    const std::string mime =
+                        blob.get("mimeType", "").asString();
+                    if (cid.empty() || mime.empty()) return;
+                    Json::Value e;
+                    e["url"] = chatHost +
+                               "/xrpc/com.atproto.sync.getBlob?did=" +
+                               blobDid + "&cid=" + cid;
+                    e["dedupe_key"] = "bsky:" + cid;
+                    e["mime"] = mime;
+                    e["kind"] = MediaVault::KindFromMime(mime);
+                    if (!alt.empty()) e["alt_text"] = alt;
+                    atts.append(e);
+                };
+                for (const auto& em : newEmbeds[i]) {
+                    if (!em.isObject()) continue;
+                    const std::string etype = em.get("$type", "").asString();
+                    if (etype == "app.bsky.embed.images" &&
+                        em.isMember("images") && em["images"].isArray()) {
+                        for (const auto& im : em["images"]) {
+                            blobAtt(im.get("image", Json::Value()),
+                                    im.get("alt", "").asString());
+                        }
+                    } else if (etype == "app.bsky.embed.video" &&
+                               em.isMember("video")) {
+                        blobAtt(em["video"], "");
+                    }
+                }
+                if (!atts.empty()) meta["attachments"] = atts;
+            }
             Json::StreamWriterBuilder wb;
             wb["indentation"] = "";
             std::string metadata = Json::writeString(wb, meta);
