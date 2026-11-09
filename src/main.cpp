@@ -95,6 +95,10 @@ static void print_help(const char* argv0) {
     << "  --pg-port <port>\n"
     << "  --pg-database <name>\n"
     << "  --pg-username <user>\n"
+    << "  --describe-provider <id>        #160 cloud vision provider (opt-in)\n"
+    << "  --describe-model-id <model>     #160 cloud vision model id\n"
+    << "  --describe-model <path>         #160 local VLM text GGUF\n"
+    << "  --describe-mmproj <path>        #160 local VLM projector GGUF\n"
     << "  --pg-password <pass>\n"
     << "  --pg-pool-size <n>\n"
     << "\n"
@@ -228,6 +232,16 @@ static void ResolvePaths(animus::kernel::KernelConfig& cfg,
 
   if (cfg.embedding_model_path.empty()) {
     cfg.embedding_model_path = (cfg.dataDir / "models" / "embeddinggemma-300m-qat-Q8_0.gguf").string();
+  }
+
+  // #160: local VLM pair for image description. Operators drop any
+  // mtmd-supported model + projector pair under <dataDir>/models and
+  // auto-describe turns on; absent files = local engine unavailable.
+  if (cfg.describe_model_path.empty()) {
+    cfg.describe_model_path = (cfg.dataDir / "models" / "vlm-model.gguf").string();
+  }
+  if (cfg.describe_mmproj_path.empty()) {
+    cfg.describe_mmproj_path = (cfg.dataDir / "models" / "vlm-mmproj.gguf").string();
   }
 }
 
@@ -430,6 +444,30 @@ static bool ParseArg(int argc, char** argv, int& i,
   if (arg == "--pg-port") {
     if (i + 1 >= argc) { std::cerr << "--pg-port requires a number\n"; std::exit(2); }
     try { cfg.pg_port = std::stoi(argv[++i]); } catch (...) { std::cerr << "--pg-port must be a number\n"; std::exit(2); }
+    wantsKernel = true;
+    return true;
+  }
+  if (arg == "--describe-provider") {
+    if (i + 1 >= argc) { std::cerr << "--describe-provider requires a value\n"; std::exit(2); }
+    cfg.describe_provider = argv[++i];
+    wantsKernel = true;
+    return true;
+  }
+  if (arg == "--describe-model-id") {
+    if (i + 1 >= argc) { std::cerr << "--describe-model-id requires a value\n"; std::exit(2); }
+    cfg.describe_model_id = argv[++i];
+    wantsKernel = true;
+    return true;
+  }
+  if (arg == "--describe-model") {
+    if (i + 1 >= argc) { std::cerr << "--describe-model requires a path\n"; std::exit(2); }
+    cfg.describe_model_path = argv[++i];
+    wantsKernel = true;
+    return true;
+  }
+  if (arg == "--describe-mmproj") {
+    if (i + 1 >= argc) { std::cerr << "--describe-mmproj requires a path\n"; std::exit(2); }
+    cfg.describe_mmproj_path = argv[++i];
     wantsKernel = true;
     return true;
   }

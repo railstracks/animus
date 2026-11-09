@@ -86,6 +86,9 @@
 #include "animus_kernel/ApiPackageStore.h"
 #include "animus_kernel/api/ApiRuntime.h"
 #include "animus_kernel/MediaVault.h"
+#include "animus_kernel/CloudVlmEngine.h"
+#include "animus_kernel/DescribeService.h"
+#include "animus_kernel/LocalVlmEngine.h"
 #include "animus_kernel/api/SecretsVault.h"
 #include "animus_kernel/api/ApiConnectionManager.h"
 #include "animus_kernel/tools/ApiTool.h"
@@ -105,6 +108,7 @@
 #include "animus_kernel/tools/DiceTool.h"
 #include "animus_kernel/tools/CalculatorTool.h"
 #include "animus_kernel/tools/ToolsTool.h"
+#include "animus_kernel/tools/DescribeTool.h"
 #include "animus_kernel/tools/ImageTool.h"
 #include "animus_kernel/tools/DiffusionTool.h"
 #include "animus_kernel/DiffusionStore.h"
@@ -513,6 +517,63 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             },
             std::filesystem::path(m_config.dataDir) / "media");
         m_mediaVault->EnsureSchema();
+
+        // #160: describe engine — auto-describe inbound images.
+        // Local-first: a loaded VLM pair is the default engine. Cloud is
+        // strictly opt-in (provider + model_id explicitly configured) and
+        // additionally gated per channel at dispatch time.
+        {
+            LocalVlmEngine::Params lp;
+            lp.model_path = m_config.describe_model_path;
+            lp.mmproj_path = m_config.describe_mmproj_path;
+            auto local = std::make_unique<LocalVlmEngine>(lp);
+            DescribeService::EngineFn engineFn;
+            std::string engineName = "local-vlm";
+            if (local->IsAvailable()) {
+                ALOG_INFO("describe",
+                          "local VLM ready: " << local->ModelId());
+                LocalVlmEngine* raw = local.get();
+                engineFn = [raw](const DescribeService::EngineRequest& r) {
+                    return raw->Describe(r.image_path, r.prompt);
+                };
+                m_localVlm = std::move(local);
+            } else {
+                ALOG_INFO("describe",
+                          "local VLM unavailable: " << local->LoadError());
+                engineName = "none";
+                engineFn = [](const DescribeService::EngineRequest&) {
+                    DescribeService::EngineResult r;
+                    r.error = "no describe engine available "
+                              "(no local VLM pair; cloud not configured)";
+                    return r;
+                };
+            }
+            m_describeLocal = std::make_unique<DescribeService>(
+                m_dataStore, m_mediaVault.get(), engineFn, engineName);
+            m_describeLocal->EnsureSchema();
+        }
+        if (!m_config.describe_provider.empty() &&
+            !m_config.describe_model_id.empty()) {
+            const std::string visionModel = m_config.describe_provider +
+                                            "/" + m_config.describe_model_id;
+            CloudVlmEngine::Params cp;
+            cp.vision_model = visionModel;
+            m_cloudVlm = std::make_unique<CloudVlmEngine>(
+                std::move(cp),
+                [this](const llm::LLMRequest& req, const std::string& pid,
+                       llm::LLMResponse& out, std::string& error) {
+                    return CloudVisionComplete(req, pid, out, error);
+                });
+            CloudVlmEngine* rawCloud = m_cloudVlm.get();
+            m_describeCloud = std::make_unique<DescribeService>(
+                m_dataStore, m_mediaVault.get(),
+                [rawCloud](const DescribeService::EngineRequest& r) {
+                    return rawCloud->Describe(r.image_path, r.prompt);
+                },
+                CloudVlmEngine::kEngineName);
+            m_describeCloud->EnsureSchema();
+            ALOG_INFO("describe", "cloud vision enabled: " << visionModel);
+        }
         m_adminServer->SetChannelContextStore(m_channelContextStore);
 
         // --- API Package Store (#26 data layer, build order b) ---
@@ -1947,6 +2008,112 @@ std::string AgentKernel::VaultInboundAttachments(
     return Json::writeString(wb, out);
 }
 
+// #160: resolve the describe service for a channel. Null = auto-describe
+// gated off (disabled, channel opt-out, or no engine available). Local is
+// the default; cloud only when the channel explicitly opts in AND the
+// operator configured provider + model id; cloud-without-config degrades
+// to local (privacy-safe default), local-without-model skips quietly
+// (boot already logged why).
+DescribeService* AgentKernel::DescribeServiceFor(
+    const ChannelManager::ReplyTarget& replyTarget) const {
+    if (!m_config.describe_enabled || !m_describeLocal) return nullptr;
+    bool enabled = true;
+    std::string engine = "local";
+    if (m_channelManager) {
+        auto state = m_channelManager->GetChannel(replyTarget.channel_name);
+        if (state && state->config.isObject()) {
+            enabled = state->config.get("describe_images", true).asBool();
+            engine = state->config.get("describe_engine", "local").asString();
+        }
+    }
+    if (!enabled) return nullptr;
+    if (engine == "cloud") {
+        if (m_describeCloud) return m_describeCloud.get();
+        ALOG_WARNING(
+            "describe",
+            "channel '" << replyTarget.channel_name
+                        << "' requests describe_engine=cloud but no cloud "
+                           "vision model is configured; using local if "
+                           "available");
+    }
+    return m_localVlm ? m_describeLocal.get() : nullptr;
+}
+
+// #160: auto-describe vaulted inbound images — refs in, descriptions out.
+// Each image entry gains machine_description + provenance fields (or
+// describe_error, truncated, loud). Synchronous and cache-first:
+// content-addressed, so repeat deliveries and identical images are free.
+std::string AgentKernel::DescribeInboundAttachments(
+    const std::string& attachmentsJson,
+    const ChannelManager::ReplyTarget& replyTarget) {
+    DescribeService* svc = DescribeServiceFor(replyTarget);
+    if (!svc) return attachmentsJson;   // gated off — pass through
+    Json::Value entries;
+    Json::CharReaderBuilder rb;
+    std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+    std::string errs;
+    if (!reader->parse(attachmentsJson.data(),
+                       attachmentsJson.data() + attachmentsJson.size(),
+                       &entries, &errs) ||
+        !entries.isArray()) {
+        return attachmentsJson;   // never break the message over describe
+    }
+    bool changed = false;
+    for (auto& at : entries) {
+        if (!at.isObject()) continue;
+        if (at.get("kind", "").asString() != "image") continue;
+        const std::string ref = at.get("ref", "").asString();
+        if (ref.empty()) continue;   // failed acquisition — already loud
+        if (!at.get("machine_description", "").asString().empty())
+            continue;                // already described (redelivery)
+        const auto r = svc->Describe(ref);
+        if (r.ok) {
+            at["machine_description"] = r.text;
+            at["describe_engine"] = r.engine;
+            at["describe_model"] = r.model;
+        } else {
+            at["describe_error"] = r.error.substr(0, 200);
+        }
+        changed = true;
+    }
+    if (!changed) return attachmentsJson;
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    return Json::writeString(wb, entries);
+}
+
+// #160: cloud vision provider call — the CloudVlmEngine CompleteFn seam
+// bound to the ChainRunner provider registry. One explicit destination,
+// no try-all fallback (issue #160 privacy contract).
+bool AgentKernel::CloudVisionComplete(const llm::LLMRequest& req,
+                                      const std::string& providerId,
+                                      llm::LLMResponse& out,
+                                      std::string& error) {
+    if (!m_chainRunner) {
+        error = "chain runner unavailable";
+        return false;
+    }
+    auto& providers = m_chainRunner->GetProviders();
+    auto cfgOpt = m_chainRunner->GetConfigLookup()(providerId);
+    if (!cfgOpt) {
+        error = "Provider not found: " + providerId;
+        return false;
+    }
+    auto provider = providers.Create(*cfgOpt);
+    if (!provider) {
+        error = "Failed to create provider: " + providerId;
+        return false;
+    }
+    std::string llmError;
+    const llm::LLMMessage msg = provider->Complete(req, &llmError);
+    if (!llmError.empty()) {
+        error = llmError;
+        return false;
+    }
+    out.content = msg.content;
+    return true;
+}
+
 void AgentKernel::ExecuteChannelDispatch(
         const std::string& sessionKey,
         const std::string& message,
@@ -2068,6 +2235,12 @@ void AgentKernel::ExecuteChannelDispatch(
         if (!arrival.attachments.empty())
             arrival.attachments =
                 VaultInboundAttachments(arrival.attachments, replyTarget);
+        // #160: auto-describe vaulted images — per-channel gate,
+        // cache-first; descriptions (or describe_error) embed on the
+        // arrival and render on the context card with provenance.
+        if (!arrival.attachments.empty())
+            arrival.attachments = DescribeInboundAttachments(
+                arrival.attachments, replyTarget);
         dispatchAuthor = arrival.author_handle;  // #133: capture final value (post origin-fallback)
         m_channelContextStore->AddArrival(arrival);
         m_channelContextStore->Prune(arrival.session_key, arrival.agent_id);
@@ -2377,6 +2550,10 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
         m_tools.Register(std::make_unique<ImageTool>(
            m_httpClient, std::move(imgCfg), m_chainRunner, m_agentStore));
    }
+
+    // Describe tool (#160) — active layer over the describe services
+    m_tools.Register(std::make_unique<DescribeTool>(
+        m_describeLocal.get(), m_describeCloud.get()));
 
     // Diffusion tool (ticket 122)
     if (m_diffusionStore) {

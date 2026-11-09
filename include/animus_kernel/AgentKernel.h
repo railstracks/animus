@@ -9,6 +9,9 @@
 #include "animus_kernel/AgentStore.h"
 #include "animus_kernel/EmbeddingService.h"
 #include "animus_kernel/KernelConfig.h"
+#include "animus_kernel/CloudVlmEngine.h"
+#include "animus_kernel/DescribeService.h"
+#include "animus_kernel/LocalVlmEngine.h"
 #include "animus_kernel/llm/LLMProviderRegistry.h"
 #include "animus_kernel/tools/HttpClient.h"
 #include "animus_kernel/tools/ToolRegistry.h"
@@ -120,6 +123,24 @@ private:
     std::string VaultInboundAttachments(
         const std::string& rawAttachments,
         const ChannelManager::ReplyTarget& replyTarget);
+    // #160: auto-describe vaulted inbound images at dispatch time.
+    // Per-channel gate: describe_images (default on), describe_engine
+    // local|cloud — cloud requires operator config (strict opt-in) and
+    // degrades to local otherwise. Synchronous + cache-first: the
+    // description rides the first turn's context card; channels that
+    // don't want the latency opt out. Failures embed describe_error and
+    // never block the message.
+    std::string DescribeInboundAttachments(
+        const std::string& attachmentsJson,
+        const ChannelManager::ReplyTarget& replyTarget);
+    // Resolve the describe service for a channel (null = gated off).
+    DescribeService* DescribeServiceFor(
+        const ChannelManager::ReplyTarget& replyTarget) const;
+    // CloudVlmEngine provider seam → ChainRunner registry. One explicit
+    // destination, no try-all fallback (issue #160 privacy contract).
+    bool CloudVisionComplete(const llm::LLMRequest& req,
+                             const std::string& providerId,
+                             llm::LLMResponse& out, std::string& error);
     // Media egress scope for a channel: platform CDN defaults + operator
     // config (media_hosts, pds) — message content never influences it.
     std::vector<std::string> MediaScopeFor(
@@ -227,6 +248,14 @@ private:
     // default, and the web allowlist must not gate media scope.
     std::unique_ptr<MediaVault> m_mediaVault;
     HttpClient m_mediaHttp;
+    // #160: describe engine — cache-first service over the vault. Local
+    // VLM is the default engine; cloud strictly opt-in. m_describeLocal
+    // always exists (its engine may be a loud no-op for the describe
+    // tool); m_describeCloud only when provider + model are configured.
+    std::unique_ptr<LocalVlmEngine> m_localVlm;
+    std::unique_ptr<CloudVlmEngine> m_cloudVlm;
+    std::unique_ptr<DescribeService> m_describeLocal;
+    std::unique_ptr<DescribeService> m_describeCloud;
 };
 
 } // namespace animus::kernel

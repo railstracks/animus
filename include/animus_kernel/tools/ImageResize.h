@@ -1,26 +1,43 @@
 #pragma once
 
+#include <cstdlib>
 #include <string>
 #include <vector>
 #include <iostream>
 
-// stb_image — header-only image loading
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_JPEG
-#define STBI_ONLY_PNG
-#define STBI_ONLY_BMP
-#define STBI_ONLY_PSD
-#define STBI_ONLY_TGA
-#define STBI_ONLY_WEBP
+// stb declarations ONLY. The implementations live in exactly one TU:
+// src/kernel/tools/StbImageImpl.cpp (plus, for the read side,
+// libanimus_mtmd when the llama.cpp multimodal build is present — same
+// upstream v2.30). This header originally compiled the implementations
+// inline, which worked while it had a single includer (ImageTool.cpp);
+// CloudVlmEngine became the second, so the implementations moved out.
+
+// Allocator macros: stb defines them only inside its implementation
+// section, but the code below uses STBI_MALLOC / STBI_FREE for raw
+// buffers. All implementation homes use the default allocator, so these
+// equivalents are exact.
+#ifndef STBI_MALLOC
+#define STBI_MALLOC(sz) malloc(sz)
+#endif
+#ifndef STBI_FREE
+#define STBI_FREE(p) free(p)
+#endif
+
 #include "stb/stb_image.h"
-
-// stb_image_write — for re-encoding
-#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb/stb_image_write.h"
-
-// stb_image_resize2 — for downscaling
-#define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "stb/stb_image_resize2.h"
+
+// stbi_write_png_to_mem's only declaration sits inside stb_image_write.h's
+// implementation guard (line ~1128); the definition compiles in
+// StbImageImpl.cpp with extern "C" linkage. Declare it here with the
+// exact upstream signature for declarations-only includers.
+extern "C" unsigned char* stbi_write_png_to_mem(
+    const unsigned char* pixels, int stride_bytes, int x, int y, int n,
+    int* out_len);
+
+#ifndef STBIW_FREE
+#define STBIW_FREE(p) free(p)
+#endif
 
 namespace animus::kernel {
 

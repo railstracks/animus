@@ -191,6 +191,27 @@ std::string ChannelContextProvider::RenderArrival(const ChannelArrival& a) const
                 if (!alt.empty()) ss << ", alt: \"" << alt << "\"";
                 const std::string dur = at.get("duration", "").asString();
                 if (!dur.empty()) ss << ", " << dur << "s";
+                // #160: machine description + provenance — evidence about
+                // the image from a named engine, never ground truth.
+                const std::string md =
+                    at.get("machine_description", "").asString();
+                if (!md.empty()) {
+                    const std::string deng =
+                        at.get("describe_engine", "").asString();
+                    const std::string dmod =
+                        at.get("describe_model", "").asString();
+                    ss << "\n      [machine description";
+                    if (!deng.empty() || !dmod.empty()) {
+                        ss << " |";
+                        if (!deng.empty()) ss << " engine=" << deng;
+                        if (!dmod.empty()) ss << " model=" << dmod;
+                    }
+                    ss << "] " << md;
+                }
+                const std::string derr =
+                    at.get("describe_error", "").asString();
+                if (!derr.empty())
+                    ss << "\n      [describe failed: " << derr << "]";
                 ss << "\n";
             }
         }
