@@ -2,8 +2,16 @@
 
 #include "animus_kernel/tools/CompositeTool.h"
 
+#include <filesystem>
 #include <set>
 #include <string>
+#include <vector>
+
+// jsoncpp forward declaration at global scope (Json::Value appears by
+// reference only in this header)
+namespace Json {
+class Value;
+}
 
 namespace animus::kernel {
 
@@ -45,6 +53,11 @@ public:
     // the poll digest are rewritten into media:// refs before the agent
     // reads the output.
     void SetMediaVault(MediaVault* vault) { m_mediaVault = vault; }
+
+    /// #159 outbound media: the tree send_media files[] may source from
+    /// (path and base64 forms; vault refs resolve independently). Empty
+    /// (default) = path/data sources denied.
+    void SetOutboundRoot(const std::filesystem::path& root) { m_outboundRoot = root; }
 
     /// Set the current agent ID for schema filtering.
     /// When set, GetDefinition() only includes adapters for channels
@@ -99,10 +112,19 @@ protected:
                                      const std::string& platformId,
                                      const std::string& agentId);
 
+    /// #159: resolve send_media files[] (media:// ref | scoped path |
+    /// base64) into kernel-validated _media_files descriptors on args.
+    /// Returns false + error on any bad entry; tempFiles collects
+    /// base64-written temporaries for post-dispatch cleanup.
+    bool ResolveOutboundFiles(Json::Value& args,
+                              std::vector<std::string>& tempFiles,
+                              std::string& error);
+
     AgentConfigStore* m_configStore{nullptr};
     ChannelManager* m_channelManager{nullptr};
     ChannelContextStore* m_channelContextStore{nullptr};
     MediaVault* m_mediaVault{nullptr};
+    std::filesystem::path m_outboundRoot;   // #159 outbound media source tree
     std::string m_currentAgentId;
     PostCreatedCallback m_postCreatedCb;
 };

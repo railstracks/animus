@@ -850,6 +850,96 @@ local function do_auth_test(args)
 end
 
 -- ---------------------------------------------------------------------------
+-- #159: outbound media — send_media (files.upload_v2 external flow)
+-- ---------------------------------------------------------------------------
+
+--- Send a message with file attachments via Slack's three-step external
+--- upload: files.getUploadURLExternal (needs the exact byte length — the
+--- kernel resolver stats each file into _media_files[].size) → raw POST
+--- of the bytes to the presigned upload_url (no auth header; the URL is
+--- the credential) → files.completeUploadExternal, which posts the files
+--- to the channel with the text as initial_comment. No processed-poll —
+--- the complete call is the message send. Alt text rides each file title.
+local function do_send_media(args)
+    local pid = args.platform_id
+    local channel = args.channel_id
+    local media = args._media_files
+
+    if not channel or channel == "" then
+        return { success = false, error = "channel_id is required" }
+    end
+    if type(media) ~= "table" or #media == 0 then
+        return { success = false, error =
+            "no resolved attachments — pass files[] (kernel resolves to _media_files)" }
+    end
+    if #media > 10 then
+        return { success = false, error = "too many attachments: " .. tostring(#media)
+            .. " > 10 (per-upload limit)" }
+    end
+
+    local text = render_content(args.text or args.content or "")
+
+    local entries = {}
+    for i, f in ipairs(media) do
+        if not f.size or f.size <= 0 then
+            return { success = false, error = "file " .. tostring(i)
+                .. " carries no size — kernel resolver must provide _media_files[].size" }
+        end
+        local filename = f.filename or ("attachment" .. tostring(i))
+        local resp = api_post(pid, "files.getUploadURLExternal", {
+            filename = filename,
+            length = tostring(f.size)
+        })
+        if resp.status ~= 200 then
+            return { success = false, error = "getUploadURLExternal failed (HTTP "
+                .. tostring(resp.status) .. ", file " .. tostring(i) .. "): "
+                .. truncate(tostring(resp.body), 400) }
+        end
+        local data = json_decode_safe(resp.body)
+        if not data or not data.ok or not data.upload_url or not data.file_id then
+            return { success = false, error = "getUploadURLExternal error (file "
+                .. tostring(i) .. "): "
+                .. tostring(data and data.error or "malformed response") }
+        end
+
+        local up = animus.http_upload(data.upload_url, {
+            timeout = 120,
+            file = { path = f.path, mime = f.mime or "application/octet-stream" }
+        })
+        if up.status ~= 200 then
+            return { success = false, error = "byte upload failed (HTTP "
+                .. tostring(up.status) .. ", file " .. tostring(i) .. "): "
+                .. truncate(tostring(up.body or up.error), 400) }
+        end
+
+        entries[#entries + 1] = {
+            file_id = data.file_id,
+            title = (f.alt_text and f.alt_text ~= "") and f.alt_text or filename
+        }
+    end
+
+    local comp = { files = entries, channel_id = channel }
+    if text ~= "" then comp.initial_comment = text end
+    local resp = api_post(pid, "files.completeUploadExternal", comp)
+    if resp.status ~= 200 then
+        return { success = false, error = "completeUploadExternal failed (HTTP "
+            .. tostring(resp.status) .. "): " .. truncate(tostring(resp.body), 400) }
+    end
+    local data = json_decode_safe(resp.body)
+    if not data or not data.ok then
+        return { success = false, error = "completeUploadExternal: "
+            .. tostring(data and data.error or "unknown") }
+    end
+
+    return {
+        success = true,
+        channel_id = channel,
+        output = "Media message sent to " .. channel
+            .. " (" .. tostring(#entries) .. " file(s))"
+    }
+end
+
+-- ---------------------------------------------------------------------------
 -- Registration
 -- ---------------------------------------------------------------------------
 
@@ -860,7 +950,7 @@ animus.register_channel({
     actions = {
         "post", "reply", "browse", "search", "react",
         "get_channel", "list_channels", "list_members",
-        "delete", "edit", "auth_test"
+        "delete", "edit", "auth_test", "send_media"
     },
     schema = {
         post = {
@@ -876,6 +966,11 @@ animus.register_channel({
             { name = "content", type = "string", required = true, description = "Reply text" },
             { name = "broadcast", type = "boolean", required = false, description = "Show reply in channel (not just thread)" },
             { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — rendered as a Block Kit card; url-only degrades to a plain link" }
+        },
+        send_media = {
+            { name = "channel_id", type = "string", required = true, description = "Channel ID (e.g. C01234567)" },
+            { name = "files", type = "array", required = true, description = "Media attachments: [{ref: 'media://<sha256>', path?, alt_text?}] — vault refs or dataDir-scoped paths; kernel resolves to _media_files (up to 10 files, external upload flow)" },
+            { name = "text", type = "string", required = false, description = "Message text (posted as initial comment with the files)" }
         },
         browse = {
             { name = "channel_id", type = "string", required = true, description = "Channel ID" },
@@ -939,6 +1034,7 @@ animus.register_channel({
         elseif action == "delete" then return do_delete(args)
         elseif action == "edit" then return do_edit(args)
         elseif action == "auth_test" then return do_auth_test(args)
+        elseif action == "send_media" then return do_send_media(args)
         else return { success = false, error = "unknown action: " .. tostring(action) }
         end
     end
