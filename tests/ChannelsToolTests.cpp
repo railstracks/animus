@@ -1,4 +1,6 @@
 #include "animus_kernel/tools/ChannelsTool.h"
+#include "animus_kernel/DescribeService.h"
+#include "animus_kernel/SqliteDataStore.h"
 #include "animus_kernel/tools/ToolRegistry.h"
 #include "animus_kernel/lua/LuaState.h"
 #include "animus_kernel/lua/LuaToolHandler.h"
@@ -6,9 +8,12 @@
 #include "animus_kernel/ChannelManager.h"
 #include "animus_kernel/ChannelState.h"
 
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <sstream>
+#include <unistd.h>
 
 #include <json/json.h>
 #include <json/reader.h>
@@ -506,9 +511,238 @@ void TestIrcBridgeInferenceAndGate() {
     std::cerr << " done.\n";
 }
 
+// ============================================================================
+// Test: #161 outbound auto-alt at kernel file resolution
+// ============================================================================
+class TestChannelsTool : public ChannelsTool {
+public:
+    using ChannelsTool::ResolveOutboundFiles;
+};
+
+void TestOutboundAutoAlt() {
+    std::cerr << "  [ChannelsTool] outbound auto-alt (#161)...\n";
+
+    char dbTpl[] = "/tmp/animus_ct_alt_XXXXXX";
+    int dbFd = mkstemp(dbTpl);
+    if (dbFd >= 0) close(dbFd);
+    const std::string dbPath = std::string(dbTpl) + ".db";
+    char dirTpl[] = "/tmp/animus_ct_alt_dir_XXXXXX";
+    char* dir = mkdtemp(dirTpl);
+    const std::filesystem::path root(dir ? dir : "/tmp");
+
+    SqliteDataStore dataStore(dbPath);
+    MediaVault vault(
+        &dataStore,
+        [](const HttpClient::Request& req,
+           const std::vector<std::string>&) {
+            HttpClient::Response r;
+            r.status_code = 200;
+            r.body = req.url.find("a.png") != std::string::npos
+                         ? std::string("\x89PNG\r\n\x1a\ntest-image-bytes")
+                         : std::string("alt-fixture-bytes-2");
+            r.content_type = "image/png";
+            return r;
+        },
+        root);
+    vault.EnsureSchema();
+
+    std::string failWith;
+    DescribeService svc(
+        &dataStore, &vault,
+        [&failWith](const DescribeService::EngineRequest&) {
+            if (!failWith.empty())
+                return DescribeService::EngineResult{false, "", "alt-model",
+                                                     failWith};
+            return DescribeService::EngineResult{true, "machine alt for tests",
+                                                 "alt-model", ""};
+        },
+        "local-vlm");
+    svc.EnsureSchema();
+
+    const auto imgFile = root / "out.png";   // same bytes as vault a.png
+    {
+        std::ofstream out(imgFile, std::ios::binary);
+        out << "\x89PNG\r\n\x1a\ntest-image-bytes";
+    }
+    const auto imgFile2 = root / "out2.png";  // distinct bytes (failure case)
+    {
+        std::ofstream out(imgFile2, std::ios::binary);
+        out << "\x89PNG\r\n\x1a\nsecond-image-bytes";
+    }
+    const auto txtFile = root / "note.txt";
+    {
+        std::ofstream out(txtFile);
+        out << "plain text, not an image";
+    }
+
+    TestChannelsTool tool;
+    tool.SetMediaVault(&vault);
+    tool.SetOutboundRoot(root);
+    tool.SetDescribeService(&svc);
+
+    auto runResolve = [&tool](Json::Value& args) {
+        std::vector<std::string> temps;
+        std::string err;
+        const bool ok = tool.ResolveOutboundFiles(args, temps, err);
+        for (const auto& tf : temps) {
+            std::error_code ec;
+            std::filesystem::remove(tf, ec);
+        }
+        return std::make_pair(ok, err);
+    };
+
+    // 1. image without alt → machine alt fills + provenance marker
+    {
+        Json::Value args;
+        args["files"] = Json::Value(Json::arrayValue);
+        Json::Value e;
+        e["path"] = imgFile.string();
+        e["mime"] = "image/png";
+        args["files"].append(e);
+        const auto [ok, err] = runResolve(args);
+        Assert(ok, "image resolve ok: " + err);
+        const Json::Value& d = args["_media_files"][0];
+        Assert(d.get("alt_text", "").asString() == "machine alt for tests",
+               "empty alt filled by describe engine");
+        Assert(d.get("alt_text_source", "").asString() == "machine",
+               "machine marker on generated alt");
+    }
+
+    // 2. explicit alt preserved, no marker
+    {
+        Json::Value args;
+        args["files"] = Json::Value(Json::arrayValue);
+        Json::Value e;
+        e["path"] = imgFile.string();
+        e["mime"] = "image/png";
+        e["alt_text"] = "explicit alt";
+        args["files"].append(e);
+        const auto [ok, err] = runResolve(args);
+        Assert(ok, "explicit-alt resolve ok: " + err);
+        const Json::Value& d = args["_media_files"][0];
+        Assert(d.get("alt_text", "").asString() == "explicit alt",
+               "explicit alt never overwritten");
+        Assert(d.get("alt_text_source", "").asString().empty(),
+               "no machine marker on explicit alt");
+    }
+
+    // 3. non-image untouched
+    {
+        Json::Value args;
+        args["files"] = Json::Value(Json::arrayValue);
+        Json::Value e;
+        e["path"] = txtFile.string();
+        e["mime"] = "text/plain";
+        args["files"].append(e);
+        const auto [ok, err] = runResolve(args);
+        Assert(ok, "text resolve ok: " + err);
+        const Json::Value& d = args["_media_files"][0];
+        Assert(d.get("alt_text", "").asString().empty(),
+               "non-image gets no machine alt");
+        Assert(d.get("alt_error", "").asString().empty(),
+               "non-image records no alt_error");
+    }
+
+    // 4. describe failure → send still proceeds, alt_error recorded loud
+    {
+        failWith = "engine exploded";
+        Json::Value args;
+        args["files"] = Json::Value(Json::arrayValue);
+        Json::Value e;
+        e["path"] = imgFile2.string();
+        e["mime"] = "image/png";
+        args["files"].append(e);
+        const auto [ok, err] = runResolve(args);
+        Assert(ok, "failure resolve still succeeds: " + err);
+        const Json::Value& d = args["_media_files"][0];
+        Assert(d.get("alt_text", "").asString().empty(),
+               "failed describe leaves alt empty");
+        Assert(d.get("alt_error", "").asString().find("engine exploded") !=
+                   std::string::npos,
+               "alt_error recorded loudly");
+        failWith.clear();
+    }
+
+    // 5. no describe service wired → quiet skip (unconfigured, not loud)
+    {
+        TestChannelsTool bare;
+        bare.SetMediaVault(&vault);
+        bare.SetOutboundRoot(root);
+        Json::Value args;
+        args["files"] = Json::Value(Json::arrayValue);
+        Json::Value e;
+        e["path"] = imgFile.string();
+        e["mime"] = "image/png";
+        args["files"].append(e);
+        std::vector<std::string> temps;
+        std::string err;
+        Assert(bare.ResolveOutboundFiles(args, temps, err),
+               "no-service resolve ok: " + err);
+        const Json::Value& d = args["_media_files"][0];
+        Assert(d.get("alt_text", "").asString().empty(),
+               "no service → no alt");
+        Assert(d.get("alt_error", "").asString().empty(),
+               "no service → no error noise");
+        for (const auto& tf : temps) {
+            std::error_code ec;
+            std::filesystem::remove(tf, ec);
+        }
+    }
+
+    // 6. vault refs: no recorded alt → filled (cache-shared with case 1's
+    //    path describe of the same bytes); platform alt → preserved
+    {
+        MediaVault::Request v1;
+        v1.url = "https://cdn.example.com/a.png";
+        v1.kind = "image";
+        v1.filename = "a.png";
+        v1.mime = "image/png";
+        v1.scope_hosts = {"cdn.example.com"};
+        const auto r1 = vault.Acquire(v1);
+        Assert(r1.ok, "vault a.png ok: " + r1.error);
+
+        MediaVault::Request v2;
+        v2.url = "https://cdn.example.com/c.png";
+        v2.kind = "image";
+        v2.filename = "c.png";
+        v2.mime = "image/png";
+        v2.alt_text = "sender alt";
+        v2.scope_hosts = {"cdn.example.com"};
+        const auto r2 = vault.Acquire(v2);
+        Assert(r2.ok, "vault c.png ok: " + r2.error);
+
+        Json::Value args;
+        args["files"] = Json::Value(Json::arrayValue);
+        Json::Value e1;
+        e1["ref"] = r1.ref;
+        args["files"].append(e1);
+        Json::Value e2;
+        e2["ref"] = r2.ref;
+        args["files"].append(e2);
+        const auto [ok, err] = runResolve(args);
+        Assert(ok, "ref resolve ok: " + err);
+        const Json::Value& d1 = args["_media_files"][0];
+        Assert(d1.get("alt_text", "").asString() == "machine alt for tests",
+               "vault ref without alt gets machine alt (cache-shared)");
+        Assert(d1.get("alt_text_source", "").asString() == "machine",
+               "vault ref fill carries the marker");
+        const Json::Value& d2 = args["_media_files"][1];
+        Assert(d2.get("alt_text", "").asString() == "sender alt",
+               "vault-recorded platform alt preserved");
+        Assert(d2.get("alt_text_source", "").asString().empty(),
+               "platform alt gets no machine marker");
+    }
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    unlink(dbPath.c_str());
+    unlink(dbTpl);
+}
+
 int main() {
     std::cerr << "ChannelsTool tests:\n";
 
+    TestOutboundAutoAlt();
     TestChannelsToolDefinition();
     TestChannelsToolPluginRegistration();
     TestChannelsToolInstanceRouting();

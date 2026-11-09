@@ -4,6 +4,7 @@
 #include "animus_kernel/ChannelState.h"
 #include "animus_kernel/ChannelContextStore.h"
 #include "animus_kernel/MediaVault.h"
+#include "animus_kernel/DescribeService.h"
 #include "animus_kernel/lua/HttpUpload.h"
 
 #include <json/json.h>
@@ -946,6 +947,7 @@ bool ChannelsTool::ResolveOutboundFiles(Json::Value& args,
 
         std::string path, filename, mime, altText;
         std::uint64_t size = 0;
+        bool refImage = false;
         if (!ref.empty()) {
             // media://<sha256> — vault-resolved inbound object
             if (!m_mediaVault) {
@@ -962,6 +964,7 @@ bool ChannelsTool::ResolveOutboundFiles(Json::Value& args,
             mime = entry.get("mime", rec->mime).asString();
             altText = entry.get("alt_text", rec->alt_text).asString();
             size = rec->size;
+            refImage = rec->kind == "image";
         } else if (!rawPath.empty()) {
             // local path — must live inside the outbound root (dataDir)
             if (m_outboundRoot.empty()) {
@@ -1032,10 +1035,30 @@ bool ChannelsTool::ResolveOutboundFiles(Json::Value& args,
         }
 
         Json::Value d;
+        // #161: auto-alt — fill empty alt on outbound images through the
+        // describe engine (local-first). Explicit alt (caller-supplied or
+        // vault-recorded platform alt) always wins; never overwritten.
+        // Describe failures never block the send.
+        bool machineAlt = false;
+        std::string altError;
+        if ((refImage || mime.rfind("image/", 0) == 0) && altText.empty() &&
+            m_describeService) {
+            const auto r = m_describeService->DescribePath(
+                path, mime, DescribeService::kAltTextPrompt);
+            if (r.ok) {
+                altText = r.text;
+                machineAlt = true;
+            } else {
+                altError = r.error;
+            }
+        }
         d["path"] = path;
         d["filename"] = filename;
         if (!mime.empty()) d["mime"] = mime;
         if (!altText.empty()) d["alt_text"] = altText;
+        if (machineAlt) d["alt_text_source"] = "machine";
+        if (!altError.empty())
+            d["alt_error"] = altError.substr(0, 200);
         // exact byte size — slack's getUploadURLExternal requires length
         d["size"] = static_cast<Json::UInt64>(size);
         descriptors.append(d);
