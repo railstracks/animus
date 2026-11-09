@@ -8,6 +8,8 @@
 #include "animus_kernel/DescribeService.h"
 
 #include <ctime>
+#include <fstream>
+#include <iterator>
 
 #include "animus_kernel/CryptoUtils.h"
 #include "animus_kernel/SchemaHelpers.h"
@@ -17,6 +19,11 @@ namespace animus::kernel {
 const char* DescribeService::kDefaultPrompt =
     "Describe this image factually and concisely: the main subjects, any "
     "visible text, and notable qualities.";
+
+const char* DescribeService::kAltTextPrompt =
+    "Write alt text for this image: one or two plain sentences describing "
+    "only what is visibly present, suitable for a screen reader. No style "
+    "commentary, no speculation, no prefixes like 'image of'.";
 
 DescribeService::DescribeService(IDataStore* store, MediaVault* vault,
                                  EngineFn engine, std::string engineName)
@@ -106,6 +113,76 @@ DescribeService::DescribeResult DescribeService::Describe(
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         StoreDescription(rec->sha256, promptHash, m_engineName, er.model,
+                         er.text);
+    }
+
+    out.ok = true;
+    out.cached = false;
+    out.text = er.text;
+    out.model = er.model;
+    return out;
+}
+
+DescribeService::DescribeResult DescribeService::DescribePath(
+    const std::filesystem::path& image, const std::string& mime,
+    const std::string& prompt) {
+    DescribeResult out;
+    out.engine = m_engineName;
+
+    if (!m_engine) {
+        out.error = "describe engine not configured";
+        return out;
+    }
+    if (!std::filesystem::exists(image)) {
+        out.error = "image file not found: " + image.string();
+        return out;
+    }
+
+    // Content-addressed by the file's OWN bytes: the same image through a
+    // vault ref or a bare path is one cache row.
+    std::ifstream in(image, std::ios::binary);
+    std::string bytes((std::istreambuf_iterator<char>(in)),
+                      std::istreambuf_iterator<char>());
+    if (bytes.empty()) {
+        out.error = "image file unreadable or empty: " + image.string();
+        return out;
+    }
+    const std::string sha256 = crypto::Sha256Hex(bytes);
+
+    const std::string p =
+        prompt.empty() ? std::string(kDefaultPrompt) : prompt;
+    const std::string promptHash = PromptHash(p);
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        Cached c;
+        if (LoadCached(sha256, promptHash, c)) {
+            out.ok = true;
+            out.cached = true;
+            out.text = std::move(c.text);
+            out.engine = std::move(c.engine);
+            out.model = std::move(c.model);
+            return out;
+        }
+    }
+
+    EngineRequest req;
+    req.sha256 = sha256;
+    req.image_path = image;
+    req.mime = mime;
+    req.prompt = p;
+
+    const EngineResult er = m_engine(req);
+    if (!er.ok || er.text.empty()) {
+        out.error = !er.error.empty()
+                        ? er.error
+                        : "describe engine returned no text";
+        return out;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        StoreDescription(sha256, promptHash, m_engineName, er.model,
                          er.text);
     }
 

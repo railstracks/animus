@@ -836,6 +836,8 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         m_channelsTool->SetOutboundRoot(m_config.dataDir);
         m_channelsTool->SetConfigStore(m_configStore);
         m_channelsTool->SetChannelContextStore(m_channelContextStore);
+        // #161: outbound auto-alt — describe engine (local service).
+        m_channelsTool->SetDescribeService(m_describeLocal.get());
         // Note: m_channelManager is null here — wired in Initialize()
         m_tools.Register(std::unique_ptr<IToolHandler>(m_channelsTool));
         m_adminServer->SetChannelsTool(m_channelsTool);

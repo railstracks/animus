@@ -14,6 +14,7 @@
 #include "animus_kernel/tools/HttpClient.h"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <unistd.h>
@@ -210,6 +211,62 @@ int main() {
         Assert(rb.engine == "engine-a" && rb.model == "model-a",
                "provenance comes from the row, not the bound engine");
         Assert(rb.text == "answer from engine A", "row text served");
+    }
+
+    // ── DescribePath: vault-less, content-addressed by file bytes (#161) ──
+    // The a.png fixture body written to a bare temp file — same bytes the
+    // vault stores for img.ref, so path and ref addressing must SHARE one
+    // cache row.
+    {
+        const auto altFile = root / "alt-source.png";
+        {
+            std::ofstream out(altFile, std::ios::binary);
+            out << "\x89PNG\r\n\x1a\ntest-image-bytes";
+        }
+        int pathCalls = 0;
+        std::string lastPathPrompt;
+        DescribeService pathSvc(
+            &dataStore, &vault,
+            [&](const DescribeService::EngineRequest& r) {
+                pathCalls++;
+                lastPathPrompt = r.prompt;
+                return DescribeService::EngineResult{
+                    true, "A small PNG used in tests.", "path-model", ""};
+            },
+            "path-engine");
+        pathSvc.EnsureSchema();
+
+        // The alt prompt is a distinct row from the default describe prompt.
+        Assert(DescribeService::PromptHash(
+                   DescribeService::kAltTextPrompt) !=
+                   DescribeService::PromptHash(
+                       DescribeService::kDefaultPrompt),
+               "alt prompt hashes to its own row");
+
+        auto p1 = pathSvc.DescribePath(altFile, "image/png",
+                                       DescribeService::kAltTextPrompt);
+        Assert(p1.ok && !p1.cached, "path describe miss");
+        Assert(lastPathPrompt == DescribeService::kAltTextPrompt,
+               "alt prompt passthrough");
+        Assert(p1.text == "A small PNG used in tests.", "path text");
+        Assert(p1.model == "path-model", "path model passthrough");
+        auto p2 = pathSvc.DescribePath(altFile, "image/png",
+                                       DescribeService::kAltTextPrompt);
+        Assert(p2.ok && p2.cached, "path describe cache hit");
+        Assert(pathCalls == 1, "engine ran once for path describes");
+
+        // Cross-addressing: the same bytes via a VAULT ref hit the same
+        // row — proven by a cache hit with this service's engine idle.
+        auto p3 = pathSvc.Describe(img.ref,
+                                   DescribeService::kAltTextPrompt);
+        Assert(p3.ok && p3.cached, "ref and path share the cache row");
+        Assert(pathCalls == 1, "no engine call for the shared row");
+
+        // Missing file: loud.
+        auto p4 = pathSvc.DescribePath(root / "nope.png", "image/png",
+                                       DescribeService::kAltTextPrompt);
+        Assert(!p4.ok && p4.error.find("not found") != std::string::npos,
+               "missing file loud: " + p4.error);
     }
 
     // ── prompt hash determinism ──

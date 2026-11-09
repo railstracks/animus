@@ -276,6 +276,17 @@ check("send carries bot auth", uploads[1].headers["Authorization"] == "Bot bot-t
     tostring(uploads[1].headers["Authorization"]))
 local payload = json.decode(uploads[1].fields.payload_json)
 check("payload_json carries content", payload.content == "Hello with media", uploads[1].fields.payload_json)
+check("alt rides as attachment description",
+    payload.attachments and payload.attachments[1]
+    and payload.attachments[1].id == 0
+    and payload.attachments[1].description == "A chart",
+    uploads[1].fields.payload_json)
+check("alt-less file absent from descriptions",
+    payload.attachments and #payload.attachments == 1,
+    uploads[1].fields.payload_json)
+check("filename passthrough preserved alongside alt",
+    payload.attachments and payload.attachments[1].filename == nil,
+    "descriptions only — filename rides the file part")
 check("file field names indexed from 0", uploads[1].files[1].field == "files[0]"
     and uploads[1].files[2].field == "files[1]")
 check("filename passthrough", uploads[1].files[1].filename == "a.png")

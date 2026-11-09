@@ -35,6 +35,10 @@ public:
     // baseline answer, cached once per image. Explicit prompts (the active
     // tool: "read the text in this chart") hash to their own cache rows.
     static const char* kDefaultPrompt;
+    // The #161 outbound alt-text question: concise, screen-reader-fit,
+    // visibly-present-only. A distinct prompt → a distinct cache row per
+    // image, so alt text never collides with default descriptions.
+    static const char* kAltTextPrompt;
 
     struct EngineRequest {
         std::string sha256;               // content address of the image
@@ -73,6 +77,14 @@ public:
     // Cache-first; a miss runs the engine once and stores the result.
     DescribeResult Describe(const std::string& ref,
                             const std::string& prompt = "");
+
+    // Vault-less variant for kernel-side outbound paths (#161 alt-fill):
+    // content-addressed by the file's OWN bytes, so a path and a vault
+    // ref to the same image share one cache row. Requires an engine but
+    // no vault. prompt empty = default.
+    DescribeResult DescribePath(const std::filesystem::path& image,
+                                const std::string& mime,
+                                const std::string& prompt = "");
 
     // Provenance-labeled line for context cards:
     //   "[machine description | engine=local model=X] text"

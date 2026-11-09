@@ -1061,11 +1061,25 @@ local function do_send_media(args)
                     mime = f.mime or "application/octet-stream"
                 }
             end
+            -- #161: alt text rides as Discord attachment descriptions
+            -- (the platform's accessibility field). Files without alt are
+            -- simply absent from the array. The kernel may fill empty alt
+            -- machine-side (alt_text_source = "machine"); explicit alt
+            -- always wins kernel-side, so no precedence logic here.
+            local payload = { content = chunk }
+            local atts = {}
+            for i, f in ipairs(media) do
+                local alt = tostring(f.alt_text or "")
+                if alt ~= "" then
+                    atts[#atts + 1] = { id = i - 1, description = alt }
+                end
+            end
+            if #atts > 0 then payload.attachments = atts end
             local resp = animus.http_upload(
                 API_BASE .. "/channels/" .. channel_id .. "/messages", {
                     headers = { ["Authorization"] = "Bot " .. token },
                     timeout = 120,
-                    fields = { payload_json = json.encode({ content = chunk }) },
+                    fields = { payload_json = json.encode(payload) },
                     files = files
                 })
             update_rate_limits(resp, platform_id)

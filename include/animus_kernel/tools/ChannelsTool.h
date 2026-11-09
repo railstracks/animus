@@ -19,6 +19,7 @@ class AgentConfigStore;
 class ChannelManager;
 class ChannelContextStore;
 class MediaVault;
+class DescribeService;
 
 // ============================================================================
 // ChannelsTool — composite tool for channel integrations
@@ -53,6 +54,8 @@ public:
     // the poll digest are rewritten into media:// refs before the agent
     // reads the output.
     void SetMediaVault(MediaVault* vault) { m_mediaVault = vault; }
+    // #161: describe engine for outbound auto-alt (local service).
+    void SetDescribeService(DescribeService* service) { m_describeService = service; }
 
     /// #159 outbound media: the tree send_media files[] may source from
     /// (path and base64 forms; vault refs resolve independently). Empty
@@ -124,6 +127,7 @@ protected:
     ChannelManager* m_channelManager{nullptr};
     ChannelContextStore* m_channelContextStore{nullptr};
     MediaVault* m_mediaVault{nullptr};
+    DescribeService* m_describeService{nullptr};  // #161 outbound auto-alt
     std::filesystem::path m_outboundRoot;   // #159 outbound media source tree
     std::string m_currentAgentId;
     PostCreatedCallback m_postCreatedCb;
