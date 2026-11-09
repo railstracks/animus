@@ -770,6 +770,9 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         m_channelsTool = new ChannelsTool();
         // #158: pull-mode vault for agent-driven polls (mastodon digest).
         m_channelsTool->SetMediaVault(m_mediaVault.get());
+        // #159: outbound send_media sources — vault refs, dataDir paths,
+        // base64 temporaries (written under dataDir/media/tmp)
+        m_channelsTool->SetOutboundRoot(m_config.dataDir);
         m_channelsTool->SetConfigStore(m_configStore);
         m_channelsTool->SetChannelContextStore(m_channelContextStore);
         // Note: m_channelManager is null here — wired in Initialize()
@@ -2483,6 +2486,10 @@ void AgentKernel::EnsureLuaState(const std::string& agentId) {
     LuaState::Config config;
     config.agentId = agentId;
     config.configStore = m_configStore;
+    // #159: outbound uploads read only from the agent data tree
+    // (vault objects live under dataDir/media, outbound temp under
+    // dataDir/media/tmp) — default-deny everywhere else.
+    config.uploadRoot = m_config.dataDir.string();
     auto state = std::make_unique<LuaState>(config, m_tools, m_httpClient);
     m_luaStates.emplace(agentId, std::move(state));
 }

@@ -1,5 +1,6 @@
 #include "animus_kernel/lua/LuaState.h"
 #include "animus_kernel/lua/LuaToolHandler.h"
+#include "animus_kernel/lua/HttpUpload.h"
 #include "animus_kernel/lua/ScriptStore.h"
 #include "animus_kernel/tools/ToolRegistry.h"
 #include "animus_kernel/tools/HttpClient.h"
@@ -1489,6 +1490,110 @@ void TestLuaBridgeAgentIdentity() {
     std::cerr << " done\n";
 }
 
+// ============================================================================
+// #159: HttpUpload helpers (multipart composition, path scoping, caps)
+// ============================================================================
+
+void TestHttpUploadHelpers() {
+    std::cerr << "[HttpUpload helpers]\n";
+
+    // Multipart composition: structure + binary-safe content
+    {
+        std::string contentType;
+        const std::string body = BuildMultipartBody(
+            {{"status", "hello world"}, {"visibility", "public"}},
+            {{"file", "cat.png", "image/png",
+              std::string("PNG\x00\x01\xFF\r\n", 7)}},
+            "BOUND1", contentType);
+        Assert(contentType == "multipart/form-data; boundary=BOUND1",
+               "multipart content-type carries boundary");
+        Assert(body.rfind("--BOUND1\r\n", 0) == 0,
+               "body opens with boundary");
+        Assert(body.find("name=\"status\"\r\n\r\nhello world\r\n") !=
+                   std::string::npos,
+               "field part rendered");
+        Assert(body.find("name=\"file\"; filename=\"cat.png\"\r\n"
+                         "Content-Type: image/png\r\n\r\n") !=
+                   std::string::npos,
+               "file part headers rendered");
+        Assert(body.find(std::string("PNG\x00\x01\xFF\r\n", 7)) !=
+                   std::string::npos,
+               "binary content preserved verbatim");
+        Assert(body.size() >= 12 &&
+               body.compare(body.size() - 12, 12, "--BOUND1--\r\n") == 0,
+               "body closes with boundary terminator");
+    }
+
+    // Boundary collision avoidance: chosen boundary never occurs in content
+    {
+        for (int i = 0; i < 25; ++i) {
+            std::vector<UploadFilePart> parts;
+            parts.push_back({"file", "f.bin", "application/octet-stream",
+                             "----animus data " + std::to_string(i)});
+            const std::string b =
+                ChooseBoundary({{"k", "----animus value"}}, parts);
+            Assert(!b.empty(), "boundary chosen (attempt " +
+                                   std::to_string(i) + ")");
+            if (b.empty()) continue;
+            Assert(std::string("----animus value").find(b) ==
+                       std::string::npos,
+                   "boundary absent from field values");
+            Assert(parts[0].content.find(b) == std::string::npos,
+                   "boundary absent from file contents");
+        }
+    }
+
+    // Part header safety
+    Assert(PartHeaderSafe("files[0]"), "plain field name accepted");
+    Assert(PartHeaderSafe("cat.png"), "plain filename accepted");
+    Assert(!PartHeaderSafe(""), "empty token rejected");
+    Assert(!PartHeaderSafe("a\r\nb"), "CR/LF in header token rejected");
+    Assert(!PartHeaderSafe("ev\"il"), "quote in header token rejected");
+
+    // Path scoping (real dirs, traversal + symlink-adjacent cases)
+    {
+        namespace fs = std::filesystem;
+        const fs::path root = fs::temp_directory_path() /
+            ("animus_upload_scope_" + std::to_string(::getpid()));
+        fs::create_directories(root / "sub");
+        const fs::path file = root / "sub" / "a.png";
+        { std::ofstream f(file, std::ios::binary); f << "x"; }
+
+        Assert(PathWithinRoots(file, {root}), "file under root accepted");
+        Assert(PathWithinRoots(root / "sub", {root}),
+               "dir under root accepted");
+        Assert(PathWithinRoots(root, {root}), "root itself accepted");
+        Assert(!PathWithinRoots(fs::temp_directory_path(), {root}),
+               "parent of root rejected");
+        Assert(!PathWithinRoots(root / "sub" / ".." / "..", {root}),
+               "traversal escaping root rejected");
+        Assert(PathWithinRoots(root / "missing.png", {root}),
+               "missing file under existing root passes scope "
+               "(the later read fails loudly)");
+        Assert(!PathWithinRoots("/etc/passwd", {root}),
+               "outside path rejected");
+
+        fs::remove_all(root);
+    }
+
+    // ReadFileBytes: round-trip + caps + missing
+    {
+        namespace fs = std::filesystem;
+        const fs::path tmp = fs::temp_directory_path() /
+            ("animus_upload_read_" + std::to_string(::getpid()) + ".bin");
+        { std::ofstream f(tmp, std::ios::binary); f << "hello bytes"; }
+        std::string out, err;
+        Assert(ReadFileBytes(tmp, 100, out, err) && out == "hello bytes",
+               "file bytes round-trip");
+        Assert(!ReadFileBytes(tmp, 3, out, err) &&
+                   err.find("size cap") != std::string::npos,
+               "size cap enforced loudly");
+        Assert(!ReadFileBytes(tmp / "nope", 100, out, err),
+               "missing file fails");
+        fs::remove(tmp);
+    }
+}
+
 int main() {
     std::cerr << "Running Lua integration tests...\n";
 
@@ -1504,6 +1609,7 @@ int main() {
     TestLuaBridgeAgentIdentity();
     TestScriptStore();
     TestHttpClient();
+    TestHttpUploadHelpers();
     TestCoroutineMode();
     TestInstructionLimit();
     TestMemoryLimit();

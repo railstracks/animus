@@ -1015,6 +1015,95 @@ local function do_gateway_info(args)
 end
 
 -- ---------------------------------------------------------------------------
+-- #159: outbound media — send_media (multipart message with attachments)
+-- ---------------------------------------------------------------------------
+
+--- Send a message with file attachments. Discord accepts multipart/form-data
+--- on the same endpoint as JSON posts: payload_json + files[0..n] in one
+--- phase — the upload IS the message send (no processed-poll, no second
+--- post). The kernel composes the multipart body; file bytes never enter
+--- Lua. Text past the 2000-char limit splits like do_post; the first chunk
+--- carries the files, follow-ups are plain JSON posts.
+local function do_send_media(args)
+    local platform_id = args.platform_id
+    local channel_id = args.channel_id
+    local media = args._media_files
+
+    if not channel_id or channel_id == "" then
+        return { success = false, error = "channel_id is required" }
+    end
+    if type(media) ~= "table" or #media == 0 then
+        return { success = false, error =
+            "no resolved attachments — pass files[] (kernel resolves to _media_files)" }
+    end
+    if #media > 10 then
+        return { success = false, error = "too many attachments: " .. tostring(#media)
+            .. " > 10 (per-message limit)" }
+    end
+
+    local token, terr = get_token(platform_id)
+    if not token then return { success = false, error = terr } end
+
+    local content = render_content(args.text or args.content or "")
+    local chunks = split_for_limit(content, 2000)
+    if #chunks == 0 then chunks = { "" } end
+    local first_id
+
+    for idx, chunk in ipairs(chunks) do
+        if idx == 1 then
+            -- first chunk: multipart with the attachments
+            local files = {}
+            for i, f in ipairs(media) do
+                files[#files + 1] = {
+                    path = f.path,
+                    field = "files[" .. tostring(i - 1) .. "]",
+                    filename = f.filename or ("attachment" .. tostring(i)),
+                    mime = f.mime or "application/octet-stream"
+                }
+            end
+            local resp = animus.http_upload(
+                API_BASE .. "/channels/" .. channel_id .. "/messages", {
+                    headers = { ["Authorization"] = "Bot " .. token },
+                    timeout = 120,
+                    fields = { payload_json = json.encode({ content = chunk }) },
+                    files = files
+                })
+            update_rate_limits(resp, platform_id)
+            if resp.status ~= 200 and resp.status ~= 201 then
+                return {
+                    success = false,
+                    error = "send_media failed (" .. tostring(resp.status) .. "): "
+                        .. truncate(tostring(resp.body or resp.error), 500)
+                }
+            end
+            local data = json_decode_safe(resp.body)
+            if data and data.id then first_id = data.id end
+        else
+            -- follow-up chunks: plain JSON posts (files ride only chunk 1)
+            local resp = auth_post(platform_id,
+                "/channels/" .. channel_id .. "/messages", { content = chunk })
+            if resp.status ~= 200 and resp.status ~= 201 then
+                return {
+                    success = false,
+                    error = "send_media follow-up failed (" .. tostring(resp.status)
+                        .. ") on chunk " .. tostring(idx) .. "/" .. tostring(#chunks) .. ": "
+                        .. truncate(tostring(resp.body), 500)
+                }
+            end
+        end
+    end
+
+    return {
+        success = true,
+        message_id = first_id,
+        channel_id = channel_id,
+        output = "Media message sent to channel " .. channel_id
+            .. " (" .. tostring(#media) .. " file(s)"
+            .. (#chunks > 1 and (", " .. tostring(#chunks) .. " chunks") or "") .. ")"
+    }
+end
+
+-- ---------------------------------------------------------------------------
 -- Registration
 -- ---------------------------------------------------------------------------
 
@@ -1025,7 +1114,7 @@ animus.register_channel({
     actions = {
         "post", "reply", "browse", "react", "delete", "edit",
         "get_channel", "get_message", "list_channels", "get_guild",
-        "list_guilds", "typing", "gateway_info"
+        "list_guilds", "typing", "gateway_info", "send_media"
     },
     schema = {
         post = {
@@ -1039,6 +1128,11 @@ animus.register_channel({
             { name = "message_id", type = "string", required = true, description = "Message snowflake ID to reply to" },
             { name = "content", type = "string", required = true, description = "Reply text" },
             { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — native embed on the first reply chunk" }
+        },
+        send_media = {
+            { name = "channel_id", type = "string", required = true, description = "Channel snowflake ID" },
+            { name = "files", type = "array", required = true, description = "Media attachments: [{ref: 'media://<sha256>', path?, alt_text?}] — vault refs or dataDir-scoped paths; kernel resolves to _media_files (up to 10 files, multipart on the message endpoint)" },
+            { name = "text", type = "string", required = false, description = "Message text (splits past 2000 chars; first chunk carries the files)" }
         },
         browse = {
             { name = "channel_id", type = "string", required = true, description = "Channel snowflake ID" },
@@ -1105,6 +1199,7 @@ animus.register_channel({
         elseif action == "list_guilds" then return do_list_guilds(args)
         elseif action == "typing" then return do_typing(args)
         elseif action == "gateway_info" then return do_gateway_info(args)
+        elseif action == "send_media" then return do_send_media(args)
         else return { success = false, error = "unknown action: " .. tostring(action) }
         end
     end

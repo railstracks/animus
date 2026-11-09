@@ -1347,6 +1347,121 @@ local function do_delete(args)
 end
 
 -- ---------------------------------------------------------------------------
+-- #159: outbound media — send_media (uploadBlob → embed by reference)
+-- ---------------------------------------------------------------------------
+
+--- Post text with media attachments. Phase 1 uploads each resolved file
+--- as a raw blob (com.atproto.repo.uploadBlob — synchronous, no
+--- processed-poll unlike mastodon); phase 2 creates the post record
+--- embedding the blob refs (app.bsky.embed.images). Alt text rides each
+--- image entry. File bytes never enter Lua — the kernel resolves files[]
+--- to _media_files descriptors (paths only) before dispatch.
+local function do_send_media(args)
+    local pid = args.platform_id
+    local media = args._media_files
+    if type(media) ~= "table" or #media == 0 then
+        return { success = false, error =
+            "no resolved attachments — pass files[] (kernel resolves to _media_files)" }
+    end
+    if #media > 4 then
+        return { success = false, error = "too many attachments: " .. tostring(#media)
+            .. " > 4 (per-post image limit)" }
+    end
+
+    local did, aerr = ensure_auth(pid)
+    if not did then return { success = false, error = aerr } end
+    local jwt = authenticate(pid)
+    if not jwt then
+        return { success = false, error = "authentication failed — check handle and app_password" }
+    end
+    local pds = get_pds(pid)
+
+    -- Phase 1: upload each file as a blob (raw body, blob's mime)
+    local function upload_blob(token, f)
+        return animus.http_upload(pds .. "/xrpc/com.atproto.repo.uploadBlob", {
+            headers = { ["Authorization"] = "Bearer " .. token },
+            timeout = 120,
+            file = { path = f.path, mime = f.mime or "application/octet-stream" }
+        })
+    end
+
+    local blobs = {}
+    for i, f in ipairs(media) do
+        local resp = upload_blob(jwt, f)
+        if is_expired_token(resp) then
+            local njwt = reauth(pid)
+            if not njwt then
+                return { success = false, error = "re-authentication failed during upload (file "
+                    .. tostring(i) .. ")" }
+            end
+            jwt = njwt
+            resp = upload_blob(jwt, f)
+        end
+        if resp.status ~= 200 then
+            local detail = tostring(resp.body or resp.error or "")
+            if #detail > 400 then detail = detail:sub(1, 400) end
+            return {
+                success = false,
+                error = "blob upload failed (" .. tostring(resp.status) .. ") on file "
+                    .. tostring(i) .. "/" .. tostring(#media) .. ": " .. detail
+            }
+        end
+        local pok, data = pcall(json.decode, resp.body)
+        if not pok or type(data) ~= "table" or type(data.blob) ~= "table"
+            or type(data.blob.ref) ~= "table" then
+            local detail = tostring(resp.body)
+            if #detail > 300 then detail = detail:sub(1, 300) end
+            return { success = false, error = "blob upload returned no blob ref (file "
+                .. tostring(i) .. "): " .. detail }
+        end
+        blobs[#blobs + 1] = data.blob
+    end
+
+    -- Phase 2: post with the images embed
+    local text = args.text or args.content or ""
+    local images = {}
+    for i, blob in ipairs(blobs) do
+        local entry = { image = blob }
+        local alt = media[i].alt_text
+        if alt and alt ~= "" then entry.alt = alt end
+        images[#images + 1] = entry
+    end
+
+    local rendered = render_content(text)
+    local record = {
+        ["$type"] = "app.bsky.feed.post",
+        text = rendered,
+        createdAt = iso_now(),
+        langs = args.langs or { "en" }
+    }
+    attach_facets(record, rendered)
+    record.embed = {
+        ["$type"] = "app.bsky.embed.images",
+        images = images
+    }
+
+    local resp = auth_post(pid, "/xrpc/com.atproto.repo.createRecord", {
+        repo = did,
+        collection = "app.bsky.feed.post",
+        record = record
+    })
+
+    if resp.status ~= 200 then
+        return { success = false, error = "post failed (" .. resp.status .. "): " .. tostring(resp.body) }
+    end
+
+    local ok, data = pcall(json.decode, resp.body)
+    if not ok then
+        return { success = true, output = resp.body }
+    end
+
+    return {
+        success = true,
+        output = json.encode({ uri = data.uri, cid = data.cid })
+    }
+end
+
+-- ---------------------------------------------------------------------------
 -- Registration
 -- ---------------------------------------------------------------------------
 
@@ -1354,7 +1469,7 @@ animus.register_channel({
     id = "bluesky",
     name = "Bluesky",
     capabilities = {"read", "write", "search"},
-    actions = {"post", "reply", "like", "browse", "search", "get_notifications", "view_replies", "delete", "heartbeat", "chat_list", "chat_messages", "chat_send", "chat_get_convo"},
+    actions = {"post", "reply", "like", "browse", "search", "get_notifications", "view_replies", "delete", "heartbeat", "chat_list", "chat_messages", "chat_send", "chat_get_convo", "send_media"},
     schema = {
         post = {
             { name = "content", type = "string", required = true, description = "Create a new root-level post (NOT a reply). Use 'reply' action to respond to another post." },
@@ -1413,6 +1528,11 @@ animus.register_channel({
         chat_get_convo = {
             { name = "platform_id", type = "string", required = true, description = "Platform instance ID" },
             { name = "member_did", type = "string", required = true, description = "DID of the member to chat with" }
+        },
+        send_media = {
+            { name = "files", type = "array", required = true, description = "Media attachments: [{ref: 'media://<sha256>', path?, alt_text?}] — vault refs or dataDir-scoped paths; kernel resolves to _media_files (up to 4 images)" },
+            { name = "text", type = "string", required = false, description = "Post text accompanying the images" },
+            { name = "langs", type = "array", required = false, description = "BCP-47 language codes (default: ['en'])" }
         }
     },
     handler = function(args)
@@ -1434,6 +1554,7 @@ animus.register_channel({
         elseif action == "chat_messages" then return do_chat_messages(args)
         elseif action == "chat_send" then return do_chat_send(args)
         elseif action == "chat_get_convo" then return do_chat_get_convo(args)
+        elseif action == "send_media" then return do_send_media(args)
         else return { success = false, error = "unknown action: " .. tostring(action) }
         end
     end

@@ -412,6 +412,7 @@ add_library(animus_kernel
   src/kernel/context/TemporalContextProvider.cpp
   src/kernel/lua/LuaState.cpp
   src/kernel/lua/LuaToolHandler.cpp
+  src/kernel/lua/HttpUpload.cpp
   src/kernel/lua/ScriptStore.cpp
   src/kernel/lua/FilesystemScriptLoader.cpp
   src/kernel/lua/SharedScriptHealer.cpp

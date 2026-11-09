@@ -217,6 +217,20 @@ function animus.http_post(url, opts)
     return mock_dispatch(url, (opts and opts.headers) or {}, (opts and opts.body) or nil)
 end
 
+-- #159: upload seam + sleep stubs (captured for assertions; defaults succeed)
+local uploads = {}
+local mock_upload_responder = nil
+local sleep_calls = 0
+local media_poll_status = "processed"
+function animus.http_upload(url, opts)
+    uploads[#uploads + 1] = { url = url, opts = opts }
+    if mock_upload_responder then
+        return mock_upload_responder(#uploads, url, opts)
+    end
+    return { status = 200, body = json.encode({ id = tostring(5000 + #uploads) }), headers = {} }
+end
+animus.sleep = function() sleep_calls = sleep_calls + 1 end
+
 -- Capture outbound POST bodies for thread-chain assertions
 local posted = {}
 mock_add({
@@ -262,7 +276,7 @@ check("adapter registered", registration ~= nil)
 check("id = mastodon", registration.id == "mastodon")
 check("name present", registration.name == "Mastodon")
 check("capabilities read+write", #registration.capabilities == 2)
-check("actions declared", #registration.actions == 9,
+check("actions declared", #registration.actions == 10,
     table.concat(registration.actions, ","))
 
 local function call(action, args)
@@ -742,6 +756,94 @@ check("timeline 422 typed as timeline_unavailable",
     and r.http_status == 422, tostring(r.error_type))
 check("timeline 422 advice points at account_statuses fallback",
     r.error:find("account_statuses", 1, true) ~= nil, r.error)
+
+-- ---------------------------------------------------------------------------
+print("== send_media: two-phase upload → poll → post ==")
+reset_config()
+uploads = {}
+mock_upload_responder = nil
+media_poll_status = "processed"
+-- media processed-poll route: mock dispatch is LAST MATCH WINS — registered
+-- here (late) so the file's catch-all route can't shadow it
+mock_add({
+    matcher = function(url) return url:find("/api/v1/media/", 1, true) ~= nil end,
+    respond = function(url)
+        local id = url:match("/api/v1/media/(.+)$")
+        return {
+            status = 200, headers = {},
+            body = json.encode({ id = id, status = media_poll_status })
+        }
+    end
+})
+-- dedicated phase-3 capture: mock dispatch is LAST MATCH WINS, so this
+-- late-added route wins over earlier scenario mocks for /api/v1/statuses
+local send_posts = {}
+mock_add({
+    matcher = function(url) return url:find("/api/v1/statuses", 1, true) ~= nil
+        and not url:find("/context", 1, true) end,
+    respond = function(url, headers, body)
+        send_posts[#send_posts + 1] = { url = url, headers = headers, body = body }
+        local data = body and json.decode(body) or {}
+        return {
+            status = 200, headers = {},
+            body = json.encode({
+                id = "7001",
+                url = "https://mastodon.social/@agent/7001",
+                content = data.status or "",
+                visibility = data.visibility or "public"
+            })
+        }
+    end
+})
+r = call("send_media", {
+    text = "two cats, one toot",
+    _media_files = {
+        { path = "/data/media/ab/cd/abcd.png", filename = "cat1.png", mime = "image/png", alt_text = "a cat" },
+        { path = "/data/media/ef/01/ef01.mp4", filename = "vid.mp4", mime = "video/mp4" }
+    }
+})
+check("send_media success", r.success == true, r.error)
+check("two media uploaded", #uploads == 2, tostring(#uploads))
+check("upload url is v2 media", uploads[1].url:find("/api/v2/media", 1, true) ~= nil)
+check("upload carries bearer", (uploads[1].opts.headers or {})["Authorization"] == "Bearer test-token-123")
+check("alt text rides description field", uploads[1].opts.fields.description == "a cat")
+check("no alt text -> no description", uploads[2].opts.fields.description == nil)
+check("file part path", uploads[1].opts.files[1].path == "/data/media/ab/cd/abcd.png")
+check("file part mime", uploads[2].opts.files[1].mime == "video/mp4")
+check("media_ids on posted status", #send_posts == 1, tostring(#send_posts))
+local send_body = json.decode(send_posts[1].body)
+check("posted both ids", #send_body.media_ids == 2
+    and send_body.media_ids[1] == "5001" and send_body.media_ids[2] == "5002",
+    send_posts[1].body)
+check("text rides status", send_body.status == "two cats, one toot")
+check("visibility default public", send_body.visibility == "public")
+check("post id surfaced", r.post_id ~= nil, tostring(r.url))
+
+-- limit: 5 files rejected before any upload
+uploads = {}
+r = call("send_media", { _media_files = { {}, {}, {}, {}, {} } })
+check("5 files rejected", r.success == false and r.error:find("too many attachments") ~= nil, r.error)
+check("nothing uploaded on limit reject", #uploads == 0)
+
+-- upload failure: loud, per-file position
+uploads = {}
+mock_upload_responder = function(n)
+    if n == 2 then return { status = 422, body = '{"error":"file too large"}', headers = {} } end
+    return { status = 200, body = json.encode({ id = "5001" }), headers = {} }
+end
+r = call("send_media", { _media_files = { { path = "/x.png" }, { path = "/y.png" } } })
+check("upload failure loud", r.success == false and r.error:find("media upload failed %(422%)") ~= nil, r.error)
+check("failure names file position", r.error:find("file 2/2") ~= nil, r.error)
+mock_upload_responder = nil
+
+-- stuck processing: bounded polls, no partial post
+uploads = {}
+media_poll_status = "processing"
+r = call("send_media", { _media_files = { { path = "/z.png" } } })
+check("unprocessed aborts", r.success == false and r.error:find("not processed after 10 polls") ~= nil, r.error)
+check("abort paced between polls (9 sleeps / 10 polls)", sleep_calls == 9, tostring(sleep_calls))
+check("abort posts nothing", #send_posts == 1, tostring(#send_posts))
+media_poll_status = "processed"
 
 -- ---------------------------------------------------------------------------
 print("== handler contract ==")

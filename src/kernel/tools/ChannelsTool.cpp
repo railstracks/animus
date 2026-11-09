@@ -4,14 +4,20 @@
 #include "animus_kernel/ChannelState.h"
 #include "animus_kernel/ChannelContextStore.h"
 #include "animus_kernel/MediaVault.h"
+#include "animus_kernel/lua/HttpUpload.h"
 
 #include <json/json.h>
 #include <json/writer.h>
 
+#include <chrono>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <algorithm>
 #include <set>
 #include <map>
+#include <unistd.h>
 
 namespace animus::kernel {
 
@@ -441,6 +447,30 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
         }
     }
 
+    // #159 outbound media: resolve files[] into kernel-validated
+    // _media_files descriptors. The model never supplies _media_files —
+    // it is stripped and rebuilt here on every send_media call.
+    std::vector<std::string> outboundTempFiles;
+    if (action == "send_media") {
+        Json::Value args = ParseArgs(resolvedCall.arguments);
+        args.removeMember("_media_files");
+        std::string resolveErr;
+        if (!ResolveOutboundFiles(args, outboundTempFiles, resolveErr)) {
+            for (const auto& t : outboundTempFiles) {
+                std::error_code ec;
+                std::filesystem::remove(t, ec);
+            }
+            ToolResult fail;
+            fail.call_id = call.id;
+            fail.success = false;
+            fail.error = resolveErr;
+            return fail;
+        }
+        Json::StreamWriterBuilder wb;
+        wb.settings_["indentation"] = "";
+        resolvedCall.arguments = Json::writeString(wb, args);
+    }
+
     auto result = CompositeTool::Execute(resolvedCall);
 
     // #158 pull-mode: vault attachments surfacing in poll digests. Push
@@ -452,6 +482,15 @@ ToolResult ChannelsTool::Execute(const ToolCall& call) {
         result.output = VaultPollAttachments(
             result.output, platformId,
             GetStringField(preArgs, "__agent_id", m_currentAgentId));
+    }
+
+    // #159: base64-sourced temporaries are dispatch-scoped — remove after
+    // the adapter has uploaded them (or failed; nothing persists).
+    if (!outboundTempFiles.empty()) {
+        for (const auto& t : outboundTempFiles) {
+            std::error_code ec;
+            std::filesystem::remove(t, ec);
+        }
     }
 
     // If the agent just created a post, register the post_id for session routing
@@ -844,6 +883,166 @@ std::string ChannelsTool::VaultPollAttachments(const std::string& output,
     Json::StreamWriterBuilder wb;
     wb["indentation"] = "";
     return Json::writeString(wb, digest);
+}
+
+// Base64 decode for inline files[] payloads (local copy — the kernel
+// keeps per-tool decoders; returns empty on invalid input, callers
+// reject loudly).
+static std::string Base64Decode(const std::string& encoded) {
+    static const std::string kChars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve(encoded.size() / 4 * 3);
+    int val = 0, valb = -8;
+    for (const char c : encoded) {
+        if (c == '=' || c == '\n' || c == '\r' || c == ' ') continue;
+        const std::size_t idx = kChars.find(c);
+        if (idx == std::string::npos) return {};
+        val = (val << 6) + static_cast<int>(idx);
+        valb += 6;
+        if (valb >= 0) {
+            out.push_back(static_cast<char>((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+    return out;
+}
+
+// ============================================================================
+// #159 outbound media: send_media files[] resolution
+// ============================================================================
+
+bool ChannelsTool::ResolveOutboundFiles(Json::Value& args,
+                                        std::vector<std::string>& tempFiles,
+                                        std::string& error) {
+    if (!args.isMember("files") || !args["files"].isArray() ||
+        args["files"].empty()) {
+        error = "send_media requires files[] (entries: {ref|path|data, "
+                "filename?, mime?, alt_text?})";
+        return false;
+    }
+
+    Json::Value descriptors(Json::arrayValue);
+    for (const auto& entry : args["files"]) {
+        if (!entry.isObject()) {
+            error = "files[] entries must be objects";
+            return false;
+        }
+
+        const std::string ref = entry.get("ref", "").asString();
+        const std::string rawPath = entry.get("path", "").asString();
+        const std::string data = entry.get("data", "").asString();
+
+        const int sourceCount =
+            (!ref.empty()) + (!rawPath.empty()) + (!data.empty());
+        if (sourceCount == 0) {
+            error = "files[] entry needs one of ref (media://...), path, or data";
+            return false;
+        }
+        if (sourceCount > 1) {
+            error = "files[] entry must use exactly one of ref|path|data";
+            return false;
+        }
+
+        std::string path, filename, mime, altText;
+        std::uint64_t size = 0;
+        if (!ref.empty()) {
+            // media://<sha256> — vault-resolved inbound object
+            if (!m_mediaVault) {
+                error = "media vault unavailable — media:// refs not resolvable";
+                return false;
+            }
+            auto rec = m_mediaVault->Resolve(ref);
+            if (!rec) {
+                error = "unknown media ref: " + ref;
+                return false;
+            }
+            path = m_mediaVault->PathFor(rec->sha256).string();
+            filename = entry.get("filename", rec->filename).asString();
+            mime = entry.get("mime", rec->mime).asString();
+            altText = entry.get("alt_text", rec->alt_text).asString();
+            size = rec->size;
+        } else if (!rawPath.empty()) {
+            // local path — must live inside the outbound root (dataDir)
+            if (m_outboundRoot.empty()) {
+                error = "outbound root not configured — path sources denied";
+                return false;
+            }
+            const std::filesystem::path p(rawPath);
+            if (!PathWithinRoots(p, {m_outboundRoot})) {
+                error = "path outside allowed tree: " + rawPath;
+                return false;
+            }
+            path = rawPath;
+            filename = entry.get("filename", p.filename().string()).asString();
+            mime = entry.get("mime", "").asString();
+            altText = entry.get("alt_text", "").asString();
+            std::error_code statEc;
+            const std::uint64_t pathSize =
+                std::filesystem::file_size(p, statEc);
+            if (statEc) {
+                error = "cannot stat path: " + rawPath + " ("
+                        + statEc.message() + ")";
+                return false;
+            }
+            size = pathSize;
+        } else {
+            // inline base64 — decode to a dispatch-scoped temp file
+            if (m_outboundRoot.empty()) {
+                error = "outbound root not configured — data sources denied";
+                return false;
+            }
+            std::string bytes = Base64Decode(data);
+            if (bytes.empty()) {
+                error = "invalid or empty base64 payload in files[] entry";
+                return false;
+            }
+            if (static_cast<std::uint64_t>(bytes.size()) > kUploadByteCap) {
+                error = "size cap exceeded: " + std::to_string(bytes.size()) +
+                        " bytes > " + std::to_string(kUploadByteCap);
+                return false;
+            }
+            const std::filesystem::path tmpDir =
+                m_outboundRoot / "media" / "tmp";
+            std::error_code ec;
+            std::filesystem::create_directories(tmpDir, ec);
+            char name[64];
+            std::snprintf(name, sizeof(name), "out-%d-%lld",
+                          static_cast<int>(::getpid()),
+                          static_cast<long long>(
+                              std::chrono::steady_clock::now()
+                                  .time_since_epoch()
+                                  .count()));
+            const std::filesystem::path tmp = tmpDir / name;
+            {
+                std::ofstream f(tmp, std::ios::binary);
+                f.write(bytes.data(),
+                        static_cast<std::streamsize>(bytes.size()));
+                if (!f) {
+                    error = "temp write failed: " + tmp.string();
+                    return false;
+                }
+            }
+            tempFiles.push_back(tmp.string());
+            path = tmp.string();
+            filename = entry.get("filename", "attachment.bin").asString();
+            mime = entry.get("mime", "").asString();
+            altText = entry.get("alt_text", "").asString();
+            size = static_cast<std::uint64_t>(bytes.size());
+        }
+
+        Json::Value d;
+        d["path"] = path;
+        d["filename"] = filename;
+        if (!mime.empty()) d["mime"] = mime;
+        if (!altText.empty()) d["alt_text"] = altText;
+        // exact byte size — slack's getUploadURLExternal requires length
+        d["size"] = static_cast<Json::UInt64>(size);
+        descriptors.append(d);
+    }
+
+    args["_media_files"] = descriptors;
+    return true;
 }
 
 ToolResult ChannelsTool::HandleCompositeAction(const ToolCall& call,

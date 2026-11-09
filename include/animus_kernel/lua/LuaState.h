@@ -52,6 +52,10 @@ public:
         size_t executionTimeoutMs = 30'000;             // 30 seconds default
         size_t httpRateLimitPerMin = 60;                // 60 HTTP requests/minute default
         AgentConfigStore* configStore = nullptr;         // persistent config (may be null)
+
+        // #159 outbound media: the only tree animus.http_upload may read
+        // files from. Empty (default) = uploads denied on this state.
+        std::string uploadRoot;
     };
 
     explicit LuaState(const Config& config, ToolRegistry& tools, HttpClient& http);
@@ -88,6 +92,9 @@ public:
     /// Access the tool registry (for C callbacks via g_activeState).
     ToolRegistry& GetToolRegistry() { return m_tools; }
     HttpClient& GetHttpClient() { return m_http; }
+
+    /// Upload root for animus.http_upload path scoping (#159). Empty = deny.
+    const std::string& GetUploadRoot() const { return m_config.uploadRoot; }
 
     /// Whether we're running in coroutine mode (tool calls yield instead of blocking).
     bool IsCoroutineMode() const { return m_coroutineMode; }
