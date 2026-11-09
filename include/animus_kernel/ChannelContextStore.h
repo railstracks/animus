@@ -60,6 +60,18 @@ struct ChannelArrival {
                                      // ids retained here. Absent feed = absent
                                      // card line (present-keys-only).
 
+    std::string attachments;         // #158: inbound media — vault-ref
+                                     // descriptors (compact JSON array:
+                                     // [{ref, sha256, kind, mime, filename,
+                                     // size, alt_text?, …}, …]). Adapters
+                                     // declare raw platform attachments in
+                                     // dispatch metadata; the kernel vaults
+                                     // them (scope-checked download,
+                                     // sha256-addressed on disk) and stores
+                                     // refs here — bytes never enter the DB
+                                     // or agent context. Failed acquisitions
+                                     // stay loud: {url, error} entries.
+
     // --- Targeting (server-resolved ReplyTarget snapshot) ---------------------
     std::string delivery;            // "auto" (Chat: text reply auto-sent) | "tool" (must use channels tool)
     std::string peer_id;             // Chat targets

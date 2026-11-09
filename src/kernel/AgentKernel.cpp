@@ -85,6 +85,7 @@
 #include "animus_kernel/ChannelContextStore.h"
 #include "animus_kernel/ApiPackageStore.h"
 #include "animus_kernel/api/ApiRuntime.h"
+#include "animus_kernel/MediaVault.h"
 #include "animus_kernel/api/SecretsVault.h"
 #include "animus_kernel/api/ApiConnectionManager.h"
 #include "animus_kernel/tools/ApiTool.h"
@@ -497,6 +498,21 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // Written by ExecuteChannelDispatch (both direct and queue-flush paths
         // funnel through it); read by the ChannelContextProvider (#15).
         m_channelContextStore = new ChannelContextStore(m_dataStore);
+
+        // #158: inbound media vault — sha256-addressed objects under the
+        // data dir; fetches ride ApiRuntime::ExecuteScoped (every redirect
+        // hop scope-checked, credentials stripped across hosts) on a
+        // dedicated HttpClient so media sizes never hit the web tools' cap.
+        m_mediaHttp.SetMaxBodySize(64ull * 1024 * 1024);
+        m_mediaVault = std::make_unique<MediaVault>(
+            m_dataStore,
+            [this](const HttpClient::Request& r,
+                   const std::vector<std::string>& scope) {
+                return ApiRuntime::ExecuteScoped(&m_mediaHttp, scope, r,
+                                                 "mediavault");
+            },
+            std::filesystem::path(m_config.dataDir) / "media");
+        m_mediaVault->EnsureSchema();
         m_adminServer->SetChannelContextStore(m_channelContextStore);
 
         // --- API Package Store (#26 data layer, build order b) ---
@@ -752,6 +768,8 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // ChannelsTool composite — must exist before Lua scripts load
         // so adapters can register into it during Phase 2
         m_channelsTool = new ChannelsTool();
+        // #158: pull-mode vault for agent-driven polls (mastodon digest).
+        m_channelsTool->SetMediaVault(m_mediaVault.get());
         m_channelsTool->SetConfigStore(m_configStore);
         m_channelsTool->SetChannelContextStore(m_channelContextStore);
         // Note: m_channelManager is null here — wired in Initialize()
@@ -1811,6 +1829,121 @@ void AgentKernel::TryAdoptDispatchAgent(
     session.SetAgentId(binding);
 }
 
+std::vector<std::string> AgentKernel::MediaScopeFor(
+    const ChannelManager::ReplyTarget& replyTarget) const {
+    std::vector<std::string> hosts;
+    // Platform CDN defaults — the hosts attachments legitimately arrive
+    // from. Operator config extends per channel (media_hosts, pds);
+    // message content NEVER influences scope.
+    if (replyTarget.channel_type == "discord") {
+        hosts = {"cdn.discordapp.com", "cdn.discord.com",
+                 "media.discordapp.net"};
+    } else if (replyTarget.channel_type == "slack") {
+        hosts = {"files.slack.com"};
+    } else if (replyTarget.channel_type == "bluesky") {
+        hosts = {"bsky.social"};   // + the channel's PDS host, below
+    }
+    if (m_channelManager) {
+        auto state = m_channelManager->GetChannel(replyTarget.channel_name);
+        if (state && state->config.isObject()) {
+            const Json::Value extra = state->config.get("media_hosts",
+                                                        Json::Value());
+            if (extra.isArray()) {
+                for (const auto& h : extra) {
+                    const std::string s = h.asString();
+                    if (!s.empty()) hosts.push_back(s);
+                }
+            }
+            // The PDS serves bluesky blobs (getBlob URLs are pds-hosted).
+            if (replyTarget.channel_type == "bluesky") {
+                const std::string pds = state->config.get("pds", "").asString();
+                if (!pds.empty()) {
+                    const size_t sep = pds.find("://");
+                    std::string host = (sep == std::string::npos)
+                                           ? pds : pds.substr(sep + 3);
+                    const size_t slash = host.find('/');
+                    if (slash != std::string::npos) host = host.substr(0, slash);
+                    if (!host.empty()) hosts.push_back(host);
+                }
+            }
+        }
+    }
+    return hosts;
+}
+
+std::map<std::string, std::string> AgentKernel::MediaAuthHeadersFor(
+    const ChannelManager::ReplyTarget& replyTarget) const {
+    // Slack file downloads (url_private) authenticate with the workspace
+    // bot token; Discord/Bluesky CDN URLs are public or signature-scoped.
+    // Resolved from channel config at vault time only — the token never
+    // enters dispatch metadata, the arrivals table, or the card.
+    if (replyTarget.channel_type == "slack" && m_channelManager) {
+        auto state = m_channelManager->GetChannel(replyTarget.channel_name);
+        if (state && state->config.isObject()) {
+            const std::string token =
+                state->config.get("bot_token", "").asString();
+            if (!token.empty())
+                return {{"Authorization", "Bearer " + token}};
+        }
+    }
+    return {};
+}
+
+std::string AgentKernel::VaultInboundAttachments(
+    const std::string& rawAttachments,
+    const ChannelManager::ReplyTarget& replyTarget) {
+    if (!m_mediaVault) return rawAttachments;   // no vault wired: pass through
+    Json::Value entries;
+    Json::CharReaderBuilder rb;
+    std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+    std::string errs;
+    if (!reader->parse(rawAttachments.data(),
+                       rawAttachments.data() + rawAttachments.size(),
+                       &entries, &errs) ||
+        !entries.isArray()) {
+        ALOG_WARNING("mediavault", "unparseable attachments metadata: " << errs);
+        return rawAttachments;
+    }
+    const auto scope = MediaScopeFor(replyTarget);
+    const auto headers = MediaAuthHeadersFor(replyTarget);
+    Json::Value out(Json::arrayValue);
+    for (const auto& e : entries) {
+        if (!e.isObject()) continue;
+        MediaVault::Request req;
+        req.url = e.get("url", "").asString();
+        req.kind = e.get("kind", "file").asString();
+        req.filename = e.get("filename", "").asString();
+        req.mime = e.get("mime", e.get("mime_type", "").asString()).asString();
+        req.dedupe_key = e.get("dedupe_key", e.get("id", "").asString()).asString();
+        req.alt_text = e.get("alt_text", e.get("alt", "").asString()).asString();
+        req.dimensions = e.get("dimensions", "").asString();
+        req.duration = e.get("duration", "").asString();
+        req.scope_hosts = scope;
+        req.headers = headers;
+        const MediaVault::Result r = m_mediaVault->Acquire(req);
+        Json::Value o;
+        if (r.ok) {
+            o["ref"] = r.ref;
+            o["sha256"] = r.sha256;
+            o["kind"] = req.kind;
+            o["mime"] = r.mime;
+            o["filename"] = r.filename;
+            o["size"] = static_cast<Json::UInt64>(r.size);
+            if (r.deduped) o["deduped"] = true;
+            if (!req.alt_text.empty()) o["alt_text"] = req.alt_text;
+            if (!req.dimensions.empty()) o["dimensions"] = req.dimensions;
+            if (!req.duration.empty()) o["duration"] = req.duration;
+        } else {
+            o["url"] = req.url;
+            o["error"] = r.error;
+        }
+        out.append(o);
+    }
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    return Json::writeString(wb, out);
+}
+
 void AgentKernel::ExecuteChannelDispatch(
         const std::string& sessionKey,
         const std::string& message,
@@ -1926,6 +2059,12 @@ void AgentKernel::ExecuteChannelDispatch(
             metadata,
             (replyTarget.type == ChannelManager::ReplyTarget::Chat) ? "chat" : "wall",
             arrival);
+        // #158: vault declared inbound attachments — scope-checked download
+        // → sha256 refs on the arrival. Failures stay loud ({url, error});
+        // media problems never block the message itself.
+        if (!arrival.attachments.empty())
+            arrival.attachments =
+                VaultInboundAttachments(arrival.attachments, replyTarget);
         dispatchAuthor = arrival.author_handle;  // #133: capture final value (post origin-fallback)
         m_channelContextStore->AddArrival(arrival);
         m_channelContextStore->Prune(arrival.session_key, arrival.agent_id);

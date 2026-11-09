@@ -50,6 +50,7 @@ class AgentStore;
 class DiaryStore;
 class DiffusionStore;
 class AttachmentStore;
+class MediaVault;
 class SopStore;
 class GallivantingStore;
 class SessionNotesStore;
@@ -113,6 +114,19 @@ private:
 
     /// Execute a channel dispatch: run the LLM chain on the session and send the reply.
     /// Used by both the direct dispatch path and the MessageQueue flush callback.
+    // #158: inbound media vaulting at dispatch time. Raw adapter-declared
+    // attachments (URLs + metadata) become vault refs on the arrival row;
+    // failures persist as loud {url, error} entries. Never blocks dispatch.
+    std::string VaultInboundAttachments(
+        const std::string& rawAttachments,
+        const ChannelManager::ReplyTarget& replyTarget);
+    // Media egress scope for a channel: platform CDN defaults + operator
+    // config (media_hosts, pds) — message content never influences it.
+    std::vector<std::string> MediaScopeFor(
+        const ChannelManager::ReplyTarget& replyTarget) const;
+    // Download auth for scoped CDNs (Slack bot token) — kernel-side only.
+    std::map<std::string, std::string> MediaAuthHeadersFor(
+        const ChannelManager::ReplyTarget& replyTarget) const;
     void ExecuteChannelDispatch(
         const std::string& sessionKey,
         const std::string& message,
@@ -206,6 +220,13 @@ private:
     std::unique_ptr<DiffusionStore> m_diffusionStore;
     std::unique_ptr<AttachmentStore> m_attachmentStore;
     std::unique_ptr<SopStore> m_sopStore;
+
+    // #158: inbound media — content-addressed vault. Bytes live on disk
+    // (sha256-named); the arrivals table and agent context carry refs only.
+    // Dedicated HttpClient: media sizes must not inherit the web tools' 1MB
+    // default, and the web allowlist must not gate media scope.
+    std::unique_ptr<MediaVault> m_mediaVault;
+    HttpClient m_mediaHttp;
 };
 
 } // namespace animus::kernel

@@ -341,6 +341,7 @@ add_library(animus_kernel
   src/kernel/tools/MultipartFormData.cpp
   src/kernel/tools/DiffusionTool.cpp
   src/kernel/attachment/AttachmentStore.cpp
+  src/kernel/attachment/MediaVault.cpp
   src/kernel/tools/AttachmentTool.cpp
   src/kernel/sop/SopStore.cpp
   src/kernel/tools/SopTool.cpp
@@ -763,6 +764,19 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME ChannelContextStoreTests COMMAND animus_channel_context_store_tests)
+
+    add_executable(animus_media_vault_tests
+      tests/MediaVaultTests.cpp
+    )
+    target_link_libraries(animus_media_vault_tests PRIVATE animus_kernel jsoncpp_lib OpenSSL::Crypto)
+    target_include_directories(animus_media_vault_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_media_vault_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME MediaVaultTests COMMAND animus_media_vault_tests)
 
     add_executable(animus_auth_manager_tests
       tests/AuthManagerTests.cpp
