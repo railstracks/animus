@@ -603,6 +603,15 @@ void TestAttachmentsMetadata() {
         a.attachments = "[{\"ref\":\"media://abc123\",\"kind\":\"image\","
                         "\"mime\":\"image/png\",\"filename\":\"cat.png\","
                         "\"size\":1048576,\"alt_text\":\"a cat\"},"
+                        "{\"ref\":\"media://def456\",\"kind\":\"image\","
+                        "\"mime\":\"image/jpeg\",\"filename\":\"chart.png\","
+                        "\"size\":2048,\"machine_description\":"
+                        "\"A bar chart of quarterly revenue.\","
+                        "\"describe_engine\":\"local-vlm\","
+                        "\"describe_model\":\"TestVLM 1B\"},"
+                        "{\"ref\":\"media://ghi789\",\"kind\":\"image\","
+                        "\"mime\":\"image/png\",\"filename\":\"late.png\","
+                        "\"size\":10,\"describe_error\":\"no engine\"},"
                         "{\"url\":\"https://cdn.example.com/big.png\","
                         "\"error\":\"size cap exceeded: 9999999 bytes > 10485760\"}]";
         store.AddArrival(a);
@@ -626,6 +635,26 @@ void TestAttachmentsMetadata() {
                    "card shows failure loud");
             Assert(block->content.find("size cap exceeded") != std::string::npos,
                    "failure reason named");
+            Assert(block->content.find("[machine description | "
+                       "engine=local-vlm model=TestVLM 1B]") !=
+                       std::string::npos,
+                   "#160 labeled machine description renders");
+            Assert(block->content.find(
+                       "A bar chart of quarterly revenue.") !=
+                       std::string::npos,
+                   "#160 description text renders");
+            Assert(block->content.find("[describe failed: no engine") !=
+                       std::string::npos,
+                   "#160 describe failure renders loud");
+            std::size_t labelCount = 0;
+            for (std::size_t pos =
+                     block->content.find("machine description");
+                 pos != std::string::npos;
+                 pos = block->content.find("machine description", pos + 1))
+                labelCount++;
+            Assert(labelCount == 1,
+                   "#160 undescribed attachments stay unlabeled (count=" +
+                       std::to_string(labelCount) + ")");
         }
         unlink(dbPath.c_str());
     }
