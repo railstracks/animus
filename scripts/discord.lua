@@ -442,6 +442,45 @@ local function split_for_limit(text, limit)
     return chunks
 end
 
+-- Canonical Markdown -> Discord-native (#156). scripts/markdown.lua is
+-- Eval'd into the same per-agent VM and sets the `markdown` global;
+-- referenced at SEND time so standalone harnesses (which load only this
+-- adapter) keep working through the raw fallback.
+--- #157: link card helpers — markdown module guarded the same way as
+--- render_content. Degrade path: plain URL append.
+local function get_link_card(card_arg)
+    if not card_arg then return nil end
+    if type(markdown) == "table" and type(markdown.normalize_card) == "function" then
+        local ok, card, reason = pcall(markdown.normalize_card, card_arg)
+        if not ok then return nil, "link_card validation failed" end
+        if not card then return nil, reason end
+        return card
+    end
+    if type(card_arg) ~= "table" or type(card_arg.url) ~= "string"
+        or not card_arg.url:match("^https?://") then
+        return nil, "link_card.url is required and must be http(s)"
+    end
+    return card_arg
+end
+
+local function append_card_url(content, card)
+    if content:find(card.url, 1, true) then return content end
+    if type(markdown) == "table" and type(markdown.append_card) == "function" then
+        local ok, out = pcall(markdown.append_card, content, card)
+        if ok and type(out) == "string" and out ~= "" then return out end
+    end
+    return content .. "\n\n" .. card.url
+end
+
+local function render_content(content)
+    if type(markdown) == "table" and type(markdown.render_discord) == "function" then
+        local ok, out = pcall(markdown.render_discord, content)
+        if ok and type(out) == "string" and out ~= "" then return out end
+        if log and log.warn then log.warn("[discord] markdown render failed; sending raw content") end
+    end
+    return content
+end
+
 --- POST /channels/{channel_id}/messages
 local function do_post(args)
     local platform_id = args.platform_id
@@ -455,13 +494,40 @@ local function do_post(args)
         return { success = false, error = "content is required" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    -- #157: a card with no title AND no description has nothing visible to
+    -- embed — degrade to a plain link appended to the text.
+    if card and not card.title and not card.description then
+        content = append_card_url(content, card)
+        card = nil
+    end
+
     -- Auto-split at natural boundaries instead of truncating: the yielded
-    -- text is the contract with the reader (#30).
+    -- text is the contract with the reader (#30). Render canonical
+    -- Markdown to Discord-native BEFORE splitting so chunks stay <= 2000 (#156).
+    content = render_content(content)
     local chunks = split_for_limit(content, 2000)
     local first_id
     for idx, chunk in ipairs(chunks) do
         local body = { content = chunk }
-        if args.embeds and idx == 1 then body.embeds = args.embeds end
+        if idx == 1 then
+            -- #157: link card → native embed first; user-provided embeds follow.
+            local embeds = {}
+            if card then
+                local e = { url = card.url }
+                if card.title then e.title = card.title end
+                if card.description then e.description = card.description end
+                if card.image then e.image = { url = card.image } end
+                embeds[#embeds + 1] = e
+            end
+            if args.embeds then
+                for _, ue in ipairs(args.embeds) do embeds[#embeds + 1] = ue end
+            end
+            if #embeds > 0 then body.embeds = embeds end
+        end
 
         local resp = auth_post(platform_id, "/channels/" .. channel_id .. "/messages", body)
 
@@ -509,6 +575,20 @@ local function do_reply(args)
         return { success = false, error = "content is required" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card and not card.title and not card.description then
+        content = append_card_url(content, card)
+        card = nil
+    end
+
+    -- Render canonical Markdown to Discord-native BEFORE splitting — the
+    -- same seam as do_post (#156); #157 needed it here so card links render
+    -- in replies too (previously replies sent raw canonical Markdown).
+    content = render_content(content)
+
     -- Auto-split at natural boundaries instead of truncating (#30). The
     -- first chunk carries the reply reference; the rest follow in-channel.
     local chunks = split_for_limit(content, 2000)
@@ -520,6 +600,19 @@ local function do_reply(args)
                 message_id = message_id,
                 channel_id = channel_id
             }
+            -- #157: card embed rides the first reply chunk.
+            local embeds = {}
+            if card then
+                local e = { url = card.url }
+                if card.title then e.title = card.title end
+                if card.description then e.description = card.description end
+                if card.image then e.image = { url = card.image } end
+                embeds[#embeds + 1] = e
+            end
+            if args.embeds then
+                for _, ue in ipairs(args.embeds) do embeds[#embeds + 1] = ue end
+            end
+            if #embeds > 0 then body.embeds = embeds end
         end
 
         local resp = auth_post(platform_id, "/channels/" .. channel_id .. "/messages", body)
@@ -922,6 +1015,109 @@ local function do_gateway_info(args)
 end
 
 -- ---------------------------------------------------------------------------
+-- #159: outbound media — send_media (multipart message with attachments)
+-- ---------------------------------------------------------------------------
+
+--- Send a message with file attachments. Discord accepts multipart/form-data
+--- on the same endpoint as JSON posts: payload_json + files[0..n] in one
+--- phase — the upload IS the message send (no processed-poll, no second
+--- post). The kernel composes the multipart body; file bytes never enter
+--- Lua. Text past the 2000-char limit splits like do_post; the first chunk
+--- carries the files, follow-ups are plain JSON posts.
+local function do_send_media(args)
+    local platform_id = args.platform_id
+    local channel_id = args.channel_id
+    local media = args._media_files
+
+    if not channel_id or channel_id == "" then
+        return { success = false, error = "channel_id is required" }
+    end
+    if type(media) ~= "table" or #media == 0 then
+        return { success = false, error =
+            "no resolved attachments — pass files[] (kernel resolves to _media_files)" }
+    end
+    if #media > 10 then
+        return { success = false, error = "too many attachments: " .. tostring(#media)
+            .. " > 10 (per-message limit)" }
+    end
+
+    local token, terr = get_token(platform_id)
+    if not token then return { success = false, error = terr } end
+
+    local content = render_content(args.text or args.content or "")
+    local chunks = split_for_limit(content, 2000)
+    if #chunks == 0 then chunks = { "" } end
+    local first_id
+
+    for idx, chunk in ipairs(chunks) do
+        if idx == 1 then
+            -- first chunk: multipart with the attachments
+            local files = {}
+            for i, f in ipairs(media) do
+                files[#files + 1] = {
+                    path = f.path,
+                    field = "files[" .. tostring(i - 1) .. "]",
+                    filename = f.filename or ("attachment" .. tostring(i)),
+                    mime = f.mime or "application/octet-stream"
+                }
+            end
+            -- #161: alt text rides as Discord attachment descriptions
+            -- (the platform's accessibility field). Files without alt are
+            -- simply absent from the array. The kernel may fill empty alt
+            -- machine-side (alt_text_source = "machine"); explicit alt
+            -- always wins kernel-side, so no precedence logic here.
+            local payload = { content = chunk }
+            local atts = {}
+            for i, f in ipairs(media) do
+                local alt = tostring(f.alt_text or "")
+                if alt ~= "" then
+                    atts[#atts + 1] = { id = i - 1, description = alt }
+                end
+            end
+            if #atts > 0 then payload.attachments = atts end
+            local resp = animus.http_upload(
+                API_BASE .. "/channels/" .. channel_id .. "/messages", {
+                    headers = { ["Authorization"] = "Bot " .. token },
+                    timeout = 120,
+                    fields = { payload_json = json.encode(payload) },
+                    files = files
+                })
+            update_rate_limits(resp, platform_id)
+            if resp.status ~= 200 and resp.status ~= 201 then
+                return {
+                    success = false,
+                    error = "send_media failed (" .. tostring(resp.status) .. "): "
+                        .. truncate(tostring(resp.body or resp.error), 500)
+                }
+            end
+            local data = json_decode_safe(resp.body)
+            if data and data.id then first_id = data.id end
+        else
+            -- follow-up chunks: plain JSON posts (files ride only chunk 1)
+            local resp = auth_post(platform_id,
+                "/channels/" .. channel_id .. "/messages", { content = chunk })
+            if resp.status ~= 200 and resp.status ~= 201 then
+                return {
+                    success = false,
+                    error = "send_media follow-up failed (" .. tostring(resp.status)
+                        .. ") on chunk " .. tostring(idx) .. "/" .. tostring(#chunks) .. ": "
+                        .. truncate(tostring(resp.body), 500)
+                }
+            end
+        end
+    end
+
+    return {
+        success = true,
+        message_id = first_id,
+        channel_id = channel_id,
+        output = "Media message sent to channel " .. channel_id
+            .. " (" .. tostring(#media) .. " file(s)"
+            .. (#chunks > 1 and (", " .. tostring(#chunks) .. " chunks") or "") .. ")"
+    }
+end
+
+-- ---------------------------------------------------------------------------
 -- Registration
 -- ---------------------------------------------------------------------------
 
@@ -932,18 +1128,25 @@ animus.register_channel({
     actions = {
         "post", "reply", "browse", "react", "delete", "edit",
         "get_channel", "get_message", "list_channels", "get_guild",
-        "list_guilds", "typing", "gateway_info"
+        "list_guilds", "typing", "gateway_info", "send_media"
     },
     schema = {
         post = {
             { name = "channel_id", type = "string", required = true, description = "Channel snowflake ID" },
             { name = "content", type = "string", required = true, description = "Message text (max 2000 chars)" },
-            { name = "embeds", type = "array", required = false, description = "Embed objects" }
+            { name = "embeds", type = "array", required = false, description = "Embed objects" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — first chunk carries it as a native embed; url-only degrades to a plain link" }
         },
         reply = {
             { name = "channel_id", type = "string", required = true, description = "Channel snowflake ID" },
             { name = "message_id", type = "string", required = true, description = "Message snowflake ID to reply to" },
-            { name = "content", type = "string", required = true, description = "Reply text" }
+            { name = "content", type = "string", required = true, description = "Reply text" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — native embed on the first reply chunk" }
+        },
+        send_media = {
+            { name = "channel_id", type = "string", required = true, description = "Channel snowflake ID" },
+            { name = "files", type = "array", required = true, description = "Media attachments: [{ref: 'media://<sha256>', path?, alt_text?}] — vault refs or dataDir-scoped paths; kernel resolves to _media_files (up to 10 files, multipart on the message endpoint)" },
+            { name = "text", type = "string", required = false, description = "Message text (splits past 2000 chars; first chunk carries the files)" }
         },
         browse = {
             { name = "channel_id", type = "string", required = true, description = "Channel snowflake ID" },
@@ -1010,6 +1213,7 @@ animus.register_channel({
         elseif action == "list_guilds" then return do_list_guilds(args)
         elseif action == "typing" then return do_typing(args)
         elseif action == "gateway_info" then return do_gateway_info(args)
+        elseif action == "send_media" then return do_send_media(args)
         else return { success = false, error = "unknown action: " .. tostring(action) }
         end
     end

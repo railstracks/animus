@@ -135,6 +135,12 @@ void TelegramAdapter::ProcessMessage(const telegram::Message& msg) {
     meta["message_type"] = "chat";
     meta["delivery"] = "tool";
     Json::Value origin;
+    // #173: `user` feeds author_handle → speaker headers at assembly (#133).
+    // @username is the Telegram-canonical handle when present; DisplayName
+    // otherwise. Anonymous channel posts (empty `from`) leave it unset —
+    // chat-name attribution is a channel, not a person.
+    if (!msg.from.username.empty()) origin["user"] = "@" + msg.from.username;
+    else if (!senderName.empty()) origin["user"] = senderName;
     if (!senderName.empty()) origin["user_display"] = senderName;
     if (msg.from.id != 0) origin["user_id"] = std::to_string(msg.from.id);
     if (!isPrivate) {

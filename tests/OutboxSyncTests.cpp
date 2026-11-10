@@ -4,6 +4,9 @@
 #include "animus_kernel/AgentConfigStore.h"
 #include "animus_kernel/ApiPackageStore.h"
 #include "animus_kernel/api/SecretsVault.h"
+#include "animus_kernel/FederationKeys.h"
+#include "animus_kernel/CryptoUtils.h"
+#include <array>
 #include "animus_kernel/MemoryStore.h"
 #include "animus_kernel/MemoryFileStore.h"
 #include "animus_kernel/OntologyStore.h"
@@ -54,6 +57,7 @@ struct Node {
     AgentConfigStore configStore;         // #93 P3: agent_config syncs
     ApiPackageStore pkgStore;             // #93 P3: vault rows sync
     SecretsVault vault;                   // empty key path = disabled (schema only)
+    FederationKeys fedKeys;              // #274: envelope table joins the synced set
     SyncStore sync;
 
     Node(uint64_t nodeId)
@@ -61,11 +65,12 @@ struct Node {
           files(&dataStore), ontology(&dataStore), diary(&dataStore),
           scheduleStore(&dataStore), taskRunStore(&dataStore),
           leaseStore(&dataStore), configStore(&dataStore), pkgStore(&dataStore),
-          vault(&dataStore, ""), sync(&dataStore, nodeId) {
+          vault(&dataStore, ""), fedKeys(&dataStore), sync(&dataStore, nodeId) {
         taskRunStore.EnsureSchema();   // ctor doesn't ensure; schedules does
         leaseStore.EnsureSchema();     // must pre-exist trigger install
         pkgStore.EnsureSchema();       // vault FK'd tables pre-exist sync too
         vault.EnsureSchema();         // api_package_secrets table
+        fedKeys.EnsureSchema();     // #274: federation_key_envelopes table
         // Kernel parity: remote agent_config applies invalidate the cache.
         sync.SetApplyNotifier(
             [this](const std::string& t, const std::string& k) {
@@ -194,6 +199,16 @@ int TestTriggerCoverage() {
         covVault.EnsureSchema();
         std::string cerr_;
         covVault.Set("cov-pkg", "tok", "secret-value", cerr_);
+    }
+
+    // #274: federation envelope table joins the covered set.
+    {
+        crypto::X25519KeyPair kp;
+        std::string kerr;
+        crypto::GenerateX25519KeyPair(kp, kerr);
+        std::array<unsigned char, 32> covDek{};
+        std::string ferr;
+        a.fedKeys.SealEpochDek(1, "cov-node", "cov-node", kp.public_key, covDek, ferr);
     }
 
     auto records = a.sync.FetchOutboxSince(0, 1000);

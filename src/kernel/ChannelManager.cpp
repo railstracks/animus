@@ -1,5 +1,6 @@
 #include "animus_kernel/Log.h"
 #include "animus_kernel/ChannelManager.h"
+#include "animus_kernel/MediaVault.h"
 
 #include <iostream>
 #include <memory>
@@ -179,6 +180,64 @@ ChannelManager::~ChannelManager() {
 }
 
 // ============================================================================
+// ============================================================================
+// #181: channel config secret discipline.
+//
+// The persisted channel.<name>.config row replicates across peers
+// (agent_config is in the synced set). Credential-shaped fields must not
+// ride that row: they are mirrored to their own
+// channels.<type:name>.<key> rows, where the config store's
+// credential-suffix interception vaults them (secret_ref values replicate;
+// plaintext never does). Structural fields (nick, host, instance_url, ...)
+// stay in the config row — they are the non-secret surface #181 replicates.
+// ============================================================================
+
+static const std::vector<std::string>& ChannelCredentialKeys() {
+    // Keys synced from ChannelState.config to AgentConfigStore — the
+    // credential fields Lua adapters read via config.get(). Superset of the
+    // secret fields: identifiers like nick/host/tier are mirrored for
+    // adapter access but are structural, not secret.
+    static const std::vector<std::string> keys = {
+        // Common
+        "api_key", "access_token", "bot_token", "app_token", "app_password",
+        "client_id", "client_secret", "refresh_token",
+        // Base-URL overrides read by Lua adapters (moltbook mock harness;
+        // any adapter whose api_base can be overridden needs it mirrored)
+        "api_base_url",
+        // Bluesky
+        "handle", "pds", "access_jwt", "refresh_jwt", "did",
+        // VK
+        "group_id",
+        // Twitter
+        "tier",
+        // Discord
+        "application_id",
+        // IRC
+        "nick", "host", "server_password",
+        // Moltbook
+        "agent_name",
+        // Email
+        "inbox_id", "backend",
+        // Mastodon
+        "instance_url", "poll_interval",
+        // Nextcloud Talk
+        "server_url", "username",
+    };
+    return keys;
+}
+
+static bool IsSecretChannelField(const std::string& field) {
+    return AgentConfigStore::IsCredentialKey(field);
+}
+
+static Json::Value StripSecretChannelFields(const Json::Value& config) {
+    Json::Value out = config;
+    for (const auto& member : out.getMemberNames()) {
+        if (IsSecretChannelField(member)) out.removeMember(member);
+    }
+    return out;
+}
+
 // Channel CRUD
 // ============================================================================
 
@@ -229,8 +288,11 @@ bool ChannelManager::CreateChannel(const ChannelState& state, std::string* error
                            state.enabled ? "true" : "false");
         Json::StreamWriterBuilder wb;
         wb.settings_["indentation"] = "";
+        // #181: persist the structural config only — credential-shaped
+        // fields are mirrored to vaulted rows and merged back on load;
+        // they must not ride the replicated config row.
         m_configStore->Set("", "channel." + state.name + ".config",
-                           Json::writeString(wb, state.config));
+                           Json::writeString(wb, StripSecretChannelFields(state.config)));
     }
 
     {
@@ -272,8 +334,9 @@ bool ChannelManager::UpdateChannelConfig(const std::string& name,
     if (m_configStore) {
         Json::StreamWriterBuilder wb;
         wb.settings_["indentation"] = "";
+        // #181: structural config only (see CreateChannel).
         m_configStore->Set("", "channel." + name + ".config",
-                           Json::writeString(wb, config));
+                           Json::writeString(wb, StripSecretChannelFields(config)));
     }
 
     {
@@ -1033,6 +1096,36 @@ void ChannelManager::LoadChannelsFromConfigStore() {
         Json::Value config = ParseJson(configStr);
         if (config.isNull()) config = Json::objectValue;
 
+        // #181: legacy rows may still embed credential fields. Migrate
+        // them into vaulted mirror rows first, then rewrite the stored row
+        // structural-only — idempotent, self-heals pre-#181 rows on boot
+        // (MigrateFromLegacy's writes land here too: it runs before this
+        // load in Initialize()).
+        bool hadSecrets = false;
+        for (const auto& member : config.getMemberNames()) {
+            if (IsSecretChannelField(member)) { hadSecrets = true; break; }
+        }
+        if (hadSecrets) {
+            SyncChannelCredentialsToConfigStore(name, type, config);
+            Json::StreamWriterBuilder wb;
+            wb.settings_["indentation"] = "";
+            m_configStore->Set("", prefix + "config",
+                               Json::writeString(wb, StripSecretChannelFields(config)));
+            ALOG_INFO("channels", "#181 scrub: stripped embedded credentials"
+                      " from " << prefix << "config (mirrored to vaulted rows)");
+        }
+
+        // #181: merge credentials back from the channel-namespace mirror
+        // rows — the in-memory config is the adapters' source; the
+        // persisted row stays structural-only.
+        for (const auto& key : ChannelCredentialKeys()) {
+            if (!IsSecretChannelField(key)) continue;
+            if (config.isMember(key)) continue;
+            const std::string v =
+                m_configStore->Get("", "channels." + type + ":" + name + "." + key);
+            if (!v.empty()) config[key] = v;
+        }
+
         ChannelState state;
         state.name = name;
         state.type = type;
@@ -1078,39 +1171,17 @@ void ChannelManager::SyncChannelCredentialsToConfigStore(
     // must be stored under the same agent_id to be found.
     std::string agentId = config.get("agent_id", "").asString();
 
-    std::vector<std::string> agentIds;
+    // #181: mirror under the channel namespace ("") ALWAYS — it is the
+    // merge-back source on load — plus the configured agent's namespace
+    // when set (Lua adapters read config.get() under their agent_id).
+    // Credential-suffixed rows are vaulted by the config store's
+    // interception either way; only secret_ref values replicate.
+    std::vector<std::string> agentIds{""};
     if (!agentId.empty()) {
         agentIds.push_back(agentId);
     }
 
-    // Keys that should be synced from ChannelState.config to AgentConfigStore
-    // These are the credential fields that Lua adapters read via config.get()
-    static const std::vector<std::string> credentialKeys = {
-        // Common
-        "api_key", "access_token", "bot_token", "app_token", "app_password",
-        "client_id", "client_secret", "refresh_token",
-        // Base-URL overrides read by Lua adapters (moltbook mock harness;
-        // any adapter whose api_base can be overridden needs it mirrored)
-        "api_base_url",
-        // Bluesky
-        "handle", "pds", "access_jwt", "refresh_jwt", "did",
-        // VK
-        "group_id",
-        // Twitter
-        "tier",
-        // Discord
-        "application_id",
-        // IRC
-        "nick", "host",
-        // Moltbook
-        "agent_name",
-        // Email
-        "inbox_id", "backend",
-        // Mastodon
-        "instance_url", "poll_interval",
-        // Nextcloud Talk
-        "server_url", "username", "app_password",
-    };
+    const std::vector<std::string>& credentialKeys = ChannelCredentialKeys();
 
     for (const auto& key : credentialKeys) {
         if (config.isMember(key)) {
@@ -1653,6 +1724,51 @@ void ChannelManager::BlueskyPollLoop(PollerState* state) {
                 Json::Value uris(Json::arrayValue);
                 uris.append(postUri);
                 meta["bluesky_post_uris"] = uris; // session-level dedup
+                // #158: attachments — embedded post media (images/video) as
+                // PDS getBlob URLs. Raw descriptors only; the dispatch path
+                // vaults them (scope: configured PDS host) and stores refs on
+                // the arrival. Alt text rides when the author provided it.
+                {
+                    Json::Value atts(Json::arrayValue);
+                    auto blobAtt = [&atts, &pds, &authorDid](
+                                       const Json::Value& blob,
+                                       const std::string& alt) {
+                        if (!blob.isObject() || !blob.isMember("ref")) return;
+                        const std::string cid =
+                            blob["ref"].get("$link", "").asString();
+                        const std::string mime =
+                            blob.get("mimeType", "").asString();
+                        if (cid.empty() || mime.empty()) return;
+                        Json::Value e;
+                        e["url"] = pds +
+                                   "/xrpc/com.atproto.sync.getBlob?did=" +
+                                   authorDid + "&cid=" + cid;
+                        e["dedupe_key"] = "bsky:" + cid;
+                        e["mime"] = mime;
+                        e["kind"] = MediaVault::KindFromMime(mime);
+                        if (!alt.empty()) e["alt_text"] = alt;
+                        atts.append(e);
+                    };
+                    if (n.isMember("record") && n["record"].isObject() &&
+                        n["record"].isMember("embed") &&
+                        n["record"]["embed"].isObject()) {
+                        const auto& embed = n["record"]["embed"];
+                        const std::string etype =
+                            embed.get("$type", "").asString();
+                        if (etype == "app.bsky.embed.images" &&
+                            embed.isMember("images") &&
+                            embed["images"].isArray()) {
+                            for (const auto& im : embed["images"]) {
+                                blobAtt(im.get("image", Json::Value()),
+                                        im.get("alt", "").asString());
+                            }
+                        } else if (etype == "app.bsky.embed.video" &&
+                                   embed.isMember("video")) {
+                            blobAtt(embed["video"], "");
+                        }
+                    }
+                    if (!atts.empty()) meta["attachments"] = atts;
+                }
                 Json::StreamWriterBuilder wb;
                 wb["indentation"] = "";
                 std::string metadata = Json::writeString(wb, meta);
@@ -1842,6 +1958,7 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
         std::vector<std::string> newSenders;   // sender DIDs
         std::vector<std::string> newHandles;   // sender handles
         std::vector<std::string> newDisplays;  // sender display names
+        std::vector<Json::Value> newEmbeds;     // #158: record embeds per message
 
         for (int i = static_cast<int>(messages.size()) - 1; i >= 0; --i) {
             const auto& msg = messages[i];
@@ -1868,7 +1985,19 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
 
             std::string text;
             if (msg.isMember("text")) text = GetString(msg, "text");
-            if (text.empty()) continue;
+            // #158: embeds ride both shapes (flattened on the view, nested
+            // in record); a media-only message still arrives with placeholder
+            // text — its content is the attachment.
+            Json::Value embeds;
+            if (msg.isMember("embeds") && msg["embeds"].isArray())
+                embeds = msg["embeds"];
+            else if (msg.isMember("record") && msg["record"].isObject() &&
+                     msg["record"].isMember("embeds") &&
+                     msg["record"]["embeds"].isArray())
+                embeds = msg["record"]["embeds"];
+            const bool hasEmbeds = !embeds.empty();
+            if (text.empty() && !hasEmbeds) continue;
+            if (text.empty()) text = "(media attachment)";
 
             // Resolve sender identity: members map first (getMessages
             // senders carry only a DID), sender fields as fallback.
@@ -1908,6 +2037,7 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
                 newSenders.push_back(senderDid);
                 newHandles.push_back(senderHandle);
                 newDisplays.push_back(senderDisplay);
+                newEmbeds.push_back(embeds);
             }
         }
 
@@ -1946,6 +2076,25 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
             if (isGroupConvo && !groupOthersLabel.empty())
                 origin["channel"] = "group chat with " + groupOthersLabel;
             meta["origin"] = origin;
+            // #46: participants — presence for group convos, from the members
+            // map already built for this poll cycle (zero extra calls — the
+            // issue's near-free case). Excludes us; DID canonical, handle/
+            // display display-only (#42 rule). 1-1 convos omit the line —
+            // the author card already identifies the peer.
+            if (isGroupConvo) {
+                Json::Value members(Json::arrayValue);
+                for (const auto& [memberDid, handle] : didToHandle) {
+                    if (memberDid == state->bsky_did) continue;  // us
+                    Json::Value m;
+                    m["id"] = memberDid;
+                    m["handle"] = handle;
+                    auto dit = didToDisplay.find(memberDid);
+                    if (dit != didToDisplay.end())
+                        m["display"] = dit->second;
+                    members.append(m);
+                }
+                meta["participants"] = members;
+            }
             if (!rev.empty()) {
                 meta["source_message_id"] = rev;
                 Json::Value revs(Json::arrayValue);
@@ -1957,6 +2106,46 @@ void ChannelManager::BlueskyChatPollLoop(PollerState* state) {
                 "provided by the reply target and filled automatically. Text "
                 "replies are NOT delivered. If the message is not addressed to "
                 "you, staying silent is correct.";
+            // #158: attachments — embedded chat media as getBlob URLs
+            // (chatHost serves the blobs; did = the sender).
+            if (i < newEmbeds.size() && !newEmbeds[i].empty()) {
+                Json::Value atts(Json::arrayValue);
+                const std::string& blobDid = newSenders[i];
+                auto blobAtt = [&atts, &chatHost, &blobDid](
+                                   const Json::Value& blob,
+                                   const std::string& alt) {
+                    if (!blob.isObject() || !blob.isMember("ref")) return;
+                    const std::string cid =
+                        blob["ref"].get("$link", "").asString();
+                    const std::string mime =
+                        blob.get("mimeType", "").asString();
+                    if (cid.empty() || mime.empty()) return;
+                    Json::Value e;
+                    e["url"] = chatHost +
+                               "/xrpc/com.atproto.sync.getBlob?did=" +
+                               blobDid + "&cid=" + cid;
+                    e["dedupe_key"] = "bsky:" + cid;
+                    e["mime"] = mime;
+                    e["kind"] = MediaVault::KindFromMime(mime);
+                    if (!alt.empty()) e["alt_text"] = alt;
+                    atts.append(e);
+                };
+                for (const auto& em : newEmbeds[i]) {
+                    if (!em.isObject()) continue;
+                    const std::string etype = em.get("$type", "").asString();
+                    if (etype == "app.bsky.embed.images" &&
+                        em.isMember("images") && em["images"].isArray()) {
+                        for (const auto& im : em["images"]) {
+                            blobAtt(im.get("image", Json::Value()),
+                                    im.get("alt", "").asString());
+                        }
+                    } else if (etype == "app.bsky.embed.video" &&
+                               em.isMember("video")) {
+                        blobAtt(em["video"], "");
+                    }
+                }
+                if (!atts.empty()) meta["attachments"] = atts;
+            }
             Json::StreamWriterBuilder wb;
             wb["indentation"] = "";
             std::string metadata = Json::writeString(wb, meta);

@@ -113,7 +113,35 @@ if(ANIMUS_WITH_EMBEDDINGS)
     GIT_SHALLOW TRUE
   )
   FetchContent_MakeAvailable(llama_cpp)
-  set(ANIMUS_EMBEDDING_LIBS llama ggml)
+
+  # mtmd (multimodal) — local VLM engine for image description (#160).
+  # Built straight from the fetched llama.cpp tree's tools/mtmd sources:
+  # adding the upstream subdirectory would also create llama-mtmd-cli
+  # (links llama-common, which is not built here), and flipping
+  # LLAMA_BUILD_TOOLS would drag the entire tools tree into the default
+  # target. The fetch tag is pinned (b9715), so GLOB stays deterministic.
+  file(GLOB ANIMUS_MTMD_LIB_SOURCES ${llama_cpp_SOURCE_DIR}/tools/mtmd/*.cpp)
+  list(REMOVE_ITEM ANIMUS_MTMD_LIB_SOURCES
+    ${llama_cpp_SOURCE_DIR}/tools/mtmd/mtmd-cli.cpp
+    ${llama_cpp_SOURCE_DIR}/tools/mtmd/deprecation-warning.cpp)
+  file(GLOB ANIMUS_MTMD_MODEL_SOURCES ${llama_cpp_SOURCE_DIR}/tools/mtmd/models/*.cpp)
+  add_library(animus_mtmd STATIC ${ANIMUS_MTMD_LIB_SOURCES} ${ANIMUS_MTMD_MODEL_SOURCES})
+  # Linked into the shared libanimus_kernel — objects must be PIC.
+  set_target_properties(animus_mtmd PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(animus_mtmd PUBLIC ${llama_cpp_SOURCE_DIR}/tools/mtmd)
+  target_include_directories(animus_mtmd PRIVATE
+    ${llama_cpp_SOURCE_DIR}
+    ${llama_cpp_SOURCE_DIR}/vendor)
+  target_link_libraries(animus_mtmd PUBLIC ggml llama)
+  find_package(Threads REQUIRED)
+  target_link_libraries(animus_mtmd PRIVATE Threads::Threads)
+  target_compile_features(animus_mtmd PRIVATE cxx_std_17)
+  # stb_image/miniaudio warnings (mirrors upstream mtmd compile options)
+  if(NOT MSVC)
+    target_compile_options(animus_mtmd PRIVATE -Wno-cast-qual)
+  endif()
+
+  set(ANIMUS_EMBEDDING_LIBS llama ggml animus_mtmd)
   set(ANIMUS_HAS_EMBEDDINGS TRUE)
 else()
   set(ANIMUS_EMBEDDING_LIBS)
@@ -328,6 +356,8 @@ add_library(animus_kernel
   src/kernel/api/ApiRuntime.cpp
   src/kernel/api/ManifestV1.cpp
   src/kernel/api/RegistryClient.cpp
+  src/kernel/NodeIdentity.cpp
+  src/kernel/FederationKeys.cpp
   src/kernel/api/SecretsVault.cpp
   src/kernel/api/ApiConnectionManager.cpp
   src/kernel/PromptLogStore.cpp
@@ -337,8 +367,14 @@ add_library(animus_kernel
   src/kernel/diffusion/GetImgProvider.cpp
   src/kernel/diffusion/StabilityProvider.cpp
   src/kernel/tools/MultipartFormData.cpp
+  src/kernel/tools/DescribeTool.cpp
   src/kernel/tools/DiffusionTool.cpp
   src/kernel/attachment/AttachmentStore.cpp
+  src/kernel/attachment/MediaVault.cpp
+  src/kernel/describe/DescribeService.cpp
+  src/kernel/describe/LocalVlmEngine.cpp
+  src/kernel/describe/CloudVlmEngine.cpp
+  src/kernel/tools/StbImageImpl.cpp
   src/kernel/tools/AttachmentTool.cpp
   src/kernel/sop/SopStore.cpp
   src/kernel/tools/SopTool.cpp
@@ -409,6 +445,7 @@ add_library(animus_kernel
   src/kernel/context/TemporalContextProvider.cpp
   src/kernel/lua/LuaState.cpp
   src/kernel/lua/LuaToolHandler.cpp
+  src/kernel/lua/HttpUpload.cpp
   src/kernel/lua/ScriptStore.cpp
   src/kernel/lua/FilesystemScriptLoader.cpp
   src/kernel/lua/SharedScriptHealer.cpp
@@ -432,11 +469,13 @@ add_library(animus_kernel
 target_include_directories(animus_kernel PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${JSONCPP_INCLUDE_DIRS}
+  # vendor (stb) is part of the public header surface: ImageResize.h
+  # includes stb headers directly, so consumers need this path too.
+  ${CMAKE_CURRENT_SOURCE_DIR}/vendor
 )
 
 target_include_directories(animus_kernel PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/vendor
   ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
@@ -674,7 +713,7 @@ if(ANIMUS_BUILD_TESTS)
     add_executable(animus_outbox_sync_tests
       tests/OutboxSyncTests.cpp
     )
-    target_link_libraries(animus_outbox_sync_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_link_libraries(animus_outbox_sync_tests PRIVATE animus_kernel jsoncpp_lib OpenSSL::Crypto)
     target_include_directories(animus_outbox_sync_tests PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src
       ${JSONCPP_INCLUDE_DIRS}
@@ -761,6 +800,71 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME ChannelContextStoreTests COMMAND animus_channel_context_store_tests)
+
+    add_executable(animus_media_vault_tests
+      tests/MediaVaultTests.cpp
+    )
+    target_link_libraries(animus_media_vault_tests PRIVATE animus_kernel jsoncpp_lib OpenSSL::Crypto)
+    target_include_directories(animus_media_vault_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_media_vault_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME MediaVaultTests COMMAND animus_media_vault_tests)
+
+    add_executable(animus_describe_tests
+      tests/DescribeServiceTests.cpp
+    )
+    target_link_libraries(animus_describe_tests PRIVATE animus_kernel jsoncpp_lib OpenSSL::Crypto)
+    target_include_directories(animus_describe_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_describe_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME DescribeServiceTests COMMAND animus_describe_tests)
+
+    add_executable(animus_describe_tool_tests
+      tests/DescribeToolTests.cpp
+    )
+    target_link_libraries(animus_describe_tool_tests PRIVATE animus_kernel jsoncpp_lib OpenSSL::Crypto)
+    target_include_directories(animus_describe_tool_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_describe_tool_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME DescribeToolTests COMMAND animus_describe_tool_tests)
+
+    add_executable(animus_local_vlm_tests
+      tests/LocalVlmEngineTests.cpp
+    )
+    target_link_libraries(animus_local_vlm_tests PRIVATE animus_kernel jsoncpp_lib OpenSSL::Crypto)
+    target_include_directories(animus_local_vlm_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_local_vlm_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME LocalVlmEngineTests COMMAND animus_local_vlm_tests)
+
+    add_executable(animus_cloud_vlm_tests
+      tests/CloudVlmEngineTests.cpp
+    )
+    target_link_libraries(animus_cloud_vlm_tests PRIVATE animus_kernel jsoncpp_lib OpenSSL::Crypto)
+    target_include_directories(animus_cloud_vlm_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_cloud_vlm_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME CloudVlmEngineTests COMMAND animus_cloud_vlm_tests)
 
     add_executable(animus_auth_manager_tests
       tests/AuthManagerTests.cpp
@@ -1103,6 +1207,68 @@ if(ANIMUS_BUILD_TESTS)
     )
     add_test(NAME ChannelManagerTests COMMAND animus_channel_manager_tests)
 
+    add_executable(animus_crypto_utils_tests
+      tests/CryptoUtilsTests.cpp
+    )
+    target_link_libraries(animus_crypto_utils_tests PRIVATE animus_kernel OpenSSL::Crypto)
+    target_include_directories(animus_crypto_utils_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(animus_crypto_utils_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME CryptoUtilsTests COMMAND animus_crypto_utils_tests)
+
+    add_executable(animus_node_identity_tests
+      tests/NodeIdentityTests.cpp
+    )
+    target_link_libraries(animus_node_identity_tests PRIVATE animus_kernel OpenSSL::Crypto)
+    target_include_directories(animus_node_identity_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(animus_node_identity_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME NodeIdentityTests COMMAND animus_node_identity_tests)
+
+    add_executable(animus_federation_keys_tests
+      tests/FederationKeysTests.cpp
+    )
+    target_link_libraries(animus_federation_keys_tests PRIVATE animus_kernel OpenSSL::Crypto)
+    target_include_directories(animus_federation_keys_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(animus_federation_keys_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME FederationKeysTests COMMAND animus_federation_keys_tests)
+
+    add_executable(animus_email_tool_reply_tests
+      tests/EmailToolReplyTests.cpp
+    )
+    target_link_libraries(animus_email_tool_reply_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_email_tool_reply_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_email_tool_reply_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME EmailToolReplyTests COMMAND animus_email_tool_reply_tests)
+
+    add_executable(animus_email_attachment_tests
+      tests/EmailToolAttachmentTests.cpp
+    )
+    target_link_libraries(animus_email_attachment_tests PRIVATE animus_kernel jsoncpp_lib)
+    target_include_directories(animus_email_attachment_tests PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${JSONCPP_INCLUDE_DIRS}
+    )
+    set_target_properties(animus_email_attachment_tests PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+    )
+    add_test(NAME EmailToolAttachmentTests COMMAND animus_email_attachment_tests)
+
     add_executable(animus_signal_protocol_tests
       tests/SignalProtocolTests.cpp
     )
@@ -1114,6 +1280,32 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME SignalProtocolTests COMMAND animus_signal_protocol_tests)
+
+    # #265: fail if scripts/*.lua drifts from state/lua/_shared/*.lua —
+    # the runtime ships _shared/, feature work lands in scripts/; the two
+    # trees diverged silently three times before this guard.
+    add_test(NAME LuaAdapterSyncGuard
+      COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/lua_adapter_sync_guard.cmake")
+endif()
+
+# ============================================================================
+# Markdown renderer tests (#156) — golden/degrade/hostile, plain lua.
+# Needs the lua interpreter; hosts without it skip the suite (the golden
+# files and corpus are committed, so any lua-equipped host runs it).
+# ============================================================================
+
+find_program(LUA_EXECUTABLE lua)
+if(LUA_EXECUTABLE)
+    add_test(NAME MarkdownRendererTests
+      COMMAND ${LUA_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/markdown-renderer-test.lua")
+    set_tests_properties(MarkdownRendererTests PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME LinkCardTests
+      COMMAND ${LUA_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/link-card-test.lua")
+    set_tests_properties(LinkCardTests PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+else()
+    message(STATUS "lua not found — MarkdownRendererTests skipped")
 endif()
 
 # ============================================================================

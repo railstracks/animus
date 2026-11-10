@@ -293,14 +293,176 @@ int SecretsVault::MigrateAgentConfigSecrets(std::string& error) {
 bool SecretsVault::Seal(const std::string& plaintext, std::string& envelopeHex,
                         std::string& error) const {
     if (m_key.empty()) { error = "vault disabled (no master key)"; return false; }
-    envelopeHex = crypto::Aes256GcmSeal(m_key, plaintext, error);
+    // #275: armed epoch DEK → new writes seal under it (version 02);
+    // otherwise the master-key era continues (01). Reads dispatch on the
+    // version prefix.
+    if (!m_fedDek.empty()) {
+        envelopeHex = crypto::Aes256GcmSealVersion(m_fedDek, plaintext, 0x02, error);
+    } else {
+        envelopeHex = crypto::Aes256GcmSeal(m_key, plaintext, error);
+    }
     return envelopeHex.empty() == false;
 }
 
 bool SecretsVault::Open(const std::string& envelopeHex, std::string& plaintext,
                         std::string& error) const {
     if (m_key.empty()) { error = "vault disabled (no master key)"; return false; }
+    // #275: version dispatch — 01 = master-key era, 02 = federation
+    // epoch-DEK era. A 02 row without an armed DEK fails CLASSIFIED
+    // (awaiting key ceremony), never as a garbage GCM auth error and
+    // never as an empty string.
+    if (envelopeHex.size() >= 2 && envelopeHex.compare(0, 2, "02") == 0) {
+        if (m_fedDek.empty()) {
+            error = "epoch-DEK ciphertext but no federation DEK armed "
+                    "(awaiting key ceremony)";
+            return false;
+        }
+        return crypto::Aes256GcmOpen(m_fedDek, envelopeHex, plaintext, error);
+    }
     return crypto::Aes256GcmOpen(m_key, envelopeHex, plaintext, error);
+}
+
+void SecretsVault::SetFederationDek(int64_t epoch, const unsigned char* dek32, size_t len) {
+    // #274: boot-path activation. #275's versioned-ciphertext migration
+    // consumes this; the master-key path stays authoritative until then.
+    if (!dek32 || len != 32) {
+        ALOG_ERROR("api", "[vault] refusing federation DEK — expected 32 bytes, got "
+                   << len);
+        return;
+    }
+    m_fedEpoch = epoch;
+    m_fedDek.assign(dek32, dek32 + 32);
+    ALOG_INFO("api", "[vault] federation epoch " << epoch << " DEK armed");
+}
+
+int SecretsVault::RotateToNewDek(int64_t newEpoch, const unsigned char* newDek32,
+                                 size_t len, std::string& error) {
+    error.clear();
+    if (!m_store) { error = "vault has no store"; return -1; }
+    if (m_key.empty()) { error = "vault disabled (no master key)"; return -1; }
+    if (!newDek32 || len != 32) { error = "new DEK must be 32 bytes"; return -1; }
+
+    // Read + re-seal everything BEFORE re-arming: era-dispatched Open uses
+    // the CURRENT keys (01 -> master, 02 -> armed DEK). After arming the
+    // new DEK, old 02 rows would fail classified against it.
+    struct Row { std::string id, packageId, name, ciphertext; };
+    std::vector<Row> rows;
+    {
+        auto stmt = m_store->Prepare(
+            "SELECT id, package_id, name, ciphertext FROM api_package_secrets");
+        if (!stmt) { error = "vault prepare failed: " + m_store->ErrMsg(); return -1; }
+        while (stmt->Step()) {
+            Row r;
+            r.id = stmt->ColumnText(0);
+            r.packageId = stmt->ColumnText(1);
+            r.name = stmt->ColumnText(2);
+            r.ciphertext = stmt->ColumnText(3);
+            rows.push_back(std::move(r));
+        }
+    }
+
+    const std::vector<unsigned char> newDek(newDek32, newDek32 + 32);
+    int migrated = 0;
+    for (const auto& row : rows) {
+        const bool is02 = row.ciphertext.size() >= 2 &&
+                          row.ciphertext.compare(0, 2, "02") == 0;
+        if (is02 && m_fedDek.empty()) {
+            error = "rotation sweep: epoch-DEK ciphertext but no DEK armed "
+                    "(awaiting key ceremony) for '" + row.name + "' of " +
+                    row.packageId;
+            return -1;
+        }
+        std::string plaintext, openErr;
+        if (!Open(row.ciphertext, plaintext, openErr)) {
+            error = "rotation sweep: cannot open '" + row.name + "' of " +
+                    row.packageId + ": " + openErr;
+            return -1;   // loud stop — nothing is destroyed, nothing armed
+        }
+        std::string sealErr;
+        const std::string resealed =
+            crypto::Aes256GcmSealVersion(newDek, plaintext, 0x02, sealErr);
+        if (resealed.empty()) {
+            error = "rotation sweep: seal failed for '" + row.name + "': " + sealErr;
+            return -1;
+        }
+        auto upd = m_store->Prepare(
+            "UPDATE api_package_secrets SET ciphertext = ?, updated_at_unix_ms = ? "
+            "WHERE id = ?");
+        if (!upd) { error = "vault prepare failed: " + m_store->ErrMsg(); return -1; }
+        upd->BindText(1, resealed);
+        upd->BindInt64(2, NowUnixMs());
+        upd->BindText(3, row.id);
+        if (!upd->ExecDML()) {
+            error = "vault update failed: " + m_store->ErrMsg();
+            return -1;
+        }
+        ++migrated;
+    }
+    SetFederationDek(newEpoch, newDek.data(), newDek.size());
+    return migrated;
+}
+
+int SecretsVault::MigrateToEpochDek(std::string& error) {
+    error.clear();
+    if (!m_store) { error = "vault has no store"; return -1; }
+    if (m_key.empty()) { error = "vault disabled (no master key)"; return -1; }
+    if (m_fedDek.empty()) { error = "no federation DEK armed"; return -1; }
+
+    struct Row { std::string id, packageId, name, ciphertext; };
+    std::vector<Row> rows;
+    {
+        auto stmt = m_store->Prepare(
+            "SELECT id, package_id, name, ciphertext FROM api_package_secrets");
+        if (!stmt) { error = "vault prepare failed: " + m_store->ErrMsg(); return -1; }
+        while (stmt->Step()) {
+            Row r;
+            r.id = stmt->ColumnText(0);
+            r.packageId = stmt->ColumnText(1);
+            r.name = stmt->ColumnText(2);
+            r.ciphertext = stmt->ColumnText(3);
+            rows.push_back(std::move(r));
+        }
+    }
+
+    int migrated = 0;
+    for (const auto& row : rows) {
+        if (row.ciphertext.size() >= 2 && row.ciphertext.compare(0, 2, "02") == 0)
+            continue;   // already epoch-DEK era
+        if (row.ciphertext.size() < 2 || row.ciphertext.compare(0, 2, "01") != 0) {
+            ALOG_WARNING("api", "[vault] re-seal sweep: skipping unrecognized "
+                         << "ciphertext format for '" << row.name << "' of "
+                         << row.packageId);
+            continue;
+        }
+        std::string plaintext, openErr;
+        if (!crypto::Aes256GcmOpen(m_key, row.ciphertext, plaintext, openErr)) {
+            error = "re-seal sweep: cannot open '" + row.name + "' of " +
+                    row.packageId + " with the master key: " + openErr;
+            return -1;   // loud stop — a re-run skips what already moved
+        }
+        std::string sealErr;
+        const std::string resealed =
+            crypto::Aes256GcmSealVersion(m_fedDek, plaintext, 0x02, sealErr);
+        if (resealed.empty()) {
+            error = "re-seal sweep: seal failed for '" + row.name + "': " + sealErr;
+            return -1;
+        }
+        auto upd = m_store->Prepare(
+            "UPDATE api_package_secrets SET ciphertext = ?, updated_at_unix_ms = ? "
+            "WHERE id = ?");
+        if (!upd) { error = "vault prepare failed: " + m_store->ErrMsg(); return -1; }
+        upd->BindText(1, resealed);
+        upd->BindInt64(2, NowUnixMs());
+        upd->BindText(3, row.id);
+        if (!upd->ExecDML()) {
+            error = "vault update failed: " + m_store->ErrMsg();
+            return -1;
+        }
+        ++migrated;
+        ALOG_INFO("api", "[vault] re-sealed secret '" << row.name << "' of "
+                  << row.packageId << " under federation epoch " << m_fedEpoch);
+    }
+    return migrated;
 }
 
 bool SecretsVault::Set(const std::string& packageId, const std::string& name,

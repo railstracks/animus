@@ -2,14 +2,24 @@
 
 #include "animus_kernel/tools/CompositeTool.h"
 
+#include <filesystem>
 #include <set>
 #include <string>
+#include <vector>
+
+// jsoncpp forward declaration at global scope (Json::Value appears by
+// reference only in this header)
+namespace Json {
+class Value;
+}
 
 namespace animus::kernel {
 
 class AgentConfigStore;
 class ChannelManager;
 class ChannelContextStore;
+class MediaVault;
+class DescribeService;
 
 // ============================================================================
 // ChannelsTool — composite tool for channel integrations
@@ -38,6 +48,19 @@ public:
     /// When set, reply actions with missing target IDs are auto-filled
     /// from the store's LatestArrival for the current session.
     void SetChannelContextStore(ChannelContextStore* store) { m_channelContextStore = store; }
+
+    // #158: pull-mode media vaulting. Push lanes vault at dispatch;
+    // agent-driven polls (Mastodon) vault here — attachment descriptors in
+    // the poll digest are rewritten into media:// refs before the agent
+    // reads the output.
+    void SetMediaVault(MediaVault* vault) { m_mediaVault = vault; }
+    // #161: describe engine for outbound auto-alt (local service).
+    void SetDescribeService(DescribeService* service) { m_describeService = service; }
+
+    /// #159 outbound media: the tree send_media files[] may source from
+    /// (path and base64 forms; vault refs resolve independently). Empty
+    /// (default) = path/data sources denied.
+    void SetOutboundRoot(const std::filesystem::path& root) { m_outboundRoot = root; }
 
     /// Set the current agent ID for schema filtering.
     /// When set, GetDefinition() only includes adapters for channels
@@ -85,9 +108,27 @@ protected:
     ToolResult HandleCompositeAction(const ToolCall& call,
                                       const std::string& action) override;
 
+    /// #158 pull-mode: vault attachment descriptors in a poll digest into
+    /// media:// refs (scope: the instance's host + operator media_hosts).
+    /// Unparseable/non-digest output passes through untouched.
+    std::string VaultPollAttachments(const std::string& output,
+                                     const std::string& platformId,
+                                     const std::string& agentId);
+
+    /// #159: resolve send_media files[] (media:// ref | scoped path |
+    /// base64) into kernel-validated _media_files descriptors on args.
+    /// Returns false + error on any bad entry; tempFiles collects
+    /// base64-written temporaries for post-dispatch cleanup.
+    bool ResolveOutboundFiles(Json::Value& args,
+                              std::vector<std::string>& tempFiles,
+                              std::string& error);
+
     AgentConfigStore* m_configStore{nullptr};
     ChannelManager* m_channelManager{nullptr};
     ChannelContextStore* m_channelContextStore{nullptr};
+    MediaVault* m_mediaVault{nullptr};
+    DescribeService* m_describeService{nullptr};  // #161 outbound auto-alt
+    std::filesystem::path m_outboundRoot;   // #159 outbound media source tree
     std::string m_currentAgentId;
     PostCreatedCallback m_postCreatedCb;
 };

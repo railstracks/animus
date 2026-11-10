@@ -1572,8 +1572,15 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
                 if (!poll.isObject()) {
                     lint.Add("longpoll connection '" + conn.name + "': poll object is required");
                 } else {
+                    const std::string bodyFormat =
+                        poll.get("body_format", Json::Value("json")).asString();
+                    if (bodyFormat != "json" && bodyFormat != "raw")
+                        lint.Add("longpoll connection '" + conn.name +
+                                 "': poll.body_format must be 'json' or 'raw'");
                     const std::string cursor = poll.get("cursor_path", Json::Value("")).asString();
-                    if (cursor.empty())
+                    // #253: raw feeds keep their cursor in package state —
+                    // cursor_path is JSON-natured and not required for them.
+                    if (cursor.empty() && bodyFormat != "raw")
                         lint.Add("longpoll connection '" + conn.name + "': poll.cursor_path is required");
                     if (!poll.get("interval_s", Json::Value(0)).isNumeric() ||
                         poll.get("interval_s", Json::Value(0)).asDouble() <= 0)

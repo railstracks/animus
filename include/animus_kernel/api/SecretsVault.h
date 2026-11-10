@@ -155,12 +155,46 @@ public:
     bool Seal(const std::string& plaintext, std::string& envelopeHex, std::string& error) const;
     bool Open(const std::string& envelopeHex, std::string& plaintext, std::string& error) const;
 
+    // ── #274/#275: federation epoch DEK ────────────────────────────────────
+    // Set by AgentKernel at boot when this node's key envelope unwraps.
+    // #275's versioned-ciphertext migration consumes it (re-seal sweep);
+    // a peer-held epoch with no local envelope is a LOUD kernel-level
+    // lockout, never a silent empty key.
+    void SetFederationDek(int64_t epoch, const unsigned char* dek32, size_t len);
+    bool HasFederationDek() const { return !m_fedDek.empty(); }
+    int64_t FederationEpoch() const { return m_fedEpoch; }
+
+    // #275: idempotent re-seal sweep — every master-key-era (v01) row is
+    // opened with the master key and re-sealed under the armed epoch DEK
+    // (v02). Boot-invoked after SetFederationDek. Returns migrated count,
+    // or -1 with error (disabled / no DEK / open failure — loud stop; a
+    // re-run skips rows the interrupted pass already moved).
+    int MigrateToEpochDek(std::string& error);
+
+    // #276: epoch rotation. Re-seals EVERY row (era-dispatched open: 01 via
+    // master key, 02 via the currently-armed DEK) under `newDek` as 02,
+    // then arms (newEpoch, newDek). The revoked member keeps its old
+    // envelope and old ciphertexts — both fail against the new DEK. Returns
+    // rows re-sealed, or -1 with error. Loud stop; idempotent re-run is a
+    // plain MigrateToEpochDek (01 rows) + no-op (02 rows already new-era).
+    int RotateToNewDek(int64_t newEpoch, const unsigned char* newDek32,
+                      size_t len, std::string& error);
+
+    // #276: ceremony read access to the armed DEK — the owner-authenticated
+    // approve-node route seals it to a new member's public key. Same trust
+    // boundary as the vault's admin set-secret routes (which accept
+    // plaintext values); empty when no DEK is armed.
+    const std::vector<unsigned char>& FederationDekRef() const { return m_fedDek; }
+
 private:
     bool LoadOrCreateKey(std::string& error);
 
     IDataStore* m_store;
     std::string m_keyPath;
     std::vector<unsigned char> m_key;
+
+    int64_t m_fedEpoch{0};
+    std::vector<unsigned char> m_fedDek;   // #274: unwrapped epoch DEK
 };
 
 }  // namespace animus::kernel

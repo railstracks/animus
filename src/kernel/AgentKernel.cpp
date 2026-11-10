@@ -3,6 +3,7 @@
 #include "animus_kernel/PeerSyncService.h"
 #include "animus_kernel/AgentKernel.h"
 #include "animus_kernel/lua/SharedScriptHealer.h"
+#include "animus_kernel/DispatchAgentBinding.h"
 #include "animus_kernel/Log.h"
 
 #include <cstdlib>
@@ -57,6 +58,7 @@
 #include "animus_kernel/tools/LuaTool.h"
 #include "animus_kernel/lua/ScriptStore.h"
 #include "animus_kernel/AgentConfigStore.h"
+#include "animus_kernel/FederationKeys.h"
 #include "animus_kernel/tools/MemoryTool.h"
 #include "kernel/admin/TemplateResources.h"
 #include <filesystem>
@@ -83,6 +85,10 @@
 #include "animus_kernel/ChannelContextStore.h"
 #include "animus_kernel/ApiPackageStore.h"
 #include "animus_kernel/api/ApiRuntime.h"
+#include "animus_kernel/MediaVault.h"
+#include "animus_kernel/CloudVlmEngine.h"
+#include "animus_kernel/DescribeService.h"
+#include "animus_kernel/LocalVlmEngine.h"
 #include "animus_kernel/api/SecretsVault.h"
 #include "animus_kernel/api/ApiConnectionManager.h"
 #include "animus_kernel/tools/ApiTool.h"
@@ -102,6 +108,7 @@
 #include "animus_kernel/tools/DiceTool.h"
 #include "animus_kernel/tools/CalculatorTool.h"
 #include "animus_kernel/tools/ToolsTool.h"
+#include "animus_kernel/tools/DescribeTool.h"
 #include "animus_kernel/tools/ImageTool.h"
 #include "animus_kernel/tools/DiffusionTool.h"
 #include "animus_kernel/DiffusionStore.h"
@@ -173,6 +180,7 @@ AgentKernel::~AgentKernel() {
     delete m_providerThrottle; m_providerThrottle = nullptr;
     delete m_peerSyncService; m_peerSyncService = nullptr;
     delete m_syncStore; m_syncStore = nullptr;
+    delete m_federationKeys; m_federationKeys = nullptr;
     delete m_scheduler; m_scheduler = nullptr;
     delete m_sessionNotesStore; m_sessionNotesStore = nullptr;
     delete m_channelContextStore; m_channelContextStore = nullptr;
@@ -411,6 +419,10 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             AgentConfigStore configPre(m_dataStore);
             SecretsVault vaultPre(m_dataStore, "");
             vaultPre.EnsureSchema();     // table only — empty key path = no key file
+            // #274: federation DEK envelopes sync as data — pre-create so
+            // the table gets triggers on THIS boot, not the next one.
+            FederationKeys fedPre(m_dataStore);
+            fedPre.EnsureSchema();
         }
 
         // --- #78 P1a: node-scoped id ranges (federation identity) ---
@@ -443,6 +455,24 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // Admin routes expose the outbox/handshake/status on every node;
         // the pull loop runs only when peers are configured.
         m_adminServer->SetSyncStore(m_syncStore);
+
+        // --- Node identity (#182 federation secrets) ---
+        // Raw 0600 key file alongside api-vault.key — same discipline
+        // (design decision: raw v1; passphrase-wrapping deferred). Load
+        // failure is loud and fail-closed — never silently regenerate: a
+        // fresh private key would orphan every envelope sealed to the old
+        // public key.
+        {
+            std::string idErr;
+            if (LoadOrCreateNodeIdentity((m_config.dataDir / "node-identity.key").string(),
+                                         m_nodeIdentity, idErr)) {
+                m_nodeIdentityOk = true;
+                m_adminServer->SetNodeIdentity(&m_nodeIdentity);
+            } else {
+                ALOG_ERROR("federation", "[identity] load/create failed: " << idErr
+                           << " — federation key ceremonies unavailable until fixed");
+            }
+        }
         if (m_config.node.id > 0 && !m_config.node.peers.empty()) {
             m_peerSyncService = new PeerSyncService(
                 m_syncStore, m_config.node.peers, m_config.node.syncToken);
@@ -472,6 +502,78 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // Written by ExecuteChannelDispatch (both direct and queue-flush paths
         // funnel through it); read by the ChannelContextProvider (#15).
         m_channelContextStore = new ChannelContextStore(m_dataStore);
+
+        // #158: inbound media vault — sha256-addressed objects under the
+        // data dir; fetches ride ApiRuntime::ExecuteScoped (every redirect
+        // hop scope-checked, credentials stripped across hosts) on a
+        // dedicated HttpClient so media sizes never hit the web tools' cap.
+        m_mediaHttp.SetMaxBodySize(64ull * 1024 * 1024);
+        m_mediaVault = std::make_unique<MediaVault>(
+            m_dataStore,
+            [this](const HttpClient::Request& r,
+                   const std::vector<std::string>& scope) {
+                return ApiRuntime::ExecuteScoped(&m_mediaHttp, scope, r,
+                                                 "mediavault");
+            },
+            std::filesystem::path(m_config.dataDir) / "media");
+        m_mediaVault->EnsureSchema();
+
+        // #160: describe engine — auto-describe inbound images.
+        // Local-first: a loaded VLM pair is the default engine. Cloud is
+        // strictly opt-in (provider + model_id explicitly configured) and
+        // additionally gated per channel at dispatch time.
+        {
+            LocalVlmEngine::Params lp;
+            lp.model_path = m_config.describe_model_path;
+            lp.mmproj_path = m_config.describe_mmproj_path;
+            auto local = std::make_unique<LocalVlmEngine>(lp);
+            DescribeService::EngineFn engineFn;
+            std::string engineName = "local-vlm";
+            if (local->IsAvailable()) {
+                ALOG_INFO("describe",
+                          "local VLM ready: " << local->ModelId());
+                LocalVlmEngine* raw = local.get();
+                engineFn = [raw](const DescribeService::EngineRequest& r) {
+                    return raw->Describe(r.image_path, r.prompt);
+                };
+                m_localVlm = std::move(local);
+            } else {
+                ALOG_INFO("describe",
+                          "local VLM unavailable: " << local->LoadError());
+                engineName = "none";
+                engineFn = [](const DescribeService::EngineRequest&) {
+                    DescribeService::EngineResult r;
+                    r.error = "no describe engine available "
+                              "(no local VLM pair; cloud not configured)";
+                    return r;
+                };
+            }
+            m_describeLocal = std::make_unique<DescribeService>(
+                m_dataStore, m_mediaVault.get(), engineFn, engineName);
+            m_describeLocal->EnsureSchema();
+        }
+        if (!m_config.describe_provider.empty() &&
+            !m_config.describe_model_id.empty()) {
+            const std::string visionModel = m_config.describe_provider +
+                                            "/" + m_config.describe_model_id;
+            CloudVlmEngine::Params cp;
+            cp.vision_model = visionModel;
+            m_cloudVlm = std::make_unique<CloudVlmEngine>(
+                std::move(cp),
+                [this](const llm::LLMRequest& req, const std::string& pid,
+                       llm::LLMResponse& out, std::string& error) {
+                    return CloudVisionComplete(req, pid, out, error);
+                });
+            CloudVlmEngine* rawCloud = m_cloudVlm.get();
+            m_describeCloud = std::make_unique<DescribeService>(
+                m_dataStore, m_mediaVault.get(),
+                [rawCloud](const DescribeService::EngineRequest& r) {
+                    return rawCloud->Describe(r.image_path, r.prompt);
+                },
+                CloudVlmEngine::kEngineName);
+            m_describeCloud->EnsureSchema();
+            ALOG_INFO("describe", "cloud vision enabled: " << visionModel);
+        }
         m_adminServer->SetChannelContextStore(m_channelContextStore);
 
         // --- API Package Store (#26 data layer, build order b) ---
@@ -489,6 +591,52 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             const int migrated = m_secretsVault->MigrateLegacyStateSecrets(*m_apiPackageStore, migErr);
             if (migrated < 0)
                 ALOG_ERROR("api", "[vault] legacy secret migration failed: " << migErr);
+        }
+
+        // --- #274: federation epoch DEK envelopes (boot path) ---
+        // Unwrap the newest envelope addressed to this node's key. Three
+        // outcomes, all loud where it matters:
+        //   unwrapped          -> epoch DEK active in the vault (#275 consumes)
+        //   no rows at all     -> single-node / pre-ceremony: normal, quiet
+        //   rows exist but none addressed to us (or newest epoch is sealed
+        //      only to others) -> LOUD lockout: awaiting key ceremony.
+        m_federationKeys = new FederationKeys(m_dataStore);
+        m_adminServer->SetFederationKeys(m_federationKeys);
+        if (m_nodeIdentityOk) {
+            int64_t epoch = 0;
+            std::array<unsigned char, 32> dek{};
+            std::string dekErr;
+            if (m_federationKeys->OpenEpochDek(
+                    m_nodeIdentity, std::to_string(m_config.node.id),
+                    epoch, dek, dekErr)) {
+                m_secretsVault->SetFederationDek(epoch, dek.data(), dek.size());
+                ALOG_INFO("federation", "[keys] epoch " << epoch
+                          << " DEK unwrapped — federated secrets readable");
+                // #275: re-seal master-key-era rows under the epoch DEK —
+                // idempotent, safe to repeat every boot.
+                {
+                    std::string sweepErr;
+                    const int migrated = m_secretsVault->MigrateToEpochDek(sweepErr);
+                    if (migrated < 0)
+                        ALOG_ERROR("federation", "[vault] epoch re-seal sweep "
+                                   "failed: " << sweepErr);
+                    else if (migrated > 0)
+                        ALOG_INFO("federation", "[vault] re-sealed " << migrated
+                                  << " secret(s) under epoch " << epoch);
+                }
+            } else {
+                int64_t maxEpoch = 0;
+                if (m_federationKeys->MaxEpoch(&maxEpoch)) {
+                    ALOG_ERROR("federation", "[keys] LOCKED OUT of federation epoch "
+                               << maxEpoch << " — envelopes exist but none unwrap for "
+                               << "this node (" << dekErr << "). Run the key "
+                               << "ceremony (approve-node) to receive the DEK; "
+                               << "federated secrets stay unreadable until then.");
+                } else {
+                    ALOG_INFO("federation", "[keys] no key envelopes — single-node "
+                              << "or pre-ceremony; nothing to unwrap");
+                }
+            }
         }
 
         // --- Agenda Store (per-agent calendar/agenda events) ---
@@ -681,8 +829,15 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
         // ChannelsTool composite — must exist before Lua scripts load
         // so adapters can register into it during Phase 2
         m_channelsTool = new ChannelsTool();
+        // #158: pull-mode vault for agent-driven polls (mastodon digest).
+        m_channelsTool->SetMediaVault(m_mediaVault.get());
+        // #159: outbound send_media sources — vault refs, dataDir paths,
+        // base64 temporaries (written under dataDir/media/tmp)
+        m_channelsTool->SetOutboundRoot(m_config.dataDir);
         m_channelsTool->SetConfigStore(m_configStore);
         m_channelsTool->SetChannelContextStore(m_channelContextStore);
+        // #161: outbound auto-alt — describe engine (local service).
+        m_channelsTool->SetDescribeService(m_describeLocal.get());
         // Note: m_channelManager is null here — wired in Initialize()
         m_tools.Register(std::unique_ptr<IToolHandler>(m_channelsTool));
         m_adminServer->SetChannelsTool(m_channelsTool);
@@ -1528,27 +1683,11 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             }
 
             if ((interval > 0 || aggregationWindowMs > 0) && m_messageQueue) {
-                // Sender label for queued aggregates (#150): derived from the
-                // dispatch metadata the adapter already supplies — same
-                // conventions as the arrival parse in ExecuteChannelDispatch
-                // (top-level author_handle/author, then origin.user). Empty
-                // metadata → empty label → bare concatenation, unchanged for
-                // adapters that don't (yet) emit origin.
-                std::string sender;
-                {
-                    Json::Value qmeta;
-                    Json::CharReaderBuilder qrb;
-                    std::unique_ptr<Json::CharReader> qreader(qrb.newCharReader());
-                    std::string qerrs;
-                    if (qreader->parse(metadata.data(), metadata.data() + metadata.size(),
-                                       &qmeta, &qerrs) && qmeta.isObject()) {
-                        sender = qmeta.get("author_handle",
-                                           qmeta.get("author", "").asString()).asString();
-                        if (sender.empty() && qmeta.isMember("origin")
-                            && qmeta["origin"].isObject())
-                            sender = qmeta["origin"].get("user", "").asString();
-                    }
-                }
+                // Sender label for queued aggregates (#150/#173): the shared
+                // parse seam (top-level author_handle/author, then
+                // origin.user). Empty metadata → empty label → bare
+                // concatenation, unchanged for adapters that don't emit.
+                std::string sender = AuthorLabelFromMetadata(metadata);
 
                 // Check if a chain is currently active on this session
                 std::string queueKey = "channel:" + sessionKey;
@@ -1600,11 +1739,12 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             auto session = m_sessionManager->GetOrCreate(key);
             if (!session) return;
 
-            if (session->AgentId().empty()) {
-                session->SetAgentId(agentId);
-            } else if (session->Turns().empty()) {
-                session->SetAgentId(agentId);
-            }
+            // #268: adopt-on-dispatch — empty and 'default' (sentinel)
+            // bindings follow the dispatching agent. The old turns-empty
+            // override is retired with this change: it re-bound sessions
+            // already owned by a real agent — the misbinding mechanism,
+            // not a feature. Real bindings never re-bind.
+            TryAdoptDispatchAgent(*session, agentId, sessionKey);
             if (m_agentStore && !session->AgentId().empty()
                 && !m_agentStore->GetById(session->AgentId()).has_value()) {
                 ALOG_DEBUG("kernel", "session references unknown agent: "
@@ -1624,9 +1764,10 @@ bool AgentKernel::Start(const KernelConfig& config, std::string* error) {
             auto session = m_sessionManager->GetOrCreate(key);
             if (!session) return;
 
-            if (!agentId.empty() && session->AgentId().empty()) {
-                session->SetAgentId(agentId);
-            }
+            // #268: same adoption policy on the log-only path, so history
+            // appends heal sentinel bindings too — otherwise a log-only
+            // arrival keeps the session invisible to its owning agent.
+            TryAdoptDispatchAgent(*session, agentId, sessionKey);
 
             auto now = std::chrono::system_clock::now();
             auto unixMs = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1737,6 +1878,244 @@ int AgentKernel::GetChannelInterval(const std::string& channelName) const {
     return ch->config.get("min_response_interval", 0).asInt();
 }
 
+void AgentKernel::TryAdoptDispatchAgent(
+    Session& session,
+    const std::string& dispatchAgentId,
+    const std::string& sessionKeyForLog) {
+    if (dispatchAgentId.empty()) return;
+    const bool configured =
+        m_agentStore && m_agentStore->GetById(dispatchAgentId).has_value();
+    const std::string before = session.AgentId();
+    const std::string binding =
+        ResolveDispatchAgentBinding(before, dispatchAgentId, configured);
+    if (binding == before) return;
+    ALOG_INFO("channels:dispatch",
+              "agent adoption (#268): session " << sessionKeyForLog
+              << " rebinding agent '" << before << "' -> '" << binding << "'");
+    session.SetAgentId(binding);
+}
+
+std::vector<std::string> AgentKernel::MediaScopeFor(
+    const ChannelManager::ReplyTarget& replyTarget) const {
+    std::vector<std::string> hosts;
+    // Platform CDN defaults — the hosts attachments legitimately arrive
+    // from. Operator config extends per channel (media_hosts, pds);
+    // message content NEVER influences scope.
+    if (replyTarget.channel_type == "discord") {
+        hosts = {"cdn.discordapp.com", "cdn.discord.com",
+                 "media.discordapp.net"};
+    } else if (replyTarget.channel_type == "slack") {
+        hosts = {"files.slack.com"};
+    } else if (replyTarget.channel_type == "bluesky") {
+        hosts = {"bsky.social"};   // + the channel's PDS host, below
+    }
+    if (m_channelManager) {
+        auto state = m_channelManager->GetChannel(replyTarget.channel_name);
+        if (state && state->config.isObject()) {
+            const Json::Value extra = state->config.get("media_hosts",
+                                                        Json::Value());
+            if (extra.isArray()) {
+                for (const auto& h : extra) {
+                    const std::string s = h.asString();
+                    if (!s.empty()) hosts.push_back(s);
+                }
+            }
+            // The PDS serves bluesky blobs (getBlob URLs are pds-hosted).
+            if (replyTarget.channel_type == "bluesky") {
+                const std::string pds = state->config.get("pds", "").asString();
+                if (!pds.empty()) {
+                    const size_t sep = pds.find("://");
+                    std::string host = (sep == std::string::npos)
+                                           ? pds : pds.substr(sep + 3);
+                    const size_t slash = host.find('/');
+                    if (slash != std::string::npos) host = host.substr(0, slash);
+                    if (!host.empty()) hosts.push_back(host);
+                }
+            }
+        }
+    }
+    return hosts;
+}
+
+std::map<std::string, std::string> AgentKernel::MediaAuthHeadersFor(
+    const ChannelManager::ReplyTarget& replyTarget) const {
+    // Slack file downloads (url_private) authenticate with the workspace
+    // bot token; Discord/Bluesky CDN URLs are public or signature-scoped.
+    // Resolved from channel config at vault time only — the token never
+    // enters dispatch metadata, the arrivals table, or the card.
+    if (replyTarget.channel_type == "slack" && m_channelManager) {
+        auto state = m_channelManager->GetChannel(replyTarget.channel_name);
+        if (state && state->config.isObject()) {
+            const std::string token =
+                state->config.get("bot_token", "").asString();
+            if (!token.empty())
+                return {{"Authorization", "Bearer " + token}};
+        }
+    }
+    return {};
+}
+
+std::string AgentKernel::VaultInboundAttachments(
+    const std::string& rawAttachments,
+    const ChannelManager::ReplyTarget& replyTarget) {
+    if (!m_mediaVault) return rawAttachments;   // no vault wired: pass through
+    Json::Value entries;
+    Json::CharReaderBuilder rb;
+    std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+    std::string errs;
+    if (!reader->parse(rawAttachments.data(),
+                       rawAttachments.data() + rawAttachments.size(),
+                       &entries, &errs) ||
+        !entries.isArray()) {
+        ALOG_WARNING("mediavault", "unparseable attachments metadata: " << errs);
+        return rawAttachments;
+    }
+    const auto scope = MediaScopeFor(replyTarget);
+    const auto headers = MediaAuthHeadersFor(replyTarget);
+    Json::Value out(Json::arrayValue);
+    for (const auto& e : entries) {
+        if (!e.isObject()) continue;
+        MediaVault::Request req;
+        req.url = e.get("url", "").asString();
+        req.kind = e.get("kind", "file").asString();
+        req.filename = e.get("filename", "").asString();
+        req.mime = e.get("mime", e.get("mime_type", "").asString()).asString();
+        req.dedupe_key = e.get("dedupe_key", e.get("id", "").asString()).asString();
+        req.alt_text = e.get("alt_text", e.get("alt", "").asString()).asString();
+        req.dimensions = e.get("dimensions", "").asString();
+        req.duration = e.get("duration", "").asString();
+        req.scope_hosts = scope;
+        req.headers = headers;
+        const MediaVault::Result r = m_mediaVault->Acquire(req);
+        Json::Value o;
+        if (r.ok) {
+            o["ref"] = r.ref;
+            o["sha256"] = r.sha256;
+            o["kind"] = req.kind;
+            o["mime"] = r.mime;
+            o["filename"] = r.filename;
+            o["size"] = static_cast<Json::UInt64>(r.size);
+            if (r.deduped) o["deduped"] = true;
+            if (!req.alt_text.empty()) o["alt_text"] = req.alt_text;
+            if (!req.dimensions.empty()) o["dimensions"] = req.dimensions;
+            if (!req.duration.empty()) o["duration"] = req.duration;
+        } else {
+            o["url"] = req.url;
+            o["error"] = r.error;
+        }
+        out.append(o);
+    }
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    return Json::writeString(wb, out);
+}
+
+// #160: resolve the describe service for a channel. Null = auto-describe
+// gated off (disabled, channel opt-out, or no engine available). Local is
+// the default; cloud only when the channel explicitly opts in AND the
+// operator configured provider + model id; cloud-without-config degrades
+// to local (privacy-safe default), local-without-model skips quietly
+// (boot already logged why).
+DescribeService* AgentKernel::DescribeServiceFor(
+    const ChannelManager::ReplyTarget& replyTarget) const {
+    if (!m_config.describe_enabled || !m_describeLocal) return nullptr;
+    bool enabled = true;
+    std::string engine = "local";
+    if (m_channelManager) {
+        auto state = m_channelManager->GetChannel(replyTarget.channel_name);
+        if (state && state->config.isObject()) {
+            enabled = state->config.get("describe_images", true).asBool();
+            engine = state->config.get("describe_engine", "local").asString();
+        }
+    }
+    if (!enabled) return nullptr;
+    if (engine == "cloud") {
+        if (m_describeCloud) return m_describeCloud.get();
+        ALOG_WARNING(
+            "describe",
+            "channel '" << replyTarget.channel_name
+                        << "' requests describe_engine=cloud but no cloud "
+                           "vision model is configured; using local if "
+                           "available");
+    }
+    return m_localVlm ? m_describeLocal.get() : nullptr;
+}
+
+// #160: auto-describe vaulted inbound images — refs in, descriptions out.
+// Each image entry gains machine_description + provenance fields (or
+// describe_error, truncated, loud). Synchronous and cache-first:
+// content-addressed, so repeat deliveries and identical images are free.
+std::string AgentKernel::DescribeInboundAttachments(
+    const std::string& attachmentsJson,
+    const ChannelManager::ReplyTarget& replyTarget) {
+    DescribeService* svc = DescribeServiceFor(replyTarget);
+    if (!svc) return attachmentsJson;   // gated off — pass through
+    Json::Value entries;
+    Json::CharReaderBuilder rb;
+    std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+    std::string errs;
+    if (!reader->parse(attachmentsJson.data(),
+                       attachmentsJson.data() + attachmentsJson.size(),
+                       &entries, &errs) ||
+        !entries.isArray()) {
+        return attachmentsJson;   // never break the message over describe
+    }
+    bool changed = false;
+    for (auto& at : entries) {
+        if (!at.isObject()) continue;
+        if (at.get("kind", "").asString() != "image") continue;
+        const std::string ref = at.get("ref", "").asString();
+        if (ref.empty()) continue;   // failed acquisition — already loud
+        if (!at.get("machine_description", "").asString().empty())
+            continue;                // already described (redelivery)
+        const auto r = svc->Describe(ref);
+        if (r.ok) {
+            at["machine_description"] = r.text;
+            at["describe_engine"] = r.engine;
+            at["describe_model"] = r.model;
+        } else {
+            at["describe_error"] = r.error.substr(0, 200);
+        }
+        changed = true;
+    }
+    if (!changed) return attachmentsJson;
+    Json::StreamWriterBuilder wb;
+    wb["indentation"] = "";
+    return Json::writeString(wb, entries);
+}
+
+// #160: cloud vision provider call — the CloudVlmEngine CompleteFn seam
+// bound to the ChainRunner provider registry. One explicit destination,
+// no try-all fallback (issue #160 privacy contract).
+bool AgentKernel::CloudVisionComplete(const llm::LLMRequest& req,
+                                      const std::string& providerId,
+                                      llm::LLMResponse& out,
+                                      std::string& error) {
+    if (!m_chainRunner) {
+        error = "chain runner unavailable";
+        return false;
+    }
+    auto& providers = m_chainRunner->GetProviders();
+    auto cfgOpt = m_chainRunner->GetConfigLookup()(providerId);
+    if (!cfgOpt) {
+        error = "Provider not found: " + providerId;
+        return false;
+    }
+    auto provider = providers.Create(*cfgOpt);
+    if (!provider) {
+        error = "Failed to create provider: " + providerId;
+        return false;
+    }
+    std::string llmError;
+    const llm::LLMMessage msg = provider->Complete(req, &llmError);
+    if (!llmError.empty()) {
+        error = llmError;
+        return false;
+    }
+    out.content = msg.content;
+    return true;
+}
+
 void AgentKernel::ExecuteChannelDispatch(
         const std::string& sessionKey,
         const std::string& message,
@@ -1755,6 +2134,11 @@ void AgentKernel::ExecuteChannelDispatch(
     if (session->AgentId().empty()) {
         session->SetAgentId(agentId.empty() ? "default" : agentId);
     }
+    // #268: heal sentinel-bound sessions — legacy pre-#262 channel
+    // sessions (e.g. #2450) stay 'default'-bound forever otherwise:
+    // chains run under the sentinel and the owning agent's id/key/search
+    // probes all miss (ownership wall / false not-found).
+    TryAdoptDispatchAgent(*session, agentId, sessionKey);
 
     // Resolve provider
     std::string providerId = session->ProviderId();
@@ -1800,6 +2184,17 @@ void AgentKernel::ExecuteChannelDispatch(
     }
     std::size_t contextWindow = ResolveContextWindow(session->AgentId(), providerId, model);
     if (model.empty()) {
+        // #262: resolution fell through everything — the bound agent has no
+        // default_model (or the session rides the 'default' sentinel) and the
+        // provider has none either. This hardcoded guess masked live
+        // misconfiguration for months (HTTP 404s wherever the model doesn't
+        // exist on the provider). Keep the guess for compatibility, but make
+        // every occurrence loud and actionable.
+        ALOG_ERROR("channels:dispatch", "Model resolution fell through to the hardcoded fallback"
+                  << " — provider=" << providerId << " has no default_model,"
+                  << " agentId=" << session->AgentId() << " has none either;"
+                  << " guessing model gpt-4o for sessionKey=" << sessionKey
+                  << ". Fix: set the agent's default_model or the provider's.");
         model = "gpt-4o";
     }
 
@@ -1828,49 +2223,26 @@ void AgentKernel::ExecuteChannelDispatch(
         arrival.post_id = replyTarget.post_id;
         arrival.group_id = replyTarget.group_id;
         arrival.email_thread_id = replyTarget.email_thread_id;
-        // message_type / author_* / source_message_id: adapters will supply
-        // via metadata as #15 firms the schema up; parse what's there now.
-        {
-            Json::Value meta;
-            Json::CharReaderBuilder rb;
-            std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
-            std::string errs;
-            if (reader->parse(metadata.data(), metadata.data() + metadata.size(),
-                              &meta, &errs) && meta.isObject()) {
-                arrival.message_type = meta.get("message_type", "").asString();
-                arrival.author_id = meta.get("author_id", "").asString();
-                arrival.author_handle = meta.get("author_handle",
-                                                 meta.get("author", "").asString()).asString();
-                arrival.source_message_id = meta.get("source_message_id",
-                                                     meta.get("message_id", "").asString()).asString();
-                arrival.reply_parent_id = meta.get("reply_parent_id", "").asString();
-                arrival.thread_root_id = meta.get("thread_root_id",
-                                                  meta.get("root_id", "").asString()).asString();
-                arrival.reply_instructions = meta.get("reply_instructions", "").asString();
-                // Adapter-declared delivery override (#42: adapters state their
-                // channel's semantics): "tool" suppresses Chat-target
-                // auto-delivery — Bluesky chats are tool-only (groups exist,
-                // silence must be first-class).
-                arrival.delivery = meta.get("delivery", arrival.delivery).asString();
-                if (meta.isMember("origin") && meta["origin"].isObject()) {
-                    Json::StreamWriterBuilder wb;
-                    wb["indentation"] = "";
-                    arrival.origin = Json::writeString(wb, meta["origin"]);
-                    // Conventional origin keys map into typed fields when the
-                    // adapter doesn't set them explicitly.
-                    if (arrival.author_handle.empty())
-                        arrival.author_handle =
-                            meta["origin"].get("user", "").asString();
-                    if (arrival.author_id.empty())
-                        arrival.author_id =
-                            meta["origin"].get("user_id", "").asString();
-                }
-            }
-        }
-        if (arrival.message_type.empty()) {
-            arrival.message_type = (replyTarget.type == ChannelManager::ReplyTarget::Chat)
-                                       ? "chat" : "wall";
-        }
+        // message_type / author_* / ids: adapter-supplied dispatch metadata,
+        // parsed through the shared seam (#173 — was inline here AND in the
+        // queue-flush lane; behavior-identical extraction, and the emission
+        // contract is now testable without a live kernel).
+        ParseDispatchMetadata(
+            metadata,
+            (replyTarget.type == ChannelManager::ReplyTarget::Chat) ? "chat" : "wall",
+            arrival);
+        // #158: vault declared inbound attachments — scope-checked download
+        // → sha256 refs on the arrival. Failures stay loud ({url, error});
+        // media problems never block the message itself.
+        if (!arrival.attachments.empty())
+            arrival.attachments =
+                VaultInboundAttachments(arrival.attachments, replyTarget);
+        // #160: auto-describe vaulted images — per-channel gate,
+        // cache-first; descriptions (or describe_error) embed on the
+        // arrival and render on the context card with provenance.
+        if (!arrival.attachments.empty())
+            arrival.attachments = DescribeInboundAttachments(
+                arrival.attachments, replyTarget);
         dispatchAuthor = arrival.author_handle;  // #133: capture final value (post origin-fallback)
         m_channelContextStore->AddArrival(arrival);
         m_channelContextStore->Prune(arrival.session_key, arrival.agent_id);
@@ -2181,6 +2553,10 @@ void AgentKernel::RegisterBuiltinTools(const KernelConfig& config) {
            m_httpClient, std::move(imgCfg), m_chainRunner, m_agentStore));
    }
 
+    // Describe tool (#160) — active layer over the describe services
+    m_tools.Register(std::make_unique<DescribeTool>(
+        m_describeLocal.get(), m_describeCloud.get()));
+
     // Diffusion tool (ticket 122)
     if (m_diffusionStore) {
         DiffusionTool::Config diffCfg;
@@ -2289,6 +2665,10 @@ void AgentKernel::EnsureLuaState(const std::string& agentId) {
     LuaState::Config config;
     config.agentId = agentId;
     config.configStore = m_configStore;
+    // #159: outbound uploads read only from the agent data tree
+    // (vault objects live under dataDir/media, outbound temp under
+    // dataDir/media/tmp) — default-deny everywhere else.
+    config.uploadRoot = m_config.dataDir.string();
     auto state = std::make_unique<LuaState>(config, m_tools, m_httpClient);
     m_luaStates.emplace(agentId, std::move(state));
 }

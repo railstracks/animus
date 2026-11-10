@@ -1,0 +1,1 @@
+{"blocks":[{"text":{"text":"<https://example.com/animus|Animus>\nAgent kernel with native channels","type":"mrkdwn"},"type":"section"}],"channel":"C123","text":"Hello from the link card test","unfurl_links":false}

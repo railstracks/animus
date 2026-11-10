@@ -1,5 +1,6 @@
 #include "animus_kernel/lua/LuaState.h"
 #include "animus_kernel/lua/LuaToolHandler.h"
+#include "animus_kernel/lua/HttpUpload.h"
 #include "animus_kernel/lua/ScriptStore.h"
 #include "animus_kernel/tools/ToolRegistry.h"
 #include "animus_kernel/tools/HttpClient.h"
@@ -700,6 +701,124 @@ void TestMemoryLimit() {
 // in the createRecord / sendMessage payloads. One Eval chunk per case:
 // prelude (stubs) + adapter source + driver, sharing chunk-local scope.
 // ============================================================================
+// ---------------------------------------------------------------------------
+// #255: tonumber(config.get(...) or "0") crash family. config.get returns ""
+// for unset keys; "" is truthy so `or "0"` never fires; tonumber("") is nil,
+// and the first comparison crashed. The twitter post path had never worked
+// on a fresh instance: the first write died in monthly_reset_check before
+// any auth. Red witness (pristine adapters): pcall(handler) returned
+// "attempt to compare number with nil".
+// ---------------------------------------------------------------------------
+
+const char* kTwitterFreshPrelude = R"lua(
+local calls = {}
+local captured = nil
+local function stub_reply(url)
+    if string.find(url, "/2/users/me", 1, true) then
+        return { status = 200, body = json.encode({ data = { id = "2244994945", username = "tester" } }) }
+    end
+    if string.find(url, "/2/tweets", 1, true) then
+        return { status = 201, body = json.encode({ data = { id = "1234567890", text = "hello" } }) }
+    end
+    return { status = 200, body = "{}" }
+end
+animus.register_channel = function(t) captured = t end
+animus.http_post = function(url, opts)
+    table.insert(calls, { url = url, body = (opts and opts.body) or "" })
+    return stub_reply(url)
+end
+animus.http_get = function(url, opts)
+    table.insert(calls, { url = url, body = "" })
+    return stub_reply(url)
+end
+-- FRESH INSTANCE: only tier-less identity keys absent by design.
+-- No counter_reset / reads_used / writes_used / token keys set at all.
+)lua";
+
+const char* kTwitterFreshDriver = R"lua(
+local function post(content)
+    local ok, r = pcall(captured.handler, { action = "post", platform_id = "twitter:test", content = content })
+    return ok, r
+end
+-- 1) fresh instance, no tokens: must fail LOUDLY (auth), never crash
+local ok1, r1 = post("one")
+-- 2) operator-fresh tokens: the full post path must work
+config.set("channels.twitter:test.access_token", "tok-A")
+config.set("channels.twitter:test.token_expires", tostring(os.time() + 7200))
+local ok2, r2 = post("two")
+local n_tweets = 0
+for _, c in ipairs(calls) do
+    if string.find(c.url, "/2/tweets", 1, true) then n_tweets = n_tweets + 1 end
+end
+return json.encode({
+    ran1 = (ok1 == true),
+    loud1 = (ok1 and r1 and r1.success == false and tostring(r1.error):find("authentication", 1, true) ~= nil),
+    err1 = ok1 and tostring(r1 and r1.error) or tostring(r1),
+    ran2 = (ok2 == true),
+    ok2 = (ok2 and r2 and r2.success == true),
+    err2 = ok2 and tostring(r2 and r2.error) or tostring(r2),
+    tweets = n_tweets,
+    counter_reset_written = (config.get("channels.twitter:test.counter_reset") ~= "")
+})
+)lua";
+
+void TestTwitterFreshInstance() {
+    std::cerr << "  TestTwitterFreshInstance (#255)...\n";
+    // inline source read (no file-scope helper; #48's block adds one)
+    std::string src;
+    {
+        char exe[4096];
+        const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+        std::vector<std::string> candidates;
+        if (n > 0) {
+            exe[n] = '\0';
+            std::string dir(exe);
+            const auto slash = dir.rfind('/');
+            if (slash != std::string::npos)
+                candidates.push_back(dir.substr(0, slash) + "/../../state/lua/_shared/twitter.lua");
+        }
+        candidates.push_back("state/lua/_shared/twitter.lua");
+        candidates.push_back("../../state/lua/_shared/twitter.lua");
+        for (const auto& c : candidates) {
+            std::ifstream f(c);
+            if (!f) continue;
+            std::stringstream ss;
+            ss << f.rdbuf();
+            std::string s = ss.str();
+            if (!s.empty()) { src = s; break; }
+        }
+    }
+    Assert(!src.empty(), "twitter.lua source found");
+
+    ToolRegistry tools;
+    HttpClient http;
+    LuaState::Config lc;
+    lc.agentId = "test";
+    lc.instructionLimit = 5'000'000;
+    LuaState lua(lc, tools, http);
+
+    std::string out;
+    try {
+        out = lua.Eval(std::string(kTwitterFreshPrelude) + "\n" + src + "\n" +
+                       kTwitterFreshDriver, "tw-fresh");
+    } catch (const std::exception& e) {
+        Assert(false, std::string("Eval threw: ") + e.what());
+        return;
+    }
+    Json::Value v;
+    Assert(Json::Reader().parse(out, v), "fresh-case output should be JSON, got: " + out.substr(0, 200));
+    if (v.isString()) {
+        const std::string inner = v.asString();
+        Assert(Json::Reader().parse(inner, v), "unwrapped fresh-case output should be JSON");
+    }
+    Assert(v["ran1"].asBool(), "#255 fresh: handler ran without crashing (no number-vs-nil)");
+    Assert(v["loud1"].asBool(), "#255 fresh: no-token post fails loudly via auth, err=" + v["err1"].asString());
+    Assert(v["ran2"].asBool(), "#255 fresh: tokened post ran without crashing");
+    Assert(v["ok2"].asBool(), "#255 fresh: tokened post succeeded, err=" + v["err2"].asString());
+    Assert(v["tweets"].asInt() == 1, "#255 fresh: exactly one /2/tweets call");
+    Assert(v["counter_reset_written"].asBool(), "#255 fresh: monthly reset path completed and wrote its state");
+}
+
 std::string ReadIrcAdapterSrc() {
     char exe[4096];
     const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
@@ -971,6 +1090,221 @@ return json.encode({ ok = (r.success == true), message = msg })
 // call it, no matter what the backend supports. (Live sighting: Vesper
 // iterated /me-as-literal-text, blind action calls, and describe — the
 // command was invisible until the schema declared it.)
+
+// ---------------------------------------------------------------------------
+// #48: credential-lineage guards — token caches keyed to the credentials that
+// minted them. Rotation drops stale-lineage tokens before any use; un-stamped
+// (pre-#48) caches drop once on first contact; a Bluesky refresh minting a
+// DIFFERENT identity is refused and recovered from current credentials.
+// ---------------------------------------------------------------------------
+
+std::string ReadTwitterAdapterSrc() {
+    char exe[4096];
+    const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    std::vector<std::string> candidates;
+    if (n > 0) {
+        exe[n] = '\0';
+        std::string dir(exe);
+        const auto slash = dir.rfind('/');
+        if (slash != std::string::npos)
+            candidates.push_back(dir.substr(0, slash) + "/../../state/lua/_shared/twitter.lua");
+    }
+    candidates.push_back("state/lua/_shared/twitter.lua");
+    candidates.push_back("../../state/lua/_shared/twitter.lua");
+    for (const auto& c : candidates) {
+        std::ifstream f(c);
+        if (!f) continue;
+        std::stringstream ss;
+        ss << f.rdbuf();
+        std::string s = ss.str();
+        if (!s.empty()) return s;
+    }
+    return "";
+}
+
+const char* kBskyAuthPrelude = R"lua(
+local calls = {}
+local captured = nil
+local function stub_reply(url)
+    if string.find(url, "createSession", 1, true) then
+        return { status = 200, body = json.encode({ accessJwt = "h.p.s", did = "did:plc:t", refreshJwt = "r.p.s" }) }
+    end
+    if string.find(url, "refreshSession", 1, true) then
+        -- poisoned refresh: mints tokens for a DIFFERENT identity
+        return { status = 200, body = json.encode({ accessJwt = "h2.p2.s", did = "did:plc:EVIL", refreshJwt = "r2.p2.s" }) }
+    end
+    if string.find(url, "getRecord", 1, true) then
+        return { status = 200, body = json.encode({ uri = "at://did:plc:t/app.bsky.feed.post/root", cid = "bafyr", value = { cid = "bafyr" } }) }
+    end
+    return { status = 200, body = json.encode({ uri = "at://did:plc:t/app.bsky.feed.post/new", cid = "bafyn" }) }
+end
+animus.register_channel = function(t) captured = t end
+animus.http_post = function(url, opts)
+    table.insert(calls, { url = url, body = (opts and opts.body) or "" })
+    return stub_reply(url)
+end
+animus.http_get = function(url, opts)
+    table.insert(calls, { url = url, body = "" })
+    return stub_reply(url)
+end
+config.set("channels.bluesky:test.handle", "tester.bsky.social")
+config.set("channels.bluesky:test.app_password", "app-pass")
+config.set("channels.bluesky:test.access_jwt", "")
+config.set("channels.bluesky:test.did", "")
+)lua";
+
+const char* kBskyLineageDriver = R"lua(
+local function post(content)
+    return captured.handler({ action = "post", platform_id = "bluesky:test", content = content })
+end
+local r1 = post("one")          -- fresh auth (createSession #1)
+local r2 = post("two")          -- cache reuse: no new session
+config.set("channels.bluesky:test.app_password", "rotated-pass")
+local r3 = post("three")        -- rotation: drop lineage, createSession #2
+config.set("channels.bluesky:test.access_jwt", "h.eyJleHAiOjEwMDAwMDAwMDB9.s")  -- expired
+local r4 = post("four")        -- refresh -> EVIL did refused -> createSession #3
+local n_create, n_refresh = 0, 0
+local repo
+for _, c in ipairs(calls) do
+    if string.find(c.url, "createSession", 1, true) then n_create = n_create + 1 end
+    if string.find(c.url, "refreshSession", 1, true) then n_refresh = n_refresh + 1 end
+    if string.find(c.url, "createRecord", 1, true) then repo = json.decode(c.body).repo end
+end
+return json.encode({
+    ok1 = (r1.success == true), ok2 = (r2.success == true),
+    ok3 = (r3.success == true), ok4 = (r4.success == true),
+    create_sessions = n_create, refreshes = n_refresh,
+    final_repo = repo,
+    final_jwt = config.get("channels.bluesky:test.access_jwt")
+})
+)lua";
+
+const char* kTwitterAuthPrelude = R"lua(
+local calls = {}
+local captured = nil
+local function stub_reply(url)
+    if string.find(url, "oauth2/token", 1, true) then
+        return { status = 200, body = json.encode({ access_token = "tok-R", refresh_token = "ref-R", expires_in = 7200 }) }
+    end
+    if string.find(url, "/2/users/me", 1, true) then
+        return { status = 200, body = json.encode({ data = { id = "2244994945", username = "tester" } }) }
+    end
+    if string.find(url, "/2/tweets", 1, true) then
+        return { status = 201, body = json.encode({ data = { id = "1234567890", text = "hello" } }) }
+    end
+    return { status = 200, body = "{}" }
+end
+animus.register_channel = function(t) captured = t end
+animus.http_post = function(url, opts)
+    table.insert(calls, { url = url, body = (opts and opts.body) or "" })
+    return stub_reply(url)
+end
+animus.http_get = function(url, opts)
+    table.insert(calls, { url = url, body = "" })
+    return stub_reply(url)
+end
+config.set("channels.twitter:test.client_id", "cid-A")
+config.set("channels.twitter:test.client_secret", "sec-A")
+config.set("channels.twitter:test.access_token", "")
+config.set("channels.twitter:test.refresh_token", "")
+config.set("channels.twitter:test.token_expires", "0")
+)lua";
+
+const char* kTwitterLineageDriver = R"lua(
+local function post(content)
+    return captured.handler({ action = "post", platform_id = "twitter:test", content = content })
+end
+-- phase 1: pre-#48 un-stamped cache (migration drop; loud, no refresh material)
+config.set("channels.twitter:test.access_token", "tok-old")
+config.set("channels.twitter:test.token_expires", tostring(os.time() + 7200))
+local r1 = post("one")
+-- phase 2: operator-fresh tokens under the stamp adopted in phase 1
+config.set("channels.twitter:test.access_token", "tok-A")
+config.set("channels.twitter:test.refresh_token", "ref-A")
+config.set("channels.twitter:test.token_expires", tostring(os.time() + 7200))
+local r2 = post("two")
+-- phase 3: client rotation drops the lineage; old token never sent
+config.set("channels.twitter:test.client_id", "cid-B")
+local r3 = post("three")
+local n_tweets, n_refresh = 0, 0
+for _, c in ipairs(calls) do
+    if string.find(c.url, "/2/tweets", 1, true) then n_tweets = n_tweets + 1 end
+    if string.find(c.url, "oauth2/token", 1, true) then n_refresh = n_refresh + 1 end
+end
+return json.encode({
+    ok1 = (r1.success == true), err1 = tostring(r1.error),
+    ok2 = (r2.success == true),
+    ok3 = (r3.success == true), err3 = tostring(r3.error),
+    tweets = n_tweets, refresh_ep = n_refresh
+})
+)lua";
+
+Json::Value RunAdapterCase(LuaState& lua, const std::string& prelude, const std::string& src,
+                           const std::string& driver) {
+    std::string out;
+    try {
+        out = lua.Eval(prelude + "\n" + src + "\n" + driver, "lineage-case");
+    } catch (const std::exception& e) {
+        Assert(false, std::string("Eval threw: ") + e.what());
+        return Json::Value();
+    }
+    Json::Value v;
+    Assert(Json::Reader().parse(out, v), "case output should be JSON, got: " + out.substr(0, 200));
+    if (v.isString()) {
+        const std::string inner = v.asString();
+        Assert(Json::Reader().parse(inner, v),
+               "unwrapped case output should be JSON, got: " + inner.substr(0, 200));
+    }
+    return v;
+}
+
+void TestCredentialLineage() {
+    std::cerr << "  TestCredentialLineage (#48)...\n";
+    const std::string bsky = ReadBlueskyAdapterSrc();
+    const std::string tw = ReadTwitterAdapterSrc();
+    Assert(!bsky.empty(), "bluesky.lua source found");
+    Assert(!tw.empty(), "twitter.lua source found");
+
+    ToolRegistry tools;
+    HttpClient http;
+    LuaState::Config lc;
+    lc.agentId = "test";
+    lc.instructionLimit = 5'000'000;
+    LuaState lua(lc, tools, http);
+
+    // Bluesky: fresh auth -> cache reuse (no re-auth) -> rotation drop +
+    // transparent re-auth -> poisoned refresh refused + recovered.
+    {
+        Json::Value v = RunAdapterCase(lua, kBskyAuthPrelude, bsky, kBskyLineageDriver);
+        Assert(v["ok1"].asBool(), "#48 bsky: fresh post succeeds");
+        Assert(v["ok2"].asBool(), "#48 bsky: cached-token post succeeds (no rotation)");
+        Assert(v["ok3"].asBool(), "#48 bsky: post after rotation succeeds (transparent re-auth)");
+        Assert(v["ok4"].asBool(), "#48 bsky: post after poisoned refresh succeeds (recovered)");
+        Assert(v["create_sessions"].asInt() == 3,
+               "#48 bsky: exactly 3 createSession calls (initial + rotation + poison recovery)");
+        Assert(v["refreshes"].asInt() == 1, "#48 bsky: exactly 1 refreshSession attempt");
+        Assert(v["final_repo"].asString() == "did:plc:t",
+               "#48 bsky: final post identity is the CONFIGURED account");
+        Assert(v["final_jwt"].asString() == "h.p.s",
+               "#48 bsky: the poisoned refresh token was never cached");
+    }
+
+    // Twitter: un-stamped cache drops once (loud), stamped lineage works,
+    // client rotation fails loudly with the stale token never sent.
+    {
+        Json::Value v = RunAdapterCase(lua, kTwitterAuthPrelude, tw, kTwitterLineageDriver);
+        Assert(!v["ok1"].asBool(), "#48 twitter: un-stamped cache post fails (migration drop)");
+        Assert(v["err1"].asString().find("authentication") != std::string::npos,
+               "#48 twitter: migration failure is loud");
+        Assert(v["ok2"].asBool(), "#48 twitter: post with stamped-lineage tokens succeeds");
+        Assert(!v["ok3"].asBool(), "#48 twitter: post after client rotation fails loudly");
+        Assert(v["tweets"].asInt() == 1,
+               "#48 twitter: stale-lineage token never reached the API");
+        Assert(v["refresh_ep"].asInt() == 0,
+               "#48 twitter: no refresh call survived the drops");
+    }
+}
+
 void TestIrcAdapterSendAction() {
     ToolRegistry tools;
     HttpClient http;
@@ -1156,6 +1490,110 @@ void TestLuaBridgeAgentIdentity() {
     std::cerr << " done\n";
 }
 
+// ============================================================================
+// #159: HttpUpload helpers (multipart composition, path scoping, caps)
+// ============================================================================
+
+void TestHttpUploadHelpers() {
+    std::cerr << "[HttpUpload helpers]\n";
+
+    // Multipart composition: structure + binary-safe content
+    {
+        std::string contentType;
+        const std::string body = BuildMultipartBody(
+            {{"status", "hello world"}, {"visibility", "public"}},
+            {{"file", "cat.png", "image/png",
+              std::string("PNG\x00\x01\xFF\r\n", 7)}},
+            "BOUND1", contentType);
+        Assert(contentType == "multipart/form-data; boundary=BOUND1",
+               "multipart content-type carries boundary");
+        Assert(body.rfind("--BOUND1\r\n", 0) == 0,
+               "body opens with boundary");
+        Assert(body.find("name=\"status\"\r\n\r\nhello world\r\n") !=
+                   std::string::npos,
+               "field part rendered");
+        Assert(body.find("name=\"file\"; filename=\"cat.png\"\r\n"
+                         "Content-Type: image/png\r\n\r\n") !=
+                   std::string::npos,
+               "file part headers rendered");
+        Assert(body.find(std::string("PNG\x00\x01\xFF\r\n", 7)) !=
+                   std::string::npos,
+               "binary content preserved verbatim");
+        Assert(body.size() >= 12 &&
+               body.compare(body.size() - 12, 12, "--BOUND1--\r\n") == 0,
+               "body closes with boundary terminator");
+    }
+
+    // Boundary collision avoidance: chosen boundary never occurs in content
+    {
+        for (int i = 0; i < 25; ++i) {
+            std::vector<UploadFilePart> parts;
+            parts.push_back({"file", "f.bin", "application/octet-stream",
+                             "----animus data " + std::to_string(i)});
+            const std::string b =
+                ChooseBoundary({{"k", "----animus value"}}, parts);
+            Assert(!b.empty(), "boundary chosen (attempt " +
+                                   std::to_string(i) + ")");
+            if (b.empty()) continue;
+            Assert(std::string("----animus value").find(b) ==
+                       std::string::npos,
+                   "boundary absent from field values");
+            Assert(parts[0].content.find(b) == std::string::npos,
+                   "boundary absent from file contents");
+        }
+    }
+
+    // Part header safety
+    Assert(PartHeaderSafe("files[0]"), "plain field name accepted");
+    Assert(PartHeaderSafe("cat.png"), "plain filename accepted");
+    Assert(!PartHeaderSafe(""), "empty token rejected");
+    Assert(!PartHeaderSafe("a\r\nb"), "CR/LF in header token rejected");
+    Assert(!PartHeaderSafe("ev\"il"), "quote in header token rejected");
+
+    // Path scoping (real dirs, traversal + symlink-adjacent cases)
+    {
+        namespace fs = std::filesystem;
+        const fs::path root = fs::temp_directory_path() /
+            ("animus_upload_scope_" + std::to_string(::getpid()));
+        fs::create_directories(root / "sub");
+        const fs::path file = root / "sub" / "a.png";
+        { std::ofstream f(file, std::ios::binary); f << "x"; }
+
+        Assert(PathWithinRoots(file, {root}), "file under root accepted");
+        Assert(PathWithinRoots(root / "sub", {root}),
+               "dir under root accepted");
+        Assert(PathWithinRoots(root, {root}), "root itself accepted");
+        Assert(!PathWithinRoots(fs::temp_directory_path(), {root}),
+               "parent of root rejected");
+        Assert(!PathWithinRoots(root / "sub" / ".." / "..", {root}),
+               "traversal escaping root rejected");
+        Assert(PathWithinRoots(root / "missing.png", {root}),
+               "missing file under existing root passes scope "
+               "(the later read fails loudly)");
+        Assert(!PathWithinRoots("/etc/passwd", {root}),
+               "outside path rejected");
+
+        fs::remove_all(root);
+    }
+
+    // ReadFileBytes: round-trip + caps + missing
+    {
+        namespace fs = std::filesystem;
+        const fs::path tmp = fs::temp_directory_path() /
+            ("animus_upload_read_" + std::to_string(::getpid()) + ".bin");
+        { std::ofstream f(tmp, std::ios::binary); f << "hello bytes"; }
+        std::string out, err;
+        Assert(ReadFileBytes(tmp, 100, out, err) && out == "hello bytes",
+               "file bytes round-trip");
+        Assert(!ReadFileBytes(tmp, 3, out, err) &&
+                   err.find("size cap") != std::string::npos,
+               "size cap enforced loudly");
+        Assert(!ReadFileBytes(tmp / "nope", 100, out, err),
+               "missing file fails");
+        fs::remove(tmp);
+    }
+}
+
 int main() {
     std::cerr << "Running Lua integration tests...\n";
 
@@ -1171,12 +1609,15 @@ int main() {
     TestLuaBridgeAgentIdentity();
     TestScriptStore();
     TestHttpClient();
+    TestHttpUploadHelpers();
     TestCoroutineMode();
     TestInstructionLimit();
     TestMemoryLimit();
     TestBlueskyFacets();
+    TestCredentialLineage();
     TestIrcAdapterSendAction();
     TestIrcAdapterJoinPartSchema();
+    TestTwitterFreshInstance();
 
     if (g_failures > 0) {
         std::cerr << "\nFAILED: " << g_failures << " assertions failed\n";

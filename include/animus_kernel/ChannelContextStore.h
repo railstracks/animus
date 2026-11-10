@@ -49,6 +49,29 @@ struct ChannelArrival {
                                      // to the channel (operator-configured),
                                      // never to content self-description.
 
+    std::string participants;        // #46: presence list for the conversation
+                                     // (compact JSON array: [{id, handle?,
+                                     // display?}, …]) — adapter-supplied from
+                                     // data already in the poll cycle, never
+                                     // a per-message API call. Stable ids are
+                                     // canonical, names display-only (#42
+                                     // rule); the card renders resolved names
+                                     // (capped for large conversations) with
+                                     // ids retained here. Absent feed = absent
+                                     // card line (present-keys-only).
+
+    std::string attachments;         // #158: inbound media — vault-ref
+                                     // descriptors (compact JSON array:
+                                     // [{ref, sha256, kind, mime, filename,
+                                     // size, alt_text?, …}, …]). Adapters
+                                     // declare raw platform attachments in
+                                     // dispatch metadata; the kernel vaults
+                                     // them (scope-checked download,
+                                     // sha256-addressed on disk) and stores
+                                     // refs here — bytes never enter the DB
+                                     // or agent context. Failed acquisitions
+                                     // stay loud: {url, error} entries.
+
     // --- Targeting (server-resolved ReplyTarget snapshot) ---------------------
     std::string delivery;            // "auto" (Chat: text reply auto-sent) | "tool" (must use channels tool)
     std::string peer_id;             // Chat targets
@@ -64,6 +87,22 @@ struct ChannelArrival {
     int64_t created_at_unix_ms{0};
     bool consumed{false};            // provider rendered it / chain consumed it
 };
+
+// ---------------------------------------------------------------------------
+// #173: dispatch-metadata parse seam — shared by the direct-dispatch and
+// queue-flush lanes in AgentKernel (was inline in both, untestable without
+// a live kernel). Adapters emit metadata JSON at dispatch; these parse the
+// settled conventions into typed fields: top-level author_handle (or
+// author) with origin.user fallback, origin.user_id -> author_id, typed
+// reply/thread ids, delivery override (#42). Free functions so the
+// emission contract is directly testable.
+void ParseDispatchMetadata(const std::string& metadata,
+                           const std::string& defaultMessageType,
+                           ChannelArrival& arrival);
+
+/// #173: author label from dispatch metadata alone (top-level
+/// author_handle/author, then origin.user) — the queue-aggregate sender.
+std::string AuthorLabelFromMetadata(const std::string& metadata);
 
 // ============================================================================
 // ChannelContextStore — per-session trusted channel context side-store

@@ -299,6 +299,45 @@ end
 -- Action implementations
 -- ---------------------------------------------------------------------------
 
+-- Canonical Markdown -> Slack mrkdwn (#156). scripts/markdown.lua is
+-- Eval'd into the same per-agent VM and sets the `markdown` global;
+-- referenced at SEND time so standalone harnesses (which load only this
+-- adapter) keep working through the raw fallback.
+--- #157: link card helpers — markdown module guarded the same way as
+--- render_content. Degrade path: plain URL append.
+local function get_link_card(card_arg)
+    if not card_arg then return nil end
+    if type(markdown) == "table" and type(markdown.normalize_card) == "function" then
+        local ok, card, reason = pcall(markdown.normalize_card, card_arg)
+        if not ok then return nil, "link_card validation failed" end
+        if not card then return nil, reason end
+        return card
+    end
+    if type(card_arg) ~= "table" or type(card_arg.url) ~= "string"
+        or not card_arg.url:match("^https?://") then
+        return nil, "link_card.url is required and must be http(s)"
+    end
+    return card_arg
+end
+
+local function append_card_url(content, card)
+    if content:find(card.url, 1, true) then return content end
+    if type(markdown) == "table" and type(markdown.append_card) == "function" then
+        local ok, out = pcall(markdown.append_card, content, card)
+        if ok and type(out) == "string" and out ~= "" then return out end
+    end
+    return content .. "\n\n" .. card.url
+end
+
+local function render_content(content)
+    if type(markdown) == "table" and type(markdown.render_slack) == "function" then
+        local ok, out = pcall(markdown.render_slack, content)
+        if ok and type(out) == "string" and out ~= "" then return out end
+        if log and log.warn then log.warn("[slack] markdown render failed; sending raw content") end
+    end
+    return content
+end
+
 --- chat.postMessage
 local function do_post(args)
     local pid = args.platform_id
@@ -312,14 +351,37 @@ local function do_post(args)
         return { success = false, error = "content is required" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    -- #157: url-only card has nothing to build a block from — plain link.
+    if card and not card.title and not card.description then
+        content = append_card_url(content, card)
+        card = nil
+    end
+
     local body = {
         channel = channel,
-        text = content
+        text = render_content(content)
     }
 
     -- Thread reply support
     if args.thread_ts and args.thread_ts ~= "" then
         body.thread_ts = args.thread_ts
+    end
+
+    -- #157: link card as Block Kit — deterministic card rendering instead
+    -- of a server unfurl. Explicit args.blocks wins over the card.
+    if card and not args.blocks then
+        local md_txt = "<" .. card.url .. "|" .. (card.title or card.url) .. ">"
+        if card.description then
+            md_txt = md_txt .. "\n" .. truncate(card.description, 280)
+        end
+        body.blocks = {
+            { type = "section", text = { type = "mrkdwn", text = md_txt } },
+        }
+        body.unfurl_links = false
     end
 
     -- Block Kit support (Phase 3 — pass through if provided)
@@ -360,11 +422,20 @@ local function do_reply(args)
         return { success = false, error = "content is required" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card and not card.title and not card.description then
+        content = append_card_url(content, card)
+        card = nil
+    end
+
     -- thread_ts optional: absent = top-level response in the channel
     -- (threaded_replies=false); present = reply inside that thread.
     local body = {
         channel = channel,
-        text = content
+        text = render_content(content)
     }
     if thread_ts and thread_ts ~= "" then
         body.thread_ts = thread_ts
@@ -373,6 +444,18 @@ local function do_reply(args)
     -- Broadcast to channel (not just thread) if requested
     if args.broadcast then
         body.reply_broadcast = true
+    end
+
+    -- #157: link card as Block Kit (same mapping as post).
+    if card then
+        local md_txt = "<" .. card.url .. "|" .. (card.title or card.url) .. ">"
+        if card.description then
+            md_txt = md_txt .. "\n" .. truncate(card.description, 280)
+        end
+        body.blocks = {
+            { type = "section", text = { type = "mrkdwn", text = md_txt } },
+        }
+        body.unfurl_links = false
     end
 
     local resp = api_post_json(pid, "chat.postMessage", body)
@@ -709,7 +792,7 @@ local function do_edit(args)
     local body = {
         channel = channel,
         ts = timestamp,
-        text = content
+        text = render_content(content)
     }
 
     local resp = api_post_json(pid, "chat.update", body)
@@ -767,6 +850,96 @@ local function do_auth_test(args)
 end
 
 -- ---------------------------------------------------------------------------
+-- #159: outbound media — send_media (files.upload_v2 external flow)
+-- ---------------------------------------------------------------------------
+
+--- Send a message with file attachments via Slack's three-step external
+--- upload: files.getUploadURLExternal (needs the exact byte length — the
+--- kernel resolver stats each file into _media_files[].size) → raw POST
+--- of the bytes to the presigned upload_url (no auth header; the URL is
+--- the credential) → files.completeUploadExternal, which posts the files
+--- to the channel with the text as initial_comment. No processed-poll —
+--- the complete call is the message send. Alt text rides each file title.
+local function do_send_media(args)
+    local pid = args.platform_id
+    local channel = args.channel_id
+    local media = args._media_files
+
+    if not channel or channel == "" then
+        return { success = false, error = "channel_id is required" }
+    end
+    if type(media) ~= "table" or #media == 0 then
+        return { success = false, error =
+            "no resolved attachments — pass files[] (kernel resolves to _media_files)" }
+    end
+    if #media > 10 then
+        return { success = false, error = "too many attachments: " .. tostring(#media)
+            .. " > 10 (per-upload limit)" }
+    end
+
+    local text = render_content(args.text or args.content or "")
+
+    local entries = {}
+    for i, f in ipairs(media) do
+        if not f.size or f.size <= 0 then
+            return { success = false, error = "file " .. tostring(i)
+                .. " carries no size — kernel resolver must provide _media_files[].size" }
+        end
+        local filename = f.filename or ("attachment" .. tostring(i))
+        local resp = api_post(pid, "files.getUploadURLExternal", {
+            filename = filename,
+            length = tostring(f.size)
+        })
+        if resp.status ~= 200 then
+            return { success = false, error = "getUploadURLExternal failed (HTTP "
+                .. tostring(resp.status) .. ", file " .. tostring(i) .. "): "
+                .. truncate(tostring(resp.body), 400) }
+        end
+        local data = json_decode_safe(resp.body)
+        if not data or not data.ok or not data.upload_url or not data.file_id then
+            return { success = false, error = "getUploadURLExternal error (file "
+                .. tostring(i) .. "): "
+                .. tostring(data and data.error or "malformed response") }
+        end
+
+        local up = animus.http_upload(data.upload_url, {
+            timeout = 120,
+            file = { path = f.path, mime = f.mime or "application/octet-stream" }
+        })
+        if up.status ~= 200 then
+            return { success = false, error = "byte upload failed (HTTP "
+                .. tostring(up.status) .. ", file " .. tostring(i) .. "): "
+                .. truncate(tostring(up.body or up.error), 400) }
+        end
+
+        entries[#entries + 1] = {
+            file_id = data.file_id,
+            title = (f.alt_text and f.alt_text ~= "") and f.alt_text or filename
+        }
+    end
+
+    local comp = { files = entries, channel_id = channel }
+    if text ~= "" then comp.initial_comment = text end
+    local resp = api_post(pid, "files.completeUploadExternal", comp)
+    if resp.status ~= 200 then
+        return { success = false, error = "completeUploadExternal failed (HTTP "
+            .. tostring(resp.status) .. "): " .. truncate(tostring(resp.body), 400) }
+    end
+    local data = json_decode_safe(resp.body)
+    if not data or not data.ok then
+        return { success = false, error = "completeUploadExternal: "
+            .. tostring(data and data.error or "unknown") }
+    end
+
+    return {
+        success = true,
+        channel_id = channel,
+        output = "Media message sent to " .. channel
+            .. " (" .. tostring(#entries) .. " file(s))"
+    }
+end
+
+-- ---------------------------------------------------------------------------
 -- Registration
 -- ---------------------------------------------------------------------------
 
@@ -777,20 +950,27 @@ animus.register_channel({
     actions = {
         "post", "reply", "browse", "search", "react",
         "get_channel", "list_channels", "list_members",
-        "delete", "edit", "auth_test"
+        "delete", "edit", "auth_test", "send_media"
     },
     schema = {
         post = {
             { name = "channel_id", type = "string", required = true, description = "Channel ID (e.g. C01234567)" },
             { name = "content", type = "string", required = true, description = "Message text" },
             { name = "thread_ts", type = "string", required = false, description = "Parent message timestamp (for threaded reply)" },
-            { name = "blocks", type = "array", required = false, description = "Block Kit payload (Phase 3)" }
+            { name = "blocks", type = "array", required = false, description = "Block Kit payload (Phase 3)" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — rendered as a Block Kit card (explicit blocks wins); url-only degrades to a plain link" }
         },
         reply = {
             { name = "channel_id", type = "string", required = true, description = "Channel ID" },
             { name = "thread_ts", type = "string", required = false, description = "Timestamp of the message to reply to (thread reply); omit for a top-level response" },
             { name = "content", type = "string", required = true, description = "Reply text" },
-            { name = "broadcast", type = "boolean", required = false, description = "Show reply in channel (not just thread)" }
+            { name = "broadcast", type = "boolean", required = false, description = "Show reply in channel (not just thread)" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — rendered as a Block Kit card; url-only degrades to a plain link" }
+        },
+        send_media = {
+            { name = "channel_id", type = "string", required = true, description = "Channel ID (e.g. C01234567)" },
+            { name = "files", type = "array", required = true, description = "Media attachments: [{ref: 'media://<sha256>', path?, alt_text?}] — vault refs or dataDir-scoped paths; kernel resolves to _media_files (up to 10 files, external upload flow)" },
+            { name = "text", type = "string", required = false, description = "Message text (posted as initial comment with the files)" }
         },
         browse = {
             { name = "channel_id", type = "string", required = true, description = "Channel ID" },
@@ -854,6 +1034,7 @@ animus.register_channel({
         elseif action == "delete" then return do_delete(args)
         elseif action == "edit" then return do_edit(args)
         elseif action == "auth_test" then return do_auth_test(args)
+        elseif action == "send_media" then return do_send_media(args)
         else return { success = false, error = "unknown action: " .. tostring(action) }
         end
     end

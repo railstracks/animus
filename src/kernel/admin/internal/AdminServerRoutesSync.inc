@@ -154,4 +154,263 @@
             callback(drogon::HttpResponse::newHttpJsonResponse(out));
         },
         {drogon::Get});
+
+    // ------------------------------------------------------------------
+    // Federation identity + peer public-key exchange (#182, #273)
+    // ------------------------------------------------------------------
+    // GET /api/v1/sync/identity — this node's id + X25519 public key.
+    drogon::app().registerHandler(
+        "/api/v1/sync/identity",
+        [](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            (void)req;
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            if (!srv->m_nodeIdentity) {
+                SendJsonError(callback, "node identity not available (load failed at boot?)",
+                              drogon::k503ServiceUnavailable);
+                return;
+            }
+            Json::Value out(Json::objectValue);
+            if (srv->m_syncStore)
+                out["node_id"] = Json::UInt64(srv->m_syncStore->LocalNodeId());
+            out["public_key"] = BytesToHex(srv->m_nodeIdentity->public_key.data(), 32);
+            callback(drogon::HttpResponse::newHttpJsonResponse(out));
+        },
+        {drogon::Get});
+
+    // GET /api/v1/sync/peers/keys — all ingested peer public keys.
+    drogon::app().registerHandler(
+        "/api/v1/sync/peers/keys",
+        [](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            (void)req;
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            if (!srv->m_configStore) {
+                SendJsonError(callback, "config store not available",
+                              drogon::k503ServiceUnavailable);
+                return;
+            }
+            Json::Value list(Json::arrayValue);
+            const std::string prefix = "federation.node_keys.";
+            for (const auto& [key, value] : srv->m_configStore->GetAll("")) {
+                if (key.rfind(prefix, 0) != 0) continue;
+                Json::Value j(Json::objectValue);
+                j["node_id"] = key.substr(prefix.size());
+                j["public_key"] = value;
+                list.append(j);
+            }
+            Json::Value out(Json::objectValue);
+            out["peers"] = list;
+            callback(drogon::HttpResponse::newHttpJsonResponse(out));
+        },
+        {drogon::Get});
+
+    // POST /api/v1/sync/peers/keys — ingest one peer public key
+    // body: { "node_id": "...", "public_key": "<64 hex>" }.
+    drogon::app().registerHandler(
+        "/api/v1/sync/peers/keys",
+        [](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            if (!srv->m_configStore) {
+                SendJsonError(callback, "config store not available",
+                              drogon::k503ServiceUnavailable);
+                return;
+            }
+            auto body = req->getJsonObject();
+            if (!body || !body->isMember("node_id") || !body->isMember("public_key")) {
+                SendJsonError(callback, "body must hold node_id and public_key",
+                              drogon::k400BadRequest);
+                return;
+            }
+            const std::string nodeId = (*body)["node_id"].asString();
+            const std::string pubHex = (*body)["public_key"].asString();
+            std::array<unsigned char, 32> pub{};
+            if (nodeId.empty() || !HexToBytes32(pubHex, pub)) {
+                SendJsonError(callback,
+                              "node_id must be non-empty; public_key must be 64 hex chars",
+                              drogon::k400BadRequest);
+                return;
+            }
+            std::string err;
+            if (!StorePeerNodeKey(*srv->m_configStore, nodeId, pub, err)) {
+                SendJsonError(callback, err, drogon::k400BadRequest);
+                return;
+            }
+            Json::Value out(Json::objectValue);
+            out["stored"] = true;
+            out["node_id"] = nodeId;
+            callback(drogon::HttpResponse::newHttpJsonResponse(out));
+        },
+        {drogon::Post});
+
+    // ------------------------------------------------------------------
+    // #276: federation key ceremonies (owner-triggered, v1). These ride
+    // the standard bearer-token filter like every other /api route — the
+    // admin credential IS the owner trigger per the design's decision 4.
+    // ------------------------------------------------------------------
+    auto fedCeremonyCtx = [](AdminServer* srv,
+                             FederationKeys::CeremonyContext& ctx) -> bool {
+        if (!srv->m_federationKeys || !srv->m_nodeIdentity || !srv->m_syncStore ||
+            !srv->m_configStore || !srv->m_apiRuntime || !srv->m_apiRuntime->vault())
+            return false;
+        ctx.keys = srv->m_federationKeys;
+        ctx.vault = srv->m_apiRuntime->vault();
+        ctx.registry = srv->m_configStore;
+        ctx.self = srv->m_nodeIdentity;
+        ctx.selfNodeId = std::to_string(srv->m_syncStore->LocalNodeId());
+        return true;
+    };
+
+    // POST /api/v1/sync/federation/approve — {node_id, public_key}
+    // Join: register the member + seal the current-epoch DEK to its key.
+    // First ceremony anywhere: establishes epoch 1 (vault rows re-sealed).
+    drogon::app().registerHandler(
+        "/api/v1/sync/federation/approve",
+        [fedCeremonyCtx](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            FederationKeys::CeremonyContext ctx;
+            if (!fedCeremonyCtx(srv, ctx)) {
+                SendJsonError(callback, "federation key ceremony surface not available",
+                              drogon::k503ServiceUnavailable);
+                return;
+            }
+            auto body = req->getJsonObject();
+            if (!body || !body->isMember("node_id") || !body->isMember("public_key")) {
+                SendJsonError(callback, "body must hold node_id and public_key",
+                              drogon::k400BadRequest);
+                return;
+            }
+            const std::string nodeId = (*body)["node_id"].asString();
+            std::array<unsigned char, 32> pub{};
+            if (nodeId.empty() || !HexToBytes32((*body)["public_key"].asString(), pub)) {
+                SendJsonError(callback,
+                              "node_id must be non-empty; public_key must be 64 hex chars",
+                              drogon::k400BadRequest);
+                return;
+            }
+            std::string err;
+            const int64_t epoch =
+                srv->m_federationKeys->RunApproveNodeCeremony(ctx, nodeId, pub, err);
+            if (epoch < 0) {
+                SendJsonError(callback, err, drogon::k500InternalServerError);
+                return;
+            }
+            Json::Value out(Json::objectValue);
+            out["approved"] = nodeId;
+            out["epoch"] = Json::Int64(epoch);
+            callback(drogon::HttpResponse::newHttpJsonResponse(out));
+        },
+        {drogon::Post});
+
+    // POST /api/v1/sync/federation/revoke — {node_id}
+    // Leave: drop the member's registry row + envelopes, rotate to epoch
+    // N+1 with a fresh DEK, re-seal to remaining members only. Honest
+    // boundary: restores exclusivity going forward; does not un-read.
+    drogon::app().registerHandler(
+        "/api/v1/sync/federation/revoke",
+        [fedCeremonyCtx](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            FederationKeys::CeremonyContext ctx;
+            if (!fedCeremonyCtx(srv, ctx)) {
+                SendJsonError(callback, "federation key ceremony surface not available",
+                              drogon::k503ServiceUnavailable);
+                return;
+            }
+            auto body = req->getJsonObject();
+            if (!body || !body->isMember("node_id")) {
+                SendJsonError(callback, "body must hold node_id",
+                              drogon::k400BadRequest);
+                return;
+            }
+            const std::string nodeId = (*body)["node_id"].asString();
+            if (nodeId.empty()) {
+                SendJsonError(callback, "node_id must be non-empty",
+                              drogon::k400BadRequest);
+                return;
+            }
+            std::string err;
+            const int64_t epoch =
+                srv->m_federationKeys->RunRevokeNodeCeremony(ctx, nodeId, err);
+            if (epoch < 0) {
+                SendJsonError(callback, err, drogon::k500InternalServerError);
+                return;
+            }
+            Json::Value out(Json::objectValue);
+            out["revoked"] = nodeId;
+            out["epoch"] = Json::Int64(epoch);
+            callback(drogon::HttpResponse::newHttpJsonResponse(out));
+        },
+        {drogon::Post});
+
+    // GET /api/v1/sync/federation/status — epoch state + membership.
+    drogon::app().registerHandler(
+        "/api/v1/sync/federation/status",
+        [fedCeremonyCtx](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            (void)req;
+            AdminServer* srv = g_activeAdminServer.load();
+            if (!srv) { SendServerNotActive(callback); return; }
+            if (!srv->m_federationKeys) {
+                SendJsonError(callback, "federation keys not available",
+                              drogon::k503ServiceUnavailable);
+                return;
+            }
+            Json::Value out(Json::objectValue);
+            out["node_id"] = srv->m_syncStore
+                ? Json::UInt64(srv->m_syncStore->LocalNodeId())
+                : Json::Value();
+            const bool armed = srv->m_apiRuntime && srv->m_apiRuntime->vault() &&
+                               srv->m_apiRuntime->vault()->HasFederationDek();
+            out["dek_armed"] = armed;
+            if (armed)
+                out["armed_epoch"] =
+                    Json::Int64(srv->m_apiRuntime->vault()->FederationEpoch());
+            int64_t maxEpoch = 0;
+            if (srv->m_federationKeys->MaxEpoch(&maxEpoch))
+                out["max_envelope_epoch"] = Json::Int64(maxEpoch);
+            if (armed && srv->m_federationKeys->MaxEpoch(&maxEpoch) &&
+                maxEpoch > srv->m_apiRuntime->vault()->FederationEpoch()) {
+                out["state"] = "locked_out";
+                out["note"] = "peers hold a newer epoch — awaiting key ceremony";
+            } else if (!armed && srv->m_federationKeys->MaxEpoch()) {
+                out["state"] = "awaiting_key_ceremony";
+            } else {
+                out["state"] = armed ? "active" : "single_node";
+            }
+            Json::Value members(Json::arrayValue);
+            if (srv->m_configStore) {
+                const std::string prefix = "federation.node_keys.";
+                for (const auto& [key, value] : srv->m_configStore->GetAll("")) {
+                    if (key.rfind(prefix, 0) != 0) continue;
+                    Json::Value m(Json::objectValue);
+                    m["node_id"] = key.substr(prefix.size());
+                    m["public_key"] = value;
+                    members.append(m);
+                }
+            }
+            out["members"] = members;
+            std::vector<FederationKeys::EnvelopeRow> envelopes;
+            std::string listErr;
+            Json::Value envList(Json::arrayValue);
+            if (srv->m_federationKeys->ListEnvelopes(envelopes, listErr)) {
+                for (const auto& e : envelopes) {
+                    Json::Value j(Json::objectValue);
+                    j["epoch"] = Json::Int64(e.epoch);
+                    j["target_node"] = e.targetNode;
+                    j["source_node"] = e.sourceNode;
+                    envList.append(j);   // ciphertext never emitted
+                }
+            }
+            out["envelopes"] = envList;
+            callback(drogon::HttpResponse::newHttpJsonResponse(out));
+        },
+        {drogon::Get});
 }

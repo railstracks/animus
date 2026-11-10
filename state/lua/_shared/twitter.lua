@@ -44,6 +44,46 @@ local function cfg_key(platform_id, field)
     return "channels." .. platform_id .. "." .. field
 end
 
+--- Credential-lineage stamp (#48): digest of client_id|client_secret — the
+--- OAuth client this token lineage was granted under. Cached tokens carry
+--- the stamp; a client rotation drops them before any use. Pure-Lua djb2
+--- (no crypto primitive in the channel-Lua sandbox; the stamp lives beside
+--- the secret it derives from and unlocks nothing on its own).
+local function cred_stamp(platform_id)
+    local mat = tostring(config.get(cfg_key(platform_id, "client_id")) or "") .. "|" ..
+        tostring(config.get(cfg_key(platform_id, "client_secret")) or "")
+    local h = 5381
+    for i = 1, #mat do
+        h = (h * 33 + string.byte(mat, i)) % 4294967296
+    end
+    return string.format("%08x", h)
+end
+
+--- Drop cached tokens minted under a different credential lineage (#48).
+--- Un-stamped caches (pre-#48) drop once on first contact — since this
+--- adapter has no stored re-auth material, that failure is loud: the
+--- operator re-runs OAuth (correct; silent cross-account use is the bug
+--- this prevents). user_id/username drop too — identity-derived state.
+local function cache_lineage_check(platform_id)
+    local stamp_key = cfg_key(platform_id, "cred_stamp")
+    local stored = config.get(stamp_key)
+    local current = cred_stamp(platform_id)
+    if stored and stored ~= "" then
+        if stored == current then return end
+        log.warn("[twitter] credential rotation detected for " .. platform_id ..
+            " — dropping cached OAuth tokens from the old lineage (#48)")
+    else
+        log.info("[twitter] no lineage stamp on cached tokens for " .. platform_id ..
+            " — dropping them once (one-time #48 migration; re-run OAuth)")
+    end
+    config.set(cfg_key(platform_id, "access_token"), "")
+    config.set(cfg_key(platform_id, "refresh_token"), "")
+    config.set(cfg_key(platform_id, "token_expires"), "0")
+    config.set(cfg_key(platform_id, "user_id"), "")
+    config.set(cfg_key(platform_id, "username"), "")
+    config.set(stamp_key, current)
+end
+
 --- Get the tier for an instance (defaults to "free").
 local function get_tier(platform_id)
     local tier = config.get(cfg_key(platform_id, "tier"))
@@ -66,7 +106,10 @@ end
 -- Returns reads_used, writes_used (after potential reset).
 local function monthly_reset_check(platform_id)
     local now = os.time()
-    local reset_ts = tonumber(config.get(cfg_key(platform_id, "counter_reset")) or "0")
+    -- #255: config.get returns "" for unset keys (never nil) — `or "0"`
+    -- never fires on ""; tonumber("") is nil and the comparison below
+    -- crashed the whole post path on fresh instances. Nil-floored form.
+    local reset_ts = tonumber(config.get(cfg_key(platform_id, "counter_reset"))) or 0
 
     -- Simple month rollover: if current month != stored month
     -- os.date with ! prefix gives UTC
@@ -80,8 +123,8 @@ local function monthly_reset_check(platform_id)
         return 0, 0
     end
 
-    local reads_used  = tonumber(config.get(cfg_key(platform_id, "reads_used"))  or "0")
-    local writes_used = tonumber(config.get(cfg_key(platform_id, "writes_used")) or "0")
+    local reads_used  = tonumber(config.get(cfg_key(platform_id, "reads_used")))  or 0
+    local writes_used = tonumber(config.get(cfg_key(platform_id, "writes_used"))) or 0
     return reads_used, writes_used
 end
 
@@ -142,8 +185,9 @@ local refresh_token_fn
 -- Returns the access_token string on success, nil + error on failure.
 -- Checks cache first; if expired, attempts refresh.
 local function get_token(platform_id)
+    cache_lineage_check(platform_id)  -- #48: rotation guard before any cache use
     local token  = config.get(cfg_key(platform_id, "access_token"))
-    local expires = tonumber(config.get(cfg_key(platform_id, "token_expires")) or "0")
+    local expires = tonumber(config.get(cfg_key(platform_id, "token_expires"))) or 0
     local now = os.time()
 
     -- Token present and not expiring within 5 minutes

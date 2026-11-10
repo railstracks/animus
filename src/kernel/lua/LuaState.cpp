@@ -1,5 +1,6 @@
 #include "animus_kernel/lua/LuaState.h"
 #include "animus_kernel/lua/LuaToolHandler.h"
+#include "animus_kernel/lua/HttpUpload.h"
 #include "animus_kernel/tools/ToolRegistry.h"
 #include "animus_kernel/tools/HttpClient.h"
 #include "animus_kernel/AgentConfigStore.h"
@@ -7,6 +8,8 @@
 #include <json/json.h>
 #include <json/writer.h>
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <sstream>
 #include <iostream>
 #include <algorithm>
@@ -502,6 +505,198 @@ int LuaHttpPatch(lua_State* L) {
     HttpClient::Response resp = client.Execute(req);
     PushHttpResponse(L, resp);
     return 1;
+}
+
+// --- animus.http_upload / animus.sleep (#159 outbound media) ---
+
+static int PushUploadFailure(lua_State* L, const std::string& err) {
+    lua_newtable(L);
+    lua_pushinteger(L, 0);
+    lua_setfield(L, -2, "status");
+    lua_pushstring(L, err.c_str());
+    lua_setfield(L, -2, "body");
+    lua_pushstring(L, err.c_str());
+    lua_setfield(L, -2, "error");
+    return 1;
+}
+
+// Kernel-side upload seam: file bytes are read and composed here, never in
+// the Lua sandbox (the http_post body bridge is not binary-safe). Paths must
+// live under the state's configured upload root — default-deny when unset.
+// Two modes:
+//   raw:       { file = {path, mime} }                     body = file bytes
+//   multipart: { fields = {k=v}, files = {{path, field,    composed
+//               filename, mime}, ...} }                    multipart body
+// Operational failures return {status=0, error=...} so adapter error
+// paths handle them like any failed request.
+static int LuaHttpUpload(lua_State* L) {
+    if (g_activeState == nullptr) {
+        return luaL_error(L, "no active LuaState for upload");
+    }
+    const char* url = luaL_checkstring(L, 1);
+    if (!lua_istable(L, 2)) {
+        return luaL_error(L, "http_upload expects (url, options)");
+    }
+    HttpClient& client = g_activeState->GetHttpClient();
+    if (!client.IsUrlAllowed(url)) {
+        return luaL_error(L, "URL blocked by SSRF protection: %s", url);
+    }
+
+    const std::string uploadRoot = g_activeState->GetUploadRoot();
+    std::vector<std::filesystem::path> roots;
+    if (!uploadRoot.empty()) roots.emplace_back(uploadRoot);
+
+    HttpClient::Request req;
+    req.method = "POST";
+    req.url = url;
+
+    lua_getfield(L, 2, "headers");
+    if (lua_istable(L, -1)) {
+        lua_pushnil(L);
+        while (lua_next(L, -2) != 0) {
+            const char* key = luaL_checkstring(L, -2);
+            const char* val = luaL_checkstring(L, -1);
+            req.headers[key] = val;
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "timeout");
+    if (lua_isinteger(L, -1)) {
+        req.timeout_seconds = static_cast<int>(lua_tointeger(L, -1));
+    }
+    lua_pop(L, 1);
+
+    std::vector<std::pair<std::string, std::string>> fields;
+    lua_getfield(L, 2, "fields");
+    if (lua_istable(L, -1)) {
+        lua_pushnil(L);
+        while (lua_next(L, -2) != 0) {
+            const char* key = luaL_checkstring(L, -2);
+            const char* val = luaL_checkstring(L, -1);
+            fields.emplace_back(key, val);
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    // raw mode: file = {path, mime}
+    lua_getfield(L, 2, "file");
+    const bool hasRawFile = lua_istable(L, -1);
+    if (hasRawFile) {
+        lua_getfield(L, -1, "path");
+        const char* pathStr = luaL_checkstring(L, -1);
+        lua_pop(L, 1);
+        lua_getfield(L, -1, "mime");
+        std::string mime = lua_isstring(L, -1)
+                               ? lua_tostring(L, -1)
+                               : "application/octet-stream";
+        lua_pop(L, 1);
+        lua_pop(L, 1);  // file table
+
+        if (roots.empty()) {
+            return PushUploadFailure(
+                L, "uploads not configured on this Lua state");
+        }
+        const std::filesystem::path p(pathStr);
+        if (!PathWithinRoots(p, roots)) {
+            return PushUploadFailure(
+                L, "path outside upload root: " + p.string());
+        }
+        std::string bytes, err;
+        if (!ReadFileBytes(p, kUploadByteCap, bytes, err)) {
+            return PushUploadFailure(L, "upload read failed: " + err);
+        }
+        req.body = std::move(bytes);
+        if (req.headers.find("Content-Type") == req.headers.end()) {
+            req.headers["Content-Type"] = mime;
+        }
+    } else {
+        lua_pop(L, 1);  // non-table (nil)
+    }
+
+    // multipart mode: files = { {path, field, filename, mime}, ... }
+    if (!hasRawFile) {
+        std::vector<UploadFilePart> parts;
+        lua_getfield(L, 2, "files");
+        if (!lua_istable(L, -1)) {
+            return PushUploadFailure(
+                L,
+                "http_upload requires file={path,mime} or files={...}");
+        }
+        const int len = static_cast<int>(lua_rawlen(L, -1));
+        for (int i = 1; i <= len; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (!lua_istable(L, -1)) {
+                return PushUploadFailure(
+                    L, "files[" + std::to_string(i) + "] must be a table");
+            }
+            lua_getfield(L, -1, "path");
+            const char* pathStr = luaL_checkstring(L, -1);
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "field");
+            std::string field = lua_isstring(L, -1)
+                                    ? lua_tostring(L, -1)
+                                    : "file";
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "filename");
+            std::string filename =
+                lua_isstring(L, -1)
+                    ? lua_tostring(L, -1)
+                    : std::filesystem::path(pathStr).filename().string();
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "mime");
+            std::string mime = lua_isstring(L, -1)
+                                   ? lua_tostring(L, -1)
+                                   : "application/octet-stream";
+            lua_pop(L, 1);
+            lua_pop(L, 1);  // entry
+
+            if (!PartHeaderSafe(field) || !PartHeaderSafe(filename)) {
+                return PushUploadFailure(
+                    L, "unsafe field/filename (CR/LF/quote rejected)");
+            }
+            if (roots.empty()) {
+                return PushUploadFailure(
+                    L, "uploads not configured on this Lua state");
+            }
+            const std::filesystem::path p(pathStr);
+            if (!PathWithinRoots(p, roots)) {
+                return PushUploadFailure(
+                    L, "path outside upload root: " + p.string());
+            }
+            std::string bytes, err;
+            if (!ReadFileBytes(p, kUploadByteCap, bytes, err)) {
+                return PushUploadFailure(L, "upload read failed: " + err);
+            }
+            parts.push_back({std::move(field), std::move(filename),
+                             std::move(mime), std::move(bytes)});
+        }
+        lua_pop(L, 1);  // files table
+
+        const std::string boundary = ChooseBoundary(fields, parts);
+        if (boundary.empty()) {
+            return PushUploadFailure(
+                L, "failed to choose a collision-free multipart boundary");
+        }
+        std::string contentType;
+        req.body = BuildMultipartBody(fields, parts, boundary, contentType);
+        req.headers["Content-Type"] = contentType;
+    }
+
+    HttpClient::Response resp = client.Execute(req);
+    PushHttpResponse(L, resp);
+    return 1;
+}
+
+// Bounded kernel-side sleep (max 10s per call) for upload-processed
+// polling — the sandbox has no blocking primitive of its own.
+static int LuaSleep(lua_State* L) {
+    const lua_Integer ms = luaL_optinteger(L, 1, 0);
+    const lua_Integer capped = (ms > 10000) ? 10000 : ((ms < 0) ? 0 : ms);
+    std::this_thread::sleep_for(std::chrono::milliseconds(capped));
+    return 0;
 }
 
 // --- animus.register_tool / register_interface / register_social ---
@@ -1307,6 +1502,15 @@ void LuaState::SetupHttpClient() {
     // http_patch
     lua_pushcfunction(m_L, LuaHttpPatch);
     lua_setfield(m_L, -2, "http_patch");
+
+    // http_upload (#159 outbound media): kernel-side file reads + multipart
+    // composition; bytes never cross into the Lua sandbox.
+    lua_pushcfunction(m_L, LuaHttpUpload);
+    lua_setfield(m_L, -2, "http_upload");
+
+    // sleep: bounded (<=10s) kernel-side pause, for upload-processed polling
+    lua_pushcfunction(m_L, LuaSleep);
+    lua_setfield(m_L, -2, "sleep");
 
     // Store the animus table on the registry for later addition of register_*
     int animusRef = luaL_ref(m_L, LUA_REGISTRYINDEX);

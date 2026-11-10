@@ -6,6 +6,7 @@
 #include <memory>
 
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 
@@ -278,6 +279,387 @@ void TestWebchatCardRender() {
     unlink(dbPath.c_str());
 }
 
+// ---------------------------------------------------------------------------
+// #173: the dispatch-metadata emission contract, driven with the REAL emit
+// shapes from every adapter's dispatch site (audit Nov 1). The parse seam
+// is what stands between adapter emission and the author/speaker-header
+// lane — this pins each adapter's actual shape + the fallback/priority
+// rules. Audit correction vs the Oct 13 table: discord, bluesky (wall +
+// chat pollers), irc, vk, whatsapp, telegram now emit; twitter/mastodon
+// are tool-browse only (no inbound push lane — emission N/A).
+// ---------------------------------------------------------------------------
+void TestDispatchMetadataEmission() {
+    std::cerr << "  [ChannelContext] #173 dispatch metadata emission...\n";
+
+    auto parse = [](const std::string& meta, const std::string& dflt) {
+        ChannelArrival a;
+        a.delivery = "auto";
+        ParseDispatchMetadata(meta, dflt, a);
+        return a;
+    };
+
+    // bluesky wall (ChannelManager notif poller): @handle + DID
+    {
+        auto a = parse(R"({"message_type":"wall","origin":{"user":"@mrsommer","user_id":"did:plc:abc","channel":"thread"},"post_id":"at://did:plc:abc/app.bsky.feed.post/3k","thread_root_id":"at://did:plc:abc/app.bsky.feed.post/3k"})",
+                       "wall");
+        Assert(a.author_handle == "@mrsommer" && a.author_id == "did:plc:abc",
+               "#173 bluesky wall: handle + DID land");
+        Assert(a.message_type == "wall" && a.thread_root_id == "at://did:plc:abc/app.bsky.feed.post/3k",
+               "#173 bluesky wall: type + thread root preserved (post_id/peer_id come "
+               "from the server-resolved replyTarget, not metadata — unchanged by #173)");
+    }
+    // bluesky chat: delivery override "tool" sticks (groups — silence first-class)
+    {
+        auto a = parse(R"({"message_type":"chat","delivery":"tool","origin":{"user":"@sofia","user_id":"did:plc:sof","channel":"group chat with @a, @b"}})",
+                       "chat");
+        Assert(a.delivery == "tool", "#173 bluesky chat: tool delivery override");
+        Assert(a.author_handle == "@sofia", "#173 bluesky chat: handle lands");
+    }
+    // discord (gateway): username + snowflake + display
+    {
+        auto a = parse(R"({"origin":{"user":"kestrel","user_id":"111222333","user_display":"Kestrel","channel":"Direct Message"}})",
+                       "chat");
+        Assert(a.author_handle == "kestrel" && a.author_id == "111222333",
+               "#173 discord: username + snowflake land");
+        Assert(a.author_handle != "Kestrel", "#173 discord: user wins over user_display");
+        Assert(a.message_type == "chat", "#173 discord: default type applied");
+    }
+    // irc: soft identity — nick, no stable id (author_id stays empty)
+    {
+        auto a = parse(R"({"origin":{"user":"sofia","channel":"#animus"}})", "chat");
+        Assert(a.author_handle == "sofia" && a.author_id.empty(),
+               "#173 irc: nick lands, no fabricated id");
+    }
+    // vk: display name + stable fromId (#42 person-graph key)
+    {
+        auto a = parse(R"({"message_type":"chat","delivery":"tool","origin":{"user":"Ivan","user_id":"42"}})",
+                       "chat");
+        Assert(a.author_handle == "Ivan" && a.author_id == "42",
+               "#173 vk: display name + stable id land");
+    }
+    // whatsapp: push name (JID fallback) + bare JID
+    {
+        auto a = parse(R"({"message_type":"chat","delivery":"tool","origin":{"user":"Melvin","user_display":"Melvin","user_id":"491511234567890"}})",
+                       "chat");
+        Assert(a.author_handle == "Melvin" && a.author_id == "491511234567890",
+               "#173 whatsapp: push name + jid land");
+    }
+    // email: sender address is the identity
+    {
+        auto a = parse(R"({"message_type":"email","delivery":"tool","origin":{"user":"devex@agentmail.to","user_id":"devex@agentmail.to","channel":"report"}})",
+                       "wall");
+        Assert(a.author_handle == "devex@agentmail.to",
+               "#173 email: sender address lands");
+    }
+    // slack (socket mode): userName + userId
+    {
+        auto a = parse(R"({"message_type":"chat","delivery":"tool","origin":{"user":"sofia","user_id":"U0123","channel":"general"}})",
+                       "chat");
+        Assert(a.author_handle == "sofia" && a.author_id == "U0123",
+               "#173 slack: userName + userId land");
+    }
+    // nextcloud: actor name + actor id
+    {
+        auto a = parse(R"({"origin":{"user":"thomas","user_id":"thomas","channel":"Team talk"}})", "chat");
+        Assert(a.author_handle == "thomas" && a.author_id == "thomas",
+               "#173 nextcloud: actor lands");
+    }
+    // moltbook: from + from_agent id; "unknown" fallback is adapter-supplied
+    {
+        auto a = parse(R"({"message_type":"wall","delivery":"tool","origin":{"user":"buffett","user_display":"buffett","user_id":"agent:buffett"},"post_id":"p1","thread_root_id":"p1"})",
+                       "wall");
+        Assert(a.author_handle == "buffett" && a.author_id == "agent:buffett",
+               "#173 moltbook: from + agent id land");
+    }
+    // telegram (post-#173 emit): @username preferred, DisplayName fallback
+    {
+        auto a = parse(R"({"message_type":"chat","delivery":"tool","origin":{"user":"@mrsommer","user_display":"Melvin Sommer","user_id":"12345"}})",
+                       "chat");
+        Assert(a.author_handle == "@mrsommer" && a.author_id == "12345",
+               "#173 telegram: @username + numeric id land");
+        auto b = parse(R"({"origin":{"user":"Melvin Sommer","user_display":"Melvin Sommer","user_id":"12345"}})",
+                       "chat");
+        Assert(b.author_handle == "Melvin Sommer",
+               "#173 telegram: DisplayName fallback when no username");
+    }
+    // priority + fallback rules
+    {
+        // top-level author_handle wins over origin.user
+        auto a = parse(R"({"author_handle":"explicit","origin":{"user":"implicit"}})", "chat");
+        Assert(a.author_handle == "explicit", "#173: top-level author_handle wins");
+        // top-level author alias also works
+        auto b = parse(R"({"author":"alias-only"})", "chat");
+        Assert(b.author_handle == "alias-only", "#173: author alias maps");
+        // empty metadata: defaults, no author
+        auto c = parse("", "chat");
+        Assert(c.message_type == "chat" && c.author_handle.empty() &&
+                   c.author_id.empty() && c.delivery == "auto",
+               "#173: empty metadata → defaults, no fabricated author");
+        // message_id alias for source_message_id
+        auto d = parse(R"({"message_id":"mid-1"})", "wall");
+        Assert(d.source_message_id == "mid-1", "#173: message_id alias maps");
+        // root_id alias for thread_root_id
+        auto e = parse(R"({"root_id":"r1"})", "wall");
+        Assert(e.thread_root_id == "r1", "#173: root_id alias maps");
+    }
+    // queue-aggregate sender label (AuthorLabelFromMetadata)
+    {
+        Assert(AuthorLabelFromMetadata(R"({"author_handle":"@mrsommer"})") == "@mrsommer",
+               "#173 sender: top-level handle");
+        Assert(AuthorLabelFromMetadata(R"({"origin":{"user":"sofia"}})") == "sofia",
+               "#173 sender: origin.user fallback");
+        Assert(AuthorLabelFromMetadata("").empty(),
+               "#173 sender: empty metadata → empty label (bare concatenation)");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// #46: participants — presence in the context card. Store round-trip incl.
+// the guarded migration from a pre-#46 schema, seam parse, card render with
+// the large-conversation cap, and absent-feed = absent-line. Feed shipped:
+// bluesky group chats (members map already in the poll cycle); other
+// adapters feed as follow-ups (present-keys-only — no feed, no line).
+// ---------------------------------------------------------------------------
+void TestParticipantsCard() {
+    std::cerr << "  [ChannelContext] #46 participants card...\n";
+
+    // 1) migration: pre-#46 table (no participants column) gains it at store
+    //    construction via the guarded ALTER; all three readers round-trip it.
+    const auto dbPath = MakeTempDbPath();
+    {
+        SqliteDataStore dataStore(dbPath);
+        dataStore.Exec(
+            "CREATE TABLE channel_arrivals ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "session_key TEXT NOT NULL, agent_id TEXT NOT NULL, "
+            "channel_type TEXT NOT NULL DEFAULT '', "
+            "channel_name TEXT NOT NULL DEFAULT '', "
+            "platform_id TEXT NOT NULL DEFAULT '', "
+            "message_type TEXT NOT NULL DEFAULT '', "
+            "author_id TEXT NOT NULL DEFAULT '', "
+            "author_handle TEXT NOT NULL DEFAULT '', "
+            "delivery TEXT NOT NULL DEFAULT '', "
+            "peer_id TEXT NOT NULL DEFAULT '', "
+            "post_id TEXT NOT NULL DEFAULT '', "
+            "group_id TEXT NOT NULL DEFAULT '', "
+            "email_thread_id TEXT NOT NULL DEFAULT '', "
+            "source_message_id TEXT NOT NULL DEFAULT '', "
+            "reply_parent_id TEXT NOT NULL DEFAULT '', "
+            "thread_root_id TEXT NOT NULL DEFAULT '', "
+            "origin TEXT NOT NULL DEFAULT '', "
+            "reply_instructions TEXT NOT NULL DEFAULT '', "
+            "created_at_unix_ms INTEGER NOT NULL, "
+            "consumed INTEGER NOT NULL DEFAULT 0)");
+        ChannelContextStore store(&dataStore);  // EnsureSchema -> ALTER fires
+        ChannelArrival a = MakeArrival("channel:chat:bluesky:1", "agent-a", "m1");
+        a.participants =
+            R"([{"id":"did:plc:a","handle":"@sofia"},{"id":"did:plc:b","handle":"@devex","display":"Devex"}])";
+        store.AddArrival(a);
+        auto pending = store.PendingArrivals("channel:chat:bluesky:1", "agent-a");
+        Assert(pending.size() == 1 &&
+                   pending[0].participants.find("@sofia") != std::string::npos,
+               "#46 migration: guarded ALTER + PendingArrivals round-trip");
+        auto latest = store.LatestArrival("channel:chat:bluesky:1", "agent-a");
+        Assert(latest.has_value() &&
+                   latest->participants.find("@devex") != std::string::npos,
+               "#46 LatestArrival carries participants");
+        auto recent = store.RecentArrivals("channel:chat:bluesky:1", "agent-a", 5);
+        Assert(recent.size() == 1 &&
+                   recent[0].participants.find("Devex") != std::string::npos,
+               "#46 RecentArrivals carries participants");
+    }
+    unlink(dbPath.c_str());
+
+    // 2) seam parse: meta["participants"] array -> compact JSON on the arrival
+    {
+        ChannelArrival a;
+        a.delivery = "auto";
+        ParseDispatchMetadata(
+            R"({"message_type":"chat","participants":[{"id":"did:plc:a","handle":"@sofia"},{"id":"did:plc:b","handle":"@devex","display":"Devex"}]})",
+            "chat", a);
+        Assert(a.participants.find("@sofia") != std::string::npos &&
+                   a.participants.find("Devex") != std::string::npos,
+               "#46 seam: participants parsed to compact JSON");
+        ChannelArrival b;
+        b.delivery = "auto";
+        ParseDispatchMetadata(R"({"message_type":"chat"})", "chat", b);
+        Assert(b.participants.empty(), "#46 seam: absent key -> empty field");
+    }
+
+    // 3) card render: own line, resolved names; cap for large conversations;
+    //    absent feed = absent line
+    Agent agent;
+    {
+        const auto dbPath2 = MakeTempDbPath();
+        SqliteDataStore dataStore(dbPath2);
+        ChannelContextStore store(&dataStore);
+        ChannelContextProvider provider(&store);
+        auto session = std::make_shared<Session>(
+            1001, SessionKey{"admin", "chat:bluesky:1", ""});
+        session->SetAgentId("main");
+        ChannelArrival small = MakeArrival(session->Key().ToString(), "main", "p1");
+        small.participants =
+            R"([{"id":"did:plc:a","handle":"@sofia"},{"id":"did:plc:b","handle":"@devex"}])";
+        store.AddArrival(small);
+        SessionAccess access(session, SessionAccessMode::ReadOnly);
+        auto block = provider.Provide(agent, access);
+        Assert(block.has_value() && block->content.find(
+                   "Participants: @sofia, @devex\n") != std::string::npos,
+               "#46 small list rendered in full on its own line");
+        unlink(dbPath2.c_str());
+    }
+    {
+        std::ostringstream pj;
+        pj << "[";
+        for (int i = 1; i <= 13; ++i) {
+            if (i > 1) pj << ",";
+            pj << R"({"id":"u)" << i << R"(", "handle":"@user)" << i << R"("})";
+        }
+        pj << "]";
+        const auto dbPath3 = MakeTempDbPath();
+        SqliteDataStore dataStore(dbPath3);
+        ChannelContextStore store(&dataStore);
+        ChannelContextProvider provider(&store);
+        auto session = std::make_shared<Session>(
+            1002, SessionKey{"admin", "chat:bluesky:2", ""});
+        session->SetAgentId("main");
+        ChannelArrival big = MakeArrival(session->Key().ToString(), "main", "p2");
+        big.participants = pj.str();
+        store.AddArrival(big);
+        SessionAccess access(session, SessionAccessMode::ReadOnly);
+        auto block = provider.Provide(agent, access);
+        Assert(block.has_value() && block->content.find(
+                   "(+1 more, 13 present)") != std::string::npos,
+               "#46 large list capped: 12 shown + count tail");
+        Assert(block.has_value() &&
+                   block->content.find("@user13,") == std::string::npos,
+               "#46 capped: the 13th member is not listed");
+        unlink(dbPath3.c_str());
+    }
+    {
+        const auto dbPath4 = MakeTempDbPath();
+        SqliteDataStore dataStore(dbPath4);
+        ChannelContextStore store(&dataStore);
+        ChannelContextProvider provider(&store);
+        auto session = std::make_shared<Session>(
+            1003, SessionKey{"admin", "chat:bluesky:3", ""});
+        session->SetAgentId("main");
+        store.AddArrival(MakeArrival(session->Key().ToString(), "main", "p3"));
+        SessionAccess access(session, SessionAccessMode::ReadOnly);
+        auto block = provider.Provide(agent, access);
+        Assert(block.has_value() && block->content.find("Participants:") ==
+                   std::string::npos,
+               "#46 absent feed -> no card line");
+        unlink(dbPath4.c_str());
+    }
+}
+
+void TestAttachmentsMetadata() {
+    std::cerr << "  [ChannelContext] attachments metadata (#158)...\n";
+    // Parse: attachments array in dispatch metadata lands on the arrival
+    {
+        ChannelArrival a = MakeArrival("channel:chat:discord:9", "agent-a", "m9");
+        ParseDispatchMetadata(
+            "{\"attachments\":[{\"url\":\"https://cdn.example.com/x.png\","
+            "\"kind\":\"image\",\"dedupe_key\":\"discord:1\"}]}",
+            "mention", a);
+        Assert(!a.attachments.empty(), "#158 attachments parsed to arrival");
+        Assert(a.attachments.find("cdn.example.com/x.png") != std::string::npos,
+               "attachment url preserved");
+        Assert(a.attachments.find("discord:1") != std::string::npos,
+               "dedupe key preserved");
+    }
+    // Round-trip: AddArrival -> PendingArrivals preserves attachments
+    {
+        const auto dbPath = MakeTempDbPath();
+        SqliteDataStore dataStore(dbPath);
+        ChannelContextStore store(&dataStore);
+        ChannelArrival a = MakeArrival("channel:chat:discord:10", "agent-a", "m10");
+        a.attachments = "[{\"ref\":\"media://abc123\",\"sha256\":\"abc123\","
+                        "\"kind\":\"image\",\"mime\":\"image/png\","
+                        "\"filename\":\"cat.png\",\"size\":1024}]";
+        store.AddArrival(a);
+        auto pending = store.PendingArrivals(a.session_key, a.agent_id);
+        Assert(!pending.empty(), "arrival pending");
+        Assert(pending[0].attachments == a.attachments,
+               "attachments round-trip preserved");
+        unlink(dbPath.c_str());
+    }
+    // Card render: refs + metadata render; failed acquisition renders loud
+    // (through the real read path: Provide() on a bound session —
+    // RenderArrival is private by design)
+    {
+        const auto dbPath = MakeTempDbPath();
+        SqliteDataStore dataStore(dbPath);
+        ChannelContextStore store(&dataStore);
+        ChannelContextProvider provider(&store);
+
+        auto session = std::make_shared<Session>(
+            1002, SessionKey{"admin", "ws_chat:43", ""});
+        session->SetAgentId("main");
+
+        ChannelArrival a = MakeArrival(session->Key().ToString(),
+                                      session->AgentId(), "m11");
+        a.attachments = "[{\"ref\":\"media://abc123\",\"kind\":\"image\","
+                        "\"mime\":\"image/png\",\"filename\":\"cat.png\","
+                        "\"size\":1048576,\"alt_text\":\"a cat\"},"
+                        "{\"ref\":\"media://def456\",\"kind\":\"image\","
+                        "\"mime\":\"image/jpeg\",\"filename\":\"chart.png\","
+                        "\"size\":2048,\"machine_description\":"
+                        "\"A bar chart of quarterly revenue.\","
+                        "\"describe_engine\":\"local-vlm\","
+                        "\"describe_model\":\"TestVLM 1B\"},"
+                        "{\"ref\":\"media://ghi789\",\"kind\":\"image\","
+                        "\"mime\":\"image/png\",\"filename\":\"late.png\","
+                        "\"size\":10,\"describe_error\":\"no engine\"},"
+                        "{\"url\":\"https://cdn.example.com/big.png\","
+                        "\"error\":\"size cap exceeded: 9999999 bytes > 10485760\"}]";
+        store.AddArrival(a);
+
+        Agent agent;
+        SessionAccess access(session, SessionAccessMode::ReadOnly);
+        auto block = provider.Provide(agent, access);
+        Assert(block.has_value(), "card rendered from pending arrival");
+        if (block.has_value()) {
+            Assert(block->content.find("Attachments:") != std::string::npos,
+                   "card shows attachments block");
+            Assert(block->content.find("media://abc123") != std::string::npos,
+                   "card shows ref");
+            Assert(block->content.find("image/png") != std::string::npos,
+                   "card shows mime");
+            Assert(block->content.find("cat.png") != std::string::npos,
+                   "card shows filename");
+            Assert(block->content.find("a cat") != std::string::npos,
+                   "card shows alt text");
+            Assert(block->content.find("(unavailable:") != std::string::npos,
+                   "card shows failure loud");
+            Assert(block->content.find("size cap exceeded") != std::string::npos,
+                   "failure reason named");
+            Assert(block->content.find("[machine description | "
+                       "engine=local-vlm model=TestVLM 1B]") !=
+                       std::string::npos,
+                   "#160 labeled machine description renders");
+            Assert(block->content.find(
+                       "A bar chart of quarterly revenue.") !=
+                       std::string::npos,
+                   "#160 description text renders");
+            Assert(block->content.find("[describe failed: no engine") !=
+                       std::string::npos,
+                   "#160 describe failure renders loud");
+            std::size_t labelCount = 0;
+            for (std::size_t pos =
+                     block->content.find("machine description");
+                 pos != std::string::npos;
+                 pos = block->content.find("machine description", pos + 1))
+                labelCount++;
+            Assert(labelCount == 1,
+                   "#160 undescribed attachments stay unlabeled (count=" +
+                       std::to_string(labelCount) + ")");
+        }
+        unlink(dbPath.c_str());
+    }
+}
+
 int main() {
     std::cerr << "[ChannelContextStoreTests]\n";
     TestAddAndPending();
@@ -287,6 +669,9 @@ int main() {
     TestReopenPersistence();
     TestKeyFormSeam();
     TestWebchatCardRender();
+    TestDispatchMetadataEmission();
+    TestParticipantsCard();
+    TestAttachmentsMetadata();
     if (g_failures == 0) {
         std::cerr << "  ALL PASSED\n";
         return 0;

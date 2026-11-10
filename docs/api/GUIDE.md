@@ -143,7 +143,7 @@ per-package cooldown, queueing rules: SANDBOX.md). The agent's reply is just act
 }]
 ```
 
-Longpoll instead? Give `poll: {method, params_template, cursor_path, interval_s}` — the supervisor
+Longpoll instead? Give `poll: {method, params_template, cursor_path, interval_s, body_format}` — the supervisor
 persists the cursor across restarts; if your feed can echo objects the agent itself created, filter
 them in `on_message` (CONNECTIONS.md, self-send guard).
 

@@ -299,6 +299,16 @@ struct AgentModelConfig {
     std::string embedding_model_path;  // resolved from dataDir / "models" / ...
     bool embedding_enabled{true};
 
+    // Image description (#160): auto-describe inbound images through a
+    // local VLM (default engine) or an explicitly configured cloud vision
+    // model. Cloud is strictly opt-in: provider AND model_id must both be
+    // set; channels additionally opt in via describe_engine=cloud.
+    bool describe_enabled{true};       // master switch for auto-describe
+    std::string describe_model_path;   // text-side VLM GGUF (main.cpp default)
+    std::string describe_mmproj_path;  // vision projector (mmproj) GGUF
+    std::string describe_provider;     // cloud: provider id ("" = cloud off)
+    std::string describe_model_id;     // cloud: vision model id
+
     // SOP server registries — remote servers for SOP discovery
     // Default: the official animus-sop registry. Additional servers can be configured.
     std::vector<std::string> sop_servers{"https://animus-sop.steadyfort.com"};

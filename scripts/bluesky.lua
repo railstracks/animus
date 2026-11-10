@@ -11,6 +11,7 @@
 -- Internal cached state (auto-managed):
 --   config.get("channels.bluesky:personal.access_jwt")
 --   config.get("channels.bluesky:personal.did")
+--   config.get("channels.bluesky:personal.cred_stamp")    -- #48 credential-lineage key
 -- ============================================================================
 
 local DEFAULT_PDS = "https://bsky.social"
@@ -95,6 +96,48 @@ local function get_pds(platform_id)
     return DEFAULT_PDS
 end
 
+--- Credential-lineage stamp (#48): a cheap digest of the CURRENT credential
+--- material (handle|app_password|pds). Token caches carry the stamp they were
+--- minted under; a credential rotation changes the stamp and cached tokens
+--- from the old lineage are dropped before any use. Pure-Lua djb2 — the
+--- channel-Lua sandbox has no crypto primitive, and the stamp lives in the
+--- same config store as the secret it derives from (it unlocks nothing on
+--- its own). Incident (Aug 31): a rotated app password left an old-identity
+--- refresh token live, and refreshSession kept minting fresh ACCESS tokens
+--- for the OLD identity — the cache never re-derived identity from current
+--- credentials.
+local function cred_stamp(platform_id)
+    local mat = tostring(config.get(cfg_key(platform_id, "handle")) or "") .. "|" ..
+        tostring(config.get(cfg_key(platform_id, "app_password")) or "") .. "|" ..
+        tostring(get_pds(platform_id) or "")
+    local h = 5381
+    for i = 1, #mat do
+        h = (h * 33 + string.byte(mat, i)) % 4294967296
+    end
+    return string.format("%08x", h)
+end
+
+--- Drop cached tokens minted under a different credential lineage (#48).
+--- Un-stamped caches (pre-#48) drop once on first contact — a one-time
+--- migration; this adapter recovers transparently via createSession.
+local function cache_lineage_check(platform_id)
+    local stamp_key = cfg_key(platform_id, "cred_stamp")
+    local stored = config.get(stamp_key)
+    local current = cred_stamp(platform_id)
+    if stored and stored ~= "" then
+        if stored == current then return end
+        log.warn("[bluesky] credential rotation detected for " .. platform_id ..
+            " — dropping cached tokens from the old lineage (#48)")
+    else
+        log.info("[bluesky] no lineage stamp on cached tokens for " .. platform_id ..
+            " — dropping them once (one-time #48 migration)")
+    end
+    config.set(cfg_key(platform_id, "access_jwt"), "")
+    config.set(cfg_key(platform_id, "refresh_jwt"), "")
+    config.set(cfg_key(platform_id, "did"), "")
+    config.set(stamp_key, current)
+end
+
 --- Forward declaration (refresh_auth defined below).
 local refresh_auth
 
@@ -129,6 +172,23 @@ local function try_refresh_session(platform_id)
         return nil
     end
 
+    -- #48: refresh mints tokens for whatever identity owns the refresh
+    -- token. If the session DID no longer matches the cached one, the
+    -- refresh is renewing a DIFFERENT account (the Aug 31 cross-account
+    -- posting path) — refuse, drop the cache, fall through to full re-auth
+    -- from current credentials.
+    if data.did then
+        local cached_did = config.get(cfg_key(platform_id, "did"))
+        if cached_did and cached_did ~= "" and cached_did ~= data.did then
+            log.error("[bluesky] refreshSession minted tokens for a different identity ("
+                .. tostring(data.did) .. " != cached " .. cached_did
+                .. ") — dropping cache, re-authenticating (#48)")
+            config.set(cfg_key(platform_id, "access_jwt"), "")
+            config.set(cfg_key(platform_id, "refresh_jwt"), "")
+            config.set(cfg_key(platform_id, "did"), "")
+            return nil
+        end
+    end
     -- Update cached tokens
     config.set(cfg_key(platform_id, "access_jwt"), data.accessJwt or "")
     config.set(cfg_key(platform_id, "refresh_jwt"), data.refreshJwt or "")
@@ -143,6 +203,7 @@ end
 -- Returns the accessJwt string on success, nil + error on failure.
 -- Tries: cached token → refresh session → full re-auth.
 local function authenticate(platform_id)
+    cache_lineage_check(platform_id)  -- #48: rotation guard before any cache use
     local jwt_key = cfg_key(platform_id, "access_jwt")
     local jwt = config.get(jwt_key)
     if jwt and jwt ~= "" and not is_jwt_expired(jwt) then
@@ -444,6 +505,196 @@ local function do_chat_messages(args)
 end
 
 --- Send a DM to a conversation.
+-- ---------------------------------------------------------------------------
+-- Rich-text facets (#36): ATProto links + hashtags as byte-range facets.
+--
+-- ATProto facet offsets are UTF-8 BYTE positions (byteStart inclusive,
+-- byteEnd exclusive, 0-based). Lua strings are byte arrays, so scanning is
+-- byte-native: span.s is 1-based inclusive, span.e is 1-based inclusive,
+-- and the facet index is { byteStart = s - 1, byteEnd = e }.
+--
+-- Deliberate deviations from the reference @atproto implementation:
+--   - ZWJ / VS16 do not terminate hashtag runs (rare inside tags; a facet
+--     spanning them is still accepted by the API).
+--   - A tag must contain at least one ASCII alnum OR any non-ASCII byte
+--     (keeps CJK tags working; may linkify pure-emoji tags the reference
+--     would skip — harmless and API-legal).
+-- ---------------------------------------------------------------------------
+
+local FACET_URL_TRAILING = {
+    [string.byte(".")] = true, [string.byte(",")] = true,
+    [string.byte(";")] = true, [string.byte(":")] = true,
+    [string.byte("!")] = true, [string.byte("?")] = true,
+    [string.byte(")")] = true, [string.byte("'")] = true,
+    [string.byte('"')] = true,
+}
+
+local function facet_is_space(b)
+    return b == 32 or b == 9 or b == 10 or b == 13
+end
+
+-- Bytes that continue a URL run: visible, not bracket, not quote.
+local function facet_url_byte(b)
+    if b == nil or b < 0x21 then return false end
+    return b ~= string.byte("<") and b ~= string.byte(">") and b ~= string.byte('"')
+end
+
+-- Bytes that continue a hashtag name: ASCII word chars or any UTF-8 byte.
+local function facet_tag_byte(b)
+    if b == nil then return false end
+    if b >= 0x80 then return true end
+    if b >= 0x30 and b <= 0x39 then return true end   -- 0-9
+    if b >= 0x41 and b <= 0x5a then return true end   -- A-Z
+    if b >= 0x61 and b <= 0x7a then return true end   -- a-z
+    return b == string.byte("_")
+end
+
+local function detect_url_spans(text)
+    local spans = {}
+    local i, n = 1, #text
+    while i <= n - 3 do
+        local rest
+        if text:sub(i, i + 7) == "https://" then
+            rest = i + 8
+        elseif text:sub(i, i + 6) == "http://" then
+            rest = i + 7
+        elseif text:sub(i, i + 3) == "www." then
+            rest = i + 4
+        end
+        if not rest then
+            i = i + 1
+        else
+            local boundary = (i == 1)
+            if not boundary then
+                local pb = text:byte(i - 1)
+                boundary = facet_is_space(pb) or FACET_URL_TRAILING[pb] or pb == string.byte("(")
+            end
+            if not boundary then
+                i = i + 1
+            else
+                local e = rest
+                while e <= n and facet_url_byte(text:byte(e)) do e = e + 1 end
+                while e > rest and FACET_URL_TRAILING[text:byte(e - 1)] do e = e - 1 end
+                if e > rest then
+                    table.insert(spans, { kind = "url", s = i, e = e - 1, value = text:sub(i, e - 1) })
+                    i = e
+                else
+                    i = i + 1
+                end
+            end
+        end
+    end
+    return spans
+end
+
+local function detect_tag_spans(text, url_spans)
+    local spans = {}
+    local i, n = 1, #text
+    while i <= n do
+        if text:byte(i) ~= string.byte("#") then
+            i = i + 1
+        else
+            local boundary = (i == 1)
+            if not boundary then
+                boundary = not facet_tag_byte(text:byte(i - 1))
+            end
+            if not boundary then
+                i = i + 1
+            else
+                local e = i + 1
+                while e <= n and facet_tag_byte(text:byte(e)) do e = e + 1 end
+                if e > i + 1 then
+                    local name = text:sub(i + 1, e - 1)
+                    local has_letter = name:match("%w") ~= nil or name:match("[\128-\255]") ~= nil
+                    local in_url = false
+                    for _, u in ipairs(url_spans) do
+                        if i >= u.s and i <= u.e then
+                            in_url = true
+                            break
+                        end
+                    end
+                    if has_letter and not in_url then
+                        table.insert(spans, { kind = "tag", s = i, e = e - 1, value = name })
+                    end
+                    i = e
+                else
+                    i = i + 1
+                end
+            end
+        end
+    end
+    return spans
+end
+
+local function build_facets(text)
+    if not text or text == "" then return {} end
+    local urls = detect_url_spans(text)
+    local tags = detect_tag_spans(text, urls)
+    local facets = {}
+    for _, sp in ipairs(urls) do
+        local uri = sp.value
+        if uri:sub(1, 4) == "www." then uri = "https://" .. uri end
+        table.insert(facets, {
+            index = { byteStart = sp.s - 1, byteEnd = sp.e },
+            features = { { ["$type"] = "app.bsky.richtext.facet#link", uri = uri } },
+        })
+    end
+    for _, sp in ipairs(tags) do
+        table.insert(facets, {
+            index = { byteStart = sp.s - 1, byteEnd = sp.e },
+            features = { { ["$type"] = "app.bsky.richtext.facet#tag", tag = sp.value } },
+        })
+    end
+    return facets
+end
+
+-- Canonical Markdown -> Bluesky plain text (#156). scripts/markdown.lua
+-- is Eval'd into the same per-agent VM and sets the `markdown` global;
+-- referenced at SEND time so standalone harnesses (which load only this
+-- adapter) keep working through the raw fallback. Facets attach to the
+-- RENDERED text — byte offsets must index the final string (#36).
+local function render_content(content)
+    if type(markdown) == "table" and type(markdown.render_bluesky) == "function" then
+        local ok, out = pcall(markdown.render_bluesky, content)
+        if ok and type(out) == "string" and out ~= "" then return out end
+        if log and log.warn then log.warn("[bluesky] markdown render failed; sending raw content") end
+    end
+    return content
+end
+
+local function attach_facets(record, text)
+    local facets = build_facets(text)
+    if #facets > 0 then
+        record.facets = facets
+    end
+end
+
+--- #157: link card helpers — markdown module guarded the same way as
+--- render_content. Degrade path: plain URL append.
+local function get_link_card(card_arg)
+    if not card_arg then return nil end
+    if type(markdown) == "table" and type(markdown.normalize_card) == "function" then
+        local ok, card, reason = pcall(markdown.normalize_card, card_arg)
+        if not ok then return nil, "link_card validation failed" end
+        if not card then return nil, reason end
+        return card
+    end
+    if type(card_arg) ~= "table" or type(card_arg.url) ~= "string"
+        or not card_arg.url:match("^https?://") then
+        return nil, "link_card.url is required and must be http(s)"
+    end
+    return card_arg
+end
+
+local function append_card_url(content, card)
+    if content:find(card.url, 1, true) then return content end
+    if type(markdown) == "table" and type(markdown.append_card) == "function" then
+        local ok, out = pcall(markdown.append_card, content, card)
+        if ok and type(out) == "string" and out ~= "" then return out end
+    end
+    return content .. "\n\n" .. card.url
+end
+
 local function do_chat_send(args)
     local pid = args.platform_id
     if not pid or pid == "" then
@@ -455,9 +706,19 @@ local function do_chat_send(args)
     if not args.content or args.content == "" then
         return { success = false, error = "content is required" }
     end
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    -- #157: chat messages degrade to URL-in-text (no external embed on the
+    -- chat surface); the URL facet auto-attaches from the rendered text.
+    if card then args.content = append_card_url(args.content, card) end
+    local rendered = render_content(args.content)
+    local message = { text = rendered }
+    attach_facets(message, rendered)
     local body = {
         convoId = args.convo_id,
-        message = { text = args.content }
+        message = message
     }
     local resp = auth_chat_post(pid, "/xrpc/chat.bsky.convo.sendMessage", body)
     if resp.status ~= 200 then
@@ -544,17 +805,42 @@ local function do_post(args)
         return do_reply(args)
     end
 
+    -- #157: validate + attach the card before any auth I/O (loud input
+    -- errors win over transport errors).
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card then args.content = append_card_url(args.content, card) end
+
     local did, err = ensure_auth(pid)
     if not did then
         return { success = false, error = err }
     end
+    local rendered = render_content(args.content)
 
     local record = {
         ["$type"] = "app.bsky.feed.post",
-        text = args.content,
+        text = rendered,
         createdAt = iso_now(),
         langs = args.langs or { "en" }
     }
+
+    attach_facets(record, rendered)
+    if card then
+        -- #157: app.bsky.embed.external rides the post record; the URL
+        -- facet attaches from the rendered text above. card.image (thumb)
+        -- needs a blob upload — #159's outbound-media lane; documented
+        -- degradation.
+        record.embed = {
+            ["$type"] = "app.bsky.embed.external",
+            external = {
+                uri = card.url,
+                title = card.title or "",
+                description = card.description or "",
+            },
+        }
+    end
 
     local resp = auth_post(pid, "/xrpc/com.atproto.repo.createRecord", {
         repo = did,
@@ -592,6 +878,13 @@ local function do_reply(args)
         return { success = false, error = "content is required for reply" }
     end
 
+    -- #157: validate + attach the card before any auth/parent-resolve I/O.
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card then args.content = append_card_url(args.content, card) end
+
     local did, err = ensure_auth(pid)
     if not did then
         return { success = false, error = err }
@@ -612,9 +905,11 @@ local function do_reply(args)
         end
     end
 
+    local rendered = render_content(args.content)
+
     local record = {
         ["$type"] = "app.bsky.feed.post",
-        text = args.content,
+        text = rendered,
         createdAt = iso_now(),
         langs = args.langs or { "en" },
         reply = {
@@ -622,6 +917,19 @@ local function do_reply(args)
             parent = { uri = args.post_id, cid = parent_cid }
         }
     }
+
+    attach_facets(record, rendered)
+    if card then
+        -- #157: same external embed on replies.
+        record.embed = {
+            ["$type"] = "app.bsky.embed.external",
+            external = {
+                uri = card.url,
+                title = card.title or "",
+                description = card.description or "",
+            },
+        }
+    end
 
     local resp = auth_post(pid, "/xrpc/com.atproto.repo.createRecord", {
         repo = did,
@@ -1039,6 +1347,121 @@ local function do_delete(args)
 end
 
 -- ---------------------------------------------------------------------------
+-- #159: outbound media — send_media (uploadBlob → embed by reference)
+-- ---------------------------------------------------------------------------
+
+--- Post text with media attachments. Phase 1 uploads each resolved file
+--- as a raw blob (com.atproto.repo.uploadBlob — synchronous, no
+--- processed-poll unlike mastodon); phase 2 creates the post record
+--- embedding the blob refs (app.bsky.embed.images). Alt text rides each
+--- image entry. File bytes never enter Lua — the kernel resolves files[]
+--- to _media_files descriptors (paths only) before dispatch.
+local function do_send_media(args)
+    local pid = args.platform_id
+    local media = args._media_files
+    if type(media) ~= "table" or #media == 0 then
+        return { success = false, error =
+            "no resolved attachments — pass files[] (kernel resolves to _media_files)" }
+    end
+    if #media > 4 then
+        return { success = false, error = "too many attachments: " .. tostring(#media)
+            .. " > 4 (per-post image limit)" }
+    end
+
+    local did, aerr = ensure_auth(pid)
+    if not did then return { success = false, error = aerr } end
+    local jwt = authenticate(pid)
+    if not jwt then
+        return { success = false, error = "authentication failed — check handle and app_password" }
+    end
+    local pds = get_pds(pid)
+
+    -- Phase 1: upload each file as a blob (raw body, blob's mime)
+    local function upload_blob(token, f)
+        return animus.http_upload(pds .. "/xrpc/com.atproto.repo.uploadBlob", {
+            headers = { ["Authorization"] = "Bearer " .. token },
+            timeout = 120,
+            file = { path = f.path, mime = f.mime or "application/octet-stream" }
+        })
+    end
+
+    local blobs = {}
+    for i, f in ipairs(media) do
+        local resp = upload_blob(jwt, f)
+        if is_expired_token(resp) then
+            local njwt = reauth(pid)
+            if not njwt then
+                return { success = false, error = "re-authentication failed during upload (file "
+                    .. tostring(i) .. ")" }
+            end
+            jwt = njwt
+            resp = upload_blob(jwt, f)
+        end
+        if resp.status ~= 200 then
+            local detail = tostring(resp.body or resp.error or "")
+            if #detail > 400 then detail = detail:sub(1, 400) end
+            return {
+                success = false,
+                error = "blob upload failed (" .. tostring(resp.status) .. ") on file "
+                    .. tostring(i) .. "/" .. tostring(#media) .. ": " .. detail
+            }
+        end
+        local pok, data = pcall(json.decode, resp.body)
+        if not pok or type(data) ~= "table" or type(data.blob) ~= "table"
+            or type(data.blob.ref) ~= "table" then
+            local detail = tostring(resp.body)
+            if #detail > 300 then detail = detail:sub(1, 300) end
+            return { success = false, error = "blob upload returned no blob ref (file "
+                .. tostring(i) .. "): " .. detail }
+        end
+        blobs[#blobs + 1] = data.blob
+    end
+
+    -- Phase 2: post with the images embed
+    local text = args.text or args.content or ""
+    local images = {}
+    for i, blob in ipairs(blobs) do
+        local entry = { image = blob }
+        local alt = media[i].alt_text
+        if alt and alt ~= "" then entry.alt = alt end
+        images[#images + 1] = entry
+    end
+
+    local rendered = render_content(text)
+    local record = {
+        ["$type"] = "app.bsky.feed.post",
+        text = rendered,
+        createdAt = iso_now(),
+        langs = args.langs or { "en" }
+    }
+    attach_facets(record, rendered)
+    record.embed = {
+        ["$type"] = "app.bsky.embed.images",
+        images = images
+    }
+
+    local resp = auth_post(pid, "/xrpc/com.atproto.repo.createRecord", {
+        repo = did,
+        collection = "app.bsky.feed.post",
+        record = record
+    })
+
+    if resp.status ~= 200 then
+        return { success = false, error = "post failed (" .. resp.status .. "): " .. tostring(resp.body) }
+    end
+
+    local ok, data = pcall(json.decode, resp.body)
+    if not ok then
+        return { success = true, output = resp.body }
+    end
+
+    return {
+        success = true,
+        output = json.encode({ uri = data.uri, cid = data.cid })
+    }
+end
+
+-- ---------------------------------------------------------------------------
 -- Registration
 -- ---------------------------------------------------------------------------
 
@@ -1046,17 +1469,19 @@ animus.register_channel({
     id = "bluesky",
     name = "Bluesky",
     capabilities = {"read", "write", "search"},
-    actions = {"post", "reply", "like", "browse", "search", "get_notifications", "view_replies", "delete", "heartbeat", "chat_list", "chat_messages", "chat_send", "chat_get_convo"},
+    actions = {"post", "reply", "like", "browse", "search", "get_notifications", "view_replies", "delete", "heartbeat", "chat_list", "chat_messages", "chat_send", "chat_get_convo", "send_media"},
     schema = {
         post = {
             { name = "content", type = "string", required = true, description = "Create a new root-level post (NOT a reply). Use 'reply' action to respond to another post." },
             { name = "visibility", type = "string", required = false, description = "Not used by Bluesky (always public)" },
-            { name = "langs", type = "array", required = false, description = "BCP-47 language codes (default: ['en'])" }
+            { name = "langs", type = "array", required = false, description = "BCP-47 language codes (default: ['en'])" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — app.bsky.embed.external on the post; image (thumb) degrades until #159's media lane" }
         },
         reply = {
             { name = "post_id", type = "string", required = true, description = "AT-URI of the direct parent post you are replying to" },
             { name = "root_id", type = "string", required = true, description = "AT-URI of the thread root post (top-level post that started the thread)" },
-            { name = "content", type = "string", required = true, description = "Reply text (max 300 graphemes)" }
+            { name = "content", type = "string", required = true, description = "Reply text (max 300 graphemes)" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — external embed on the reply" }
         },
         like = {
             { name = "post_id", type = "string", required = true, description = "AT-URI of the post to like" }
@@ -1097,11 +1522,17 @@ animus.register_channel({
         chat_send = {
             { name = "platform_id", type = "string", required = true, description = "Platform instance ID" },
             { name = "convo_id", type = "string", required = true, description = "Conversation ID" },
-            { name = "content", type = "string", required = true, description = "Message text (max 10k chars)" }
+            { name = "content", type = "string", required = true, description = "Message text (max 10k chars)" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — chat degrades to url-in-text" }
         },
         chat_get_convo = {
             { name = "platform_id", type = "string", required = true, description = "Platform instance ID" },
             { name = "member_did", type = "string", required = true, description = "DID of the member to chat with" }
+        },
+        send_media = {
+            { name = "files", type = "array", required = true, description = "Media attachments: [{ref: 'media://<sha256>', path?, alt_text?}] — vault refs or dataDir-scoped paths; kernel resolves to _media_files (up to 4 images)" },
+            { name = "text", type = "string", required = false, description = "Post text accompanying the images" },
+            { name = "langs", type = "array", required = false, description = "BCP-47 language codes (default: ['en'])" }
         }
     },
     handler = function(args)
@@ -1123,6 +1554,7 @@ animus.register_channel({
         elseif action == "chat_messages" then return do_chat_messages(args)
         elseif action == "chat_send" then return do_chat_send(args)
         elseif action == "chat_get_convo" then return do_chat_get_convo(args)
+        elseif action == "send_media" then return do_send_media(args)
         else return { success = false, error = "unknown action: " .. tostring(action) }
         end
     end

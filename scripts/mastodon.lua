@@ -293,7 +293,9 @@ local function auth_get(platform_id, endpoint, query)
     end
 
     if resp.status == 429 or resp.status == 503 then
-        local consecutive = tonumber(config.get(cfg_key(platform_id, "consecutive_errors")) or "0") + 1
+        -- #255: nil-floored form (see twitter.lua) — "" from config.get
+        -- defeated the old `or "0"` guard on fresh instances.
+        local consecutive = (tonumber(config.get(cfg_key(platform_id, "consecutive_errors"))) or 0) + 1
         config.set(cfg_key(platform_id, "consecutive_errors"), tostring(consecutive))
         local seconds = compute_backoff(platform_id, resp, consecutive)
         log.warn("[mastodon] rate limited (" .. tostring(resp.status)
@@ -330,7 +332,7 @@ local function auth_post(platform_id, endpoint, body_table, idem_suffix)
     update_rate_limits(platform_id, resp)
 
     if resp.status == 429 or resp.status == 503 then
-        local consecutive = tonumber(config.get(cfg_key(platform_id, "consecutive_errors")) or "0") + 1
+        local consecutive = (tonumber(config.get(cfg_key(platform_id, "consecutive_errors"))) or 0) + 1
         config.set(cfg_key(platform_id, "consecutive_errors"), tostring(consecutive))
         local seconds = compute_backoff(platform_id, resp, consecutive)
         log.warn("[mastodon] rate limited (" .. tostring(resp.status)
@@ -611,6 +613,38 @@ local function do_poll(args)
                     in_reply_to_id = status.in_reply_to_id or "",
                     visibility = status.visibility or "public"
                 }
+                -- #158: media attachments on the mention (raw descriptors).
+                -- The kernel's post-poll pass vaults them (scope: this
+                -- instance's host) and rewrites to media:// refs before the
+                -- agent reads the digest. gifv counts as video; unknown as file.
+                local atts = {}
+                if type(status.media_attachments) == "table" then
+                    for _, m in ipairs(status.media_attachments) do
+                        if type(m) == "table" then
+                            local a_url = m.url or m.remote_url or ""
+                            if a_url ~= "" then
+                                local a_kind = m.type or "file"
+                                if a_kind == "gifv" then a_kind = "video" end
+                                if a_kind == "unknown" then a_kind = "file" end
+                                local a = {
+                                    url = a_url,
+                                    kind = a_kind,
+                                    dedupe_key = "mastodon:" .. tostring(m.id or ""),
+                                    mime = m.mime_type or ""
+                                }
+                                if m.description and m.description ~= "" then
+                                    a.alt_text = m.description
+                                end
+                                local om = type(m.meta) == "table" and m.meta.original or nil
+                                if type(om) == "table" and om.width and om.height then
+                                    a.dimensions = tostring(om.width) .. "x" .. tostring(om.height)
+                                end
+                                atts[#atts + 1] = a
+                            end
+                        end
+                    end
+                end
+                if #atts > 0 then entry.attachments = atts end
                 mentions[#mentions + 1] = entry
             end
         end
@@ -621,9 +655,16 @@ local function do_poll(args)
         config.set(cfg_key(platform_id, "last_notif_id"), tostring(max_id))
     end
 
+    -- #158: output is a JSON DIGEST object (not a plain string) — the
+    -- handler serializes non-string output as JSON, so the agent sees the
+    -- mentions themselves, and the kernel's post-poll pass can rewrite
+    -- attachment entries into vault refs in place.
     return {
         success = true,
-        output = #mentions .. " new mention(s); watermark=" .. tostring(max_id),
+        output = {
+            summary = #mentions .. " new mention(s); watermark=" .. tostring(max_id),
+            mentions = mentions
+        },
         mentions = mentions,
         count = #mentions
     }
@@ -631,6 +672,80 @@ end
 
 --- Post a new toot. Auto-splits over-limit content into a thread
 --- (first toot, then replies to it). NO byte-trim sends (#131 family).
+-- Canonical Markdown -> Mastodon allowlist HTML (#156). scripts/markdown.lua
+-- is Eval'd into the same per-agent VM and sets the `markdown` global;
+-- referenced at SEND time so standalone harnesses (which load only this
+-- adapter) keep working through the raw fallback. Rendered BEFORE chunk
+-- splitting so every chunk stays <= limit on the FINAL text.
+local function render_content(content)
+    if type(markdown) == "table" and type(markdown.render_mastodon) == "function" then
+        local ok, out = pcall(markdown.render_mastodon, content)
+        if ok and type(out) == "string" and out ~= "" then return out end
+        if log and log.warn then log.warn("[mastodon] markdown render failed; sending raw content") end
+    end
+    return content
+end
+
+--- #157: link card helpers — markdown module guarded the same way as
+--- render_content. Degrade path: plain URL append.
+local function get_link_card(card_arg)
+    if not card_arg then return nil end
+    if type(markdown) == "table" and type(markdown.normalize_card) == "function" then
+        local ok, card, reason = pcall(markdown.normalize_card, card_arg)
+        if not ok then return nil, "link_card validation failed" end
+        if not card then return nil, reason end
+        return card
+    end
+    if type(card_arg) ~= "table" or type(card_arg.url) ~= "string"
+        or not card_arg.url:match("^https?://") then
+        return nil, "link_card.url is required and must be http(s)"
+    end
+    return card_arg
+end
+
+local function append_card_url(content, card)
+    if content:find(card.url, 1, true) then return content end
+    if type(markdown) == "table" and type(markdown.append_card) == "function" then
+        local ok, out = pcall(markdown.append_card, content, card)
+        if ok and type(out) == "string" and out ~= "" then return out end
+    end
+    return content .. "\n\n" .. card.url
+end
+
+--- #157: Mastodon counts every link as 23 chars against the toot limit,
+--- regardless of URL length, plus the anchor label's real bytes. Mask each
+--- rendered anchor as ONE space-free word of exactly that weighted size —
+--- \1%04d + \2 padding — split, then restore the original anchors. No
+--- spaces anywhere means the boundary matcher can never break inside a
+--- token and a label can never separate from its URL; while masked, the
+--- byte budget equals the weighted budget. \1/\2 never occur in rendered
+--- HTML, so token bytes are unambiguous; any fragment surviving an
+--- ultra-rare fallback mid-word break is stripped as debris. Bare
+--- (unlinked) URLs stay conservative: full length counted.
+local LINK_WEIGHT = 23
+
+local function weighted_split(rendered, limit)
+    local anchors = {}
+    local masked = rendered:gsub('<a href="[^"]+"[^>]*>.-</a>', function(m)
+        local label = m:match(">(.-)</a>$") or ""
+        local i = #anchors + 1
+        anchors[i] = { full = m, pad = LINK_WEIGHT - 6 + #label }
+        return "\1" .. string.format("%04d", i) .. string.rep("\2", anchors[i].pad)
+    end)
+    local chunks = split_for_limit(masked, limit)
+    local out = {}
+    for ci, chunk in ipairs(chunks) do
+        local c = chunk
+        for i = 1, #anchors do
+            local a = anchors[i]
+            local tok = "\1" .. string.format("%04d", i) .. string.rep("\2", a.pad)
+            c = c:gsub(tok, function() return a.full end)
+        end
+        out[ci] = c:gsub("[\1\2]", "")
+    end
+    return out
+end
+
 local function do_post(args)
     local platform_id = args.platform_id
     local content = args.content
@@ -646,8 +761,15 @@ local function do_post(args)
             .. " (public|unlisted|private|direct)" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card then content = append_card_url(content, card) end
+
+    content = render_content(content)
     local limit = get_char_limit(platform_id)
-    local chunks = split_for_limit(content, limit)
+    local chunks = weighted_split(content, limit)
 
     local first_id, first_url
     for idx, chunk in ipairs(chunks) do
@@ -702,8 +824,15 @@ local function do_reply(args)
         return { success = false, error = "content is required" }
     end
 
+    local card, cerr = get_link_card(args.link_card)
+    if args.link_card and not card then
+        return { success = false, error = "invalid link_card: " .. tostring(cerr) }
+    end
+    if card then content = append_card_url(content, card) end
+
+    content = render_content(content)
     local limit = get_char_limit(platform_id)
-    local chunks = split_for_limit(content, limit)
+    local chunks = weighted_split(content, limit)
 
     local reply_id, reply_url
     for idx, chunk in ipairs(chunks) do
@@ -1065,6 +1194,125 @@ end
 -- Registration
 -- ---------------------------------------------------------------------------
 
+--- #159: send_media — upload → poll processed → post with media_ids.
+-- Two-phase platform. The kernel pre-resolves files[] into _media_files
+-- descriptors ({path, filename, mime, alt_text}) and bytes ride the kernel
+-- upload seam (animus.http_upload) — never through Lua strings.
+local function do_send_media(args)
+    local platform_id = args.platform_id
+    local media = args._media_files
+    if type(media) ~= "table" or #media == 0 then
+        return { success = false, error =
+            "no resolved attachments — pass files[] (kernel resolves to _media_files)" }
+    end
+    if #media > 4 then
+        return { success = false, error = "too many attachments: " .. tostring(#media)
+            .. " > 4 (per-status limit)" }
+    end
+
+    local text = args.text or args.content or ""
+    local visibility = args.visibility or "public"
+    if visibility ~= "public" and visibility ~= "unlisted"
+        and visibility ~= "private" and visibility ~= "direct" then
+        return { success = false, error = "invalid visibility: " .. tostring(visibility)
+            .. " (public|unlisted|private|direct)" }
+    end
+
+    local token, terr = get_token(platform_id)
+    if not token then return { success = false, error = terr } end
+    local base = get_instance_url(platform_id)
+
+    -- Phase 1: upload each file (v2 media endpoint)
+    local ids = {}
+    for i, f in ipairs(media) do
+        local fields = {}
+        if f.alt_text and f.alt_text ~= "" then
+            fields.description = f.alt_text
+        end
+        local resp = animus.http_upload(base .. "/api/v2/media", {
+            headers = {
+                ["Authorization"] = "Bearer " .. token,
+                ["Idempotency-Key"] = platform_id .. "-media-"
+                    .. tostring(os.time()) .. "-" .. tostring(i)
+            },
+            timeout = 120,
+            fields = fields,
+            files = {
+                {
+                    path = f.path,
+                    field = "file",
+                    filename = f.filename or "attachment",
+                    mime = f.mime or "application/octet-stream"
+                }
+            }
+        })
+        if resp.status ~= 200 then
+            return {
+                success = false,
+                error = "media upload failed (" .. tostring(resp.status) .. ") on file "
+                    .. tostring(i) .. "/" .. tostring(#media) .. ": "
+                    .. truncate(tostring(resp.body or resp.error), 400)
+            }
+        end
+        local pok, uploaded = pcall(json.decode, resp.body)
+        if not pok or type(uploaded) ~= "table" or not uploaded.id then
+            return { success = false, error = "media upload returned no id (file "
+                .. tostring(i) .. "): " .. truncate(tostring(resp.body), 300) }
+        end
+        ids[#ids + 1] = tostring(uploaded.id)
+    end
+
+    -- Phase 2: poll until each upload is processed (transcode, thumbnails)
+    for i, id in ipairs(ids) do
+        local attempts = 0
+        while true do
+            local resp = auth_get(platform_id, "/api/v1/media/" .. id)
+            if resp.status == 200 then
+                local pok, m = pcall(json.decode, resp.body)
+                if pok and type(m) == "table" then
+                    if m.status == "processed" then break end
+                    if m.status == "failed" then
+                        return { success = false, error = "media processing failed (file "
+                            .. tostring(i) .. ", id " .. id .. ")" }
+                    end
+                end
+            end
+            attempts = attempts + 1
+            if attempts >= 10 then
+                return { success = false, error = "media not processed after "
+                    .. tostring(attempts) .. " polls (file " .. tostring(i)
+                    .. ", id " .. id .. ") — post aborted, no partial status" }
+            end
+            animus.sleep(1000)
+        end
+    end
+
+    -- Phase 3: post the status with media attached
+    local resp = auth_post(platform_id, "/api/v1/statuses",
+        { status = text, visibility = visibility, media_ids = ids }, "send_media")
+    if resp.status ~= 200 then
+        return {
+            success = false,
+            error = "post failed (" .. tostring(resp.status) .. ") after uploading "
+                .. tostring(#ids) .. " media: " .. truncate(tostring(resp.body), 500)
+        }
+    end
+    local pok, status = pcall(json.decode, resp.body)
+    local out = {
+        success = true,
+        media_count = #ids,
+        media_ids = ids,
+        output = "posted " .. tostring(#ids) .. " attachment(s)"
+    }
+    if pok and type(status) == "table" then
+        out.post_id = status.id
+        out.url = status.url
+        out.output = "posted " .. tostring(#ids) .. " attachment(s): "
+            .. tostring(status.url or status.id)
+    end
+    return out
+end
+
 animus.register_channel({
     id = "mastodon",
     name = "Mastodon",
@@ -1072,7 +1320,8 @@ animus.register_channel({
     actions = {
         "poll", "post", "reply", "get_status",
         "get_context", "verify",
-        "search", "account_statuses", "public_timeline"
+        "search", "account_statuses", "public_timeline",
+        "send_media"
     },
     schema = {
         poll = {
@@ -1080,12 +1329,14 @@ animus.register_channel({
         },
         post = {
             { name = "content", type = "string", required = true, description = "Toot text (auto-split into a thread if over the instance limit)" },
-            { name = "visibility", type = "string", required = false, description = "public (default), unlisted, private, direct" }
+            { name = "visibility", type = "string", required = false, description = "public (default), unlisted, private, direct" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — url rides the toot text (server-side preview); links count 23 chars against the instance limit" }
         },
         reply = {
             { name = "status_id", type = "string", required = true, description = "Status ID to reply to" },
             { name = "content", type = "string", required = true, description = "Reply text (auto-split if over limit)" },
-            { name = "visibility", type = "string", required = false, description = "public (default), unlisted, private, direct" }
+            { name = "visibility", type = "string", required = false, description = "public (default), unlisted, private, direct" },
+            { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — url rides the toot text (server-side preview); links count 23 chars against the instance limit" }
         },
         get_status = {
             { name = "status_id", type = "string", required = true, description = "Status ID to fetch" }
@@ -1120,6 +1371,11 @@ animus.register_channel({
         },
         verify = {
             -- No required params
+        },
+        send_media = {
+            { name = "files", type = "array", required = true, description = "Attachments [{ref|path|data, filename?, mime?, alt_text?}] — ref = vault media://sha256; path must live under dataDir; data = base64. The kernel resolves sources and uploads bytes." },
+            { name = "text", type = "string", required = false, description = "Status text accompanying the media (optional — media-only posts allowed)" },
+            { name = "visibility", type = "string", required = false, description = "public (default), unlisted, private, direct" }
         }
     },
     handler = function(args)
@@ -1137,6 +1393,7 @@ animus.register_channel({
         elseif action == "account_statuses" then return do_account_statuses(args)
         elseif action == "public_timeline" then return do_public_timeline(args)
         elseif action == "verify" then return do_verify(args)
+        elseif action == "send_media" then return do_send_media(args)
         else return { success = false, error = "unknown action: " .. tostring(action) }
         end
     end

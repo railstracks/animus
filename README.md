@@ -25,14 +25,14 @@ Animus is a **C++ agent framework** — a modular, efficient runtime for AI agen
 
 ## Current Status
 
-**v0.4.7** — Active development. Core kernel, admin server, LLM pipeline, tool system, **API packages**, **verified-node federation** (multi-master config replication), **secrets vault**, egress control, multi-tenant architecture, channel system, Lua scripting, memory system (hardened by the v0.4.7 audit arc: full-row mutation audit trail, durable retirement semantics), social adapters, **attribution** (author metadata across channels and sessions), authentication, scheduled tasks, external nodes, agent export/import, and diffusion are all operational.
+**v0.4.8** — Active development. Core kernel, admin server, LLM pipeline, tool system, **API packages**, **verified-node federation** (multi-master config replication, **encrypted secrets** via node identity + epoch envelopes), **secrets vault**, egress control, multi-tenant architecture, channel system, Lua scripting, memory system (hardened by the v0.4.7 audit arc: full-row mutation audit trail, durable retirement semantics), social adapters (deepened by the v0.4.8 media arc: inbound/outbound media, formatting renderers, describe engine), **attribution** (author metadata across channels and sessions), authentication, scheduled tasks, external nodes, agent export/import, and diffusion are all operational.
 
 | Area | Status |
 |------|--------|
 | Kernel + session management | ✅ Production-ready |
 | LLM providers (11) | ✅ Live |
 | Chain execution (streaming) | ✅ Live |
-| Tool system (26 tools) | ✅ Live |
+| Tool system (27 tools) | ✅ Live |
 | API packages (manifest v1: Lua actions, connections, state, egress allowlist) | ✅ Live |
 | Egress control + owner-approval gate (deny-by-default, content-bound approvals) | ✅ Live |
 | Animus Registry integration (browse, fetch, re-hash, loud-reject on mismatch) | ✅ Live |
@@ -53,10 +53,16 @@ Animus is a **C++ agent framework** — a modular, efficient runtime for AI agen
 | Secrets vault (AES-GCM, secret_ref indirection, encrypted replication) | ✅ Live |
 | Diffusion (GetImg + Stability AI) | ✅ Live |
 | Chat attachments (per-channel, token-secured) | ✅ Live |
+| Media vault (egress-scoped downloads, sha256 content-addressed, inbound refs) | ✅ Live |
+| Image describe engine (local VLM + opt-in cloud, sha256-cached, provenance-labeled) | ✅ Live |
+| Outbound media (send_media across social adapters) | ✅ Live |
+| Outbound alt-text auto-fill (describe engine, platform alt fields) | ✅ Live |
+| Outbound formatting (canonical Markdown → per-adapter renderers) | ✅ Live |
+| Outbound link cards (uniform {url,title,description,image} → platform embeds) | ✅ Live |
 | SOP system (Standard Operating Procedures) | ✅ Live |
 | Scheduled tasks (cron + interval, per-agent isolation) | ✅ Live |
 | External nodes (HMAC-signed remote commands) | ✅ Live |
-| Federation (multi-master replication, verified nodes, scratch-join rebuild) | ✅ Live |
+| Federation (multi-master replication, verified nodes, scratch-join rebuild, encrypted secrets: X25519+HKDF node identity, epoch-keyed envelopes) | ✅ Live |
 | Agent export/import (composable `.agent` archives) | ✅ Live |
 | Session notes + agenda tool | ✅ Live |
 | Temporal context provider (time-aware assembly) | ✅ Live |
@@ -456,7 +462,7 @@ The migration tool reads all tables from SQLite and inserts them into PostgreSQL
 cd build && ctest --output-on-failure
 ```
 
-**Test suite: 45 targets, 48 ctest cases — all green.** Coverage spans the kernel core (jobs, sessions, modules), admin server (routes, auth, observation administration, agent deletion cleanup), the memory family (store, search, consolidation, ontology, layer seeding, active memory, concurrency), channels and social (manager, context, helpers, IRC interface, reply resolution), tools (file, dispatch, social, media output), Lua runtime and API packages (sandbox, runtime, registry client), federation (peer sync, outbox, node ids, node manager), and infrastructure (migration, secrets vault, scheduler, connection supervisor, healer, embedding sweep, signal protocol).
+**Test suite: 58 targets, 61 ctest cases — all green.** Coverage spans the kernel core (jobs, sessions, modules), admin server (routes, auth, observation administration, agent deletion cleanup), the memory family (store, search, consolidation, ontology, layer seeding, active memory, concurrency), channels and social (manager, context, helpers, IRC interface, reply resolution), tools (file, dispatch, social, media output, describe, describe-tool), the media stack (vault, VLM engines local + cloud, email attachments), Lua runtime and API packages (sandbox, runtime, registry client), federation (peer sync, outbox, node ids, node manager, node identity, key envelopes), and infrastructure (migration, secrets vault, scheduler, connection supervisor, healer, embedding sweep, signal protocol, crypto utils, database config, datastore concurrency).
 
 ## Project Structure
 

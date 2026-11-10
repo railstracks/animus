@@ -407,6 +407,30 @@ ApiConnectionManager::PollOutcome ApiConnectionManager::PollConnection(
     }
     o.consecutiveErrors = 0;
 
+    // #253: poll.body_format "raw" — non-JSON feeds (Atom/RSS/plain text)
+    // skip the JSON gate AND the dot-path cursor: the response TEXT reaches
+    // on_message as a string-valued ctx.event, and raw connections keep
+    // their cursor in package state (hook-written; {{state._cursor.value}}
+    // interpolates from that state for request templates). Default "json"
+    // keeps the gate + cursor + hook sequence below byte-identical.
+    const std::string bodyFormat = poll.get("body_format", Json::Value("json")).asString();
+    if (bodyFormat != "json" && bodyFormat != "raw") {
+        ALOG_WARNING("api-conn", "[" << pkg.name << ":" << conn.name
+                                     << "] unsupported poll.body_format '" << bodyFormat
+                                     << "' (json|raw) — using json");
+    }
+    if (bodyFormat == "raw") {
+        Json::Value hooks = ParseJsonOr(conn.hooks, Json::Value(Json::objectValue));
+        std::string onMessage = hooks.get("on_message", "").asString();
+        if (onMessage.empty()) return o;
+        ALOG_INFO("api-conn", "[" << pkg.name << ":" << conn.name << "] on_message (raw "
+                                  << resp.body.size() << " B) -> '" << onMessage << "'");
+        Json::Value eventVal(resp.body);  // string value -> ctx.event string in Lua
+        Json::Value result = m_runtime->RunHook(pkg.name, onMessage, "", eventVal);
+        HandleHookResult(pkg, conn, result);
+        return o;
+    }
+
     Json::Value body = ParseJsonOr(resp.body, Json::Value(Json::nullValue));
     if (body.isNull()) {
         ALOG_WARNING("api-conn", "[" << pkg.name << ":" << conn.name

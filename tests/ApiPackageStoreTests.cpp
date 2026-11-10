@@ -441,6 +441,10 @@ int TestManifestInstall() {
                   "connections":[{"name":"c","type":"longpoll","url_template":"x",
                                   "poll":{"interval_s":15,"cursor_path":"a","method":"DELETE"}}]})",
                 "poll.method must be", "unknown poll.method rejected");
+        Rejects(R"({"kind":"api_package","name":"badformat","version":"1","description":"x",
+                  "connections":[{"name":"c","type":"longpoll","url_template":"x",
+                                  "poll":{"interval_s":15,"cursor_path":"a","body_format":"yaml"}}]})",
+                "poll.body_format must be", "unknown poll.body_format rejected");
         Rejects(R"({"kind":"api_package","name":"bodyget","version":"1","description":"x",
                   "connections":[{"name":"c","type":"longpoll","url_template":"x",
                                   "poll":{"interval_s":15,"cursor_path":"a",
@@ -453,7 +457,7 @@ int TestManifestInstall() {
         // Failed installs must leave no package behind.
         for (const auto& name : std::vector<std::string>{"wrongkind", "download", "UPPER",
                                                         "nohook", "hookparams", "badparam",
-                                                        "badconn", "nourl", "nopoll",
+                                                        "badconn", "nourl", "nopoll", "badformat",
                                                         "statchema"})
             Assert(!store.GetPackageByName(name).has_value(), "no residue: " + name);
         Assert(store.ListPackages().size() == 1, "only the good install persisted");

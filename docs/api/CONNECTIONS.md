@@ -69,8 +69,11 @@ pipeline, not two.
 
 ## Longpoll specifics
 
-- `poll = {method, params_template, cursor_path, interval_s}`; `interval_s` bounds the loop
+- `poll = {method, params_template, cursor_path, interval_s, body_format}`; `interval_s` bounds the loop
   (respect server `Retry-After` when present).
+- `body_format: "raw"` (default `"json"`): non-JSON feeds (Atom/RSS/plain text) skip the JSON gate —
+  `on_message` receives the response **text** as a string-valued `ctx.event`; `cursor_path` is
+  JSON-natured and optional in raw mode — hooks keep the cursor in package state (#253).
 - Cursor: extracted via `cursor_path` from each response, persisted in package state under
   `_cursor.<conn>` **immediately** — survives daemon restarts (moltbook watermark lesson: a
   restart must never reprocess a window it has already seen; and a reset cursor below reality is

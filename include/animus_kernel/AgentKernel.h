@@ -9,6 +9,9 @@
 #include "animus_kernel/AgentStore.h"
 #include "animus_kernel/EmbeddingService.h"
 #include "animus_kernel/KernelConfig.h"
+#include "animus_kernel/CloudVlmEngine.h"
+#include "animus_kernel/DescribeService.h"
+#include "animus_kernel/LocalVlmEngine.h"
 #include "animus_kernel/llm/LLMProviderRegistry.h"
 #include "animus_kernel/tools/HttpClient.h"
 #include "animus_kernel/tools/ToolRegistry.h"
@@ -16,6 +19,7 @@
 #include "animus_kernel/lua/ScriptStore.h"
 #include "animus_kernel/lua/FilesystemScriptLoader.h"
 #include "animus_kernel/AgentConfigStore.h"
+#include "animus_kernel/NodeIdentity.h"
 #include "animus_kernel/ChannelManager.h"
 #include "animus_kernel/MessageQueue.h"
 #include "animus_kernel/tools/ProjectTool.h"
@@ -24,12 +28,14 @@ namespace animus::kernel {
 
 class IDataStore;
 class AdminServer;
+class Session;
 class ProviderThrottle;
 class SessionManager;
 class ChainRunner;
 class CompactionService;
 class SecretsVault;
 class SyncStore;
+class FederationKeys;
 class PeerSyncService;
 class Scheduler;
 class ConsolidationPipeline;
@@ -47,6 +53,7 @@ class AgentStore;
 class DiaryStore;
 class DiffusionStore;
 class AttachmentStore;
+class MediaVault;
 class SopStore;
 class GallivantingStore;
 class SessionNotesStore;
@@ -110,6 +117,37 @@ private:
 
     /// Execute a channel dispatch: run the LLM chain on the session and send the reply.
     /// Used by both the direct dispatch path and the MessageQueue flush callback.
+    // #158: inbound media vaulting at dispatch time. Raw adapter-declared
+    // attachments (URLs + metadata) become vault refs on the arrival row;
+    // failures persist as loud {url, error} entries. Never blocks dispatch.
+    std::string VaultInboundAttachments(
+        const std::string& rawAttachments,
+        const ChannelManager::ReplyTarget& replyTarget);
+    // #160: auto-describe vaulted inbound images at dispatch time.
+    // Per-channel gate: describe_images (default on), describe_engine
+    // local|cloud — cloud requires operator config (strict opt-in) and
+    // degrades to local otherwise. Synchronous + cache-first: the
+    // description rides the first turn's context card; channels that
+    // don't want the latency opt out. Failures embed describe_error and
+    // never block the message.
+    std::string DescribeInboundAttachments(
+        const std::string& attachmentsJson,
+        const ChannelManager::ReplyTarget& replyTarget);
+    // Resolve the describe service for a channel (null = gated off).
+    DescribeService* DescribeServiceFor(
+        const ChannelManager::ReplyTarget& replyTarget) const;
+    // CloudVlmEngine provider seam → ChainRunner registry. One explicit
+    // destination, no try-all fallback (issue #160 privacy contract).
+    bool CloudVisionComplete(const llm::LLMRequest& req,
+                             const std::string& providerId,
+                             llm::LLMResponse& out, std::string& error);
+    // Media egress scope for a channel: platform CDN defaults + operator
+    // config (media_hosts, pds) — message content never influences it.
+    std::vector<std::string> MediaScopeFor(
+        const ChannelManager::ReplyTarget& replyTarget) const;
+    // Download auth for scoped CDNs (Slack bot token) — kernel-side only.
+    std::map<std::string, std::string> MediaAuthHeadersFor(
+        const ChannelManager::ReplyTarget& replyTarget) const;
     void ExecuteChannelDispatch(
         const std::string& sessionKey,
         const std::string& message,
@@ -119,6 +157,13 @@ private:
 
     /// Read min_response_interval from a channel's config. Returns 0 if not set.
     int GetChannelInterval(const std::string& channelName) const;
+
+    /// #268: re-bind empty/sentinel-bound channel sessions to the
+    /// dispatching agent when that agent is actually configured. Sessions
+    /// bound to a real agent never re-bind (cross-agent isolation).
+    void TryAdoptDispatchAgent(Session& session,
+                               const std::string& dispatchAgentId,
+                               const std::string& sessionKeyForLog);
 
     /// Resolve the effective context window for an agent: provider window
     /// clamped to the agent's configured context_window if set.
@@ -167,6 +212,10 @@ private:
     SessionTagsStore* m_sessionTagsStore{nullptr}; // session tag keywords
     PromptLogStore* m_promptLogStore{nullptr}; // LLM call logging
     SyncStore* m_syncStore{nullptr};
+    FederationKeys* m_federationKeys{nullptr};         // #274 epoch DEK envelopes
+    NodeIdentity m_nodeIdentity;                  // #182 fed-secrets X25519 identity
+    bool m_nodeIdentityOk{false};
+    const NodeIdentity& GetNodeIdentity() const { return m_nodeIdentity; }
     PeerSyncService* m_peerSyncService{nullptr};   // #78 P1c pull loop
     Scheduler* m_scheduler{nullptr};              // cron-like schedule subsystem
     ConsolidationPipeline* m_consolidation{nullptr}; // memory consolidation pipeline
@@ -192,6 +241,21 @@ private:
     std::unique_ptr<DiffusionStore> m_diffusionStore;
     std::unique_ptr<AttachmentStore> m_attachmentStore;
     std::unique_ptr<SopStore> m_sopStore;
+
+    // #158: inbound media — content-addressed vault. Bytes live on disk
+    // (sha256-named); the arrivals table and agent context carry refs only.
+    // Dedicated HttpClient: media sizes must not inherit the web tools' 1MB
+    // default, and the web allowlist must not gate media scope.
+    std::unique_ptr<MediaVault> m_mediaVault;
+    HttpClient m_mediaHttp;
+    // #160: describe engine — cache-first service over the vault. Local
+    // VLM is the default engine; cloud strictly opt-in. m_describeLocal
+    // always exists (its engine may be a loud no-op for the describe
+    // tool); m_describeCloud only when provider + model are configured.
+    std::unique_ptr<LocalVlmEngine> m_localVlm;
+    std::unique_ptr<CloudVlmEngine> m_cloudVlm;
+    std::unique_ptr<DescribeService> m_describeLocal;
+    std::unique_ptr<DescribeService> m_describeCloud;
 };
 
 } // namespace animus::kernel

@@ -30,6 +30,34 @@ public:
     ToolDefinition GetDefinition() const override;
     ToolResult Execute(const ToolCall& call) override;
 
+    // #211: pure client-side reply-recipient resolution — explicit `to`
+    // arg wins; otherwise the anchor's envelope decides (own-sent anchor
+    // -> its To:, the original recipient; received anchor -> its From:).
+    // Returns false + error when unresolvable — never guesses. The old
+    // server-side thread-ownership path silently self-addressed replies
+    // anchored on the sender's own sent messages.
+    // Pure: no HTTP, unit-testable against anchor JSON fixtures.
+    static bool ResolveReplyRecipient(const Json::Value& args,
+                                      const Json::Value& anchor,
+                                      bool anchorFetched,
+                                      const std::string& selfInboxId,
+                                      std::string& outRecipient,
+                                      std::string& outError);
+
+    // --- #212: attachment support (pure, unit-testable) ---
+    // Normalizes the optional attachments param for send: array of
+    // {filename, content(base64), content_type?}. Rejects malformed
+    // entries loudly. Absent param -> empty array, no error.
+    static bool NormalizeAttachments(const Json::Value& args,
+                                     Json::Value& outAttachments,
+                                     std::string& outError);
+
+    // Counts attachments on the sent message inside a thread-GET body.
+    // Send responses can echo "attachments": 0 despite success (observed
+    // live 2026-10-22) — the thread is the receipt. -1 = message absent.
+    static int CountConfirmedAttachments(const Json::Value& threadBody,
+                                         const std::string& messageId);
+
 private:
     // --- AgentMail REST API helpers ---
     HttpClient::Response AgentMailGet(const std::string& inboxId,
@@ -69,6 +97,7 @@ private:
     std::string HandleGetThread(const Json::Value& args);
     std::string HandleGetMessage(const Json::Value& args);
     std::string HandleGetAttachment(const Json::Value& args);
+    std::string HandleListAttachments(const Json::Value& args);
     std::string HandleSearch(const Json::Value& args);
     std::string HandleSend(const Json::Value& args);
     std::string HandleReply(const Json::Value& args);
