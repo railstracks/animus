@@ -1280,11 +1280,32 @@ void NextcloudAdapter::RunLoop() {
                     std::string actorName = GetString(msg, "actorDisplayName");
                     if (actorName.empty()) actorName = actorId;
 
+                    // Talk renders mentions as "{mention-userN}" placeholders in
+                    // the message text; the literal "@user" trigger survives only
+                    // in plain-text posts. messageParameters is the ground truth
+                    // (and arrives as [] when empty — the PHP empty-array quirk).
+                    const Json::Value noParams(Json::arrayValue);
+                    const Json::Value& mentionParams =
+                        (msg.isMember("messageParameters")
+                         && msg["messageParameters"].isObject())
+                            ? msg["messageParameters"] : noParams;
+                    bool mentionedViaParams = false;
+                    if (mentionParams.isObject()) {
+                        for (const auto& key : mentionParams.getMemberNames()) {
+                            const Json::Value& p = mentionParams[key];
+                            if (p.isObject()
+                                && p.get("type", "").asString() == "user"
+                                && p.get("id", "").asString() == username)
+                                mentionedViaParams = true;
+                        }
+                    }
+
                     bool shouldDispatch = false;
                     if (isDm(conv.type) && respondInDm) {
                         shouldDispatch = true;
                     } else if (!isDm(conv.type) && respondInGroupOnMention) {
-                        if (messageText.find(mentionTrigger) != std::string::npos)
+                        if (mentionedViaParams
+                            || messageText.find(mentionTrigger) != std::string::npos)
                             shouldDispatch = true;
                     } else if (!isDm(conv.type) && !respondInGroupOnMention) {
                         shouldDispatch = true;
@@ -1293,6 +1314,25 @@ void NextcloudAdapter::RunLoop() {
 
                     // Strip mention trigger
                     std::string cleanText = messageText;
+                    // Render "{mention-*}" placeholders as "@name" first (Talk's
+                    // stored form). Our own mention is removed outright; others
+                    // stay readable in the prompt.
+                    if (mentionParams.isObject()) {
+                        for (const auto& key : mentionParams.getMemberNames()) {
+                            if (key.rfind("mention-", 0) != 0) continue;
+                            const Json::Value& p = mentionParams[key];
+                            if (!p.isObject()) continue;
+                            const bool isUs = p.get("type", "").asString() == "user"
+                                && p.get("id", "").asString() == username;
+                            const std::string token = "{" + key + "}";
+                            const std::string repl =
+                                isUs ? std::string()
+                                     : "@" + p.get("name", p.get("id", "")).asString();
+                            size_t pos;
+                            while ((pos = cleanText.find(token)) != std::string::npos)
+                                cleanText.replace(pos, token.size(), repl);
+                        }
+                    }
                     if (!mentionTrigger.empty()) {
                         size_t pos;
                         while ((pos = cleanText.find(mentionTrigger)) != std::string::npos)
