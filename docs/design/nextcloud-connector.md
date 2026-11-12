@@ -57,7 +57,7 @@ Talk messaging actions are **gone from the package** — they belong to the adap
 
 1. Trigger (scheduled, or the Active session) → package `recording start` on the target room
 2. Call ends → `recording status` → recording lands in Files (talk-recording backend verified healthy, #162)
-3. Package `file get` pulls it → STT (separate package, per #69 stance) → transcript
+3. Package `file get` pulls it (v0.3.0: lands in the sandbox files area — STT reads it from there, no giant strings through the result lane) → STT (separate package, per #69 stance) → transcript
 4. Package `note create` writes the meeting note → **adapter posts the summary to the room** → optional `deck card create` for action items
 5. `share create` if humans need a link
 

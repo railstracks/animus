@@ -16,6 +16,8 @@
 
 #include <atomic>
 #include <cassert>
+#include <fstream>
+#include <iterator>
 #include <chrono>
 #include <filesystem>
 #include <cstring>
@@ -394,6 +396,168 @@ int TestPrimaryTransport() {
            r["error"].asString().find("missing key: state.token") != std::string::npos,
            "interpolation failure names missing key");
     Assert(r["error"].asString().find("SECRET") == std::string::npos, "secret not leaked in error");
+    return 0;
+}
+
+// v0.3.0 (#300): nextcloud recording control + file get — scripts verbatim
+// from packages/nextcloud. Request templates are adapted to the fixture's
+// state vocabulary (Bearer {{state.token}} instead of Basic
+// {{state.auth_header}}, literal "agent" instead of {{state.user}}) — the
+// interpolation machinery under test is identical.
+int TestNextcloudRecordingCommands() {
+    Fixture fx;
+    const std::string extra = R"({"name": "recording status", "kind": "action",
+       "description": "room recording state",
+       "parameters": {"token": {"type": "string", "required": true}},
+       "request": {"method": "GET",
+                   "url": "{{state.base_url}}/ocs/v2.php/apps/spreed/api/v4/room/{{args.token}}",
+                   "headers": {"Authorization": "Bearer {{state.token}}",
+                               "OCS-APIREQUEST": "true", "Accept": "application/json"}},
+       "script": "function run(ctx) local r = ctx.request local j = r.json or {} local d = (j.ocs and j.ocs.data) or {} local rec = tonumber(d.callRecording) if rec == nil then return {success = false, output = 'recording status failed: HTTP '..tostring(r.status)..' - unexpected payload'} end local names = {[0]='none',[1]='video',[2]='audio',[3]='video_starting',[4]='audio_starting',[5]='failed'} return {output = 'callRecording: '..rec..' ('..names[rec]..') | hasCall: '..tostring(d.hasCall)..' | activeSince: '..tostring(d.activeSince), data = {callRecording = rec, state = names[rec], hasCall = d.hasCall, activeSince = d.activeSince}} end"},
+      {"name": "recording start", "kind": "action",
+       "description": "start recording",
+       "parameters": {"token": {"type": "string", "required": true},
+                      "status": {"type": "number", "required": true}},
+       "request": {"method": "POST",
+                   "url": "{{state.base_url}}/ocs/v2.php/apps/spreed/api/v1/recording/{{args.token}}",
+                   "headers": {"Authorization": "Bearer {{state.token}}",
+                               "OCS-APIREQUEST": "true", "Accept": "application/json",
+                               "Content-Type": "application/json"},
+                   "body": "{\"status\": {{args.status}}}"},
+       "script": "function run(ctx) local r = ctx.request if r.status == 200 then return {output = 'recording start accepted (status '..tostring(ctx.args.status)..'); poll recording status for activation'} end local j = r.json or {} local e = (j.ocs and j.ocs.data and j.ocs.data.error) or nil if e then return {success = false, output = 'recording start failed: HTTP '..tostring(r.status)..' ('..tostring(e)..')'} end return {success = false, output = 'recording start failed: HTTP '..tostring(r.status)} end"},
+      {"name": "recording stop", "kind": "action",
+       "description": "stop recording",
+       "parameters": {"token": {"type": "string", "required": true}},
+       "request": {"method": "DELETE",
+                   "url": "{{state.base_url}}/ocs/v2.php/apps/spreed/api/v1/recording/{{args.token}}",
+                   "headers": {"Authorization": "Bearer {{state.token}}",
+                               "OCS-APIREQUEST": "true", "Accept": "application/json"}},
+       "script": "function run(ctx) local r = ctx.request if r.status == 200 then return {output = 'recording stop accepted; finalization in progress'} end return {success = false, output = 'recording stop failed: HTTP '..tostring(r.status)} end"},
+      {"name": "file get", "kind": "action",
+       "description": "download file content",
+       "parameters": {"path": {"type": "string", "required": true}},
+       "request": {"method": "GET",
+                   "url": "{{state.base_url}}/remote.php/dav/files/agent/{{args.path}}",
+                   "headers": {"Authorization": "Bearer {{state.token}}"}},
+       "script": "function run(ctx) local r = ctx.request if r.status ~= 200 then return {success=false, output='file get failed: HTTP '..tostring(r.status)} end local b = r.body or '' local slug = ctx.args.path:lower():gsub('[^%w._-]+','-') if slug == '' then slug = 'download' end if #slug > 128 then slug = slug:sub(1,128) end if slug:sub(1,1) == '.' then slug = 'dl'..slug end local ok, err = ctx.fs.write(slug, b) if not ok then return {success=false, output='file get: fs write failed: '..tostring(err)} end local d = {path=ctx.args.path, size=#b, file=slug} if #b <= 4096 then d.content = b end return {output='retrieved '..ctx.args.path..' ('..#b..' bytes) -> files:'..slug, data=d} end"})";
+    InstallFixturePkg(fx, extra);
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        fx.server.rawBodies["/ocs/v2.php/apps/spreed/api/v4/room/tok1"] =
+            "{\"ocs\":{\"meta\":{\"status\":\"ok\"},\"data\":{\"callRecording\":2,"
+            "\"hasCall\":true,\"activeSince\":\"2026-11-12T18:00:00+00:00\"}}}";
+        fx.server.rawBodies["/ocs/v2.php/apps/spreed/api/v4/room/tok2"] =
+            "{\"ok\":true}";
+        fx.server.rawBodies["/remote.php/dav/files/agent/rec.txt"] =
+            "hello-talk-recording";
+    }
+
+    // recording status: OCS payload parse + callRecording mapping.
+    Json::Value args;
+    args["token"] = "tok1";
+    auto r = fx.runtime->ExecuteAction("testpkg", "recording status", "agent", args);
+    Assert(r["success"].asBool() &&
+           r["output"].asString().find("2 (audio)") != std::string::npos &&
+           r["output"].asString().find("hasCall: true") != std::string::npos,
+           "recording status maps callRecording to state name");
+    Assert(r["data"]["state"].asString() == "audio" &&
+           r["data"]["callRecording"].asInt() == 2,
+           "recording status data fields");
+
+    // recording status: non-OCS body fails loudly (no silent empty success).
+    args["token"] = "tok2";
+    r = fx.runtime->ExecuteAction("testpkg", "recording status", "agent", args);
+    Assert(!r["success"].asBool() &&
+           r["output"].asString().find("unexpected payload") != std::string::npos,
+           "recording status fails loudly on non-OCS payload");
+
+    // recording start: POST verb + exact template body on the wire.
+    Json::Value sa;
+    sa["token"] = "tok1";
+    sa["status"] = 2;
+    r = fx.runtime->ExecuteAction("testpkg", "recording start", "agent", sa);
+    Assert(r["success"].asBool() &&
+           r["output"].asString().find("accepted") != std::string::npos,
+           "recording start executed");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "POST", "recording start is POST");
+        Assert(fx.server.lastBody == "{\"status\": 2}",
+               "recording start body exact on the wire");
+        Assert(fx.server.lastPath ==
+               "/ocs/v2.php/apps/spreed/api/v1/recording/tok1",
+               "recording start path interpolated");
+    }
+
+    // recording stop: DELETE verb.
+    Json::Value da;
+    da["token"] = "tok1";
+    r = fx.runtime->ExecuteAction("testpkg", "recording stop", "agent", da);
+    Assert(r["success"].asBool(), "recording stop executed");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "DELETE", "recording stop is DELETE");
+    }
+
+    // file get: files-lane shape — body lands in the sandbox files area
+    // byte-exact; inline content only when small (kernel caps result strings).
+    const auto slurp = [](const std::string& p) {
+        std::ifstream f(p, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(f)),
+                           std::istreambuf_iterator<char>());
+    };
+    const std::string pkgFiles =
+        (std::filesystem::path(fx.filesRoot) / "testpkg").string();
+
+    Json::Value fa;
+    fa["path"] = "rec.txt";
+    r = fx.runtime->ExecuteAction("testpkg", "file get", "agent", fa);
+    Assert(r["success"].asBool() &&
+           r["output"].asString().find("(20 bytes)") != std::string::npos,
+           "file get reports byte size");
+    Assert(r["data"]["content"].asString() == "hello-talk-recording",
+           "file get inlines small content");
+    Assert(r["data"]["file"].asString() == "rec.txt",
+           "file get returns the sandbox slug");
+    Assert(slurp(pkgFiles + "/rec.txt") == "hello-talk-recording",
+           "file get writes body to files area byte-exact");
+
+    // file get: NUL-bearing (binary) body survives the bridge — regression
+    // for the lua_pushstring truncation found live on a 50KB PNG (8 bytes).
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        fx.server.rawBodies["/remote.php/dav/files/agent/bin.dat"] =
+            std::string("AB\x00CD", 5);
+    }
+    fa["path"] = "bin.dat";
+    r = fx.runtime->ExecuteAction("testpkg", "file get", "agent", fa);
+    Assert(r["success"].asBool() &&
+           r["output"].asString().find("(5 bytes)") != std::string::npos,
+           "file get length is NUL-safe");
+    Assert(r["data"]["content"].asString().size() == 5,
+           "file get content survives embedded NUL");
+    Assert(slurp(pkgFiles + "/bin.dat") == std::string("AB\x00CD", 5),
+           "file get NUL body written byte-exact");
+
+    // file get: large body travels via the files lane only (no inline
+    // content past the threshold) — regression for the kernel string cap
+    // truncating a 50KB PNG to ~10KB of transcoded garbage in the JSON.
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        fx.server.rawBodies["/remote.php/dav/files/agent/big.bin"] =
+            std::string(5000, 'x');
+    }
+    fa["path"] = "big.bin";
+    r = fx.runtime->ExecuteAction("testpkg", "file get", "agent", fa);
+    Assert(r["success"].asBool() &&
+           r["output"].asString().find("(5000 bytes)") != std::string::npos,
+           "file get large body success");
+    Assert(r["data"]["content"].asString().empty(),
+           "file get large body has no inline content");
+    Assert(r["data"]["size"].asInt() == 5000,
+           "file get large body reports size");
+    Assert(slurp(pkgFiles + "/big.bin").size() == 5000,
+           "file get large body written whole to files area");
     return 0;
 }
 
@@ -1445,6 +1609,7 @@ int main() {
     TestInterpolation();
     TestArgsValidation();
     TestPrimaryTransport();
+    TestNextcloudRecordingCommands();
     TestSandboxStateAndSecrets();
     TestEgressControl();
     TestSandboxGlobals();

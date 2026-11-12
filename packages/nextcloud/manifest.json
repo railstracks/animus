@@ -1,8 +1,8 @@
 {
   "kind": "api_package",
   "name": "nextcloud",
-  "version": "0.2.0",
-  "description": "Nextcloud office connector — Files (WebDAV), Notes, Calendar (CalDAV), Shares. Read + write lanes; writes_gated (declared writes are #106-bound, script-composed writes take per-invocation #126 approvals).",
+  "version": "0.3.0",
+  "description": "Nextcloud office connector — Files (WebDAV), Notes, Calendar (CalDAV), Shares, Talk recording control. Read + write lanes; writes_gated (declared writes are #106-bound, script-composed writes take per-invocation #126 approvals).",
   "keywords": [
     "nextcloud",
     "office",
@@ -195,6 +195,94 @@
         }
       },
       "script": "function run(ctx) local body = json.encode({path = ctx.args.path, shareType = 3}) local r = ctx.http.post(ctx.package.get_state('base_url')..'/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json', {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = body}) if r.status ~= 200 then return {success = false, output = 'share create failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local d = r.json and r.json.ocs and r.json.ocs.data if not d or not d.url then return {success = false, output = 'share create: unexpected OCS payload'} end return {output = d.url, data = {id = d.id, url = d.url, token = d.token}} end"
+    },
+    {
+      "name": "recording status",
+      "kind": "action",
+      "description": "Read a Talk room's call-recording state. callRecording: 0=none, 1=video, 2=audio, 3=video_starting, 4=audio_starting, 5=failed. Also reports hasCall/activeSince.",
+      "parameters": {
+        "token": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "{{state.base_url}}/ocs/v2.php/apps/spreed/api/v4/room/{{args.token}}",
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "OCS-APIREQUEST": "true",
+          "Accept": "application/json"
+        }
+      },
+      "script": "function run(ctx) local r = ctx.request local j = r.json or {} local d = (j.ocs and j.ocs.data) or {} local rec = tonumber(d.callRecording) if rec == nil then return {success = false, output = 'recording status failed: HTTP '..tostring(r.status)..' - unexpected payload'} end local names = {[0]='none',[1]='video',[2]='audio',[3]='video_starting',[4]='audio_starting',[5]='failed'} return {output = 'callRecording: '..rec..' ('..names[rec]..') | hasCall: '..tostring(d.hasCall)..' | activeSince: '..tostring(d.activeSince), data = {callRecording = rec, state = names[rec], hasCall = d.hasCall, activeSince = d.activeSince}} end"
+    },
+    {
+      "name": "recording start",
+      "kind": "action",
+      "description": "Start call recording in a Talk room (moderator required; an active call must exist). status: 1 = video, 2 = audio (number). spreed errors map to reasons: classified/status/recording/call/config.",
+      "parameters": {
+        "token": {
+          "type": "string",
+          "required": true
+        },
+        "status": {
+          "type": "number",
+          "required": true
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "{{state.base_url}}/ocs/v2.php/apps/spreed/api/v1/recording/{{args.token}}",
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "OCS-APIREQUEST": "true",
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        },
+        "body": "{\"status\": {{args.status}}}"
+      },
+      "script": "function run(ctx) local r = ctx.request if r.status == 200 then return {output = 'recording start accepted (status '..tostring(ctx.args.status)..'); poll recording status for activation'} end local j = r.json or {} local e = (j.ocs and j.ocs.data and j.ocs.data.error) or nil if e then return {success = false, output = 'recording start failed: HTTP '..tostring(r.status)..' ('..tostring(e)..')'} end return {success = false, output = 'recording start failed: HTTP '..tostring(r.status)} end"
+    },
+    {
+      "name": "recording stop",
+      "kind": "action",
+      "description": "Stop call recording in a Talk room (moderator required). The file is finalized and lands in the recording starter's Files under Talk/ (can take a moment after stop).",
+      "parameters": {
+        "token": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "request": {
+        "method": "DELETE",
+        "url": "{{state.base_url}}/ocs/v2.php/apps/spreed/api/v1/recording/{{args.token}}",
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "OCS-APIREQUEST": "true",
+          "Accept": "application/json"
+        }
+      },
+      "script": "function run(ctx) local r = ctx.request if r.status == 200 then return {output = 'recording stop accepted; finalization in progress'} end return {success = false, output = 'recording stop failed: HTTP '..tostring(r.status)} end"
+    },
+    {
+      "name": "file get",
+      "kind": "action",
+      "description": "Download a file (WebDAV GET) into the sandbox files area. Returns {path, size, file} where file is the sandbox slug; content inlined only when <= 4096 bytes (kernel caps result strings - large payloads travel via the files lane, quota files_quota_mb). Binary-safe.",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "{{state.base_url}}/remote.php/dav/files/{{state.user}}/{{args.path}}",
+        "headers": {
+          "Authorization": "{{state.auth_header}}"
+        }
+      },
+      "script": "function run(ctx) local r = ctx.request if r.status ~= 200 then return {success=false, output='file get failed: HTTP '..tostring(r.status)} end local b = r.body or '' local slug = ctx.args.path:lower():gsub('[^%w._-]+','-') if slug == '' then slug = 'download' end if #slug > 128 then slug = slug:sub(1,128) end if slug:sub(1,1) == '.' then slug = 'dl'..slug end local ok, err = ctx.fs.write(slug, b) if not ok then return {success=false, output='file get: fs write failed: '..tostring(err)} end local d = {path=ctx.args.path, size=#b, file=slug} if #b <= 4096 then d.content = b end return {output='retrieved '..ctx.args.path..' ('..#b..' bytes) -> files:'..slug, data=d} end"
     }
   ],
   "connections": []
