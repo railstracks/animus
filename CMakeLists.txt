@@ -942,6 +942,8 @@ if(ANIMUS_BUILD_TESTS)
       ${CMAKE_CURRENT_SOURCE_DIR}/src
       ${JSONCPP_INCLUDE_DIRS}
     )
+    target_compile_definitions(animus_api_package_store_tests PRIVATE
+      ANIMUS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     set_target_properties(animus_api_package_store_tests PROPERTIES
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
