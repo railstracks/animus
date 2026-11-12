@@ -1115,6 +1115,20 @@ int TestWritesGate() {
     Assert(fx.runtime->ListPendingWrites(pkg.id).size() == pendingBefore,
            "read verb queued no new pending write");
 
+    // --- declared writes in a gated package: #106-bound, no hold --------
+    // Request-template writes ride the package content-hash approval
+    // (#106), NOT the per-invocation #126 gate — that gate is for
+    // runtime-composed (script) writes. This pins the split the
+    // nextcloud write lane leans on: file put/event put are declared
+    // templates; note create/share create compose bodies at runtime.
+    Json::Value po;
+    po["symbol"] = "AAPL";
+    po["qty"] = 2;
+    r = fx.runtime->ExecuteAction("testpkg", "post order", "agent", po);
+    Assert(r["success"].asBool(),
+           "declared write executes without per-invocation hold");
+    Assert(fx.server.hits == 4, "declared write hit the server");
+
     // --- TTL expiry --------------------------------------------------------
     {
         Fixture fx2;
