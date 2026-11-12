@@ -1047,7 +1047,11 @@ int TestWritesGate() {
         "script": "function run(ctx) local r = ctx.http.post(ctx.package.get_state('base_url')..'/orders', {body='{\"sym\":\"'..ctx.args.sym..'\"}'}) return {output='held '..tostring(r.approval_required ~= nil), data={held=r.approval_required ~= nil, digest=tostring(r.digest), status=r.status}} end"},)"
         R"({"name": "sandbox get", "kind": "action", "description": "d",
         "parameters": {},
-        "script": "function run(ctx) local r = ctx.http.get(ctx.package.get_state('base_url')..'/ping') return {output='status '..tostring(r.status), data={held=r.approval_required ~= nil}} end"},)";
+        "script": "function run(ctx) local r = ctx.http.get(ctx.package.get_state('base_url')..'/ping') return {output='status '..tostring(r.status), data={held=r.approval_required ~= nil}} end"},)"
+        R"({"name": "dav list", "kind": "action", "description": "d",
+        "parameters": {},
+        "request": {"method": "PROPFIND", "url": "{{state.base_url}}/dav", "headers": {"Depth": "1"}},
+        "script": "function run(ctx) return {output='dav '..tostring(ctx.request.status), data={held=ctx.request.approval_required ~= nil, status=ctx.request.status}} end"},)";
     auto pkg = InstallFixturePkg(fx, extra, "", /*ownerInstalled=*/true, /*writesGated=*/true);
 
     Json::Value args;
@@ -1095,6 +1099,21 @@ int TestWritesGate() {
     Assert(r["success"].asBool() && !r["data"]["held"].asBool(),
            "GET passes ungated");
     Assert(fx.server.hits == 2, "read hit the server");
+
+    // --- WebDAV read verbs via declared templates: ungated (#293) --------
+    // Declared request templates never enter the #126 per-invocation gate
+    // (#106-bound declared content); PROPFIND is a read. This pins the
+    // property the nextcloud package's read lane leans on: file/calendar
+    // listings must never queue owner approval.
+    const size_t pendingBefore = fx.runtime->ListPendingWrites(pkg.id).size();
+    r = fx.runtime->ExecuteAction("testpkg", "dav list", "agent", Json::Value());
+    Assert(r["success"].asBool(), "declared PROPFIND executes in gated package");
+    Assert(!r["data"]["held"].asBool(), "declared PROPFIND is never write-held");
+    Assert(fx.server.hits == 3, "PROPFIND hit the transport");
+    Assert(fx.server.lastMethod == "PROPFIND",
+           "verb preserved to the wire (server saw '" + fx.server.lastMethod + "')");
+    Assert(fx.runtime->ListPendingWrites(pkg.id).size() == pendingBefore,
+           "read verb queued no new pending write");
 
     // --- TTL expiry --------------------------------------------------------
     {
