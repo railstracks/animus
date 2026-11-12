@@ -255,7 +255,12 @@ Json::Value LuaToJson(lua_State* L, int idx) {
                 return Json::Value(static_cast<Json::Int64>(d));
             return Json::Value(d);
         }
-        case LUA_TSTRING: return Json::Value(std::string(lua_tostring(L, idx)));
+        case LUA_TSTRING: {
+            // NUL-safe round-trip: lua_tostring truncates at embedded NULs.
+            size_t len = 0;
+            const char* s = lua_tolstring(L, idx, &len);
+            return Json::Value(std::string(s, len));
+        }
         case LUA_TTABLE: {
             Json::Value out;
             const bool hasMeta = (lua_getmetatable(L, idx) != 0);
@@ -313,7 +318,13 @@ void PushJson(lua_State* L, const Json::Value& v) {
             lua_pushinteger(L, static_cast<lua_Integer>(v.asInt64()));
             break;
         case Json::realValue: lua_pushnumber(L, v.asDouble()); break;
-        case Json::stringValue: lua_pushstring(L, v.asCString()); break;
+        case Json::stringValue: {
+            // NUL-safe: JSON strings may carry embedded NULs (binary file
+            // content); asCString() would truncate at the first one.
+            const std::string s = v.asString();
+            lua_pushlstring(L, s.data(), s.size());
+            break;
+        }
         case Json::arrayValue: {
             lua_newtable(L);
             int i = 1;
@@ -489,7 +500,11 @@ Json::Value DoHttp(BridgeContext* bc, const std::string& method, lua_State* L, i
         }
         lua_pop(L, 1);
         lua_getfield(L, optsIdx, "body");
-        if (lua_isstring(L, -1)) req.body = lua_tostring(L, -1);
+        if (lua_isstring(L, -1)) {
+            size_t len = 0;
+            const char* s = lua_tolstring(L, -1, &len);
+            req.body = std::string(s, len);  // NUL-safe (binary bodies)
+        }
         lua_pop(L, 1);
     }
     // #126 per-invocation write gate: writes_gated packages must have each
