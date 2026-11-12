@@ -3,117 +3,196 @@
   "name": "nextcloud",
   "version": "0.2.0",
   "description": "Nextcloud office connector — Files (WebDAV), Notes, Calendar (CalDAV), Shares. Read + write lanes; writes_gated (declared writes are #106-bound, script-composed writes take per-invocation #126 approvals).",
-  "keywords": ["nextcloud", "office", "files", "webdav", "notes", "calendar", "caldav", "shares"],
+  "keywords": [
+    "nextcloud",
+    "office",
+    "files",
+    "webdav",
+    "notes",
+    "calendar",
+    "caldav",
+    "shares"
+  ],
   "dispatch_cooldown_ms": 2000,
   "files_quota_mb": 128,
   "writes_gated": true,
-  "egress_hosts": ["nextcloud.steadyfort.com"],
+  "egress_hosts": [
+    "nextcloud.steadyfort.com"
+  ],
   "state_schema": {
-    "base_url":    {"type": "string", "default": "https://nextcloud.steadyfort.com"},
-    "user":        {"type": "string", "default": "animus-agent"},
-    "auth_header": {"type": "string", "secret": true}
+    "base_url": {
+      "type": "string",
+      "default": "https://nextcloud.steadyfort.com"
+    },
+    "user": {
+      "type": "string",
+      "default": "animus-agent"
+    },
+    "auth_header": {
+      "type": "string",
+      "secret": true
+    }
   },
   "commands": [
     {
-      "name": "connect", "kind": "action",
+      "name": "connect",
+      "kind": "action",
       "description": "Validate an app password against the instance and store the precomputed Authorization header. Get the app password from the animus-agent account (Settings → Security → Devices & sessions).",
       "parameters": {
-        "user": {"type": "string", "required": true},
-        "app_password": {"type": "string", "required": true, "secret": true}
+        "user": {
+          "type": "string",
+          "required": true
+        },
+        "app_password": {
+          "type": "string",
+          "required": true,
+          "secret": true
+        }
       },
       "script": "function run(ctx) local h = 'Basic '..b64.encode(ctx.args.user..':'..ctx.args.app_password) local r = ctx.http.get(ctx.package.get_state('base_url')..'/ocs/v2.php/cloud/user?format=json', {headers = {['Authorization'] = h, ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json'}}) if r.status ~= 200 then return {success = false, output = 'connect failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local o = r.json and r.json.ocs if not o or not o.data or not o.data.id then return {success = false, output = 'connect failed: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end local ok1 = ctx.package.set_state('user', ctx.args.user) local ok2 = ctx.package.set_state('auth_header', h) if not ok1 or not ok2 then return {success = false, output = 'connect failed: state persist error'} end return {output = 'connected as '..o.data.id..' ('..tostring(o.data['display-name'])..')', data = {user_id = o.data.id}} end"
     },
     {
-      "name": "files list", "kind": "action",
+      "name": "files list",
+      "kind": "action",
       "description": "List files and folders in the account's root folder (PROPFIND, Depth 1)",
       "parameters": {},
       "request": {
         "method": "PROPFIND",
         "url": "{{state.base_url}}/remote.php/dav/files/{{state.user}}/",
-        "headers": {"Authorization": "***}}", "Depth": "1"}
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "Depth": "1"
+        }
       },
       "script": "function run(ctx) local b = ctx.request.body or '' local rows = {} for resp in b:gmatch('<d:response>.-</d:response>') do local href = resp:match('<d:href>([^<]+)</d:href>') or '' local is_dir = resp:match('<d:resourcetype>%s*<d:collection') ~= nil local size = resp:match('<d:getcontentlength>([^<]+)<') or '' local mtime = resp:match('<d:getlastmodified>([^<]+)<') or '' local name = href:match('([^/]+)/?$') or href name = name:gsub('%%20', ' ') table.insert(rows, {name = name, type = is_dir and 'dir' or 'file', size = tonumber(size) or 0, modified = mtime, href = href}) end if #rows == 0 then return {success = false, output = 'files list: no response rows parsed - unexpected body shape (HTTP '..tostring(ctx.request.status)..')'} end return {output = #rows..' entries', data = rows} end"
     },
     {
-      "name": "file put", "kind": "action",
+      "name": "file put",
+      "kind": "action",
       "description": "Upload/overwrite a text file (raw-body PUT). Path is relative to the account root; percent-encode special characters (e.g. %20 for spaces).",
       "parameters": {
-        "path": {"type": "string", "required": true},
-        "content": {"type": "string", "required": true}
+        "path": {
+          "type": "string",
+          "required": true
+        },
+        "content": {
+          "type": "string",
+          "required": true
+        }
       },
       "request": {
         "method": "PUT",
         "url": "{{state.base_url}}/remote.php/dav/files/{{state.user}}/{{args.path}}",
-        "headers": {"Authorization": "***}}"},
+        "headers": {
+          "Authorization": "{{state.auth_header}}"
+        },
         "body": "{{args.content}}"
       },
       "script": "function run(ctx) local r = ctx.request if r.status ~= 201 and r.status ~= 204 then return {success = false, output = 'file put failed: HTTP '..tostring(r.status)} end return {output = 'wrote '..ctx.args.path..' (HTTP '..r.status..')'} end"
     },
     {
-      "name": "file delete", "kind": "action",
+      "name": "file delete",
+      "kind": "action",
       "description": "Delete a file or folder (folder delete is recursive). Path relative to account root, percent-encoded as in file put.",
       "parameters": {
-        "path": {"type": "string", "required": true}
+        "path": {
+          "type": "string",
+          "required": true
+        }
       },
       "request": {
         "method": "DELETE",
         "url": "{{state.base_url}}/remote.php/dav/files/{{state.user}}/{{args.path}}",
-        "headers": {"Authorization": "***}}"}
+        "headers": {
+          "Authorization": "{{state.auth_header}}"
+        }
       },
       "script": "function run(ctx) local r = ctx.request if r.status ~= 204 then return {success = false, output = 'file delete failed: HTTP '..tostring(r.status)} end return {output = 'deleted '..ctx.args.path} end"
     },
     {
-      "name": "note list", "kind": "action",
+      "name": "note list",
+      "kind": "action",
       "description": "List notes (Notes app API)",
       "parameters": {},
       "request": {
         "method": "GET",
         "url": "{{state.base_url}}/index.php/apps/notes/api/v1/notes",
-        "headers": {"Authorization": "***}}", "Accept": "application/json"}
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "Accept": "application/json"
+        }
       },
       "script": "function run(ctx) local rows = ctx.request.json if type(rows) ~= 'table' then return {success = false, output = 'note list: no JSON payload (HTTP '..tostring(ctx.request.status)..')'} end local out = {} for _, n in ipairs(rows) do table.insert(out, {id = n.id, title = n.title, modified = n.modified}) end return {output = #out..' notes', data = out} end"
     },
     {
-      "name": "note create", "kind": "action",
+      "name": "note create",
+      "kind": "action",
       "description": "Create a note with arbitrary text (Notes app). Body is script-composed via json.encode — per-invocation #126 approval applies (one-shot, payload-bound).",
       "parameters": {
-        "title": {"type": "string", "required": true},
-        "content": {"type": "string", "required": true}
+        "title": {
+          "type": "string",
+          "required": true
+        },
+        "content": {
+          "type": "string",
+          "required": true
+        }
       },
       "script": "function run(ctx) local body = json.encode({title = ctx.args.title, content = ctx.args.content}) local r = ctx.http.post(ctx.package.get_state('base_url')..'/index.php/apps/notes/api/v1/notes', {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = body}) if r.status ~= 200 then return {success = false, output = 'note create failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local j = r.json or {} return {output = 'note '..tostring(j.id)..': '..tostring(j.title), data = {id = j.id, title = j.title}} end"
     },
     {
-      "name": "cal list", "kind": "action",
+      "name": "cal list",
+      "kind": "action",
       "description": "List calendars (CalDAV PROPFIND, Depth 1)",
       "parameters": {},
       "request": {
         "method": "PROPFIND",
         "url": "{{state.base_url}}/remote.php/dav/calendars/{{state.user}}/",
-        "headers": {"Authorization": "***}}", "Depth": "1"}
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "Depth": "1"
+        }
       },
       "script": "function run(ctx) local b = ctx.request.body or '' local rows = {} for resp in b:gmatch('<d:response>.-</d:response>') do local href = resp:match('<d:href>([^<]+)</d:href>') or '' local name = resp:match('<d:displayname>([^<]+)</d:displayname>') if name then table.insert(rows, {name = name, href = href}) end end if #rows == 0 then return {success = false, output = 'cal list: no calendars parsed - unexpected body shape (HTTP '..tostring(ctx.request.status)..')'} end return {output = #rows..' calendars', data = rows} end"
     },
     {
-      "name": "event put", "kind": "action",
+      "name": "event put",
+      "kind": "action",
       "description": "Create/overwrite a calendar event from VEVENT iCalendar text (raw-body PUT). calendar is the calendar id from cal list (e.g. personal); uid names the .ics resource and should match the VEVENT's UID.",
       "parameters": {
-        "calendar": {"type": "string", "required": true},
-        "uid": {"type": "string", "required": true},
-        "ics": {"type": "string", "required": true}
+        "calendar": {
+          "type": "string",
+          "required": true
+        },
+        "uid": {
+          "type": "string",
+          "required": true
+        },
+        "ics": {
+          "type": "string",
+          "required": true
+        }
       },
       "request": {
         "method": "PUT",
         "url": "{{state.base_url}}/remote.php/dav/calendars/{{state.user}}/{{args.calendar}}/{{args.uid}}.ics",
-        "headers": {"Authorization": "***}}", "Content-Type": "text/calendar; charset=utf-8"},
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "Content-Type": "text/calendar; charset=utf-8"
+        },
         "body": "{{args.ics}}"
       },
       "script": "function run(ctx) local r = ctx.request if r.status ~= 201 and r.status ~= 204 then return {success = false, output = 'event put failed: HTTP '..tostring(r.status)} end return {output = 'event '..ctx.args.uid..' written (HTTP '..r.status..')'} end"
     },
     {
-      "name": "share create", "kind": "action",
+      "name": "share create",
+      "kind": "action",
       "description": "Create a public link share for a file/folder path; returns the share URL. Body is script-composed — per-invocation #126 approval applies.",
       "parameters": {
-        "path": {"type": "string", "required": true}
+        "path": {
+          "type": "string",
+          "required": true
+        }
       },
       "script": "function run(ctx) local body = json.encode({path = ctx.args.path, shareType = 3}) local r = ctx.http.post(ctx.package.get_state('base_url')..'/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json', {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = body}) if r.status ~= 200 then return {success = false, output = 'share create failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local d = r.json and r.json.ocs and r.json.ocs.data if not d or not d.url then return {success = false, output = 'share create: unexpected OCS payload'} end return {output = d.url, data = {id = d.id, url = d.url, token = d.token}} end"
     }
