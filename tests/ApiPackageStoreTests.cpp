@@ -9,6 +9,7 @@
 #include <iostream>
 #include <string>
 #include <unistd.h>
+#include <dirent.h>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -510,6 +511,77 @@ int TestFixtureFileInstalls() {
     return 0;
 }
 
+// #299: every manifest shipped under packages/ must pass the install lint.
+// The #298 class (literal credential headers in request.headers) shipped
+// because the suites lint fixtures only — this walk makes the repo's own
+// manifests a first-class test input, plus a canary proving the lint still
+// refuses the literal class.
+int TestRepoManifestLint() {
+    std::cerr << "  [store] repo packages/* manifests install clean (#299)...\n";
+#ifdef ANIMUS_SOURCE_DIR
+    const std::string pkgDir = std::string(ANIMUS_SOURCE_DIR) + "/packages";
+    DIR* d = opendir(pkgDir.c_str());
+    if (!d) { Assert(false, "packages/ dir not found: " + pkgDir); return 0; }
+    int manifests = 0;
+    struct dirent* ent;
+    while ((ent = readdir(d)) != nullptr) {
+        if (ent->d_name[0] == '.') continue;
+        const std::string mf = pkgDir + "/" + ent->d_name + "/manifest.json";
+        std::ifstream f(mf);
+        if (!f.good()) continue;  // not a package directory
+        ++manifests;
+        std::stringstream ss; ss << f.rdbuf();
+        const std::string dbPath = MakeTempDbPath();
+        {
+            SqliteDataStore db(dbPath);
+            ApiPackageStore store(&db);
+            try {
+                store.InstallFromManifest(ss.str());
+            } catch (const std::exception& ex) {
+                Assert(false, std::string(ent->d_name) + "/manifest.json REJECTED: " + ex.what());
+            }
+        }
+        unlink(dbPath.c_str());
+    }
+    closedir(d);
+    Assert(manifests > 0, "walk found >= 1 manifest (walk itself broken?)");
+    std::cerr << "  [store] walked " << manifests << " repo manifest(s)\n";
+
+    // Canary: the #298 class — literal credential header value — must be
+    // refused by the same lint the walk exercises.
+    {
+        const char* kLintCanary = R"({
+          "kind": "api_package",
+          "name": "lint-canary",
+          "version": "0.0.1",
+          "description": "lint canary",
+          "commands": [
+            {
+              "name": "probe", "kind": "action",
+              "description": "probe",
+              "request": {"method": "GET", "url": "https://example.invalid/",
+                          "headers": {"Authorization": "Basic"}},
+              "script": "function run(ctx) return {output='ok'} end"
+            }
+          ]
+        })";
+        const std::string dbPath = MakeTempDbPath();
+        SqliteDataStore db(dbPath);
+        ApiPackageStore store(&db);
+        bool refused = false;
+        try { store.InstallFromManifest(kLintCanary); }
+        catch (const std::exception& ex) {
+            refused = std::string(ex.what()).find("must template") != std::string::npos;
+        }
+        Assert(refused, "literal Authorization refused (the #298 class)");
+        unlink(dbPath.c_str());
+    }
+#else
+    Assert(false, "ANIMUS_SOURCE_DIR not defined for store tests build");
+#endif
+    return 0;
+}
+
 int main() {
     std::cerr << "ApiPackageStore tests:\n";
     TestSchemaIdempotent();
@@ -519,6 +591,7 @@ int main() {
     TestAgentOverlay();
     TestManifestInstall();
     TestFixtureFileInstalls();
+    TestRepoManifestLint();
     if (g_failures == 0) std::cerr << "All api package store tests passed.\n";
     else std::cerr << g_failures << " failures.\n";
     return g_failures == 0 ? 0 : 1;
