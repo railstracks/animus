@@ -1,0 +1,60 @@
+{
+  "kind": "api_package",
+  "name": "nextcloud",
+  "version": "0.1.0",
+  "description": "Nextcloud office connector — Files (WebDAV), Notes, Calendar (CalDAV). Read lane (Phase A); writes land behind the #126 approval gate in a later version.",
+  "keywords": ["nextcloud", "office", "files", "webdav", "notes", "calendar", "caldav"],
+  "dispatch_cooldown_ms": 2000,
+  "files_quota_mb": 128,
+  "egress_hosts": ["nextcloud.steadyfort.com"],
+  "state_schema": {
+    "base_url":    {"type": "string", "default": "https://nextcloud.steadyfort.com"},
+    "user":        {"type": "string", "default": "animus-agent"},
+    "auth_header": {"type": "string", "secret": true}
+  },
+  "commands": [
+    {
+      "name": "connect", "kind": "action",
+      "description": "Validate an app password against the instance and store the precomputed Authorization header. Get the app password from the animus-agent account (Settings → Security → Devices & sessions).",
+      "parameters": {
+        "user": {"type": "string", "required": true},
+        "app_password": {"type": "string", "required": true, "secret": true}
+      },
+      "script": "function run(ctx) local h = 'Basic '..b64.encode(ctx.args.user..':'..ctx.args.app_password) local r = ctx.http.get(ctx.package.get_state('base_url')..'/ocs/v2.php/cloud/user?format=json', {headers = {['Authorization'] = h, ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json'}}) if r.status ~= 200 then return {success = false, output = 'connect failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local o = r.json and r.json.ocs if not o or not o.data or not o.data.id then return {success = false, output = 'connect failed: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end local ok1 = ctx.package.set_state('user', ctx.args.user) local ok2 = ctx.package.set_state('auth_header', h) if not ok1 or not ok2 then return {success = false, output = 'connect failed: state persist error'} end return {output = 'connected as '..o.data.id..' ('..tostring(o.data['display-name'])..')', data = {user_id = o.data.id}} end"
+    },
+    {
+      "name": "files list", "kind": "action",
+      "description": "List files and folders in the account's root folder (PROPFIND, Depth 1)",
+      "parameters": {},
+      "request": {
+        "method": "PROPFIND",
+        "url": "{{state.base_url}}/remote.php/dav/files/{{state.user}}/",
+        "headers": {"Authorization": "{{state.auth_header}}", "Depth": "1"}
+      },
+      "script": "function run(ctx) local b = ctx.request.body or '' local rows = {} for resp in b:gmatch('<d:response>.-</d:response>') do local href = resp:match('<d:href>([^<]+)</d:href>') or '' local is_dir = resp:match('<d:resourcetype>%s*<d:collection') ~= nil local size = resp:match('<d:getcontentlength>([^<]+)<') or '' local mtime = resp:match('<d:getlastmodified>([^<]+)<') or '' local name = href:match('([^/]+)/?$') or href name = name:gsub('%%20', ' ') table.insert(rows, {name = name, type = is_dir and 'dir' or 'file', size = tonumber(size) or 0, modified = mtime, href = href}) end if #rows == 0 then return {success = false, output = 'files list: no response rows parsed - unexpected body shape (HTTP '..tostring(ctx.request.status)..')'} end return {output = #rows..' entries', data = rows} end"
+    },
+    {
+      "name": "note list", "kind": "action",
+      "description": "List notes (Notes app API)",
+      "parameters": {},
+      "request": {
+        "method": "GET",
+        "url": "{{state.base_url}}/index.php/apps/notes/api/v1/notes",
+        "headers": {"Authorization": "{{state.auth_header}}", "Accept": "application/json"}
+      },
+      "script": "function run(ctx) local rows = ctx.request.json if type(rows) ~= 'table' then return {success = false, output = 'note list: no JSON payload (HTTP '..tostring(ctx.request.status)..')'} end local out = {} for _, n in ipairs(rows) do table.insert(out, {id = n.id, title = n.title, modified = n.modified}) end return {output = #out..' notes', data = out} end"
+    },
+    {
+      "name": "cal list", "kind": "action",
+      "description": "List calendars (CalDAV PROPFIND, Depth 1)",
+      "parameters": {},
+      "request": {
+        "method": "PROPFIND",
+        "url": "{{state.base_url}}/remote.php/dav/calendars/{{state.user}}/",
+        "headers": {"Authorization": "{{state.auth_header}}", "Depth": "1"}
+      },
+      "script": "function run(ctx) local b = ctx.request.body or '' local rows = {} for resp in b:gmatch('<d:response>.-</d:response>') do local href = resp:match('<d:href>([^<]+)</d:href>') or '' local name = resp:match('<d:displayname>([^<]+)</d:displayname>') if name then table.insert(rows, {name = name, href = href}) end end if #rows == 0 then return {success = false, output = 'cal list: no calendars parsed - unexpected body shape (HTTP '..tostring(ctx.request.status)..')'} end return {output = #rows..' calendars', data = rows} end"
+    }
+  ],
+  "connections": []
+}

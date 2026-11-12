@@ -111,12 +111,18 @@ HttpClient::Response HttpClient::Execute(const Request& request) {
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
     } else if (request.method == "HEAD") {
         curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-    } else {
-        // GET (default)
+    } else if (request.method == "GET") {
         curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    } else {
+        // Any other verb (WebDAV PROPFIND/REPORT, MKCOL, …) goes out
+        // verbatim — never silently downgraded to GET. Found by the #293
+        // suite: a declared PROPFIND reached the transport but the wire
+        // method was GET (NC answers GET on a DAV path with HTML, not a
+        // multistatus — every WebDAV read would have broken silently).
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, request.method.c_str());
     }
 
-    // Body (for POST/PUT/PATCH)
+    // Body (for POST/PUT/PATCH and body-carrying custom verbs e.g. REPORT)
     if (!request.body.empty()) {
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request.body.c_str());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(request.body.size()));

@@ -429,6 +429,15 @@ int CtxSetState(lua_State* L) {
     return 2;
 }
 
+namespace {
+// #126 companion: read-only verbs never enter the per-invocation write gate.
+// GET/HEAD are plain reads; PROPFIND/REPORT are WebDAV's read verbs
+// (property listings and queries) — they fetch state, never mutate it.
+bool IsReadVerb(const std::string& m) {
+    return m == "GET" || m == "HEAD" || m == "PROPFIND" || m == "REPORT";
+}
+}  // namespace
+
 Json::Value DoHttp(BridgeContext* bc, const std::string& method, lua_State* L, int urlIdx,
                    int optsIdx) {
     Json::Value out(Json::objectValue);
@@ -484,11 +493,14 @@ Json::Value DoHttp(BridgeContext* bc, const std::string& method, lua_State* L, i
         lua_pop(L, 1);
     }
     // #126 per-invocation write gate: writes_gated packages must have each
-    // sandbox write (POST/PUT/DELETE) approved as an exact payload digest.
+    // sandbox write approved as an exact payload digest.
     // The request-template path is already #106-bound (declared content);
     // this is the complementary gate for runtime-composed requests. Held
     // requests never touch the network — the budget is not spent either.
-    if (bc->writesGated && method != "GET" && bc->runtime) {
+    // Read-only verbs are exempt: GET/HEAD plus WebDAV reads (PROPFIND/REPORT)
+    // — they fetch state and never mutate it, so gating them as writes would
+    // hold every files/cal listing hostage to owner approval.
+    if (bc->writesGated && !IsReadVerb(method) && bc->runtime) {
         const std::string digest =
             ApiRuntime::WriteDigest(bc->packageId, method, url, req.body);
         const std::string maskedUrl = ApiRuntime::MaskSecrets(url, bc->secretValues);
