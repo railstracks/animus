@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "回覆 {'@'} 提及",
         respondToAll: '回覆所有訊息（忽略提及過濾器）',
         threadedReplies: '頻道中的線程回應（每個訊息啟動一個線程）'
+      },
+      nextcloud: {
+        serverUrl: '伺服器 URL',
+        username: '用戶名',
+        appPassword: '應用程式密碼',
+        watchTokens: '監察 token（可選）',
+        watchTokensHint: '要監察嘅傾偈 token。留空代表全部。',
+        respondInDm: '回覆直接訊息',
+        respondInGroupOnMention: '回應群組入面嘅提及',
+        mentionTrigger: '提及觸發字串'
       }
     }
   } as const;

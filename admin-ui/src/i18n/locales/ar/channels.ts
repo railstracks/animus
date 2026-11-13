@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "الرد على {'@'}الإشارات",
         respondToAll: 'الرد على جميع الرسائل (يتجاهل مرشح الإشارة)',
         threadedReplies: 'ردود الموضوع في القنوات (كل رسالة تبدأ سلسلة رسائل)'
+      },
+      nextcloud: {
+        serverUrl: 'عنوان URL للخادم',
+        username: 'اسم المستخدم',
+        appPassword: 'كلمة مرور التطبيق',
+        watchTokens: 'الرموز المراقبة (اختياري)',
+        watchTokensHint: 'رموز المحادثات المراد مراقبتها. اتركه فارغًا للجميع.',
+        respondInDm: 'الرد على الرسائل المباشرة',
+        respondInGroupOnMention: 'الرد على الإشارات في المجموعات',
+        mentionTrigger: 'سلسلة تشغيل الإشارة'
       }
     }
   } as const;

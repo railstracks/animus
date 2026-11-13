@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "به {'@'}ذکرها پاسخ دهید",
         respondToAll: 'پاسخ به همه پیام‌ها (فیلتر ذکر را نادیده می‌گیرد)',
         threadedReplies: 'پاسخ های موضوع در کانال ها (هر پیام یک موضوع را شروع می کند)'
+      },
+      nextcloud: {
+        serverUrl: 'نشانی URL سرور',
+        username: 'نام کاربری',
+        appPassword: 'گذرواژه برنامه',
+        watchTokens: 'توکن‌های تحت نظر (اختیاری)',
+        watchTokensHint: 'توکن‌های گفتگوهای تحت نظر. برای همه خالی بگذارید.',
+        respondInDm: 'پاسخ به پیام‌های مستقیم',
+        respondInGroupOnMention: 'پاسخ به اشاره‌ها در گروه‌ها',
+        mentionTrigger: 'رشته راه‌انداز اشاره'
       }
     }
   } as const;

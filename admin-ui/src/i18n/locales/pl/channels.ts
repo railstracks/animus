@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "Odpowiadaj na {'@'}wzmianki",
         respondToAll: 'Odpowiadaj na wszystkie wiadomości (ignoruje filtr wzmianek)',
         threadedReplies: 'Odpowiedzi na wątki w kanałach (każda wiadomość rozpoczyna wątek)'
+      },
+      nextcloud: {
+        serverUrl: 'Adres URL serwera',
+        username: 'Nazwa użytkownika',
+        appPassword: 'Hasło aplikacji',
+        watchTokens: 'Obserwowane tokeny (opcjonalnie)',
+        watchTokensHint: 'Tokeny rozmów do obserwacji. Puste — wszystkie.',
+        respondInDm: 'Odpowiadaj na wiadomości bezpośrednie',
+        respondInGroupOnMention: 'Odpowiadaj na wzmianki w grupach',
+        mentionTrigger: 'Wyzwalacz wzmianki'
       }
     }
   } as const;

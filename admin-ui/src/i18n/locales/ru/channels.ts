@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "Отвечайте на упоминания {'@'}",
         respondToAll: 'Отвечать на все сообщения (игнорирует фильтр упоминаний)',
         threadedReplies: 'Ответы на темы в каналах (каждое сообщение запускает тему)'
+      },
+      nextcloud: {
+        serverUrl: 'URL-адрес сервера',
+        username: 'Имя пользователя',
+        appPassword: 'Пароль приложения',
+        watchTokens: 'Отслеживаемые токены (необязательно)',
+        watchTokensHint: 'Токены бесед для отслеживания. Пусто — для всех.',
+        respondInDm: 'Отвечать на личные сообщения',
+        respondInGroupOnMention: 'Отвечать на упоминания в группах',
+        mentionTrigger: 'Триггер упоминания'
       }
     }
   } as const;

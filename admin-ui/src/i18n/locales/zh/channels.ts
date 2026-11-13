@@ -116,6 +116,16 @@ export const channels = {
         respondToMentions: "回复 {'@'} 提及",
         respondToAll: '回复所有消息（忽略提及过滤器）',
         threadedReplies: '频道中的线程回复（每条消息启动一个线程）'
+      },
+      nextcloud: {
+        serverUrl: '服务器 URL',
+        username: '用户名',
+        appPassword: '应用密码',
+        watchTokens: '监视令牌（可选）',
+        watchTokensHint: '要监视的会话令牌。留空表示全部。',
+        respondInDm: '回复私信',
+        respondInGroupOnMention: '回复群组中的提及',
+        mentionTrigger: '提及触发字符串'
       }
     }
   } as const;

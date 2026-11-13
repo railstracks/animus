@@ -114,6 +114,16 @@ export const channels = {
       respondToMentions: 'Reageren op @vermeldingen',
       respondToAll: 'Reageren op alle berichten (negeert mention-filter)',
       threadedReplies: 'Antwoorden in threads (elk bericht start een thread)'
+    },
+    nextcloud: {
+      serverUrl: 'Server-URL',
+      username: 'Gebruikersnaam',
+      appPassword: 'App-wachtwoord',
+      watchTokens: 'Gemonitorde tokens (optioneel)',
+      watchTokensHint: 'Tokens van gesprekken om te monitoren. Leeg voor alles.',
+      respondInDm: 'Reageren op directe berichten',
+      respondInGroupOnMention: 'Reageren op vermeldingen in groepen',
+      mentionTrigger: 'Vermeldingstrigger'
     }
   }
 } as const;

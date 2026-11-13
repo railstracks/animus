@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "{'@'}bahislere yanıt verin",
         respondToAll: 'Tüm mesajları yanıtlayın (bahsetme filtresi dikkate alınmaz)',
         threadedReplies: 'Konu kanallarında yanıt verir (her mesaj bir konu başlatır)'
+      },
+      nextcloud: {
+        serverUrl: 'Sunucu URL\'si',
+        username: 'Kullanıcı adı',
+        appPassword: 'Uygulama parolası',
+        watchTokens: 'İzlenen tokenlar (isteğe bağlı)',
+        watchTokensHint: 'İzlenecek görüşme tokenları. Tümü için boş bırakın.',
+        respondInDm: 'Doğrudan mesajlara yanıt ver',
+        respondInGroupOnMention: 'Gruplarda bahsetmelere yanıt ver',
+        mentionTrigger: 'Bahsetme tetikleyicisi'
       }
     }
   } as const;

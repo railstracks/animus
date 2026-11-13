@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "Responder a {'@'}menções",
         respondToAll: 'Responder a todas as mensagens (ignora filtro de menção)',
         threadedReplies: 'Respostas de tópicos em canais (cada mensagem inicia um tópico)'
+      },
+      nextcloud: {
+        serverUrl: 'URL do servidor',
+        username: 'Nome de utilizador',
+        appPassword: 'Palavra-passe de aplicação',
+        watchTokens: 'Tokens vigiados (opcional)',
+        watchTokensHint: 'Tokens das conversas a vigiar. Vazio para todas.',
+        respondInDm: 'Responder a mensagens diretas',
+        respondInGroupOnMention: 'Responder a menções em grupos',
+        mentionTrigger: 'Acionador de menção'
       }
     }
   } as const;

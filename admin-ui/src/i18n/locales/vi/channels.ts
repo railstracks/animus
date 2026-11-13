@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "Trả lời {'@'}đề cập",
         respondToAll: 'Trả lời tất cả tin nhắn (bỏ qua bộ lọc đề cập)',
         threadedReplies: 'Chủ đề trả lời trong các kênh (mỗi tin nhắn bắt đầu một chủ đề)'
+      },
+      nextcloud: {
+        serverUrl: 'URL máy chủ',
+        username: 'Tên người dùng',
+        appPassword: 'Mật khẩu ứng dụng',
+        watchTokens: 'Mã thông báo theo dõi (tùy chọn)',
+        watchTokensHint: 'Mã thông báo hội thoại cần theo dõi. Để trống cho tất cả.',
+        respondInDm: 'Trả lời tin nhắn trực tiếp',
+        respondInGroupOnMention: 'Trả lời lượt nhắc trong nhóm',
+        mentionTrigger: 'Chuỗi kích hoạt lượt nhắc'
       }
     }
   } as const;
