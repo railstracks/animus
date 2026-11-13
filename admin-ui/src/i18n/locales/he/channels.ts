@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "השב לאזכורים {'@'}",
         respondToAll: 'השב לכל ההודעות (מתעלם מסנן אזכור)',
         threadedReplies: 'תשובות לשרשור בערוצים (כל הודעה פותחת שרשור)'
+      },
+      nextcloud: {
+        serverUrl: 'כתובת URL של השרת',
+        username: 'שם משתמש',
+        appPassword: 'סיסמת אפליקציה',
+        watchTokens: 'אסימונים במעקב (רשות)',
+        watchTokensHint: 'אסימוני שיחות למעקב. ריק עבור הכול.',
+        respondInDm: 'להשיב להודעות ישירות',
+        respondInGroupOnMention: 'להשיב לאזכורים בקבוצות',
+        mentionTrigger: 'מחרוזת הפעלת אזכור'
       }
     }
   } as const;

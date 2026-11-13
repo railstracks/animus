@@ -116,6 +116,16 @@ export const channels = {
         respondToMentions: "Auf {'@'}Erwähnungen antworten",
         respondToAll: 'Auf alle Nachrichten antworten (Erwähnungsfilter ignorieren)',
         threadedReplies: 'Thread-Antworten in Kanälen (jede Nachricht startet einen Thread)'
+      },
+      nextcloud: {
+        serverUrl: 'Server-URL',
+        username: 'Benutzername',
+        appPassword: 'App-Passwort',
+        watchTokens: 'Beobachtete Tokens (optional)',
+        watchTokensHint: 'Zu überwachende Gesprächs-Tokens. Leer für alle.',
+        respondInDm: 'Auf Direktnachrichten antworten',
+        respondInGroupOnMention: 'Bei Erwähnungen in Gruppen antworten',
+        mentionTrigger: 'Erwähnungs-Auslöser'
       }
     }
   } as const;

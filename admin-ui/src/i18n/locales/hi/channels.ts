@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "{'@'}उल्लेखों का जवाब दें",
         respondToAll: 'सभी संदेशों का उत्तर दें (उल्लेख फ़िल्टर को अनदेखा करें)',
         threadedReplies: 'चैनलों में थ्रेड उत्तर देता है (प्रत्येक संदेश एक थ्रेड प्रारंभ करता है)'
+      },
+      nextcloud: {
+        serverUrl: 'सर्वर URL',
+        username: 'उपयोगकर्ता नाम',
+        appPassword: 'ऐप पासवर्ड',
+        watchTokens: 'निगरानी टोकन (वैकल्पिक)',
+        watchTokensHint: 'निगरानी के लिए बातचीत टोकन। सभी के लिए खाली छोड़ें।',
+        respondInDm: 'सीधे संदेशों का उत्तर दें',
+        respondInGroupOnMention: 'समूहों में मेंशन का उत्तर दें',
+        mentionTrigger: 'मेंशन ट्रिगर स्ट्रिंग'
       }
     }
   } as const;

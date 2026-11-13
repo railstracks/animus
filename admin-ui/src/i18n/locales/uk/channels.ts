@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "Відповідайте на {'@'}згадки",
         respondToAll: 'Відповідати на всі повідомлення (ігнорує фільтр згадок)',
         threadedReplies: 'Відповіді на ланцюжки в каналах (кожне повідомлення починає ланцюжок)'
+      },
+      nextcloud: {
+        serverUrl: 'URL-адреса сервера',
+        username: 'Ім\'я користувача',
+        appPassword: 'Пароль застосунку',
+        watchTokens: 'Токени спостереження (необов\'язково)',
+        watchTokensHint: 'Токени розмов для спостереження. Порожньо — для всіх.',
+        respondInDm: 'Відповідати на особисті повідомлення',
+        respondInGroupOnMention: 'Відповідати на згадки в групах',
+        mentionTrigger: 'Тригер згадки'
       }
     }
   } as const;

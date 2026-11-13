@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "Amsa ga {'@'} ambaton",
         respondToAll: 'Amsa ga duk saƙonni (yi watsi da ambaton tace)',
         threadedReplies: 'Zare yana ba da amsa a cikin tashoshi (kowane saƙo yana fara zaren)'
+      },
+      nextcloud: {
+        serverUrl: 'URL na sabar',
+        username: 'Sunan mai amfani',
+        appPassword: 'Kalmar sirri ta app',
+        watchTokens: 'Alamomin sa ido (zaɓi)',
+        watchTokensHint: 'Alamomin tattaunawa don sa ido. Bar komai ga duk.',
+        respondInDm: 'Amsa saƙonni kai tsaye',
+        respondInGroupOnMention: 'Amsa ambato a cikin ƙungiyoyi',
+        mentionTrigger: 'Kirtin faɗakarwar ambato'
       }
     }
   } as const;

@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "ឆ្លើយតបទៅនឹង {'@'} ការលើកឡើង",
         respondToAll: 'ឆ្លើយតបទៅនឹងសារទាំងអស់ (មិនអើពើនឹងការលើកឡើងតម្រង)',
         threadedReplies: 'ការ​ឆ្លើយ​តប​ខ្សែ​ស្រឡាយ​នៅ​ក្នុង​ឆានែល (សារ​នីមួយៗ​ចាប់​ផ្ដើម​ខ្សែ​ស្រឡាយ)'
+      },
+      nextcloud: {
+        serverUrl: 'URL របស់ម៉ាស៊ីនមេ',
+        username: 'ឈ្មោះអ្នកប្រើ',
+        appPassword: 'ពាក្យសម្ងាត់កម្មវិធី',
+        watchTokens: 'ថូខឹនតាមដាន (ស្រេចចិត្ត)',
+        watchTokensHint: 'ថូខឹនសន្ទនាដែលត្រូវតាមដាន។ ទុកទទេសម្រាប់ទាំងអស់។',
+        respondInDm: 'ឆ្លើយតបសារផ្ទាល់',
+        respondInGroupOnMention: 'ឆ្លើយតបការរំលឹកក្នុងក្រុម',
+        mentionTrigger: 'ខ្សែអក្សរបញ្ឆោតការរំលឹក'
       }
     }
   } as const;

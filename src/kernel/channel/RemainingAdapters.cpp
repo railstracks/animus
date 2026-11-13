@@ -1161,7 +1161,7 @@ void NextcloudAdapter::RunLoop() {
     };
     std::unordered_map<std::string, ConvState> conversations;
 
-    auto syncConversationList = [&]() {
+    auto syncConversationList = [&]() -> bool {
         HttpClient::Request req;
         req.method = "GET";
         req.url = apiBase + "/room?format=json";
@@ -1171,10 +1171,22 @@ void NextcloudAdapter::RunLoop() {
         req.follow_redirects = false;
 
         auto resp = m_ctx.httpClient.Execute(req);
-        if (resp.status_code != 200) return;
+        if (resp.status_code != 200) {
+            if (resp.status_code == 401 || resp.status_code == 403)
+                ALOG_ERROR("nextcloud", "Room sync: credentials rejected ("
+                           << resp.status_code << ") for " << rt->channel_name);
+            else
+                ALOG_WARNING("nextcloud", "Room sync failed (" << resp.status_code
+                             << ") for " << rt->channel_name);
+            return false;
+        }
 
         auto data = ParseJson(resp.body);
-        if (!data.isMember("ocs") || !data["ocs"]["data"].isArray()) return;
+        if (!data.isMember("ocs") || !data["ocs"]["data"].isArray()) {
+            ALOG_WARNING("nextcloud", "Room sync: unexpected payload for "
+                         << rt->channel_name);
+            return false;
+        }
 
         for (const auto& room : data["ocs"]["data"]) {
             std::string token = GetString(room, "token");
@@ -1211,6 +1223,7 @@ void NextcloudAdapter::RunLoop() {
                 conversations[token].displayName = displayName;
             }
         }
+        return true;
     };
 
     syncConversationList();
@@ -1222,7 +1235,10 @@ void NextcloudAdapter::RunLoop() {
             auto now = std::chrono::steady_clock::now();
 
             if (now - lastRoomSync > roomSyncInterval) {
-                syncConversationList();
+                if (syncConversationList())
+                    rt->consecutive_errors = 0;
+                else
+                    rt->consecutive_errors++;
                 lastRoomSync = now;
             }
 
@@ -1231,6 +1247,7 @@ void NextcloudAdapter::RunLoop() {
                 continue;
             }
 
+            bool authFailure = false;
             for (auto& [token, conv] : conversations) {
                 if (!rt->active) break;
 
@@ -1249,11 +1266,31 @@ void NextcloudAdapter::RunLoop() {
                 req.timeout_seconds = 35;
 
                 auto resp = m_ctx.httpClient.Execute(req);
-                if (resp.status_code == 304) continue;
-                if (resp.status_code != 200) continue;
+                if (resp.status_code == 304) { rt->consecutive_errors = 0; continue; }
+                if (resp.status_code != 200) {
+                    const bool authRejected =
+                        (resp.status_code == 401 || resp.status_code == 403);
+                    if (authRejected)
+                        ALOG_ERROR("nextcloud", "Poll: credentials rejected ("
+                                   << resp.status_code << ") in \""
+                                   << conv.displayName
+                                   << "\" - check server_url/username/app_password");
+                    else
+                        ALOG_WARNING("nextcloud", "Poll failed (" << resp.status_code
+                                     << ") in \"" << conv.displayName << "\"");
+                    rt->consecutive_errors++;
+                    authFailure = authRejected;
+                    break;
+                }
 
                 auto data = ParseJson(resp.body);
-                if (!data.isMember("ocs") || !data["ocs"]["data"].isArray()) continue;
+                if (!data.isMember("ocs") || !data["ocs"]["data"].isArray()) {
+                    ALOG_WARNING("nextcloud", "Poll: unexpected payload in \""
+                                 << conv.displayName << "\"");
+                    rt->consecutive_errors++;
+                    break;
+                }
+                rt->consecutive_errors = 0;
 
                 for (const auto& msg : data["ocs"]["data"]) {
                     int msgId = msg.isMember("id") ? msg["id"].asInt() : 0;
@@ -1346,33 +1383,44 @@ void NextcloudAdapter::RunLoop() {
                     if (isDm(conv.type)) prompt += " (direct message)";
                     prompt += "]\n" + cleanText;
 
-                    ChannelReplyTarget replyTarget;
-                    replyTarget.channel_name = rt->channel_name;
-                    replyTarget.channel_type = rt->channel_type;
-                    replyTarget.type = ChannelReplyTarget::Chat;
-                    replyTarget.peer_id = token;
-
                     // Dispatch metadata (#150): origin feeds author_handle for
                     // speaker headers at assembly (#133). Actor id is the stable
                     // Nextcloud identity; conversation display names group chats
-                    // only. Delivery semantics intentionally untouched — Chat
-                    // auto-delivery stays the default.
+                    // only. Chat auto-delivery stays the default; session key and
+                    // reply target come from the shared Dispatch (peer:<token>
+                    // routing, Telegram-style dm/group session typing).
                     Json::Value dispatchMeta;
                     Json::Value origin;
                     origin["user"] = actorName;
                     origin["user_id"] = actorId;
                     if (!isDm(conv.type)) origin["channel"] = conv.displayName;
                     dispatchMeta["origin"] = origin;
+                    dispatchMeta["room_token"] = token;
+                    dispatchMeta["chat_type"] = isDm(conv.type) ? "dm" : "group";
+                    dispatchMeta["reply_instructions"] =
+                        "Replies are delivered automatically. To post explicitly, "
+                        "use the channels tool action=send with this room_token.";
                     Json::StreamWriterBuilder dwb;
                     dwb["indentation"] = "";
                     const std::string dispatchMetadata =
                         Json::writeString(dwb, dispatchMeta);
-                    m_ctx.dispatch(rt->agent_id, "conv:" + token, prompt, "nextcloud",
-                                   replyTarget, dispatchMetadata);
+
+                    const std::string sessionType =
+                        isDm(conv.type) ? "nextcloud:dm" : "nextcloud:group";
+                    Dispatch("peer:" + token, prompt, sessionType, dispatchMetadata);
 
                     ALOG_DEBUG("nextcloud", "Dispatched from " << actorName
                               << " in " << conv.displayName << " (id=" << msgId << ")");
                 }
+            }
+            if (rt->consecutive_errors > 0) {
+                const int backoff = authFailure
+                    ? std::min(600, 60 + rt->consecutive_errors * 30)
+                    : std::min(60, rt->consecutive_errors * 5);
+                ALOG_WARNING("nextcloud", "Backing off " << backoff
+                             << "s (" << rt->consecutive_errors
+                             << " consecutive errors) for " << rt->channel_name);
+                std::this_thread::sleep_for(std::chrono::seconds(backoff));
             }
         } catch (const std::exception& ex) {
             ALOG_ERROR("nextcloud", "Exception: " << ex.what());

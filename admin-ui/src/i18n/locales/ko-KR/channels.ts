@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "{'@'}멘션에 응답",
         respondToAll: '모든 메시지에 응답(멘션 필터 무시)',
         threadedReplies: '스레드는 채널에서 응답합니다(각 메시지는 스레드를 시작합니다).'
+      },
+      nextcloud: {
+        serverUrl: '서버 URL',
+        username: '사용자 이름',
+        appPassword: '앱 비밀번호',
+        watchTokens: '감시 토큰 (선택)',
+        watchTokensHint: '감시할 대화 토큰. 비우면 모두.',
+        respondInDm: '직접 메시지에 응답',
+        respondInGroupOnMention: '그룹에서 멘션에 응답',
+        mentionTrigger: '멘션 트리거 문자열'
       }
     }
   } as const;

@@ -114,6 +114,16 @@ export const channels = {
         respondToMentions: "{'@'}メンションに返信する",
         respondToAll: 'すべてのメッセージに応答します (メンション フィルターを無視します)',
         threadedReplies: 'チャネル内のスレッド応答 (各メッセージがスレッドを開始します)'
+      },
+      nextcloud: {
+        serverUrl: 'サーバーURL',
+        username: 'ユーザー名',
+        appPassword: 'アプリパスワード',
+        watchTokens: '監視トークン（任意）',
+        watchTokensHint: '監視する会話トークン。空にするとすべて。',
+        respondInDm: 'ダイレクトメッセージに返信',
+        respondInGroupOnMention: 'グループでのメンションに返信',
+        mentionTrigger: 'メンショントリガー文字列'
       }
     }
   } as const;

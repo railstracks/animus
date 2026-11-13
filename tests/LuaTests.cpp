@@ -843,6 +843,30 @@ std::string ReadIrcAdapterSrc() {
     return "";
 }
 
+std::string ReadNextcloudAdapterSrc() {
+    char exe[4096];
+    const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    std::vector<std::string> candidates;
+    if (n > 0) {
+        exe[n] = '\0';
+        std::string dir(exe);
+        const auto slash = dir.rfind('/');
+        if (slash != std::string::npos)
+            candidates.push_back(dir.substr(0, slash) + "/../../state/lua/_shared/nextcloud.lua");
+    }
+    candidates.push_back("state/lua/_shared/nextcloud.lua");
+    candidates.push_back("../../state/lua/_shared/nextcloud.lua");
+    for (const auto& c : candidates) {
+        std::ifstream f(c);
+        if (f.good()) {
+            std::stringstream ss;
+            ss << f.rdbuf();
+            return ss.str();
+        }
+    }
+    return "";
+}
+
 std::string ReadBlueskyAdapterSrc() {
     char exe[4096];
     const ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
@@ -1374,6 +1398,141 @@ return out
 }
 
 // ============================================================================
+// #300 Phase B: nextcloud.lua outbound seam — registration shape, send wire
+// shape (OCS headers + Basic auth vector), loud failure paths
+// ============================================================================
+void TestNextcloudLuaSendAction() {
+    ToolRegistry tools;
+    HttpClient http;
+    LuaState::Config config;
+    config.agentId = "test";
+    config.instructionLimit = 100'000;
+    LuaState lua(config, tools, http);
+
+    // Prelude: capture the registration; stub the globals nextcloud.lua uses.
+    // config.get mirrors the kernel contract ("" for unset) and returns
+    // creds for exactly one instance so the Basic vector is deterministic.
+    const char* prelude = R"(
+captured = nil
+animus = {}
+function animus.register_channel(t) captured = t end
+config = {}
+function config.get(k)
+  if k == "channels.nextcloud:talk.server_url" then return "https://nc.example.org/" end
+  if k == "channels.nextcloud:talk.username" then return "animus-agent" end
+  if k == "channels.nextcloud:talk.app_password" then return "secret" end
+  return ""
+end
+post_cap = nil
+get_cap = nil
+post_mode = "ok"
+function animus.http_post(u, o)
+  post_cap = { url = u, opts = o }
+  if post_mode == "401" then
+    return { status = 401, body = '{"ocs":{"meta":{"status":"failure","statuscode":401,"message":"Unauthorised"}}}' }
+  end
+  return { status = 200, body = '{"ocs":{"meta":{"status":"ok"},"data":{"id":4242}}}' }
+end
+function animus.http_get(u, o)
+  get_cap = { url = u, opts = o }
+  return { status = 200, body = '{"ocs":{"meta":{"status":"ok"},"data":[{"token":"abc123","type":1,"displayName":"Melvin Sommer"},{"token":"abc123","type":2,"displayName":"Team"}]}}' }
+end
+)";
+
+    const std::string src = ReadNextcloudAdapterSrc();
+    Assert(!src.empty(), "nextcloud.lua source found");
+
+    const std::string driver = R"(
+local out = {}
+out.id = captured.id
+out.has_send = false
+out.has_rooms = false
+for _, a in ipairs(captured.actions) do
+    if a == "send" then out.has_send = true end
+    if a == "rooms" then out.has_rooms = true end
+end
+out.schema_token_required = false
+if captured.schema.send then
+    for _, p in ipairs(captured.schema.send) do
+        if p.name == "token" and p.required then out.schema_token_required = true end
+    end
+end
+local r = captured.handler({ action = "send", platform_id = "nextcloud:talk",
+                             token = "abc123", text = "hello world" })
+out.send_ok = r.success
+out.send_output = r.output or ""
+out.send_error = r.error or ""
+out.post_url = post_cap and post_cap.url or ""
+out.post_auth = post_cap and (post_cap.opts.headers["Authorization"] or "") or ""
+out.post_ocs = post_cap and (post_cap.opts.headers["OCS-APIREQUEST"] or "") or ""
+out.post_body = post_cap and post_cap.opts.body or ""
+post_mode = "401"
+local r2 = captured.handler({ action = "send", platform_id = "nextcloud:talk",
+                              token = "abc123", text = "hi" })
+post_mode = "ok"
+out.auth_error = r2.error or ""
+local r3 = captured.handler({ action = "send", platform_id = "nextcloud:other",
+                              token = "abc123", text = "hi" })
+out.nocreds_error = r3.error or ""
+local r4 = captured.handler({ action = "rooms", platform_id = "nextcloud:talk" })
+out.rooms_ok = r4.success
+out.rooms_output = r4.output or ""
+out.get_url = get_cap and get_cap.url or ""
+return out
+)";
+
+    const std::string out = lua.Eval(
+        std::string(prelude) + "\n" + src + "\n" + driver, "nextcloud-seam-case");
+    Json::Value v;
+    Assert(Json::Reader().parse(out, v), "nextcloud seam output parses, got: "
+           + out.substr(0, 120));
+    if (v.isString()) {
+        Assert(Json::Reader().parse(v.asString(), v),
+               "nextcloud seam output unwrap parses");
+    }
+
+    Assert(v.get("id", "").asString() == "nextcloud",
+           "registration id is nextcloud");
+    Assert(v.get("has_send", false).asBool(), "actions list declares send");
+    Assert(v.get("has_rooms", false).asBool(), "actions list declares rooms");
+    Assert(v.get("schema_token_required", false).asBool(),
+           "send schema declares required token");
+    Assert(v.get("send_ok", false).asBool(), "send succeeds against fixture");
+    const std::string sendOutput = v.get("send_output", "").asString();
+    Assert(sendOutput.find("abc123") != std::string::npos
+               && sendOutput.find("4242") != std::string::npos,
+           "send output names room token + message id");
+    Assert(v.get("post_url", "").asString()
+               == "https://nc.example.org/ocs/v2.php/apps/spreed/api/v1/chat/abc123",
+           "send URL strips trailing slash and hits the v1 chat path");
+    Assert(v.get("post_auth", "").asString()
+               == "Basic YW5pbXVzLWFnZW50OnNlY3JldA==",
+           "Basic auth header matches the known base64 vector");
+    Assert(v.get("post_ocs", "").asString() == "true",
+           "OCS-APIRequest header present");
+    const std::string postBody = v.get("post_body", "").asString();
+    Assert(postBody.find("hello world") != std::string::npos
+               && postBody.find("silent") != std::string::npos,
+           "chat body carries message text and silent flag");
+    const std::string authError = v.get("auth_error", "").asString();
+    Assert(authError.find("401") != std::string::npos
+               && authError.find("Unauthorised") != std::string::npos,
+           "401 fails loud with status + server message");
+    Assert(v.get("nocreds_error", "").asString().find("platform_id")
+               != std::string::npos,
+           "unknown instance fails with platform_id guidance");
+    Assert(v.get("rooms_ok", false).asBool(), "rooms succeeds against fixture");
+    const std::string roomsOutput = v.get("rooms_output", "").asString();
+    Assert(roomsOutput.find("abc123") != std::string::npos
+               && roomsOutput.find("group") != std::string::npos
+               && roomsOutput.find("Team") != std::string::npos,
+           "rooms output lists token, type and display name");
+    Assert(v.get("get_url", "").asString().find(
+               "/ocs/v2.php/apps/spreed/api/v4/room") != std::string::npos,
+           "rooms URL hits the v4 room list");
+}
+
+// ============================================================================
 // #205: join/part schemas declare key/farewell; fallback names the toggle
 // ============================================================================
 void TestIrcAdapterJoinPartSchema() {
@@ -1616,6 +1775,7 @@ int main() {
     TestBlueskyFacets();
     TestCredentialLineage();
     TestIrcAdapterSendAction();
+    TestNextcloudLuaSendAction();
     TestIrcAdapterJoinPartSchema();
     TestTwitterFreshInstance();
 
