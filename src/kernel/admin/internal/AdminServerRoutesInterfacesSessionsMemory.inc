@@ -1051,15 +1051,16 @@
                     return;
                 }
 
-                // #307: optional keep_recent body override. Default behavior
-                // is unchanged when absent/invalid — the tail-preservation
-                // window for a poisoned end-of-session turn is operator-driven.
-                std::size_t keepRecent = 0;  // 0 = service default (10)
+                // #307: optional keep_recent body override. Absent/invalid =
+                // service default (10); explicit keep_recent=0 is honored —
+                // it compacts everything, which is how an operator targets a
+                // poisoned end-of-session turn.
+                std::optional<std::size_t> keepRecentOverride;  // nullopt = default
                 if (const auto body = req->getJsonObject()) {
                     if (body->isMember("keep_recent")) {
                         const Json::Value& kr = (*body)["keep_recent"];
                         if (kr.isUInt() || (kr.isIntegral() && kr.asInt64() >= 0)) {
-                            keepRecent = static_cast<std::size_t>(kr.asUInt());
+                            keepRecentOverride = static_cast<std::size_t>(kr.asUInt());
                         }
                     }
                 }
@@ -1078,7 +1079,7 @@
                     "",  // model — will use default
                     contextWindow,
                     nullptr,  // SummaryGenerator — default
-                    keepRecent);
+                    keepRecentOverride);
 
                 Json::Value out;
                 if (result.success) {

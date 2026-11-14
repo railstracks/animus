@@ -109,7 +109,7 @@ CompactionResult CompactionService::CompactNow(
     const std::string& model,
     std::size_t contextWindowTokens,
     SummaryGenerator generator,
-    std::size_t keepRecentOverride)
+    std::optional<std::size_t> keepRecentOverride)
 {
     CreateSchema();
 
@@ -135,7 +135,7 @@ CompactionResult CompactionService::DoCompact(
     std::size_t contextWindowTokens,
     bool force,
     SummaryGenerator generator,
-    std::size_t keepRecentOverride)
+    std::optional<std::size_t> keepRecentOverride)
 {
     const auto& turns = session.Turns();
     if (turns.empty()) {
@@ -164,12 +164,11 @@ CompactionResult CompactionService::DoCompact(
     // Determine which turns to compact:
     // Keep the last N turns un-compacted (they're recent context).
     // Compact everything before that, including any previous compaction summary.
-    // keepRecentOverride (#307) lets callers tighten the tail window — e.g. a
-    // single poisoned end-of-session turn can be compacted away with
-    // keep_recent=0 without padding the session with junk turns first.
-    // clamp keeps an explicit keep_recent=0 distinct from the unset default.
-    const std::size_t keepRecent = keepRecentOverride > 0
-        ? keepRecentOverride : 10;  // Default: keep last 10 turns as-is
+    // keepRecentOverride (#307): explicit value replaces the default window —
+    // keep_recent=0 is HONORED (compacts everything), it is how an operator
+    // targets a poisoned end-of-session turn without padding the session with
+    // junk turns first; absent override keeps the default of 10.
+    const std::size_t keepRecent = keepRecentOverride.value_or(10);
     std::size_t compactEnd = turns.size() > keepRecent ? turns.size() - keepRecent : turns.size();
 
     // Don't compact if there's nothing to compact
