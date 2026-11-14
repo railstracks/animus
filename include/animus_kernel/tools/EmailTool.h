@@ -58,6 +58,18 @@ public:
     static int CountConfirmedAttachments(const Json::Value& threadBody,
                                          const std::string& messageId);
 
+public:
+    // #304: made public for the direct scrub-instance resolver witness
+    // (EmailToolReplyTests) — visibility-only change, no signature change.
+    bool ResolveAccount(const std::string& accountName,
+                        std::string& outInboxId,
+                        std::string& outApiKey);
+    bool ResolveAccountByInboxId(const std::string& inboxId,
+                                 std::string& outInboxId,
+                                 std::string& outApiKey);
+    bool FindFirstAgentMailAccount(std::string& outInboxId,
+                                   std::string& outApiKey);
+
 private:
     // --- AgentMail REST API helpers ---
     HttpClient::Response AgentMailGet(const std::string& inboxId,
@@ -76,20 +88,19 @@ private:
                                           const std::string& path,
                                           const std::string& apiKey);
 
-    // Resolve inbox_id + api_key from config store for a given account name.
-    // Returns true if found, fills out params.
-    bool ResolveAccount(const std::string& accountName,
-                        std::string& outInboxId,
-                        std::string& outApiKey);
-
-    // Resolve by inbox_id when the agent passes an email address instead of channel name.
-    bool ResolveAccountByInboxId(const std::string& inboxId,
-                                 std::string& outInboxId,
-                                 std::string& outApiKey);
-
-    // Find the first AgentMail account in config store.
-    bool FindFirstAgentMailAccount(std::string& outInboxId,
-                                   std::string& outApiKey);
+    // #304: channel-namespace credential mirror lookup — the read side of
+    // the #181 credential split. After the scrub, the persisted
+    // channel.{name}.config row is structural-only (StripSecretChannelFields
+    // on every write; UpdateChannel also strips admin re-entry), while
+    // credential fields live in vaulted channels.{type}:{name}.{key} mirror
+    // rows — exactly what ChannelManager's adapter load path merges back
+    // (LoadChannelsFromConfigStore). The tool-side resolvers must consult
+    // the same seam: channel.{name}.type names the platform_id, then
+    // channels.{type}:{name}.api_key is read via AgentConfigStore->Get
+    // (vault-ref aware, namespace ""). No mirror row -> empty output;
+    // the caller falls back to the legacy plaintext row.
+    bool LookupChannelNamespaceApiKey(const std::string& channelName,
+                                      std::string& outApiKey);
 
     // --- Action handlers ---
     std::string HandleListInboxes(const Json::Value& args);

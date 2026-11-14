@@ -7,6 +7,7 @@
 #include <sstream>
 #include <iostream>
 #include <map>
+#include <stdexcept>
 
 namespace animus::kernel {
 
@@ -456,6 +457,35 @@ std::string StripHtml(const std::string& html) {
     while (!out.empty() && (out.back() == ' ' || out.back() == '\n')) out.pop_back();
     return out;
 }
+// ============================================================================
+// #304: channel-namespace credential mirror lookup (tool-side read of the
+// #181 credential split)
+//
+// The #181 scrub (ChannelManager::LoadChannelsFromConfigStore) mirrors
+// credential fields into vaulted channels.{type}:{name}.{key} rows and
+// rewrites the persisted channel.{name}.config row structural-only —
+// UpdateChannel strips secrets on every admin re-entry too, so the legacy
+// row never regains an api_key. The adapter path merge-backs the mirror
+// rows in-memory (LoadChannelsFromConfigStore); these resolvers are the
+// tool-side counterpart and must consult the same seam. The platform_id is
+// derived from the channel.{name}.type sibling row — the same row the load
+// path itself consults. Lookup goes through AgentConfigStore->Get, which is
+// vault-ref aware ({\"secret_ref\":...} mirrors resolve transparently).
+// ============================================================================
+
+bool EmailTool::LookupChannelNamespaceApiKey(const std::string& channelName,
+                                             std::string& outApiKey) {
+    outApiKey.clear();
+    if (!m_configStore || channelName.empty()) return false;
+
+    const std::string type =
+        m_configStore->Get("", "channel." + channelName + ".type");
+    if (type.empty()) return false;
+
+    outApiKey =
+        m_configStore->Get("", "channels." + type + ":" + channelName + ".api_key");
+    return !outApiKey.empty();
+}
 
 bool EmailTool::ResolveAccount(const std::string& accountName,
                                 std::string& outInboxId,
@@ -471,7 +501,11 @@ bool EmailTool::ResolveAccount(const std::string& accountName,
     if (config.isNull()) return false;
 
     outInboxId = GetString(config, "inbox_id");
-    outApiKey = GetString(config, "api_key");
+    // #304: mirror-first — the adapter path merges the vaulted mirror row,
+    // so the tool resolves the identical credential first; the legacy
+    // plaintext row is fallback (fresh pre-scrub instances).
+    LookupChannelNamespaceApiKey(accountName, outApiKey);
+    if (outApiKey.empty()) outApiKey = GetString(config, "api_key");
     return !outInboxId.empty() && !outApiKey.empty();
 }
 
@@ -495,7 +529,12 @@ bool EmailTool::ResolveAccountByInboxId(const std::string& inboxId,
 
         if (GetString(config, "inbox_id") == inboxId) {
             outInboxId = GetString(config, "inbox_id");
-            outApiKey = GetString(config, "api_key");
+            // #304: mirror-first (see ResolveAccount) — legacy row fallback.
+            const std::string rest = key.substr(8);
+            const std::string name = rest.substr(0, rest.find('.'));
+            LookupChannelNamespaceApiKey(name, outApiKey);
+            if (outApiKey.empty())
+                outApiKey = GetString(config, "api_key");
             return !outApiKey.empty();
         }
     }
@@ -518,7 +557,12 @@ bool EmailTool::FindFirstAgentMailAccount(std::string& outInboxId,
         if (GetString(config, "backend") != "agentmail") continue;
 
         outInboxId = GetString(config, "inbox_id");
-        outApiKey = GetString(config, "api_key");
+        // #304: mirror-first (see ResolveAccount) — legacy row fallback.
+        const std::string rest = key.substr(8);
+        const std::string name = rest.substr(0, rest.find('.'));
+        LookupChannelNamespaceApiKey(name, outApiKey);
+        if (outApiKey.empty())
+            outApiKey = GetString(config, "api_key");
         return !outInboxId.empty() && !outApiKey.empty();
     }
     return false;
@@ -575,39 +619,20 @@ std::string EmailTool::HandleListThreads(const Json::Value& args) {
 
     // Resolve default account if no inbox_id specified
     if (inboxId.empty()) {
-        // Try first email account
-        if (!m_configStore) return ErrResult(400, "No email accounts configured");
-        auto keys = m_configStore->ListKeys("");
-        bool found = false;
-        for (const auto& key : keys) {
-            if (key.substr(0, 8) != "channel.") continue;
-            if (key.find(".config") == std::string::npos) continue;
-            auto configStr = m_configStore->Get("", key);
-            auto config = ParseArgs(configStr);
-            if (GetString(config, "backend") != "agentmail") continue;
-            inboxId = GetString(config, "inbox_id");
-            apiKey = GetString(config, "api_key");
-            found = true;
-            break;
+        // #304: resolve through the shared resolvers (legacy row + vaulted
+        // mirror fallback). This handler previously carried its own inline
+        // duplicate that read only the legacy row — dead after the #181
+        // scrub. Same first-agentmail-account semantics.
+        if (!FindFirstAgentMailAccount(inboxId, apiKey)) {
+            return ErrResult(400, "No email accounts configured");
         }
-        if (!found) return ErrResult(400, "No email accounts configured");
     } else {
-        // Resolve by inbox_id — find matching account
-        if (!m_configStore) return ErrResult(400, "No config store");
-        auto keys = m_configStore->ListKeys("");
-        bool found = false;
-        for (const auto& key : keys) {
-            if (key.substr(0, 8) != "channel.") continue;
-            if (key.find(".config") == std::string::npos) continue;
-            auto configStr = m_configStore->Get("", key);
-            auto config = ParseArgs(configStr);
-            if (GetString(config, "inbox_id") == inboxId) {
-                apiKey = GetString(config, "api_key");
-                found = true;
-                break;
-            }
+        // #304: shared resolver (legacy row + vaulted mirror fallback),
+        // replacing the inline duplicate that read only the legacy row.
+        // Same backend=="agentmail" filter and same "Unknown inbox" error.
+        if (!ResolveAccountByInboxId(inboxId, inboxId, apiKey)) {
+            return ErrResult(400, "Unknown inbox: " + inboxId);
         }
-        if (!found) return ErrResult(400, "Unknown inbox: " + inboxId);
     }
 
     std::map<std::string, std::string> query;
