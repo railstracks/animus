@@ -1051,6 +1051,19 @@
                     return;
                 }
 
+                // #307: optional keep_recent body override. Default behavior
+                // is unchanged when absent/invalid — the tail-preservation
+                // window for a poisoned end-of-session turn is operator-driven.
+                std::size_t keepRecent = 0;  // 0 = service default (10)
+                if (const auto body = req->getJsonObject()) {
+                    if (body->isMember("keep_recent")) {
+                        const Json::Value& kr = (*body)["keep_recent"];
+                        if (kr.isUInt() || (kr.isIntegral() && kr.asInt64() >= 0)) {
+                            keepRecent = static_cast<std::size_t>(kr.asUInt());
+                        }
+                    }
+                }
+
                 KernelConfig::AgentRuntimeConfig agentConfig;
                 {
                     std::lock_guard<std::mutex> lock(server->m_agentMutex);
@@ -1063,7 +1076,9 @@
                     "",  // system prompt — will use default compaction prompt
                     "",  // provider — will use default
                     "",  // model — will use default
-                    contextWindow);
+                    contextWindow,
+                    nullptr,  // SummaryGenerator — default
+                    keepRecent);
 
                 Json::Value out;
                 if (result.success) {
