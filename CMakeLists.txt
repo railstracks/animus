@@ -341,6 +341,7 @@ add_library(animus_kernel
   src/kernel/session/Session.cpp
   src/kernel/session/SessionManager.cpp
   src/kernel/chain/PromptAssembler.cpp
+  src/kernel/chain/ToolCallSanitizer.cpp
   src/kernel/chain/ChainRunner.cpp
   src/kernel/chain/ToolSchemaService.cpp
   src/kernel/chain/ToolExecutionService.cpp
