@@ -1,9 +1,11 @@
 #include "animus_kernel/PromptAssembler.h"
+#include "animus_kernel/Log.h"
 #include <ctime>
 #include <cstdio>
 #include <cstdint>
 #include "animus_kernel/Session.h"
 #include "animus_kernel/TokenEstimate.h"
+#include "animus_kernel/ToolCallSanitizer.h"
 
 #include <chrono>
 
@@ -89,6 +91,34 @@ PromptAssemblyResult PromptAssembler::Build(
     // block, but they still anchor time on long gaps. Metadata renders as a
     // delimited block (Author/Timestamp/====) so channel metadata never
     // shares a line with message text.
+
+    // #307 replay-side validation: sessions persisted before the persist-side
+    // fix can still carry a poisoned assistant turn (malformed tool-call
+    // arguments). Providers validate tool-call arguments on ingestion and
+    // reject the whole request with HTTP 400 — so the wire copy is repaired
+    // here, on every render, until a clean turn is persisted. Sanitized calls
+    // record per-call evidence markers on the turn metadata (display data).
+    // The render loop iterates local copies; the caller's turn list is read-only.
+    std::vector<SessionTurn> localTurns = turns;
+    {
+        ToolCallSanitizeStats replayStats;
+        for (auto& turn : localTurns) {
+            if (turn.role != "assistant" || turn.tool_calls.empty()) {
+                continue;
+            }
+            SanitizeToolCallArgs(turn.tool_calls, replayStats);
+            if (replayStats.sanitized_count > 0) {
+                turn.metadata = MergeSanitizeMarkersIntoMetadata(
+                    turn.metadata, replayStats);
+                for (const auto& note : replayStats.notes) {
+                    ALOG_WARNING("chain",
+                                 "#307 replay-side sanitized tool-call arguments: "
+                                     << note);
+                }
+            }
+            replayStats = ToolCallSanitizeStats{};
+        }
+    }
     auto stampMs = [](std::uint64_t ms) -> std::string {
         std::time_t secs = static_cast<std::time_t>(ms / 1000);
         std::tm tm{};
@@ -103,7 +133,8 @@ PromptAssemblyResult PromptAssembler::Build(
     std::uint64_t lastRenderedMs = 0;
     std::size_t headerTokens = 0;  // #133: header cost, folded into accounting below
     constexpr std::uint64_t kAttributionGapMs = 600'000;  // 10 min
-    for (const auto& turn : turns) {
+
+    for (const auto& turn : localTurns) {
         if (turn.is_summary) continue;
         if (turn.is_compacted) continue;
 
@@ -160,7 +191,7 @@ PromptAssemblyResult PromptAssembler::Build(
     }
 
     // Compute session turn tokens (already assembled above)
-    for (const auto& turn : turns) {
+    for (const auto& turn : localTurns) {
         if (turn.is_summary) continue;
         if (turn.is_compacted) continue;
         if (turn.content.empty() && turn.tool_calls.empty()) continue;
@@ -184,7 +215,7 @@ PromptAssemblyResult PromptAssembler::Build(
         const std::size_t budget = static_cast<std::size_t>(
             static_cast<float>(contextWindowTokens) * compactionThreshold);
 
-        if (result.total_tokens > budget && turns.size() > 4) {
+        if (result.total_tokens > budget && localTurns.size() > 4) {
             result.needs_compaction = true;
         }
     }

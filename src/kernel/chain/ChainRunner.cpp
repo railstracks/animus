@@ -11,6 +11,7 @@
 #include "animus_kernel/SessionManager.h"
 #include "animus_kernel/ContextProviderRegistry.h"
 #include "animus_kernel/llm/LLMProviderBase.h"
+#include "animus_kernel/ToolCallSanitizer.h"
 
 namespace animus::kernel {
 
@@ -868,6 +869,22 @@ bool ChainRunner::ProcessResponse(
               << " content_len=" << content.size()
               << " thinking_len=" << thinkingContent.size());
 
+    // ========================================================================
+    // #307: sanitize tool-call arguments BEFORE building the turn. A malformed
+    // arguments JSON used to be persisted verbatim and replayed on every later
+    // request — providers reject the whole request with HTTP 400 and the
+    // session was permanently bricked. Sanitized form is what gets persisted,
+    // executed, and replayed, so all three surfaces agree.
+    // ========================================================================
+    ToolCallSanitizeStats sanitizeStats;
+    if (!response.tool_calls.empty()) {
+        SanitizeToolCallArgs(response.tool_calls, sanitizeStats);
+        for (std::size_t i = 0; i < sanitizeStats.notes.size(); ++i) {
+            ALOG_WARNING("chain", "#307 sanitized tool-call arguments: "
+                      << sanitizeStats.notes[i]);
+        }
+    }
+
     // 1. Store assistant turn with thinking_content as a property.
     //    thinking_content is never sent to the LLM (excluded by PromptAssembler),
     //    but displayed in the UI as a collapsible block.
@@ -880,6 +897,10 @@ bool ChainRunner::ProcessResponse(
         assistantTurn.unix_ms = NowUnixMs();
         for (const auto& call : response.tool_calls) {
             assistantTurn.tool_calls.push_back(FromLLM(call));
+        }
+        if (sanitizeStats.sanitized_count > 0) {
+            assistantTurn.metadata = MergeSanitizeMarkersIntoMetadata(
+                assistantTurn.metadata, sanitizeStats);
         }
         session.AddTurn(std::move(assistantTurn));
         m_sessions.FlushSession(session.Id());

@@ -72,13 +72,19 @@ public:
         SummaryGenerator generator = nullptr);
 
     // Force compaction of a session regardless of threshold.
+    // keepRecentOverride: nullopt = configured default tail window
+    // (keepRecent = 10); otherwise the last N turns stay un-compacted —
+    // including 0, which compacts everything (the move that targets a
+    // poisoned end-of-session turn without padding the session with junk
+    // turns first). #307.
     CompactionResult CompactNow(
         SessionId sessionId,
         const std::string& systemPrompt,
         const std::string& providerId,
         const std::string& model,
         std::size_t contextWindowTokens,
-        SummaryGenerator generator = nullptr);
+        SummaryGenerator generator = nullptr,
+        std::optional<std::size_t> keepRecentOverride = std::nullopt);
 
     // Retrieve compaction history for a session.
     std::vector<CompactionEntry> GetCompactions(SessionId sessionId);
@@ -100,7 +106,8 @@ private:
         const std::string& model,
         std::size_t contextWindowTokens,
         bool force,
-        SummaryGenerator generator);
+        SummaryGenerator generator,
+        std::optional<std::size_t> keepRecentOverride = std::nullopt);
 
     std::string BuildCompactionPrompt(
         const std::vector<SessionTurn>& turns,
