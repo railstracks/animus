@@ -6,6 +6,7 @@
 #include "animus_kernel/CryptoUtils.h"
 #include "animus_kernel/Log.h"
 #include "animus_kernel/tools/HttpClient.h"
+#include "animus_kernel/lua/HttpUpload.h"
 
 extern "C" {
 #include <lua.h>
@@ -449,6 +450,64 @@ bool IsReadVerb(const std::string& m) {
 }
 }  // namespace
 
+// Shared tail for script-composed requests (the ctx.http.* closures): the
+// #126 write gate binds a payload digest over the exact wire bytes; held
+// requests never touch the network and spend no budget. Then the #25
+// redirect-chained egress execution and the response shape (status,
+// headers, body, auto-parsed json).
+Json::Value DispatchScriptRequest(BridgeContext* bc, HttpClient::Request&& req) {
+    if (bc->writesGated && !IsReadVerb(req.method) && bc->runtime) {
+        const std::string digest =
+            ApiRuntime::WriteDigest(bc->packageId, req.method, req.url, req.body);
+        const std::string maskedUrl = ApiRuntime::MaskSecrets(req.url, bc->secretValues);
+        int64_t expiresMs = 0;
+        if (bc->runtime->GateWrite(bc->packageId, digest, req.method, maskedUrl,
+                                   expiresMs) == ApiRuntime::WriteGateDecision::kHeld) {
+            ALOG_WARNING("api", "[writes-gate] HELD " << bc->logPrefix << " "
+                         << req.method << " " << maskedUrl << " digest "
+                         << digest.substr(0, 12) << " — awaiting owner approval");
+            Json::Value held(Json::objectValue);
+            held["status"] = 0;
+            held["error"] = "approval_required: write " + req.method + " held pending owner "
+                            "approval (digest " + digest + "). Approve via "
+                            "POST /api/v1/api/packages/" + bc->packageId +
+                            "/approvals/" + digest + " then retry — approval is "
+                            "one-shot and payload-bound (modified request = new digest).";
+            held["approval_required"] = true;
+            held["digest"] = digest;
+            held["expires_at_unix_ms"] = static_cast<Json::Int64>(expiresMs);
+            return held;
+        }
+        ALOG_INFO("api", "[writes-gate] PASSED " << bc->logPrefix << " "
+                  << req.method << " " << maskedUrl << " digest " << digest.substr(0, 12));
+    }
+    bc->httpUsed++;
+    // #25: sandbox fetches follow redirects under the same per-hop scope
+    // checks as the primary transport.
+    HttpClient::Response resp =
+        bc->http ? ApiRuntime::ExecuteScoped(bc->http, bc->egressHosts, req,
+                                             bc->logPrefix + " (sandbox)")
+                 : HttpClient::Response{};
+    Json::Value out(Json::objectValue);
+    out["status"] = resp.status_code;
+    {
+        Json::Value headers(Json::objectValue);
+        for (const auto& [k, v] : resp.headers) headers[k] = v;
+        out["headers"] = headers;
+    }
+    out["body"] = resp.body;
+    if (!resp.error.empty()) {
+        out["error"] = resp.error;
+    } else {
+        Json::Value parsed;
+        std::string jerr;
+        std::istringstream bs(resp.body);
+        Json::CharReaderBuilder rb;
+        if (Json::parseFromStream(rb, bs, &parsed, &jerr)) out["json"] = parsed;
+    }
+    return out;
+}
+
 Json::Value DoHttp(BridgeContext* bc, const std::string& method, lua_State* L, int urlIdx,
                    int optsIdx) {
     Json::Value out(Json::objectValue);
@@ -507,63 +566,7 @@ Json::Value DoHttp(BridgeContext* bc, const std::string& method, lua_State* L, i
         }
         lua_pop(L, 1);
     }
-    // #126 per-invocation write gate: writes_gated packages must have each
-    // sandbox write approved as an exact payload digest.
-    // The request-template path is already #106-bound (declared content);
-    // this is the complementary gate for runtime-composed requests. Held
-    // requests never touch the network — the budget is not spent either.
-    // Read-only verbs are exempt: GET/HEAD plus WebDAV reads (PROPFIND/REPORT)
-    // — they fetch state and never mutate it, so gating them as writes would
-    // hold every files/cal listing hostage to owner approval.
-    if (bc->writesGated && !IsReadVerb(method) && bc->runtime) {
-        const std::string digest =
-            ApiRuntime::WriteDigest(bc->packageId, method, url, req.body);
-        const std::string maskedUrl = ApiRuntime::MaskSecrets(url, bc->secretValues);
-        int64_t expiresMs = 0;
-        if (bc->runtime->GateWrite(bc->packageId, digest, method, maskedUrl,
-                                   expiresMs) == ApiRuntime::WriteGateDecision::kHeld) {
-            ALOG_WARNING("api", "[writes-gate] HELD " << bc->logPrefix << " "
-                         << method << " " << maskedUrl << " digest "
-                         << digest.substr(0, 12) << " — awaiting owner approval");
-            Json::Value held(Json::objectValue);
-            held["status"] = 0;
-            held["error"] = "approval_required: write " + method + " held pending owner "
-                            "approval (digest " + digest + "). Approve via "
-                            "POST /api/v1/api/packages/" + bc->packageId +
-                            "/approvals/" + digest + " then retry — approval is "
-                            "one-shot and payload-bound (modified request = new digest).";
-            held["approval_required"] = true;
-            held["digest"] = digest;
-            held["expires_at_unix_ms"] = static_cast<Json::Int64>(expiresMs);
-            return held;
-        }
-        ALOG_INFO("api", "[writes-gate] PASSED " << bc->logPrefix << " "
-                  << method << " " << maskedUrl << " digest " << digest.substr(0, 12));
-    }
-    bc->httpUsed++;
-    // #25: sandbox fetches follow redirects under the same per-hop scope
-    // checks as the primary transport.
-    HttpClient::Response resp =
-        bc->http ? ApiRuntime::ExecuteScoped(bc->http, bc->egressHosts, req,
-                                             bc->logPrefix + " (sandbox)")
-                 : HttpClient::Response{};
-    out["status"] = resp.status_code;
-    {
-        Json::Value headers(Json::objectValue);
-        for (const auto& [k, v] : resp.headers) headers[k] = v;
-        out["headers"] = headers;
-    }
-    out["body"] = resp.body;
-    if (!resp.error.empty()) {
-        out["error"] = resp.error;
-    } else {
-        Json::Value parsed;
-        std::string jerr;
-        std::istringstream bs(resp.body);
-        Json::CharReaderBuilder rb;
-        if (Json::parseFromStream(rb, bs, &parsed, &jerr)) out["json"] = parsed;
-    }
-    return out;
+    return DispatchScriptRequest(bc, std::move(req));
 }
 
 int CtxHttpGet(lua_State* L) { PushJson(L, DoHttp(GetBridge(L, 1), "GET", L, 1, 2)); return 1; }
@@ -622,6 +625,179 @@ int CtxFsRead(lua_State* L) {
     std::string out(std::min<size_t>(size, bc->fsReadCap), '\0');
     f.read(out.data(), static_cast<std::streamsize>(out.size()));
     lua_pushlstring(L, out.data(), out.size());
+    return 1;
+}
+
+// --- ctx.http.upload (#69 package upload lane) -----------------------------
+//
+// Kernel-side file upload for the package sandbox, mirroring the channel
+// seam (#159): file bytes are read from THIS package's files area and
+// composed kernel-side — they never enter Lua. Two modes:
+//   raw:       { file = {name, mime?},            headers, timeout_s }
+//   multipart: { files = {{name, field?, filename?, mime?}, ...},
+//                fields = {k = v, ...},            headers, timeout_s }
+// The request is a script-composed POST: writes_gated packages bind the
+// #126 digest over the exact wire bytes; egress stays package-scoped (#25).
+static bool ResolveUploadPart(lua_State* L, int tidx, const fs::path& root,
+                              UploadFilePart& part, std::string& err) {
+    lua_getfield(L, tidx, "name");
+    const char* name = lua_isstring(L, -1) ? lua_tostring(L, -1) : nullptr;
+    lua_pop(L, 1);
+    if (name == nullptr || *name == '\0') {
+        err = "upload part missing 'name' (package files-area slug)";
+        return false;
+    }
+    if (!IsValidFileSlug(name)) {
+        err = std::string("invalid files-area slug: ") + name;
+        return false;
+    }
+    const fs::path target = root / name;
+    if (!PathWithinRoots(target, {root})) {
+        err = "path outside package files area: " + target.string();
+        return false;
+    }
+    lua_getfield(L, tidx, "field");
+    part.field =
+        (lua_isstring(L, -1) && *lua_tostring(L, -1)) ? lua_tostring(L, -1) : "file";
+    lua_pop(L, 1);
+    lua_getfield(L, tidx, "filename");
+    part.filename =
+        (lua_isstring(L, -1) && *lua_tostring(L, -1)) ? lua_tostring(L, -1) : name;
+    lua_pop(L, 1);
+    lua_getfield(L, tidx, "mime");
+    part.mime = (lua_isstring(L, -1) && *lua_tostring(L, -1))
+                    ? lua_tostring(L, -1)
+                    : "application/octet-stream";
+    lua_pop(L, 1);
+    if (!PartHeaderSafe(part.field) || !PartHeaderSafe(part.filename)) {
+        err = "unsafe field/filename (CR/LF/quote rejected)";
+        return false;
+    }
+    if (!ReadFileBytes(target, kUploadByteCap, part.content, err)) {
+        err = "upload read failed: " + err;
+        return false;
+    }
+    return true;
+}
+
+int CtxHttpUpload(lua_State* L) {
+    BridgeContext* bc = GetBridge(L, 1);
+    const char* url = luaL_checkstring(L, 1);
+    Json::Value out(Json::objectValue);
+    const auto fail = [&](const std::string& msg) {
+        out["status"] = 0;
+        out["error"] = msg;
+        PushJson(L, out);
+        return 1;
+    };
+    if (!lua_istable(L, 2)) {
+        return fail("ctx.http.upload expects (url, options)");
+    }
+    if (bc->httpUsed >= bc->httpBudget) {
+        return fail("secondary http budget exhausted (" +
+                    std::to_string(bc->httpBudget) + " calls per invocation)");
+    }
+    std::string egressHost;
+    if (!ApiRuntime::EgressAllowed(bc->egressHosts, url, egressHost)) {
+        ALOG_WARNING("api", "[egress] DENIED " << bc->logPrefix << " -> "
+                     << (egressHost.empty() ? "<malformed url>" : egressHost)
+                     << " (outside package scope)");
+        return fail("egress denied: host '" +
+                    (egressHost.empty() ? "<malformed>" : egressHost) +
+                    "' is not in this package's egress allowlist");
+    }
+    HttpClient::Request req;
+    req.method = "POST";
+    req.url = url;
+    req.timeout_seconds = 120;  // transcription-scale uploads run long
+    std::vector<std::pair<std::string, std::string>> fields;
+    lua_getfield(L, 2, "timeout_s");
+    if (lua_isnumber(L, -1)) {
+        int t = static_cast<int>(lua_tonumber(L, -1));
+        if (t >= 1 && t <= 300) req.timeout_seconds = t;
+    }
+    lua_pop(L, 1);
+    lua_getfield(L, 2, "headers");
+    if (lua_istable(L, -1)) {
+        lua_pushnil(L);
+        while (lua_next(L, -2) != 0) {
+            if (lua_isstring(L, -2) && lua_isstring(L, -1))
+                req.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+    lua_getfield(L, 2, "fields");
+    if (lua_istable(L, -1)) {
+        lua_pushnil(L);
+        while (lua_next(L, -2) != 0) {
+            if (lua_isstring(L, -2) && lua_isstring(L, -1))
+                fields.emplace_back(lua_tostring(L, -2), lua_tostring(L, -1));
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+    const fs::path root = PackageRoot(bc);
+    std::vector<UploadFilePart> parts;
+    bool hasRaw = false;
+    lua_getfield(L, 2, "file");
+    if (lua_istable(L, -1)) {
+        hasRaw = true;
+        UploadFilePart raw;
+        std::string perr;
+        if (!ResolveUploadPart(L, lua_gettop(L), root, raw, perr)) return fail(perr);
+        req.body = std::move(raw.content);
+        if (req.headers.find("Content-Type") == req.headers.end())
+            req.headers["Content-Type"] = raw.mime;
+        lua_pop(L, 1);
+    } else {
+        lua_pop(L, 1);  // non-table (absent)
+    }
+    if (!hasRaw) {
+        lua_getfield(L, 2, "files");
+        if (!lua_istable(L, -1))
+            return fail("ctx.http.upload requires file={name,mime} or files={...}");
+        const int len = static_cast<int>(lua_rawlen(L, -1));
+        for (int i = 1; i <= len; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (!lua_istable(L, -1))
+                return fail("files[" + std::to_string(i) + "] must be a table");
+            UploadFilePart part;
+            std::string perr;
+            if (!ResolveUploadPart(L, lua_gettop(L), root, part, perr)) return fail(perr);
+            parts.push_back(std::move(part));
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);  // files table
+        // #126 replay determinism: the gate binds a digest over the exact
+        // wire bytes, so the boundary must be a function of the logical
+        // payload — not per-attempt RNG (else an approved upload composes a
+        // different body on retry and is held forever). Seed = SHA-256 over
+        // url + fields + part headers + contents (length-framed).
+        std::string seedMat;
+        seedMat.reserve(128);
+        const auto frame = [&seedMat](const std::string& s) {
+            seedMat += std::to_string(s.size());
+            seedMat += ':';
+            seedMat += s;
+            seedMat += ',';
+        };
+        frame(url);
+        for (const auto& [fn, fv] : fields) { frame(fn); frame(fv); }
+        for (const auto& p : parts) {
+            frame(p.field); frame(p.filename); frame(p.mime); frame(p.content);
+        }
+        const std::uint64_t seed =
+            static_cast<std::uint64_t>(std::strtoull(
+                crypto::Sha256Hex(seedMat).substr(0, 16).c_str(), nullptr, 16));
+        const std::string boundary = ChooseBoundary(fields, parts, seed);
+        if (boundary.empty())
+            return fail("failed to choose a collision-free multipart boundary");
+        std::string contentType;
+        req.body = BuildMultipartBody(fields, parts, boundary, contentType);
+        req.headers["Content-Type"] = contentType;
+    }
+    PushJson(L, DispatchScriptRequest(bc, std::move(req)));
     return 1;
 }
 
@@ -893,7 +1069,7 @@ void BuildCtx(lua_State* L, BridgeContext* bc, const Json::Value& request, bool 
     }
 
     // ctx.http
-    lua_createtable(L, 0, 4);
+    lua_createtable(L, 0, 5);
     lua_pushlightuserdata(L, bc);
     lua_pushcclosure(L, CtxHttpGet, 1);
     lua_setfield(L, -2, "get");
@@ -906,6 +1082,9 @@ void BuildCtx(lua_State* L, BridgeContext* bc, const Json::Value& request, bool 
     lua_pushlightuserdata(L, bc);
     lua_pushcclosure(L, CtxHttpDelete, 1);
     lua_setfield(L, -2, "delete");
+    lua_pushlightuserdata(L, bc);
+    lua_pushcclosure(L, CtxHttpUpload, 1);
+    lua_setfield(L, -2, "upload");
     lua_setfield(L, -2, "http");
 
     // ctx.crypto (pure: request signing; no network, no state)
