@@ -1,8 +1,8 @@
 {
   "kind": "api_package",
   "name": "stt",
-  "version": "0.1.0",
-  "description": "Speech-to-text via the internal whisper.cpp server (Swarm service `stt` on the animus overlay). Uploads audio from the package files area kernel-side (ctx.http.upload, #69 seam) and returns the transcript. Transcription is side-effect-free: writes_gated is off by design and the egress allowlist (host `stt` only) is the boundary.",
+  "version": "0.1.1",
+  "description": "Speech-to-text via the internal whisper.cpp server (Swarm service `stt` on the animus overlay). Uploads audio from the package files area kernel-side (ctx.http.upload, #69 seam) and returns the transcript. Transcription is side-effect-free: writes_gated is off by design and the egress allowlist (host `stt` only) is the boundary. v0.1.1: files_from [\"nextcloud\"] lets uploads read <pkg>/<slug> refs from declared sibling files areas (#69 notetaker handoff); transcript persistence is checked loudly.",
   "keywords": [
     "speech",
     "transcription",
@@ -16,6 +16,9 @@
   "egress_hosts": [
     "stt"
   ],
+  "files_from": [
+    "nextcloud"
+  ],
   "state_schema": {
     "base_url": {
       "type": "string",
@@ -26,7 +29,7 @@
     {
       "name": "transcribe",
       "kind": "action",
-      "description": "Transcribe an audio file from the package files area (wav/ogg/webm/mp3 — the server converts via ffmpeg). The full transcript is also persisted to <file>.txt in the files area. Boundary: single-request timeout is 300 s (kernel clamp); chunk longer audio before upload. Requires a kernel with ctx.http.upload (#69).",
+      "description": "Transcribe an audio file (wav/ogg/webm/mp3 — the server converts via ffmpeg). file is a bare slug from the stt files area or <pkg>/<slug> for a package declared in files_from (e.g. nextcloud/<recording> pulled by file get). The transcript is also persisted to <basename>.txt in the stt files area. Boundary: single-request timeout is 300 s (kernel clamp); chunk longer audio before upload. Requires a kernel with ctx.http.upload and files_from (#69).",
       "parameters": {
         "file": {
           "type": "string",
@@ -36,7 +39,7 @@
           "type": "string"
         }
       },
-      "script": "function run(ctx) local base = ctx.package.get_state('base_url') local r = ctx.http.upload(base..'/inference', {files = {{name = ctx.args.file, field = 'file', mime = ctx.args.mime or 'application/octet-stream'}}, fields = {response_format = 'json'}, timeout_s = 300}) if r.status ~= 200 or not (r.json and r.json.text) then return {success = false, output = 'transcribe failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local text = r.json.text local path = ctx.fs.write(ctx.args.file..'.txt', text) return {output = 'transcribed '..tostring(#text)..' chars', data = {text = text, transcript_path = path}} end"
+      "script": "function run(ctx) local base = ctx.package.get_state('base_url') local r = ctx.http.upload(base..'/inference', {files = {{name = ctx.args.file, field = 'file', mime = ctx.args.mime or 'application/octet-stream'}}, fields = {response_format = 'json'}, timeout_s = 300}) if r.status ~= 200 or not (r.json and r.json.text) then return {success = false, output = 'transcribe failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local text = r.json.text local bn = ctx.args.file:match('[^/]+$') or ctx.args.file local ok, werr = ctx.fs.write(bn..'.txt', text) if not ok then return {success = false, output = 'transcribe failed: transcript persist: '..tostring(werr)} end return {output = 'transcribed '..tostring(#text)..' chars', data = {text = text, transcript_file = bn..'.txt'}} end"
     }
   ],
   "connections": []

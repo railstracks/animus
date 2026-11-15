@@ -225,6 +225,7 @@ struct BridgeContext {
     std::vector<std::string> secretValues;
     std::set<std::string> secretKeys;
     std::vector<std::string> egressHosts;  // #25: package egress scope
+    std::set<std::string> filesFrom;  // #69: sibling files areas uploads may read
     bool writesGated{false};               // #126: write methods need approval
     ApiPackageStore* store{nullptr};
     HttpClient* http{nullptr};
@@ -576,6 +577,17 @@ int CtxHttpDelete(lua_State* L) { PushJson(L, DoHttp(GetBridge(L, 1), "DELETE", 
 
 fs::path PackageRoot(const BridgeContext* bc) { return fs::path(bc->filesRoot) / bc->packageName; }
 
+std::set<std::string> ParseFilesFromSet(const std::string& json) {
+    std::set<std::string> out;
+    Json::Value arr;
+    std::string jerr;
+    if (!ParseJsonText(json.empty() ? "[]" : json, arr, jerr) || !arr.isArray())
+        return out;
+    for (const auto& v : arr)
+        if (v.isString() && !v.asString().empty()) out.insert(v.asString());
+    return out;
+}
+
 int64_t DirUsageBytes(const fs::path& dir) {
     int64_t total = 0;
     std::error_code ec;
@@ -638,7 +650,41 @@ int CtxFsRead(lua_State* L) {
 //                fields = {k = v, ...},            headers, timeout_s }
 // The request is a script-composed POST: writes_gated packages bind the
 // #126 digest over the exact wire bytes; egress stays package-scoped (#25).
-static bool ResolveUploadPart(lua_State* L, int tidx, const fs::path& root,
+static bool ResolvePartSource(const BridgeContext* bc, const char* name,
+                              fs::path& root, std::string& slug, std::string& err) {
+    const std::string s(name);
+    const auto slash = s.find('/');
+    if (slash == std::string::npos) {
+        root = PackageRoot(bc);
+        slug = s;
+        return true;
+    }
+    const std::string pkg = s.substr(0, slash);
+    // Only slug-shaped prefixes are files_from refs; anything else (e.g.
+    // '../evil.bin') keeps the legacy whole-name treatment below.
+    const bool pkgShape =
+        !pkg.empty() && pkg.size() <= 63 &&
+        pkg.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-") ==
+            std::string::npos;
+    if (!pkgShape) {
+        root = PackageRoot(bc);
+        slug = s;
+        return true;
+    }
+    if (bc->filesFrom.count(pkg) == 0) {
+        err = "upload part '" + s + "': package '" + pkg +
+              "' is not declared in files_from - declare it in the manifest";
+        ALOG_WARNING("api", "[files_from] DENIED " << bc->logPrefix
+                     << " upload part '" << s << "' -> package '" << pkg
+                     << "' (not declared)");
+        return false;
+    }
+    root = fs::path(bc->filesRoot) / pkg;
+    slug = s.substr(slash + 1);
+    return true;
+}
+
+static bool ResolveUploadPart(lua_State* L, int tidx, const BridgeContext* bc,
                               UploadFilePart& part, std::string& err) {
     lua_getfield(L, tidx, "name");
     const char* name = lua_isstring(L, -1) ? lua_tostring(L, -1) : nullptr;
@@ -647,12 +693,15 @@ static bool ResolveUploadPart(lua_State* L, int tidx, const fs::path& root,
         err = "upload part missing 'name' (package files-area slug)";
         return false;
     }
-    if (!IsValidFileSlug(name)) {
-        err = std::string("invalid files-area slug: ") + name;
+    fs::path srcRoot;
+    std::string slug;
+    if (!ResolvePartSource(bc, name, srcRoot, slug, err)) return false;
+    if (!IsValidFileSlug(slug)) {
+        err = "invalid files-area slug: " + slug;
         return false;
     }
-    const fs::path target = root / name;
-    if (!PathWithinRoots(target, {root})) {
+    const fs::path target = srcRoot / slug;
+    if (!PathWithinRoots(target, {srcRoot})) {
         err = "path outside package files area: " + target.string();
         return false;
     }
@@ -662,7 +711,7 @@ static bool ResolveUploadPart(lua_State* L, int tidx, const fs::path& root,
     lua_pop(L, 1);
     lua_getfield(L, tidx, "filename");
     part.filename =
-        (lua_isstring(L, -1) && *lua_tostring(L, -1)) ? lua_tostring(L, -1) : name;
+        (lua_isstring(L, -1) && *lua_tostring(L, -1)) ? lua_tostring(L, -1) : slug;
     lua_pop(L, 1);
     lua_getfield(L, tidx, "mime");
     part.mime = (lua_isstring(L, -1) && *lua_tostring(L, -1))
@@ -737,7 +786,6 @@ int CtxHttpUpload(lua_State* L) {
         }
     }
     lua_pop(L, 1);
-    const fs::path root = PackageRoot(bc);
     std::vector<UploadFilePart> parts;
     bool hasRaw = false;
     lua_getfield(L, 2, "file");
@@ -745,7 +793,7 @@ int CtxHttpUpload(lua_State* L) {
         hasRaw = true;
         UploadFilePart raw;
         std::string perr;
-        if (!ResolveUploadPart(L, lua_gettop(L), root, raw, perr)) return fail(perr);
+        if (!ResolveUploadPart(L, lua_gettop(L), bc, raw, perr)) return fail(perr);
         req.body = std::move(raw.content);
         if (req.headers.find("Content-Type") == req.headers.end())
             req.headers["Content-Type"] = raw.mime;
@@ -764,7 +812,7 @@ int CtxHttpUpload(lua_State* L) {
                 return fail("files[" + std::to_string(i) + "] must be a table");
             UploadFilePart part;
             std::string perr;
-            if (!ResolveUploadPart(L, lua_gettop(L), root, part, perr)) return fail(perr);
+            if (!ResolveUploadPart(L, lua_gettop(L), bc, part, perr)) return fail(perr);
             parts.push_back(std::move(part));
             lua_pop(L, 1);
         }
@@ -1668,6 +1716,7 @@ Json::Value ApiRuntime::ExecuteInternal(const std::string& packageName,
     bc.secretValues = secretValues;
     bc.secretKeys = secretKeys;
     bc.egressHosts = egressScope;
+    bc.filesFrom = ParseFilesFromSet(pkg->files_from);
     bc.writesGated = pkg->writes_gated;
     bc.runtime = this;
     bc.store = m_store;

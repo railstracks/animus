@@ -58,7 +58,6 @@ export const agents = {
       timeoutSeconds: 'Timeout (seconds)',
       tokenBudgetPerPrompt: 'Token Budget / Prompt',
       contextWindow: 'Context Window',
-      contextWindow: 'Context Window',
       episodicTokenBudget: 'Episodic Memory Budget (tokens)',
       semanticTokenBudget: 'Semantic Memory Budget (tokens)',
       perspectivesTokenBudget: 'Perspectives Budget (tokens)',

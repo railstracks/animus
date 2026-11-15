@@ -67,6 +67,10 @@ Talk messaging actions are **gone from the package** — they belong to the adap
 
 Orchestration lives in the agent/scheduler/Active session — the package stays a bag of actions, the adapter stays a channel.
 
+**Amendment (Nov 15, post-stt-0.1.0 live proof):** step 3's "STT reads it from there" assumed one shared files area. The kernel enforces **per-package roots** (`filesRoot/<pkg>/` — live-verified: nextcloud `file get` lands in `api-files/nextcloud/`, stt `transcribe` reads `api-files/stt/` only; the first live chain bridged them with a manual host-side copy). The sanctioned handoff is a **manifest-declared `files_from` allowlist**, mirroring `egress_hosts` (#25 model): owner-visible at install, kernel-enforced at upload resolution, loud deny otherwise. stt declares `files_from: ["nextcloud"]`; its upload parts accept `<pkg>/<slug>` references resolved against declared siblings' roots (bare names stay own-area, back-compat). `ctx.fs` stays package-local — only the upload seam crosses, nothing else.
+
+**Measured boundary (same proof):** the 300 s single-request clamp holds for ~≤4 min of audio on the current CPU (12.3-min recording uploaded + converted fine but inference exceeded the clamp → client-side failure). Driver methodology must treat longer recordings as chunked-or-capped; full segmentation is Phase C.
+
 ## 7. Phasing
 
 - **Phase A (0.5.0):** office package skeleton + Files/Shares/Deck/Notes/Calendar actions + tests (fixture discipline: every test cleans up). Registry-published per SOP.

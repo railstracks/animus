@@ -197,6 +197,11 @@ void ApiPackageStore::EnsureSchema() {
     if (!schema::ColumnExists(m_store, "api_packages", "approved_hash"))
         schema::CreateTable(m_store,
             "ALTER TABLE api_packages ADD COLUMN approved_hash TEXT NOT NULL DEFAULT ''");
+    // #69 notetaker handoff: declared sibling files areas (upload reads as
+    // "<pkg>/<slug>" refs). NULL = row predates the seam.
+    if (!schema::ColumnExists(m_store, "api_packages", "files_from"))
+        schema::CreateTable(m_store,
+            "ALTER TABLE api_packages ADD COLUMN files_from TEXT");
     // #106 audit: NULL hash_algo = row hashed under v1 (string-embedded
     // projection). MigrateHashV2 verifies those rows against the v1
     // algorithm before re-binding under v2; new writes always stamp 'v2'.
@@ -509,6 +514,10 @@ std::string ApiPackageStore::ComputeContentHash(const ApiPackage& pkg,
     j["state_schema"] = CanonicalNested(pkg.state_schema.empty() ? "{}" : pkg.state_schema,
                                         Json::Value(Json::objectValue));
     j["egress_hosts"] = CanonicalHostSet(pkg.egress_hosts);
+    // #69: files_from widens the upload read surface — approval binds to it.
+    // Key present ONLY when declared, so pre-seam packages hash unchanged.
+    if (!pkg.files_from.empty())
+        j["files_from"] = CanonicalHostSet(pkg.files_from);
     Json::Value jc(Json::arrayValue);
     std::vector<ApiPackageCommand> sortedCmds = cmds;
     std::sort(sortedCmds.begin(), sortedCmds.end(),
@@ -641,6 +650,7 @@ ApiPackage RowToPackage(const std::unique_ptr<IStatement>& stmt) {
     p.created_at_unix_ms = stmt->ColumnInt64(14);
     p.updated_at_unix_ms = stmt->ColumnInt64(15);
     p.writes_gated = stmt->ColumnInt64(21) != 0;
+    p.files_from = stmt->ColumnText(22);  // #69 ("" = NULL = not declared)
     return p;
 }
 
@@ -648,7 +658,8 @@ const char* kPackageColumns =
     "id, name, display_name, description, keywords, version, registry_source, "
     "registry_version, locally_modified, enabled, dispatch_cooldown_ms, "
     "files_quota_mb, state_schema, state, created_at_unix_ms, updated_at_unix_ms, "
-    "egress_hosts, approval_status, content_hash, approved_hash, hash_algo, writes_gated";
+    "egress_hosts, approval_status, content_hash, approved_hash, hash_algo, writes_gated, "
+    "files_from";
 
 ApiPackageCommand RowToCommand(const std::unique_ptr<IStatement>& stmt) {
     ApiPackageCommand c;
@@ -699,8 +710,8 @@ ApiPackage ApiPackageStore::CreatePackage(const ApiPackage& pkg) {
         "version, registry_source, registry_version, locally_modified, enabled, "
         "dispatch_cooldown_ms, files_quota_mb, state_schema, state, "
         "created_at_unix_ms, updated_at_unix_ms, egress_hosts, "
-        "approval_status, content_hash, approved_hash, writes_gated) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        "approval_status, content_hash, approved_hash, writes_gated, files_from) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     if (!stmt) throw std::runtime_error("api_packages insert prepare failed");
     stmt->BindText(1, id);
     stmt->BindText(2, pkg.name);
@@ -727,6 +738,7 @@ ApiPackage ApiPackageStore::CreatePackage(const ApiPackage& pkg) {
     stmt->BindText(19, pkg.content_hash);
     stmt->BindText(20, pkg.approved_hash);
     stmt->BindInt64(21, pkg.writes_gated ? 1 : 0);
+    stmt->BindText(22, pkg.files_from);
     stmt->ExecDML();
     stmt->Finalize();
 
@@ -772,7 +784,7 @@ bool ApiPackageStore::UpdatePackageMeta(const ApiPackage& pkg, bool partOfLarger
         "version = ?, registry_source = ?, registry_version = ?, locally_modified = ?, "
         "dispatch_cooldown_ms = ?, files_quota_mb = ?, state_schema = ?, "
         "egress_hosts = ?, approval_status = ?, content_hash = ?, approved_hash = ?, "
-        "writes_gated = ?, updated_at_unix_ms = ? WHERE id = ?");
+        "writes_gated = ?, files_from = ?, updated_at_unix_ms = ? WHERE id = ?");
     if (!stmt) return false;
     stmt->BindText(1, pkg.display_name);
     stmt->BindText(2, pkg.description);
@@ -789,8 +801,9 @@ bool ApiPackageStore::UpdatePackageMeta(const ApiPackage& pkg, bool partOfLarger
     stmt->BindText(13, pkg.content_hash);
     stmt->BindText(14, pkg.approved_hash);
     stmt->BindInt64(15, pkg.writes_gated ? 1 : 0);
-    stmt->BindInt64(16, NowUnixMs());
-    stmt->BindText(17, pkg.id);
+    stmt->BindText(16, pkg.files_from);
+    stmt->BindInt64(17, NowUnixMs());
+    stmt->BindText(18, pkg.id);
     stmt->ExecDML();
     stmt->Finalize();
     // Meta carries hash-relevant fields (version, state_schema, egress_hosts):
@@ -1658,6 +1671,37 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
         }
     }
 
+    // #69 notetaker handoff: files_from declares sibling packages whose
+    // files areas this package's uploads may read ("<pkg>/<slug>" refs).
+    // Deny-by-default at runtime; explicit declaration, no derivation.
+    Json::Value filesFromArr(Json::arrayValue);
+    if (m.isMember("files_from")) {
+        const Json::Value& ff = m["files_from"];
+        if (!ff.isArray()) {
+            lint.Add("files_from must be an array of package names");
+        } else if (ff.size() > 8) {
+            lint.Add("files_from: at most 8 packages");
+        } else {
+            for (const auto& v : ff) {
+                if (!v.isString() || v.asString().empty() ||
+                    v.asString().size() > 63 ||
+                    v.asString().find_first_not_of(
+                        "abcdefghijklmnopqrstuvwxyz0123456789-") !=
+                        std::string::npos) {
+                    lint.Add("files_from: entries must be lowercase slugs "
+                             "[a-z0-9-], 1-63 chars");
+                    break;
+                }
+                if (v.asString() == name) {
+                    lint.Add("files_from: self-reference is meaningless "
+                             "(own files area is always readable)");
+                    break;
+                }
+            }
+            if (lint.Ok()) filesFromArr = ff;
+        }
+    }
+
     if (!lint.Ok()) lint.Throw("manifest lint failed");
 
     // Upgrade-in-place: same name -> replace commands/connections/meta while
@@ -1686,6 +1730,7 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
     pkg.writes_gated = writesGated;
     pkg.state_schema = JsonCompact(stateSchema);
     pkg.egress_hosts = egressDeclared ? JsonCompact(egressArr) : JsonHostArray(derived);
+    pkg.files_from = m.isMember("files_from") ? JsonCompact(filesFromArr) : "";
     if (existing) {
         pkg.id = existing->id;
         pkg.created_at_unix_ms = existing->created_at_unix_ms;
