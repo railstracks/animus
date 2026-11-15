@@ -21,6 +21,7 @@
 #include "animus_kernel/CompactionService.h"
 #include "animus_kernel/Session.h"
 #include "animus_kernel/SessionManager.h"
+#include "animus_kernel/DefaultSessionRouter.h"
 #include "animus_kernel/SqliteDataStore.h"
 #include "animus_kernel/SqliteSessionStore.h"
 #include "animus_kernel/llm/LLMTypes.h"
