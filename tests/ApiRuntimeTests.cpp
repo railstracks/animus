@@ -1700,10 +1700,60 @@ int TestScriptHttpUpload() {
     return 0;
 }
 
+// #69 stt package v0.1: transcribe — multipart wire shape against the
+// whisper contract, transcript surfaced in data AND persisted to the files
+// area (durable copy past the result-string cap), loud failure on bad input.
+int TestSttPackage() {
+    std::cerr << "  [runtime] stt package: transcribe...\n";
+    const std::string extra =
+        R"({"name": "transcribe", "kind": "action", "description": "Transcribe audio from the files area",
+         "parameters": {"file": {"type": "string", "required": true}, "mime": {"type": "string"}},
+         "script": "function run(ctx) local base = ctx.package.get_state('base_url') local r = ctx.http.upload(base..'/inference', {files = {{name = ctx.args.file, field = 'file', mime = ctx.args.mime or 'application/octet-stream'}}, fields = {response_format = 'json'}, timeout_s = 300}) if r.status ~= 200 or not (r.json and r.json.text) then return {success = false, output = 'transcribe failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local text = r.json.text local path = ctx.fs.write(ctx.args.file..'.txt', text) return {output = 'transcribed '..tostring(#text)..' chars', data = {text = text, transcript_path = path}} end"})";
+    Fixture fx;
+    fx.server.rawBodies["/inference"] = R"({"text": " hello from whisper"})";
+    InstallFixturePkg(fx, extra, R"(["127.0.0.1"])", true, false);
+    const std::filesystem::path proot = std::filesystem::path(fx.filesRoot) / "testpkg";
+    std::filesystem::create_directories(proot);
+    {
+        std::ofstream f(proot / "meeting.wav", std::ios::binary);
+        const std::string audio = "RIFFfake-audio-bytes";
+        f.write(audio.data(), static_cast<std::streamsize>(audio.size()));
+    }
+    Json::Value args;
+    args["file"] = "meeting.wav";
+    auto r = fx.runtime->ExecuteAction("testpkg", "transcribe", "agent", args);
+    Assert(r["output"].asString().find("transcribed 19 chars") != std::string::npos,
+           "stt transcribe output char count");
+    Assert(r["data"]["text"].asString() == " hello from whisper",
+           "stt transcript surfaced in data");
+    Assert(fx.server.lastMethod == "POST" && fx.server.lastPath == "/inference",
+           "stt request verb+path");
+    Assert(fx.server.lastBody.find("name=\"response_format\"") != std::string::npos,
+           "stt response_format field part");
+    Assert(fx.server.lastBody.find("name=\"file\"; filename=\"meeting.wav\"") !=
+               std::string::npos,
+           "stt file part header");
+    Assert(fx.server.lastBody.find("RIFFfake-audio-bytes") != std::string::npos,
+           "stt audio bytes on the wire");
+    std::ifstream tf(proot / "meeting.wav.txt", std::ios::binary);
+    std::string persisted((std::istreambuf_iterator<char>(tf)),
+                          std::istreambuf_iterator<char>());
+    Assert(persisted == " hello from whisper",
+           "stt transcript persisted to files area");
+    args["file"] = "missing.wav";
+    r = fx.runtime->ExecuteAction("testpkg", "transcribe", "agent", args);
+    Assert(!r["success"].asBool() &&
+               r["output"].asString().find("transcribe failed") != std::string::npos &&
+               r["output"].asString().find("upload read failed") != std::string::npos,
+           "stt missing file fails loudly");
+    return 0;
+}
+
 int main() {
     std::cerr << "ApiRuntime tests:\n";
     TestInterpolation();
     TestScriptHttpUpload();
+    TestSttPackage();
     TestArgsValidation();
     TestPrimaryTransport();
     TestNextcloudRecordingCommands();
