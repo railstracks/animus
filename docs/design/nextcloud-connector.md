@@ -1,8 +1,8 @@
 # Nextcloud Connector — office api package + Talk channel adapter
 
-**Status:** v2 — owner rulings folded 2026-11-12 (Kestrel)
+**Status:** v3 — 2026-11-15: #69 open questions answered (live capability probe + installed-source pass on recording gates & transcription). v2 owner rulings 2026-11-12 folded.
 **Tickets:** #293 (office package) + #69 (Talk adapter) — one connector effort, **two artifacts**
-**Evidence:** probe pass on #162 (comment 6772647442) and #293 (comment 6782390182); ✅ items live-verified against `https://nextcloud.steadyfort.com` (NC 35.0.2.2, Collabora 26.04.5.2, spreed 25.0.7); Talk API ground truth read from installed source Nov 12.
+**Evidence:** probe pass on #162 (comment 6772647442) and #293 (comment 6782390182); ✅ items live-verified against `https://nextcloud.steadyfort.com` (NC 35.0.2.2, Collabora 26.04.5.2, spreed 25.0.7); Talk API ground truth read from installed source Nov 12; second source pass + unauth capability probe Nov 15 (recording gates, bot actor model, live-transcription contract).
 
 ## 1. The split (owner ruling, Nov 12)
 
@@ -38,24 +38,28 @@ Legend: ✅ probe-proven live · ⚠️ endpoint shape verified, action untested
 
 **Activity:** `activity feed` — OCS read ❓
 
-**Recording control (notetaker's hands):** `recording start/stop/status` ⚠️ (route shape verified; live test needs a real call)
+**Recording control (notetaker's hands):** `recording start/stop/status` ⚠️ (route shape verified; live test needs a real call + `animus-agent` promoted to moderator — Q3 ruling in §5)
 
 Talk messaging actions are **gone from the package** — they belong to the adapter.
 
 ## 5. Talk channel adapter (#69)
 
+**Live capability probe (Nov 15, unauth OCS `cloud/capabilities` — endpoint is public, zero credential handling):** `recording-v1` ✅ · `bots-v1` ✅ · `recording-chunked-upload` ✅ · `bot-features-api` · `recording-consent` · `external-call-service` advertised in call config (Phase 2 path exists server-side) · attachments `conversation-subfolders` (recordings land per-room as assumed). NC 35.0.2, spreed 25.0.7.
+
 **Session model:** rooms → Animus sessions on the standard channel infrastructure. Ground truth from installed source (`custom_apps/spreed/lib/Room.php`): room types are `TYPE_ONE_TO_ONE=1`, `TYPE_GROUP=2`, `TYPE_PUBLIC=3`, `TYPE_CHANGELOG=4`, `TYPE_ONE_TO_ONE_FORMER=5`, `TYPE_NOTE_TO_SELF=6`.
 
 - **DMs factor in naturally** (investigation item resolved): a DM is a room of type 1 in the same API as everything else — the adapter maps it like a Discord DM lane, no special protocol. Group rooms = channels; public rooms = joinable servers, effectively.
 - **Direct chat first:** message send/readback is the same API either way (`lookIntoFuture` long-poll proven in #162). This ships before voice.
-- **Inbound voice:** spreed 25.0.7 has the **TaskProcessing speech-to-text pipeline wired in** (integration points live in `Recording/Listener.php`, `Chat/Changelog/Manager.php`, `Capabilities.php`, `Notification/Notifier.php`) — **but no STT backend app is installed** (`app:list` shows spreed alone; no assistant/speech app). So: the mechanism is builtin, the *worker* isn't. Options: install a community STT backend app, or wire our own #69 STT package as the TaskProcessing backend. Ruling needed at Phase C.
+- **Inbound voice — two distinct mechanisms (Nov 15 source pass):**
+  - **Live transcription in calls:** Talk 25.0.7 ships `LiveTranscriptionService` + `LiveTranscriptionController`, delegating to an **AppAPI ExApp id `live_transcription`** — contract: `GET /api/v1/languages`, `POST /api/v1/call/transcribe`, room-level enable/disable, per-room language (`setLanguage`; call-config flag `live-transcription-target-language-id`), live **translation** also supported. The ExApp is not installed on our instance — mechanism builtin, worker absent. Phase C options now three: community backend, our STT package as TaskProcessing provider, or **Animus implements the ExApp contract** (our STT rail becomes the instance's native live-transcription engine — one rail, three consumers).
+  - **Post-call STT of recordings:** TaskProcessing speech-to-text pipeline wired in (Nov 12 read; backend app likewise absent) — but Phase 1 doesn't depend on it: the STT package reads the pulled recording file directly.
 - **Outbound voice:** no builtin TTS — synthesis is ours. TTS package → audio file → share into the room (Talk plays shared audio inline). Correct as stated by owner; the synthesis work is the #69 voice lane.
 
-**Bots:** `occ talk:bot:install` exists (probe-proven); whether the adapter presents as a bot participant or a plain user session is a Phase B implementation question. Bot webhooks, when they come, are a kernel inbound lane — and land naturally as an **interjection source for the Active session** (#295), not as package machinery.
+**Bots — Q3 answered (source, Nov 15):** `recording start`/`stop` both carry `#[RequireLoggedInModeratorParticipant]` (`RecordingController.php:359/384`), and moderator rights are pure `participant_type` membership — `OWNER=1 | MODERATOR=2 | GUEST_MODERATOR=6` (`Participant.php::hasModeratorPermissions`, :137); bot attendees are `actorType='bots'` (`Attendee.php:87`) and can never hold them. **Ruling: the service account is the notetaker's hand.** `animus-agent` promoted to room moderator starts/stops recordings via the documented API; the adapter presents as a plain user session. Cost: no bot-webhook push lane — ingestion rides `lookIntoFuture` long-poll (proven #162) or `notify_push` (installed). `occ talk:bot:install` stays available later as a presence/interjection source (#295) — bots can never be the recording control surface.
 
 ## 6. Notetaker flow (Phase B composition)
 
-1. Trigger (scheduled, or the Active session) → package `recording start` on the target room
+1. Trigger (scheduled, or the Active session) → package `recording start` on the target room, executed as `animus-agent` room moderator (source-proven gate, §5)
 2. Call ends → `recording status` → recording lands in Files (talk-recording backend verified healthy, #162)
 3. Package `file get` pulls it (v0.3.0: lands in the sandbox files area — STT reads it from there, no giant strings through the result lane) → STT (separate package, per #69 stance) → transcript
 4. Package `note create` writes the meeting note → **adapter posts the summary to the room** → optional `deck card create` for action items
@@ -73,7 +77,8 @@ Orchestration lives in the agent/scheduler/Active session — the package stays 
 
 - ❓ **ApiRuntime verb support** (Phase A blocker): does the declarative `request` accept PROPFIND/REPORT? Fallback: script-side HTTP if sandboxed, else adapter-assisted reads.
 - Basic-auth header from state: expected per alpaca pattern; confirm in build.
-- STT backend absent on instance (evidence above) — Phase C ruling.
+- STT backend absent on instance — lanes now precisely characterized (live = `live_transcription` ExApp contract; post-call = TaskProcessing provider); Phase C ruling includes the implement-the-ExApp option.
+- ✅ #69 open questions Q1 (capabilities) / Q2 (occ access, retired by self-host) / Q3 (recording rights) — all answered Nov 15. Phase 1/1.5 lane has no open blockers.
 - ✅ Keeper/backup — resolved Nov 12 (#294 live).
 - ✅ DM investigation — resolved Nov 12: DMs are type-1 rooms, same API.
 
