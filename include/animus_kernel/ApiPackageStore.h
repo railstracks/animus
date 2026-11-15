@@ -38,6 +38,9 @@ struct ApiPackage {
                                      // template path is already #106-bound)
     std::string egress_hosts;        // JSON array of allowed host patterns (#25);
                                      // derived from url templates when undeclared
+    std::string files_from;          // JSON array of sibling package names whose
+                                     // files areas uploads may read via
+                                     // "<pkg>/<slug>" refs (#69); "" = not declared
     std::string approval_status;     // #25 gate: "pending" | "approved" | "rejected";
                                      // "" (NULL) = pre-gate row, grandfathered by sweep
     std::string content_hash;        // SHA256 of the canonical content projection;

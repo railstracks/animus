@@ -192,7 +192,8 @@ struct Fixture {
 ApiPackage InstallFixturePkg(Fixture& fx, const std::string& extra = "",
                              const std::string& egressField = "",
                              bool ownerInstalled = true,
-                             bool writesGated = false) {
+                             bool writesGated = false,
+                             const std::string& filesFromField = "") {
     std::string manifest = R"({
       "kind": "api_package", "name": "testpkg", "version": "0.1.0",
       "description": "fixture",
@@ -248,6 +249,13 @@ ApiPackage InstallFixturePkg(Fixture& fx, const std::string& extra = "",
         size_t cpos = manifest.find("      \"connections\": []");
         assert(cpos != std::string::npos);
         manifest.replace(cpos, 0, "      \"writes_gated\": true,\n");
+    }
+    // #69 notetaker handoff: declared sibling files areas (cross-package uploads)
+    if (!filesFromField.empty()) {
+        size_t cpos = manifest.find("      \"connections\": []");
+        assert(cpos != std::string::npos);
+        manifest.replace(cpos, 0,
+                         "      \"files_from\": " + filesFromField + ",\n");
     }
     ApiPackage pkg = fx.store.InstallFromManifest(manifest, "", "", ownerInstalled);
     fx.store.SetPackageEnabled(pkg.id, true);
@@ -1708,7 +1716,7 @@ int TestSttPackage() {
     const std::string extra =
         R"({"name": "transcribe", "kind": "action", "description": "Transcribe audio from the files area",
          "parameters": {"file": {"type": "string", "required": true}, "mime": {"type": "string"}},
-         "script": "function run(ctx) local base = ctx.package.get_state('base_url') local r = ctx.http.upload(base..'/inference', {files = {{name = ctx.args.file, field = 'file', mime = ctx.args.mime or 'application/octet-stream'}}, fields = {response_format = 'json'}, timeout_s = 300}) if r.status ~= 200 or not (r.json and r.json.text) then return {success = false, output = 'transcribe failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local text = r.json.text local path = ctx.fs.write(ctx.args.file..'.txt', text) return {output = 'transcribed '..tostring(#text)..' chars', data = {text = text, transcript_path = path}} end"})";
+         "script": "function run(ctx) local base = ctx.package.get_state('base_url') local r = ctx.http.upload(base..'/inference', {files = {{name = ctx.args.file, field = 'file', mime = ctx.args.mime or 'application/octet-stream'}}, fields = {response_format = 'json'}, timeout_s = 300}) if r.status ~= 200 or not (r.json and r.json.text) then return {success = false, output = 'transcribe failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local text = r.json.text local bn = ctx.args.file:match('[^/]+$') or ctx.args.file local ok, werr = ctx.fs.write(bn..'.txt', text) if not ok then return {success = false, output = 'transcribe failed: transcript persist: '..tostring(werr)} end return {output = 'transcribed '..tostring(#text)..' chars', data = {text = text, transcript_file = bn..'.txt'}} end"})";
     Fixture fx;
     fx.server.rawBodies["/inference"] = R"({"text": " hello from whisper"})";
     InstallFixturePkg(fx, extra, R"(["127.0.0.1"])", true, false);
@@ -1740,6 +1748,8 @@ int TestSttPackage() {
                           std::istreambuf_iterator<char>());
     Assert(persisted == " hello from whisper",
            "stt transcript persisted to files area");
+    Assert(r["data"]["transcript_file"].asString() == "meeting.wav.txt",
+           "stt transcript_file named in data");
     args["file"] = "missing.wav";
     r = fx.runtime->ExecuteAction("testpkg", "transcribe", "agent", args);
     Assert(!r["success"].asBool() &&
@@ -1749,11 +1759,72 @@ int TestSttPackage() {
     return 0;
 }
 
+// #69 notetaker handoff: files_from — declared sibling reads resolve
+// kernel-side against the sibling's files area ("<pkg>/<slug>" refs),
+// undeclared siblings are denied loudly egress-style, traversal via the
+// pkg prefix is rejected. Bare names stay own-area (back-compat, covered
+// by the upload tests above).
+int TestScriptHttpUploadFilesFrom() {
+    std::cerr << "  [runtime] ctx.http.upload files_from...\n";
+    const std::string extra =
+        R"({"name": "send", "kind": "action", "description": "Upload named file",
+         "parameters": {"file": {"type": "string", "required": true},
+                        "url": {"type": "string", "required": true}},
+         "script": "function run(ctx) local r = ctx.http.upload(ctx.args.url, {files = {{name = ctx.args.file, field='file'}}}) if r.status ~= 200 then return {success=false, output='upload failed: '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end return {output='ok'} end"})";
+    Fixture fx;
+    fx.server.rawBodies["/up"] = "ok";
+    InstallFixturePkg(fx, extra, R"(["127.0.0.1"])", true, false, R"(["peer"])");
+    // peer = recording source (nextcloud stand-in): installed + seeded
+    const std::string peerManifest = R"({
+      "kind": "api_package", "name": "peer", "version": "0.1.0",
+      "description": "peer fixture - recording source",
+      "commands": [{"name": "noop", "kind": "action", "description": "noop",
+         "script": "function run(ctx) return {output='noop'} end"}],
+      "connections": []
+    })";
+    ApiPackage peer = fx.store.InstallFromManifest(peerManifest, "", "", true);
+    fx.store.SetPackageEnabled(peer.id, true);
+    const std::filesystem::path peerRoot =
+        std::filesystem::path(fx.filesRoot) / "peer";
+    std::filesystem::create_directories(peerRoot);
+    {
+        std::ofstream f(peerRoot / "rec.ogg", std::ios::binary);
+        const std::string audio = "PEER-RECORDING-BYTES";
+        f.write(audio.data(), static_cast<std::streamsize>(audio.size()));
+    }
+    Json::Value args;
+    args["url"] = "http://127.0.0.1:" + std::to_string(fx.port) + "/up";
+    args["file"] = "peer/rec.ogg";
+    auto r = fx.runtime->ExecuteAction("testpkg", "send", "agent", args);
+    Assert(r["success"].asBool(), "files_from sibling upload succeeds");
+    Assert(fx.server.lastBody.find("PEER-RECORDING-BYTES") != std::string::npos,
+           "sibling bytes on the wire");
+    Assert(fx.server.lastBody.find("filename=\"rec.ogg\"") != std::string::npos,
+           "sibling part filename is the slug");
+    // undeclared sibling: denied loudly, nothing touches the wire
+    const int hitsBefore = fx.server.hits.load();
+    args["file"] = "other/x.dat";
+    r = fx.runtime->ExecuteAction("testpkg", "send", "agent", args);
+    Assert(!r["success"].asBool() &&
+               r["output"].asString().find("files_from") != std::string::npos,
+           "undeclared sibling denied loudly");
+    Assert(fx.server.hits == hitsBefore, "denied upload never hit the wire");
+    // traversal via the pkg prefix: slug carries slashes -> rejected
+    args["file"] = "peer/../testpkg/secret.dat";
+    r = fx.runtime->ExecuteAction("testpkg", "send", "agent", args);
+    Assert(!r["success"].asBool() &&
+               r["output"].asString().find("invalid files-area slug") !=
+                   std::string::npos,
+           "traversal via pkg prefix rejected");
+    return 0;
+}
+
 int main() {
     std::cerr << "ApiRuntime tests:\n";
     TestInterpolation();
     TestScriptHttpUpload();
     TestSttPackage();
+    TestScriptHttpUploadFilesFrom();
     TestArgsValidation();
     TestPrimaryTransport();
     TestNextcloudRecordingCommands();

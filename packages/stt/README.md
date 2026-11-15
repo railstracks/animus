@@ -40,3 +40,15 @@ including a rewritten `base_url`, is refused at the egress gate).
 - The `whisper` stack deployed on a workers node, attached to
   `animus-generic_default` (see `projects/animus-whisper/` in Kestrel's
   workspace: `stack.yml` + `PREFLIGHT.md` with deploy + smoke receipts).
+
+## v0.1.1 — files_from cross-package reads (#69 notetaker handoff)
+
+- `files_from: ["nextcloud"]` — declared sibling files areas. Upload parts
+  accept `<pkg>/<slug>` refs (e.g. `nextcloud/talk-recording-….ogg` pulled by
+  the nextcloud package's `file get`); resolution is kernel-side, deny-by-
+  default, loud WARN on undeclared packages (egress-style). Bare names stay
+  own-area. Requires a kernel with the files_from seam (#69).
+- Transcript persistence is now loud: `ctx.fs.write` returns `(ok, err)`, the
+  script fails the command on a failed persist instead of silently dropping
+  the path (found live Nov 15 — root-owned files dir made the write fail
+  silently). `data.transcript_file` names the persisted slug.
