@@ -41,9 +41,16 @@ std::string BuildMultipartBody(
 /// Pick a boundary that does not occur as a substring in any field value,
 /// filename, or file content (bounded attempts). Returns "" on failure —
 /// callers must reject loudly rather than compose unsafely.
+/// seed == 0: random per call (channel seam #159 — ungated, entropy fine).
+/// seed != 0: deterministic derivation from the seed (splitmix64 walk) so
+/// the same logical payload always yields the same boundary — required for
+/// writes-gated uploads (#126), where the approval digest binds the exact
+/// wire bytes; per-attempt entropy would make one-shot approval replay
+/// impossible (same payload, different digest, held forever).
 std::string ChooseBoundary(
     const std::vector<std::pair<std::string, std::string>>& fields,
-    const std::vector<UploadFilePart>& fileParts);
+    const std::vector<UploadFilePart>& fileParts,
+    std::uint64_t seed = 0);
 
 /// Canonical-path scope check: true iff path (after symlink/.. resolution)
 /// names a location at or under one of the roots. Defeats traversal and

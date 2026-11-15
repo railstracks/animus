@@ -57,11 +57,25 @@ std::string BuildMultipartBody(
 
 std::string ChooseBoundary(
     const std::vector<std::pair<std::string, std::string>>& fields,
-    const std::vector<UploadFilePart>& fileParts) {
+    const std::vector<UploadFilePart>& fileParts,
+    std::uint64_t seed) {
     static std::mt19937_64 rng(std::random_device{}());
+    // splitmix64: deterministic 64-bit mixer — same seed, same walk, good
+    // spread (deterministic lane for #126 gated-upload digest replay).
+    const auto mix = [](std::uint64_t x) {
+        x ^= x >> 30; x *= 0xBF58476D1CE4E5B9ULL;
+        x ^= x >> 27; x *= 0x94D049BB133111EBULL;
+        x ^= x >> 31; return x;
+    };
     for (int attempt = 0; attempt < 8; ++attempt) {
         std::ostringstream os;
-        os << "----animus" << std::hex << rng() << rng();
+        os << "----animus" << std::hex;
+        if (seed != 0) {
+            const std::uint64_t a = mix(seed + 0x9E3779B97F4A7C15ULL * (attempt + 1));
+            os << a << mix(a + attempt);
+        } else {
+            os << rng() << rng();
+        }
         const std::string boundary = os.str();
         bool collides = false;
         for (const auto& [name, value] : fields) {

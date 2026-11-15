@@ -1604,9 +1604,106 @@ int TestCryptoPrimitives() {
     return 0;
 }
 
+// #69 package upload lane: ctx.http.upload composes multipart/raw kernel-side;
+// wire-truth (form fields, NUL-bearing bytes), #25 egress denial, files-area
+// scoping, and the #126 hold/approve cycle for gated packages.
+int TestScriptHttpUpload() {
+    std::cerr << "  [runtime] ctx.http.upload: multipart wire-truth, raw, gates, scoping...\n";
+    const std::string extra =
+        R"({"name": "upload file", "kind": "action", "description": "multipart upload",
+         "parameters": {"url": {"type": "string", "required": true}, "name": {"type": "string", "required": true}},
+         "script": "function run(ctx) local r = ctx.http.upload(ctx.args.url, {fields = {response_format = 'json'}, files = {{name = ctx.args.name, field = 'file', mime = 'audio/wav'}}}) if r.status ~= 200 then return {success = false, output = 'upload failed: status '..tostring(r.status)..' err '..tostring(r.error), data = {digest = r.digest}} end return {output = 'uploaded '..tostring(r.status)..' text '..tostring(r.json and r.json.text), data = {status = r.status}} end"},
+        {"name": "upload raw", "kind": "action", "description": "raw upload",
+         "parameters": {"url": {"type": "string", "required": true}, "name": {"type": "string", "required": true}},
+         "script": "function run(ctx) local r = ctx.http.upload(ctx.args.url, {file = {name = ctx.args.name}}) if r.status ~= 200 then return {success = false, output = 'raw upload failed: '..tostring(r.status)..' '..tostring(r.error)} end return {output = 'raw uploaded '..tostring(r.status)} end"})";
+    Fixture fx;
+    fx.server.rawBodies["/upload"] = R"({"text": "hello from the wire"})";
+    ApiPackage pkg = InstallFixturePkg(fx, extra, R"(["127.0.0.1"])", true, false);
+    (void)pkg;
+    const std::filesystem::path proot = std::filesystem::path(fx.filesRoot) / "testpkg";
+    std::filesystem::create_directories(proot);
+    const std::string bytes = std::string("AB\0CD", 5) + "-payload-";
+    {
+        std::ofstream f(proot / "sample.bin", std::ios::binary);
+        f.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    }
+    Json::Value args;
+    args["url"] = "http://127.0.0.1:" + std::to_string(fx.port) + "/upload";
+    args["name"] = "sample.bin";
+    const int hits0 = fx.server.hits;
+    auto r = fx.runtime->ExecuteAction("testpkg", "upload file", "agent", args);
+    Assert(r["output"].asString().find("uploaded 200") != std::string::npos,
+           "multipart upload succeeds");
+    Assert(fx.server.hits == hits0 + 1, "exactly one server hit");
+    Assert(fx.server.lastMethod == "POST", "upload rides POST");
+    Assert(fx.server.lastPath == "/upload", "request path");
+    Assert(fx.server.lastBody.find("name=\"response_format\"") != std::string::npos,
+           "form field part present");
+    Assert(fx.server.lastBody.find("name=\"file\"; filename=\"sample.bin\"") !=
+               std::string::npos,
+           "file part header present");
+    Assert(fx.server.lastBody.find(std::string("AB\0CD", 5)) != std::string::npos,
+           "NUL-bearing bytes intact on the wire");
+    Assert(r["output"].asString().find("hello from the wire") != std::string::npos,
+           "canned JSON response auto-parsed and surfaced");
+    // raw mode: body is the exact bytes
+    args["url"] = "http://127.0.0.1:" + std::to_string(fx.port) + "/raw";
+    r = fx.runtime->ExecuteAction("testpkg", "upload raw", "agent", args);
+    Assert(r["output"].asString().find("raw uploaded") != std::string::npos,
+           "raw upload succeeds");
+    Assert(fx.server.lastBody == bytes, "raw body is byte-exact file content");
+    // egress denial
+    args["url"] = "http://foreign.test/upload";
+    r = fx.runtime->ExecuteAction("testpkg", "upload file", "agent", args);
+    Assert(r["output"].asString().find("upload failed") != std::string::npos &&
+               r["output"].asString().find("egress denied") != std::string::npos,
+           "foreign host refused by egress scope");
+    // traversal slug rejected loudly
+    args["url"] = "http://127.0.0.1:" + std::to_string(fx.port) + "/upload";
+    args["name"] = "../evil.bin";
+    r = fx.runtime->ExecuteAction("testpkg", "upload file", "agent", args);
+    Assert(r["output"].asString().find("invalid files-area slug") != std::string::npos,
+           "traversal slug rejected");
+    // missing file
+    args["name"] = "nope.bin";
+    r = fx.runtime->ExecuteAction("testpkg", "upload file", "agent", args);
+    Assert(r["output"].asString().find("upload read failed") != std::string::npos,
+           "missing file rejected");
+    const int hitsAfter = fx.server.hits;
+    // #126: writes_gated — upload held pending approval, then executes
+    Fixture fx2;
+    ApiPackage pkg2 = InstallFixturePkg(fx2, extra, R"(["127.0.0.1"])", true, true);
+    const std::filesystem::path proot2 =
+        std::filesystem::path(fx2.filesRoot) / "testpkg";
+    std::filesystem::create_directories(proot2);
+    {
+        std::ofstream f(proot2 / "sample.bin", std::ios::binary);
+        f.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    }
+    Json::Value args2;
+    args2["url"] = "http://127.0.0.1:" + std::to_string(fx2.port) + "/upload";
+    args2["name"] = "sample.bin";
+    r = fx2.runtime->ExecuteAction("testpkg", "upload file", "agent", args2);
+    Assert(r["output"].asString().find("approval_required") != std::string::npos,
+           "gated upload held");
+    Assert(fx2.server.hits == 0, "held upload never touched the network");
+    const std::string digest = r["data"]["digest"].asString();
+    Assert(!digest.empty(), "digest surfaced to the caller");
+    Assert(fx2.runtime->ListPendingWrites(pkg2.id).size() == 1,
+           "one pending write listed");
+    Assert(fx2.runtime->ApproveWrite(pkg2.id, digest), "approve ok");
+    r = fx2.runtime->ExecuteAction("testpkg", "upload file", "agent", args2);
+    Assert(r["output"].asString().find("uploaded 200") != std::string::npos,
+           "approved upload executes");
+    Assert(fx2.server.hits == 1, "exactly one hit after approval");
+    Assert(fx.server.hits == hitsAfter, "no stray hits on the first fixture");
+    return 0;
+}
+
 int main() {
     std::cerr << "ApiRuntime tests:\n";
     TestInterpolation();
+    TestScriptHttpUpload();
     TestArgsValidation();
     TestPrimaryTransport();
     TestNextcloudRecordingCommands();
