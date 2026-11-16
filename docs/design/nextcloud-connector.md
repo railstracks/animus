@@ -1,6 +1,6 @@
 # Nextcloud Connector — office api package + Talk channel adapter
 
-**Status:** v3 — 2026-11-15: #69 open questions answered (live capability probe + installed-source pass on recording gates & transcription). v2 owner rulings 2026-11-12 folded.
+**Status:** v4 — 2026-11-16: office depth shipped (package v0.4.0 — Deck, Notes completion, Shares completion, `event query`/`event delete`, `activity feed`, `files list dir`, `recordings list`); recording control live e2e Nov 15. v3 — 2026-11-15: #69 open questions answered (live capability probe + installed-source pass on recording gates & transcription). v2 owner rulings 2026-11-12 folded.
 **Tickets:** #293 (office package) + #69 (Talk adapter) — one connector effort, **two artifacts**
 **Evidence:** probe pass on #162 (comment 6772647442) and #293 (comment 6782390182); ✅ items live-verified against `https://nextcloud.steadyfort.com` (NC 35.0.2.2, Collabora 26.04.5.2, spreed 25.0.7); Talk API ground truth read from installed source Nov 12; second source pass + unauth capability probe Nov 15 (recording gates, bot actor model, live-transcription contract).
 
@@ -28,17 +28,19 @@ Package: derive-or-declare per #105 — request templates resolve to `{{state.ba
 
 Legend: ✅ probe-proven live · ⚠️ endpoint shape verified, action untested · ❓ mini-probe during build
 
-**Files (WebDAV):** `files list` (PROPFIND) ✅ · `file get/put/delete` ✅ (6 MB byte-exact round-trip) · `share create/list/delete` ✅ (public URL 200 unauthenticated)
+**Files (WebDAV):** `files list` (PROPFIND) ✅ · `files list dir` (PROPFIND subpath, v0.4.0) ✅ · `recordings list` (Talk/Recording/ scan, v0.4.0) ✅ · `file get/put/delete` ✅ (6 MB byte-exact round-trip)
 
-**Deck:** `deck boards/stacks` ✅ · `deck card create/update/move/delete` ✅
+**Shares:** `share create/list/delete` ✅ (public URL 200 unauthenticated) — shipped v0.4.0
 
-**Notes:** `note list/get/create/update/delete` ✅ (full round-trip)
+**Deck:** `deck boards/stacks` ✅ · `deck card create/update/move/delete` ✅ — shipped v0.4.0 (endpoints probe-proven Nov 12–13; actions fixture-tested)
 
-**Calendar (CalDAV):** `cal list` (PROPFIND) ✅ · `event put/delete` ✅ (VEVENT 201/204) · `event query` (REPORT time-range) ⚠️
+**Notes:** `note list/get/create/update/delete` ✅ (full round-trip) — `get/update/delete` shipped v0.4.0
 
-**Activity:** `activity feed` — OCS read ❓
+**Calendar (CalDAV):** `cal list` (PROPFIND) ✅ · `event put/delete` ✅ (VEVENT 201/204) · `event query` (REPORT time-range) — shipped v0.4.0, fixture-tested (REPORT is a first-class read verb kernel-side; live acceptance on roll)
 
-**Recording control (notetaker's hands):** `recording start/stop/status` ⚠️ (route shape verified; live test needs a real call + `animus-agent` promoted to moderator — Q3 ruling in §5)
+**Activity:** `activity feed` — OCS read; app confirmed **enabled** (activity 8.0.0, Nov 16 occ check); shipped v0.4.0, fixture-tested (live acceptance on roll)
+
+**Recording control (notetaker's hands):** `recording start/stop/status` ✅ — live e2e Nov 15 (real two-party call, agent-started audio recording, finalized file → `file get` → stt → note 555; the full §6 chain green)
 
 Talk messaging actions are **gone from the package** — they belong to the adapter.
 
@@ -73,7 +75,7 @@ Orchestration lives in the agent/scheduler/Active session — the package stays 
 
 ## 7. Phasing
 
-- **Phase A (0.5.0):** office package skeleton + Files/Shares/Deck/Notes/Calendar actions + tests (fixture discipline: every test cleans up). Registry-published per SOP.
+- **Phase A (0.5.0):** office package skeleton + Files/Shares/Deck/Notes/Calendar actions + tests (fixture discipline: every test cleans up). Registry-published per SOP. **Complete in v0.4.0 (Nov 16).**
 - **Phase B (0.5.0):** Talk channel adapter — sessions, DM lanes, group rooms, message send/readback — plus the notetaker flow against a real call (two participants).
 - **Phase C (0.5.x):** voice lanes (STT backend ruling, TTS package), bot presence/webhooks → Active-session interjection source, per-agent identities, activity triggers, and — owner direction Nov 12 — an internalized **contacts module**: a person registry that tracks identities and (as voice lanes mature) voice-prints, matching them to people so the agent recognizes humans *across channels*, not per-adapter. Comes later in 0.5.*; the 0.5.0 starting point is Nextcloud-only.
 

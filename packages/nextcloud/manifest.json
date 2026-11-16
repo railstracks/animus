@@ -1,8 +1,8 @@
 {
   "kind": "api_package",
   "name": "nextcloud",
-  "version": "0.3.0",
-  "description": "Nextcloud office connector — Files (WebDAV), Notes, Calendar (CalDAV), Shares, Talk recording control. Read + write lanes; writes_gated (declared writes are #106-bound, script-composed writes take per-invocation #126 approvals).",
+  "version": "0.4.0",
+  "description": "Nextcloud office connector — Files (WebDAV), Notes, Calendar (CalDAV), Shares, Deck, Activity, Talk recording control. Read + write lanes; writes_gated (declared writes are #106-bound, script-composed writes take per-invocation #126 approvals).",
   "keywords": [
     "nextcloud",
     "office",
@@ -11,7 +11,9 @@
     "notes",
     "calendar",
     "caldav",
-    "shares"
+    "shares",
+    "deck",
+    "activity"
   ],
   "dispatch_cooldown_ms": 2000,
   "files_quota_mb": 128,
@@ -283,6 +285,326 @@
         }
       },
       "script": "function run(ctx) local r = ctx.request if r.status ~= 200 then return {success=false, output='file get failed: HTTP '..tostring(r.status)} end local b = r.body or '' local slug = ctx.args.path:lower():gsub('[^%w._-]+','-') if slug == '' then slug = 'download' end if #slug > 128 then slug = slug:sub(1,128) end if slug:sub(1,1) == '.' then slug = 'dl'..slug end local ok, err = ctx.fs.write(slug, b) if not ok then return {success=false, output='file get: fs write failed: '..tostring(err)} end local d = {path=ctx.args.path, size=#b, file=slug} if #b <= 4096 then d.content = b end return {output='retrieved '..ctx.args.path..' ('..#b..' bytes) -> files:'..slug, data=d} end"
+    },
+    {
+      "name": "files list dir",
+      "kind": "action",
+      "description": "List a folder's contents (PROPFIND, Depth 1). path is relative to the account root, percent-encoded (spaces %20), trailing slash optional. Bare-root listing: files list.",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "request": {
+        "method": "PROPFIND",
+        "url": "{{state.base_url}}/remote.php/dav/files/{{state.user}}/{{args.path}}",
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "Depth": "1"
+        }
+      },
+      "script": "function run(ctx) local b = ctx.request.body or '' local rows = {} for resp in b:gmatch('<d:response>.-</d:response>') do local href = resp:match('<d:href>([^<]+)</d:href>') or '' local is_dir = resp:match('<d:resourcetype>%s*<d:collection') ~= nil local size = resp:match('<d:getcontentlength>([^<]+)<') or '' local mtime = resp:match('<d:getlastmodified>([^<]+)</d:getlastmodified>') or '' local name = href:match('([^/]+)/?$') or href name = name:gsub('%%20', ' ') table.insert(rows, {name = name, type = is_dir and 'dir' or 'file', size = tonumber(size) or 0, modified = mtime, href = href}) end if #rows == 0 then return {success = false, output = 'files list dir: no response rows parsed - unexpected body shape (HTTP '..tostring(ctx.request.status)..')'} end return {output = #rows..' entries', data = rows} end"
+    },
+    {
+      "name": "recordings list",
+      "kind": "action",
+      "description": "List Talk rooms that have call recordings (PROPFIND on Talk/Recording/, Depth 1). Rooms appear after their first finalized recording; each room dir holds the .ogg files (list them via files list dir Talk/Recording/<token>/).",
+      "parameters": {},
+      "request": {
+        "method": "PROPFIND",
+        "url": "{{state.base_url}}/remote.php/dav/files/{{state.user}}/Talk/Recording/",
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "Depth": "1"
+        }
+      },
+      "script": "function run(ctx) local b = ctx.request.body or '' local rows = {} local n = 0 for resp in b:gmatch('<d:response>.-</d:response>') do n = n + 1 local href = resp:match('<d:href>([^<]+)</d:href>') or '' local is_dir = resp:match('<d:resourcetype>%s*<d:collection') ~= nil local name = href:match('([^/]+)/?$') or href if is_dir and name ~= 'Recording' then table.insert(rows, {room = name, href = href}) end end if n == 0 then return {success = false, output = 'recordings list: no response rows parsed - unexpected body shape (HTTP '..tostring(ctx.request.status)..') - Talk/Recording absent?'} end return {output = #rows..' recorded rooms', data = rows} end"
+    },
+    {
+      "name": "share list",
+      "kind": "action",
+      "description": "List link shares (OCS files_sharing). Rows: id, type (3=public link), owner, path, url, token.",
+      "parameters": {},
+      "request": {
+        "method": "GET",
+        "url": "{{state.base_url}}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json",
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "OCS-APIREQUEST": "true",
+          "Accept": "application/json"
+        }
+      },
+      "script": "function run(ctx) local r = ctx.request local j = r.json or {} local meta = (j.ocs and j.ocs.meta) or {} local d = (j.ocs and j.ocs.data) or {} if meta.statuscode and meta.statuscode ~= 200 then return {success = false, output = 'share list failed: OCS '..tostring(meta.statuscode)..' '..tostring(meta.message or '')} end if type(d) ~= 'table' then return {success = false, output = 'share list: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end local rows = {} for _, s in ipairs(d) do table.insert(rows, {id = s.id, type = s.share_type, owner = s.uid_owner, path = s.file_target or s.path, url = s.url, token = s.token}) end return {output = #rows..' shares', data = rows} end"
+    },
+    {
+      "name": "share delete",
+      "kind": "action",
+      "description": "Delete a share by id (OCS files_sharing). Write - per-invocation #126 approval applies.",
+      "parameters": {
+        "id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "script": "function run(ctx) local r = ctx.http.delete(ctx.package.get_state('base_url')..'/ocs/v2.php/apps/files_sharing/api/v1/shares/'..tostring(ctx.args.id)..'?format=json', {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json'}}) if r.status ~= 200 then return {success = false, output = 'share delete failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local j = r.json or {} local meta = (j.ocs and j.ocs.meta) or {} if meta.statuscode and meta.statuscode ~= 200 then return {success = false, output = 'share delete failed: OCS '..tostring(meta.statuscode)..' '..tostring(meta.message or '')} end return {output = 'share '..tostring(ctx.args.id)..' deleted'} end"
+    },
+    {
+      "name": "deck boards",
+      "kind": "action",
+      "description": "List Deck boards (REST). Rows: id, title, color, archived.",
+      "parameters": {},
+      "request": {
+        "method": "GET",
+        "url": "{{state.base_url}}/index.php/apps/deck/api/v1.0/boards",
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "Accept": "application/json"
+        }
+      },
+      "script": "function run(ctx) local r = ctx.request if r.status ~= 200 then return {success = false, output = 'deck boards failed: HTTP '..tostring(r.status)} end local j = r.json if type(j) ~= 'table' then return {success = false, output = 'deck boards: unexpected payload (HTTP '..tostring(r.status)..')'} end local rows = {} for _, b in ipairs(j) do table.insert(rows, {id = b.id, title = b.title, color = b.color, archived = b.archived}) end return {output = #rows..' boards', data = rows} end"
+    },
+    {
+      "name": "deck stacks",
+      "kind": "action",
+      "description": "List a board's stacks with their cards (REST). Rows: id, title, cards[{id,title}].",
+      "parameters": {
+        "board": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "{{state.base_url}}/index.php/apps/deck/api/v1.0/boards/{{args.board}}/stacks",
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "Accept": "application/json"
+        }
+      },
+      "script": "function run(ctx) local r = ctx.request if r.status ~= 200 then return {success = false, output = 'deck stacks failed: HTTP '..tostring(r.status)} end local j = r.json if type(j) ~= 'table' then return {success = false, output = 'deck stacks: unexpected payload (HTTP '..tostring(r.status)..')'} end local rows = {} for _, s in ipairs(j) do local cards = {} if type(s.cards) == 'table' then for _, c in ipairs(s.cards) do table.insert(cards, {id = c.id, title = c.title}) end end table.insert(rows, {id = s.id, title = s.title, cards = cards}) end if #rows == 0 then return {success = false, output = 'deck stacks: no stacks parsed (HTTP '..tostring(r.status)..') - board exists?'} end return {output = #rows..' stacks', data = rows} end"
+    },
+    {
+      "name": "deck card create",
+      "kind": "action",
+      "description": "Create a card in a stack (REST). description optional. Write - per-invocation #126 approval applies.",
+      "parameters": {
+        "board": {
+          "type": "string",
+          "required": true
+        },
+        "stack": {
+          "type": "string",
+          "required": true
+        },
+        "title": {
+          "type": "string",
+          "required": true
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "script": "function run(ctx) local body = {title = ctx.args.title} if ctx.args.description then body.description = ctx.args.description end local r = ctx.http.post(ctx.package.get_state('base_url')..'/index.php/apps/deck/api/v1.0/boards/'..tostring(ctx.args.board)..'/stacks/'..tostring(ctx.args.stack)..'/cards', {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = json.encode(body)}) if r.status ~= 200 then return {success = false, output = 'deck card create failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local j = r.json or {} return {output = 'card '..tostring(j.id)..': '..tostring(j.title), data = {id = j.id, title = j.title, stackId = j.stackId}} end"
+    },
+    {
+      "name": "deck card update",
+      "kind": "action",
+      "description": "Update a card's title and/or description (REST PUT). At least one of title/description required. Write - per-invocation #126 approval applies.",
+      "parameters": {
+        "board": {
+          "type": "string",
+          "required": true
+        },
+        "stack": {
+          "type": "string",
+          "required": true
+        },
+        "card": {
+          "type": "string",
+          "required": true
+        },
+        "title": {
+          "type": "string",
+          "required": false
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "script": "function run(ctx) if ctx.args.title == nil and ctx.args.description == nil then return {success = false, output = 'deck card update: nothing to update (title or description required)'} end local body = {} if ctx.args.title ~= nil then body.title = ctx.args.title end if ctx.args.description ~= nil then body.description = ctx.args.description end local r = ctx.http.put(ctx.package.get_state('base_url')..'/index.php/apps/deck/api/v1.0/boards/'..tostring(ctx.args.board)..'/stacks/'..tostring(ctx.args.stack)..'/cards/'..tostring(ctx.args.card), {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = json.encode(body)}) if r.status ~= 200 then return {success = false, output = 'deck card update failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local j = r.json or {} return {output = 'card '..tostring(j.id)..': '..tostring(j.title), data = {id = j.id, title = j.title, stackId = j.stackId}} end"
+    },
+    {
+      "name": "deck card move",
+      "kind": "action",
+      "description": "Move a card to another stack (REST PUT with stackId). to_stack is the target stack id. Write - per-invocation #126 approval applies.",
+      "parameters": {
+        "board": {
+          "type": "string",
+          "required": true
+        },
+        "stack": {
+          "type": "string",
+          "required": true
+        },
+        "card": {
+          "type": "string",
+          "required": true
+        },
+        "to_stack": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "script": "function run(ctx) local r = ctx.http.put(ctx.package.get_state('base_url')..'/index.php/apps/deck/api/v1.0/boards/'..tostring(ctx.args.board)..'/stacks/'..tostring(ctx.args.stack)..'/cards/'..tostring(ctx.args.card), {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = json.encode({stackId = tonumber(ctx.args.to_stack)})}) if r.status ~= 200 then return {success = false, output = 'deck card move failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local j = r.json or {} return {output = 'card '..tostring(ctx.args.card)..' -> stack '..tostring(j.stackId or ctx.args.to_stack), data = {id = j.id, stackId = j.stackId}} end"
+    },
+    {
+      "name": "deck card delete",
+      "kind": "action",
+      "description": "Delete a card (REST). Write - per-invocation #126 approval applies.",
+      "parameters": {
+        "board": {
+          "type": "string",
+          "required": true
+        },
+        "stack": {
+          "type": "string",
+          "required": true
+        },
+        "card": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "script": "function run(ctx) local r = ctx.http.delete(ctx.package.get_state('base_url')..'/index.php/apps/deck/api/v1.0/boards/'..tostring(ctx.args.board)..'/stacks/'..tostring(ctx.args.stack)..'/cards/'..tostring(ctx.args.card), {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json'}}) if r.status ~= 200 and r.status ~= 204 then return {success = false, output = 'deck card delete failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end return {output = 'card '..tostring(ctx.args.card)..' deleted'} end"
+    },
+    {
+      "name": "note get",
+      "kind": "action",
+      "description": "Fetch one note by id (Notes app API). Returns {id, title, content, modified}. Content travels in the result lane - kernel caps oversized strings.",
+      "parameters": {
+        "id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "{{state.base_url}}/index.php/apps/notes/api/v1/notes/{{args.id}}",
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "Accept": "application/json"
+        }
+      },
+      "script": "function run(ctx) local r = ctx.request local j = r.json or {} if r.status ~= 200 or j.id == nil then return {success = false, output = 'note get failed: HTTP '..tostring(r.status)} end return {output = 'note '..tostring(j.id)..': '..tostring(j.title), data = {id = j.id, title = j.title, content = j.content, modified = j.modified}} end"
+    },
+    {
+      "name": "note update",
+      "kind": "action",
+      "description": "Update a note's title and/or content by id (Notes app API PUT). At least one of title/content required. Write - per-invocation #126 approval applies.",
+      "parameters": {
+        "id": {
+          "type": "string",
+          "required": true
+        },
+        "title": {
+          "type": "string",
+          "required": false
+        },
+        "content": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "script": "function run(ctx) if ctx.args.title == nil and ctx.args.content == nil then return {success = false, output = 'note update: nothing to update (title or content required)'} end local body = {} if ctx.args.title ~= nil then body.title = ctx.args.title end if ctx.args.content ~= nil then body.content = ctx.args.content end local r = ctx.http.put(ctx.package.get_state('base_url')..'/index.php/apps/notes/api/v1/notes/'..tostring(ctx.args.id), {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = json.encode(body)}) if r.status ~= 200 then return {success = false, output = 'note update failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local j = r.json or {} return {output = 'note '..tostring(j.id)..': '..tostring(j.title), data = {id = j.id, title = j.title, modified = j.modified}} end"
+    },
+    {
+      "name": "note delete",
+      "kind": "action",
+      "description": "Delete a note by id (Notes app API). Write - per-invocation #126 approval applies.",
+      "parameters": {
+        "id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "script": "function run(ctx) local r = ctx.http.delete(ctx.package.get_state('base_url')..'/index.php/apps/notes/api/v1/notes/'..tostring(ctx.args.id), {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json'}}) if r.status ~= 200 and r.status ~= 204 then return {success = false, output = 'note delete failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end return {output = 'note '..tostring(ctx.args.id)..' deleted'} end"
+    },
+    {
+      "name": "event query",
+      "kind": "action",
+      "description": "Find events in a UTC time range (CalDAV REPORT calendar-query). start/end are iCalendar UTC datetimes like 20261116T000000Z; calendar is the calendar name from cal list. Rows: uid, summary, dtstart, href.",
+      "parameters": {
+        "calendar": {
+          "type": "string",
+          "required": true
+        },
+        "start": {
+          "type": "string",
+          "required": true
+        },
+        "end": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "request": {
+        "method": "REPORT",
+        "url": "{{state.base_url}}/remote.php/dav/calendars/{{state.user}}/{{args.calendar}}/",
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "Depth": "1",
+          "Content-Type": "application/xml"
+        },
+        "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><c:calendar-query xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name=\"VCALENDAR\"><c:comp-filter name=\"VEVENT\"><c:time-range start=\"{{args.start}}\" end=\"{{args.end}}\"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>"
+      },
+      "script": "function run(ctx) local b = ctx.request.body or '' local rows = {} local n = 0 for resp in b:gmatch('<d:response>.-</d:response>') do n = n + 1 local href = resp:match('<d:href>([^<]+)</d:href>') or '' local ics = resp:match('<cal:calendar%-data>(.-)</cal:calendar%-data>') or resp:match('<x1:calendar%-data>(.-)</x1:calendar%-data>') or '' if href ~= '' and ics ~= '' then local uid = ics:match('UID:([^%c%s]+)') or (href:match('([^/]+)%.ics$') or href) local summary = ics:match('SUMMARY:([^%c]+)') or '' summary = summary:gsub('%s+$', '') local dtstart = ics:match('DTSTART:([^%c]+)') or '' dtstart = dtstart:gsub('%s+$', '') table.insert(rows, {uid = uid, summary = summary, dtstart = dtstart, href = href}) end end if n == 0 then return {success = false, output = 'event query: no response rows parsed - unexpected body shape (HTTP '..tostring(ctx.request.status)..')'} end return {output = #rows..' events in range', data = rows} end"
+    },
+    {
+      "name": "event delete",
+      "kind": "action",
+      "description": "Delete an event by uid (CalDAV DELETE on the .ics resource). Write - per-invocation #126 approval applies.",
+      "parameters": {
+        "calendar": {
+          "type": "string",
+          "required": true
+        },
+        "uid": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "request": {
+        "method": "DELETE",
+        "url": "{{state.base_url}}/remote.php/dav/calendars/{{state.user}}/{{args.calendar}}/{{args.uid}}.ics",
+        "headers": {
+          "Authorization": "{{state.auth_header}}"
+        }
+      },
+      "script": "function run(ctx) local r = ctx.request if r.status ~= 200 and r.status ~= 204 then return {success = false, output = 'event delete failed: HTTP '..tostring(r.status)} end return {output = 'event '..tostring(ctx.args.uid)..' deleted'} end"
+    },
+    {
+      "name": "activity feed",
+      "kind": "action",
+      "description": "Read the Activity feed (OCS v2). limit is rows per page (20-50 sane). Rows: id, app, type, user, subject, when.",
+      "parameters": {
+        "limit": {
+          "type": "number",
+          "required": true
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "{{state.base_url}}/ocs/v2.php/apps/activity/api/v2/activity?format=json&limit={{args.limit}}",
+        "headers": {
+          "Authorization": "{{state.auth_header}}",
+          "OCS-APIREQUEST": "true",
+          "Accept": "application/json"
+        }
+      },
+      "script": "function run(ctx) local r = ctx.request local j = r.json or {} local meta = (j.ocs and j.ocs.meta) or {} local d = (j.ocs and j.ocs.data) or {} if meta.statuscode and meta.statuscode ~= 200 then return {success = false, output = 'activity feed failed: OCS '..tostring(meta.statuscode)..' '..tostring(meta.message or '')} end if type(d) ~= 'table' then return {success = false, output = 'activity feed: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end local rows = {} for _, a in ipairs(d) do table.insert(rows, {id = a.activity_id, app = a.app, type = a.type, user = a.user, subject = a.subject, when = a.datetime}) end return {output = #rows..' activity rows', data = rows} end"
     }
   ],
   "connections": []

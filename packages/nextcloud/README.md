@@ -1,6 +1,6 @@
-# nextcloud (api package, v0.3.0 — Phase A + write lane + recording control)
+# nextcloud (api package, v0.4.0 — Phase A + write lane + recording control + office depth)
 
-Nextcloud office connector for Animus: **Files (WebDAV)**, **Notes**, **Calendar (CalDAV)**, **Shares**, **Talk recording control** — read and write lanes. Part of #293; Talk *messaging* is deliberately **not** here — the Talk channel adapter is a separate artifact (#69, session architecture, same as Discord). Recording control is a room utility (moderator surface), specced to the package per the ruling; the adapter stays the message lane.
+Nextcloud office connector for Animus: **Files (WebDAV)**, **Notes**, **Calendar (CalDAV)**, **Shares**, **Deck**, **Activity**, **Talk recording control** — read and write lanes. Part of #293; Talk *messaging* is deliberately **not** here — the Talk channel adapter is a separate artifact (#69, session architecture, same as Discord). Recording control is a room utility (moderator surface), specced to the package per the ruling; the adapter stays the message lane.
 
 ## Connect
 
@@ -15,10 +15,10 @@ Every request template interpolates `{{state.auth_header}}`; the raw password is
 
 Writes split by payload trust, matching the kernel's two write mechanisms:
 
-- **Declared-template writes — #106-bound (no per-write friction).** `file put`, `file delete`, `event put`: raw-body templates whose content is byte-safe under plain interpolation (file bytes, iCalendar text). These ride the package content-hash approval — one owner approval of the package covers the declared write shapes.
-- **Script-composed writes — #126 per-invocation approval (one-shot, payload-bound).** `note create`, `share create`: bodies built at runtime via `json.encode` because arbitrary text cannot ride JSON template interpolation safely. Each exact payload holds once pending owner approval, then passes; a modified payload is a new digest.
+- **Declared-template writes — #106-bound (no per-write friction).** `file put`, `file delete`, `event put`, `event delete`: raw-body templates whose content is byte-safe under plain interpolation (file bytes, iCalendar text). These ride the package content-hash approval — one owner approval of the package covers the declared write shapes.
+- **Script-composed writes — #126 per-invocation approval (one-shot, payload-bound).** `note create`, `note update`, `note delete`, `share create`, `share delete`, `deck card create/update/move/delete`: bodies built at runtime via `json.encode` because arbitrary text cannot ride JSON template interpolation safely. Each exact payload holds once pending owner approval, then passes; a modified payload is a new digest.
 
-Reads (`files list`, `note list`, `cal list`) are never gated.
+Reads (`files list`, `files list dir`, `recordings list`, `file get`, `note list`, `note get`, `cal list`, `event query`, `share list`, `deck boards`, `deck stacks`, `activity feed`, `recording status`) are never gated.
 
 ## Recording control + file get (v0.3.0)
 
@@ -31,10 +31,22 @@ The notetaker's hands (design doc §6): the agent orchestrates, the package prov
 
 Live lane evidence (Nov 12, room `mzpfyojc`): start → ACTIVE (~3s) → stop → finalized, with room system-message receipts (`audio_recording_started`/`audio_recording_stopped`). File materialization needs a call with actual media — the headless empty-call probe proves control, not content.
 
+## Office depth (v0.4.0)
+
+- **`files list dir`** (read) — PROPFIND on a subpath (percent-encoded, like all path args). Root listing stays `files list`.
+- **`recordings list`** (read) — rooms with finalized recordings under `Talk/Recording/`; list a room's files via `files list dir Talk/Recording/<token>/`.
+- **`share list`** (read) / **`share delete`** (write) — OCS files_sharing; list rows carry id/type/owner/path/url/token.
+- **`deck boards`** / **`deck stacks`** (reads) — board inventory; stacks come with their cards. **`deck card create/update/move/delete`** (writes) — the action-item lane from §6 of the design doc.
+- **`note get`** (read) / **`note update`** / **`note delete`** (writes) — completes the Notes suite around `note list`/`note create`.
+- **`event query`** (read) — CalDAV REPORT `calendar-query` with a UTC time-range filter; declarative REPORT bodies are kernel-supported (verb allowlist + interpolated body templates). Rows: uid/summary/dtstart/href. **`event delete`** (declared write) joins `event put`.
+- **`activity feed`** (read) — OCS Activity v2; the instance runs activity 8.0.0 (enabled, confirmed Nov 16).
+
+Deck/Notes/Shares/Calendar endpoint shapes live-verified in the Nov 12–13 probe passes (#293); `event query` and `activity feed` ship fixture-tested with live acceptance on the v0.4.0 roll.
+
 ## Scope & egress
 
 - `egress_hosts` is bound to `nextcloud.steadyfort.com` (single-tenant). For another instance, edit the manifest **before** install — registry installs are egress-manifest-bound, there is no post-install override.
-- `files list` / `cal list` parse the WebDAV multistatus with minimal Lua patterns (NC emits the `d:` namespace prefix consistently); a body that parses to zero rows fails loudly rather than returning an empty success.
+- `files list` / `files list dir` / `recordings list` / `event query` parse WebDAV/CalDAV multistatus with minimal Lua patterns (NC emits the `d:` namespace prefix consistently); a body that parses to zero responses fails loudly rather than returning an empty success.
 - Paths in `file put` / `file delete` / `file get` are percent-encoded by the caller (`%20` for spaces).
 - Binary uploads are a follow-up (script-lane b64 decode); v0.2 `file put` is text-safe raw body.
 

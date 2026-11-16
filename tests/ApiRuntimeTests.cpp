@@ -200,6 +200,8 @@ ApiPackage InstallFixturePkg(Fixture& fx, const std::string& extra = "",
       "state_schema": {
         "token": {"type": "string", "secret": true},
         "base_url": {"type": "string", "default": "http://127.0.0.1:PORT"},
+        "user": {"type": "string", "default": "agent"},
+        "auth_header": {"type": "string", "secret": true},
         "_cursor": {"type": "string"}
       },
       "commands": [
@@ -1819,6 +1821,281 @@ int TestScriptHttpUploadFilesFrom() {
     return 0;
 }
 
+// v0.4.0 (#293): office depth — connect + files list dir, recordings list,
+// share list/delete, deck suite, note get/update/delete, event query/delete,
+// activity feed. Scripts and request templates are VERBATIM from
+// packages/nextcloud/manifest.json; the fixture state schema carries
+// user/auth_header so {{state.*}} interpolation resolves without adaptation.
+int TestNextcloudOfficeCommands() {
+    Fixture fx;
+    const std::string extra = R"nk({"name":"connect","kind":"action","description":"Validate an app password against the instance and store the precomputed Authorization header. Get the app password from the animus-agent account (Settings \u2192 Security \u2192 Devices & sessions).","parameters":{"user":{"type":"string","required":true},"app_password":{"type":"string","required":true,"secret":true}},"script":"function run(ctx) local h = 'Basic '..b64.encode(ctx.args.user..':'..ctx.args.app_password) local r = ctx.http.get(ctx.package.get_state('base_url')..'/ocs/v2.php/cloud/user?format=json', {headers = {['Authorization'] = h, ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json'}}) if r.status ~= 200 then return {success = false, output = 'connect failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local o = r.json and r.json.ocs if not o or not o.data or not o.data.id then return {success = false, output = 'connect failed: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end local ok1 = ctx.package.set_state('user', ctx.args.user) local ok2 = ctx.package.set_state('auth_header', h) if not ok1 or not ok2 then return {success = false, output = 'connect failed: state persist error'} end return {output = 'connected as '..o.data.id..' ('..tostring(o.data['display-name'])..')', data = {user_id = o.data.id}} end"},{"name":"files list dir","kind":"action","description":"List a folder's contents (PROPFIND, Depth 1). path is relative to the account root, percent-encoded (spaces %20), trailing slash optional. Bare-root listing: files list.","parameters":{"path":{"type":"string","required":true}},"request":{"method":"PROPFIND","url":"{{state.base_url}}/remote.php/dav/files/{{state.user}}/{{args.path}}","headers":{"Authorization":"{{state.auth_header}}","Depth":"1"}},"script":"function run(ctx) local b = ctx.request.body or '' local rows = {} for resp in b:gmatch('<d:response>.-</d:response>') do local href = resp:match('<d:href>([^<]+)</d:href>') or '' local is_dir = resp:match('<d:resourcetype>%s*<d:collection') ~= nil local size = resp:match('<d:getcontentlength>([^<]+)<') or '' local mtime = resp:match('<d:getlastmodified>([^<]+)</d:getlastmodified>') or '' local name = href:match('([^/]+)/?$') or href name = name:gsub('%%20', ' ') table.insert(rows, {name = name, type = is_dir and 'dir' or 'file', size = tonumber(size) or 0, modified = mtime, href = href}) end if #rows == 0 then return {success = false, output = 'files list dir: no response rows parsed - unexpected body shape (HTTP '..tostring(ctx.request.status)..')'} end return {output = #rows..' entries', data = rows} end"},{"name":"recordings list","kind":"action","description":"List Talk rooms that have call recordings (PROPFIND on Talk/Recording/, Depth 1). Rooms appear after their first finalized recording; each room dir holds the .ogg files (list them via files list dir Talk/Recording/<token>/).","parameters":{},"request":{"method":"PROPFIND","url":"{{state.base_url}}/remote.php/dav/files/{{state.user}}/Talk/Recording/","headers":{"Authorization":"{{state.auth_header}}","Depth":"1"}},"script":"function run(ctx) local b = ctx.request.body or '' local rows = {} local n = 0 for resp in b:gmatch('<d:response>.-</d:response>') do n = n + 1 local href = resp:match('<d:href>([^<]+)</d:href>') or '' local is_dir = resp:match('<d:resourcetype>%s*<d:collection') ~= nil local name = href:match('([^/]+)/?$') or href if is_dir and name ~= 'Recording' then table.insert(rows, {room = name, href = href}) end end if n == 0 then return {success = false, output = 'recordings list: no response rows parsed - unexpected body shape (HTTP '..tostring(ctx.request.status)..') - Talk/Recording absent?'} end return {output = #rows..' recorded rooms', data = rows} end"},{"name":"share list","kind":"action","description":"List link shares (OCS files_sharing). Rows: id, type (3=public link), owner, path, url, token.","parameters":{},"request":{"method":"GET","url":"{{state.base_url}}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json","headers":{"Authorization":"{{state.auth_header}}","OCS-APIREQUEST":"true","Accept":"application/json"}},"script":"function run(ctx) local r = ctx.request local j = r.json or {} local meta = (j.ocs and j.ocs.meta) or {} local d = (j.ocs and j.ocs.data) or {} if meta.statuscode and meta.statuscode ~= 200 then return {success = false, output = 'share list failed: OCS '..tostring(meta.statuscode)..' '..tostring(meta.message or '')} end if type(d) ~= 'table' then return {success = false, output = 'share list: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end local rows = {} for _, s in ipairs(d) do table.insert(rows, {id = s.id, type = s.share_type, owner = s.uid_owner, path = s.file_target or s.path, url = s.url, token = s.token}) end return {output = #rows..' shares', data = rows} end"},{"name":"share delete","kind":"action","description":"Delete a share by id (OCS files_sharing). Write - per-invocation #126 approval applies.","parameters":{"id":{"type":"string","required":true}},"script":"function run(ctx) local r = ctx.http.delete(ctx.package.get_state('base_url')..'/ocs/v2.php/apps/files_sharing/api/v1/shares/'..tostring(ctx.args.id)..'?format=json', {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json'}}) if r.status ~= 200 then return {success = false, output = 'share delete failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local j = r.json or {} local meta = (j.ocs and j.ocs.meta) or {} if meta.statuscode and meta.statuscode ~= 200 then return {success = false, output = 'share delete failed: OCS '..tostring(meta.statuscode)..' '..tostring(meta.message or '')} end return {output = 'share '..tostring(ctx.args.id)..' deleted'} end"},{"name":"deck boards","kind":"action","description":"List Deck boards (REST). Rows: id, title, color, archived.","parameters":{},"request":{"method":"GET","url":"{{state.base_url}}/index.php/apps/deck/api/v1.0/boards","headers":{"Authorization":"{{state.auth_header}}","Accept":"application/json"}},"script":"function run(ctx) local r = ctx.request if r.status ~= 200 then return {success = false, output = 'deck boards failed: HTTP '..tostring(r.status)} end local j = r.json if type(j) ~= 'table' then return {success = false, output = 'deck boards: unexpected payload (HTTP '..tostring(r.status)..')'} end local rows = {} for _, b in ipairs(j) do table.insert(rows, {id = b.id, title = b.title, color = b.color, archived = b.archived}) end return {output = #rows..' boards', data = rows} end"},{"name":"deck stacks","kind":"action","description":"List a board's stacks with their cards (REST). Rows: id, title, cards[{id,title}].","parameters":{"board":{"type":"string","required":true}},"request":{"method":"GET","url":"{{state.base_url}}/index.php/apps/deck/api/v1.0/boards/{{args.board}}/stacks","headers":{"Authorization":"{{state.auth_header}}","Accept":"application/json"}},"script":"function run(ctx) local r = ctx.request if r.status ~= 200 then return {success = false, output = 'deck stacks failed: HTTP '..tostring(r.status)} end local j = r.json if type(j) ~= 'table' then return {success = false, output = 'deck stacks: unexpected payload (HTTP '..tostring(r.status)..')'} end local rows = {} for _, s in ipairs(j) do local cards = {} if type(s.cards) == 'table' then for _, c in ipairs(s.cards) do table.insert(cards, {id = c.id, title = c.title}) end end table.insert(rows, {id = s.id, title = s.title, cards = cards}) end if #rows == 0 then return {success = false, output = 'deck stacks: no stacks parsed (HTTP '..tostring(r.status)..') - board exists?'} end return {output = #rows..' stacks', data = rows} end"},{"name":"deck card create","kind":"action","description":"Create a card in a stack (REST). description optional. Write - per-invocation #126 approval applies.","parameters":{"board":{"type":"string","required":true},"stack":{"type":"string","required":true},"title":{"type":"string","required":true},"description":{"type":"string","required":false}},"script":"function run(ctx) local body = {title = ctx.args.title} if ctx.args.description then body.description = ctx.args.description end local r = ctx.http.post(ctx.package.get_state('base_url')..'/index.php/apps/deck/api/v1.0/boards/'..tostring(ctx.args.board)..'/stacks/'..tostring(ctx.args.stack)..'/cards', {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = json.encode(body)}) if r.status ~= 200 then return {success = false, output = 'deck card create failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local j = r.json or {} return {output = 'card '..tostring(j.id)..': '..tostring(j.title), data = {id = j.id, title = j.title, stackId = j.stackId}} end"},{"name":"deck card update","kind":"action","description":"Update a card's title and/or description (REST PUT). At least one of title/description required. Write - per-invocation #126 approval applies.","parameters":{"board":{"type":"string","required":true},"stack":{"type":"string","required":true},"card":{"type":"string","required":true},"title":{"type":"string","required":false},"description":{"type":"string","required":false}},"script":"function run(ctx) if ctx.args.title == nil and ctx.args.description == nil then return {success = false, output = 'deck card update: nothing to update (title or description required)'} end local body = {} if ctx.args.title ~= nil then body.title = ctx.args.title end if ctx.args.description ~= nil then body.description = ctx.args.description end local r = ctx.http.put(ctx.package.get_state('base_url')..'/index.php/apps/deck/api/v1.0/boards/'..tostring(ctx.args.board)..'/stacks/'..tostring(ctx.args.stack)..'/cards/'..tostring(ctx.args.card), {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = json.encode(body)}) if r.status ~= 200 then return {success = false, output = 'deck card update failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local j = r.json or {} return {output = 'card '..tostring(j.id)..': '..tostring(j.title), data = {id = j.id, title = j.title, stackId = j.stackId}} end"},{"name":"deck card move","kind":"action","description":"Move a card to another stack (REST PUT with stackId). to_stack is the target stack id. Write - per-invocation #126 approval applies.","parameters":{"board":{"type":"string","required":true},"stack":{"type":"string","required":true},"card":{"type":"string","required":true},"to_stack":{"type":"string","required":true}},"script":"function run(ctx) local r = ctx.http.put(ctx.package.get_state('base_url')..'/index.php/apps/deck/api/v1.0/boards/'..tostring(ctx.args.board)..'/stacks/'..tostring(ctx.args.stack)..'/cards/'..tostring(ctx.args.card), {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = json.encode({stackId = tonumber(ctx.args.to_stack)})}) if r.status ~= 200 then return {success = false, output = 'deck card move failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local j = r.json or {} return {output = 'card '..tostring(ctx.args.card)..' -> stack '..tostring(j.stackId or ctx.args.to_stack), data = {id = j.id, stackId = j.stackId}} end"},{"name":"deck card delete","kind":"action","description":"Delete a card (REST). Write - per-invocation #126 approval applies.","parameters":{"board":{"type":"string","required":true},"stack":{"type":"string","required":true},"card":{"type":"string","required":true}},"script":"function run(ctx) local r = ctx.http.delete(ctx.package.get_state('base_url')..'/index.php/apps/deck/api/v1.0/boards/'..tostring(ctx.args.board)..'/stacks/'..tostring(ctx.args.stack)..'/cards/'..tostring(ctx.args.card), {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json'}}) if r.status ~= 200 and r.status ~= 204 then return {success = false, output = 'deck card delete failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end return {output = 'card '..tostring(ctx.args.card)..' deleted'} end"},{"name":"note get","kind":"action","description":"Fetch one note by id (Notes app API). Returns {id, title, content, modified}. Content travels in the result lane - kernel caps oversized strings.","parameters":{"id":{"type":"string","required":true}},"request":{"method":"GET","url":"{{state.base_url}}/index.php/apps/notes/api/v1/notes/{{args.id}}","headers":{"Authorization":"{{state.auth_header}}","Accept":"application/json"}},"script":"function run(ctx) local r = ctx.request local j = r.json or {} if r.status ~= 200 or j.id == nil then return {success = false, output = 'note get failed: HTTP '..tostring(r.status)} end return {output = 'note '..tostring(j.id)..': '..tostring(j.title), data = {id = j.id, title = j.title, content = j.content, modified = j.modified}} end"},{"name":"note update","kind":"action","description":"Update a note's title and/or content by id (Notes app API PUT). At least one of title/content required. Write - per-invocation #126 approval applies.","parameters":{"id":{"type":"string","required":true},"title":{"type":"string","required":false},"content":{"type":"string","required":false}},"script":"function run(ctx) if ctx.args.title == nil and ctx.args.content == nil then return {success = false, output = 'note update: nothing to update (title or content required)'} end local body = {} if ctx.args.title ~= nil then body.title = ctx.args.title end if ctx.args.content ~= nil then body.content = ctx.args.content end local r = ctx.http.put(ctx.package.get_state('base_url')..'/index.php/apps/notes/api/v1/notes/'..tostring(ctx.args.id), {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = json.encode(body)}) if r.status ~= 200 then return {success = false, output = 'note update failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local j = r.json or {} return {output = 'note '..tostring(j.id)..': '..tostring(j.title), data = {id = j.id, title = j.title, modified = j.modified}} end"},{"name":"note delete","kind":"action","description":"Delete a note by id (Notes app API). Write - per-invocation #126 approval applies.","parameters":{"id":{"type":"string","required":true}},"script":"function run(ctx) local r = ctx.http.delete(ctx.package.get_state('base_url')..'/index.php/apps/notes/api/v1/notes/'..tostring(ctx.args.id), {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['Accept'] = 'application/json'}}) if r.status ~= 200 and r.status ~= 204 then return {success = false, output = 'note delete failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end return {output = 'note '..tostring(ctx.args.id)..' deleted'} end"},{"name":"event query","kind":"action","description":"Find events in a UTC time range (CalDAV REPORT calendar-query). start/end are iCalendar UTC datetimes like 20261116T000000Z; calendar is the calendar name from cal list. Rows: uid, summary, dtstart, href.","parameters":{"calendar":{"type":"string","required":true},"start":{"type":"string","required":true},"end":{"type":"string","required":true}},"request":{"method":"REPORT","url":"{{state.base_url}}/remote.php/dav/calendars/{{state.user}}/{{args.calendar}}/","headers":{"Authorization":"{{state.auth_header}}","Depth":"1","Content-Type":"application/xml"},"body":"<?xml version=\"1.0\" encoding=\"utf-8\"?><c:calendar-query xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name=\"VCALENDAR\"><c:comp-filter name=\"VEVENT\"><c:time-range start=\"{{args.start}}\" end=\"{{args.end}}\"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>"},"script":"function run(ctx) local b = ctx.request.body or '' local rows = {} local n = 0 for resp in b:gmatch('<d:response>.-</d:response>') do n = n + 1 local href = resp:match('<d:href>([^<]+)</d:href>') or '' local ics = resp:match('<cal:calendar%-data>(.-)</cal:calendar%-data>') or resp:match('<x1:calendar%-data>(.-)</x1:calendar%-data>') or '' if href ~= '' and ics ~= '' then local uid = ics:match('UID:([^%c%s]+)') or (href:match('([^/]+)%.ics$') or href) local summary = ics:match('SUMMARY:([^%c]+)') or '' summary = summary:gsub('%s+$', '') local dtstart = ics:match('DTSTART:([^%c]+)') or '' dtstart = dtstart:gsub('%s+$', '') table.insert(rows, {uid = uid, summary = summary, dtstart = dtstart, href = href}) end end if n == 0 then return {success = false, output = 'event query: no response rows parsed - unexpected body shape (HTTP '..tostring(ctx.request.status)..')'} end return {output = #rows..' events in range', data = rows} end"},{"name":"event delete","kind":"action","description":"Delete an event by uid (CalDAV DELETE on the .ics resource). Write - per-invocation #126 approval applies.","parameters":{"calendar":{"type":"string","required":true},"uid":{"type":"string","required":true}},"request":{"method":"DELETE","url":"{{state.base_url}}/remote.php/dav/calendars/{{state.user}}/{{args.calendar}}/{{args.uid}}.ics","headers":{"Authorization":"{{state.auth_header}}"}},"script":"function run(ctx) local r = ctx.request if r.status ~= 200 and r.status ~= 204 then return {success = false, output = 'event delete failed: HTTP '..tostring(r.status)} end return {output = 'event '..tostring(ctx.args.uid)..' deleted'} end"},{"name":"activity feed","kind":"action","description":"Read the Activity feed (OCS v2). limit is rows per page (20-50 sane). Rows: id, app, type, user, subject, when.","parameters":{"limit":{"type":"number","required":true}},"request":{"method":"GET","url":"{{state.base_url}}/ocs/v2.php/apps/activity/api/v2/activity?format=json&limit={{args.limit}}","headers":{"Authorization":"{{state.auth_header}}","OCS-APIREQUEST":"true","Accept":"application/json"}},"script":"function run(ctx) local r = ctx.request local j = r.json or {} local meta = (j.ocs and j.ocs.meta) or {} local d = (j.ocs and j.ocs.data) or {} if meta.statuscode and meta.statuscode ~= 200 then return {success = false, output = 'activity feed failed: OCS '..tostring(meta.statuscode)..' '..tostring(meta.message or '')} end if type(d) ~= 'table' then return {success = false, output = 'activity feed: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end local rows = {} for _, a in ipairs(d) do table.insert(rows, {id = a.activity_id, app = a.app, type = a.type, user = a.user, subject = a.subject, when = a.datetime}) end return {output = #rows..' activity rows', data = rows} end"})nk";
+    InstallFixturePkg(fx, extra);
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        fx.server.rawBodies["/ocs/v2.php/cloud/user"] =
+            "{\"ocs\":{\"meta\":{\"status\":\"ok\",\"statuscode\":200},"
+            "\"data\":{\"id\":\"agent\",\"displayname\":\"Agent\"}}}";
+        fx.server.rawBodies["/index.php/apps/deck/api/v1.0/boards"] =
+            "[{\"id\":7,\"title\":\"Roadmap\",\"color\":\"00ff00\",\"archived\":false},"
+            "{\"id\":9,\"title\":\"Ops\",\"color\":\"ff0000\",\"archived\":false}]";
+        fx.server.rawBodies["/index.php/apps/deck/api/v1.0/boards/7/stacks"] =
+            "[{\"id\":21,\"title\":\"To do\",\"cards\":[{\"id\":101,\"title\":\"Ship v0.4.0\",\"stackId\":21}]},"
+            "{\"id\":22,\"title\":\"Done\",\"cards\":[]}]";
+        fx.server.rawBodies["/index.php/apps/deck/api/v1.0/boards/7/stacks/21/cards"] =
+            "{\"id\":102,\"title\":\"Test card\",\"stackId\":21}";
+        fx.server.rawBodies["/index.php/apps/notes/api/v1/notes/42"] =
+            "{\"id\":42,\"title\":\"Scratch\",\"content\":\"hello note\",\"modified\":1795000000}";
+        fx.server.rawBodies["/ocs/v2.php/apps/files_sharing/api/v1/shares"] =
+            "{\"ocs\":{\"meta\":{\"status\":\"ok\",\"statuscode\":200},\"data\":[{"
+            "\"id\":\"12\",\"share_type\":3,\"uid_owner\":\"agent\","
+            "\"file_target\":\"/Talk/Recording/d7vv2vaa\","
+            "\"url\":\"https://nc.example/s/abc123\",\"token\":\"abc123\"}]}}";
+        fx.server.rawBodies["/ocs/v2.php/apps/activity/api/v2/activity"] =
+            "{\"ocs\":{\"meta\":{\"status\":\"ok\",\"statuscode\":200},\"data\":[{"
+            "\"activity_id\":\"55\",\"app\":\"spreed\",\"type\":\"call\","
+            "\"user\":\"melvin\",\"subject\":\"You attended a call\","
+            "\"datetime\":\"2026-11-15T20:31:00+00:00\"}]}}";
+        fx.server.rawBodies["/remote.php/dav/files/agent/sub/"] =
+            "<d:multistatus xmlns:d=\"DAV:\">"
+            "<d:response><d:href>/remote.php/dav/files/agent/sub/</d:href>"
+            "<d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop>"
+            "<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+            "<d:response><d:href>/remote.php/dav/files/agent/sub/notes.txt</d:href>"
+            "<d:propstat><d:prop><d:resourcetype/><d:getcontentlength>20</d:getcontentlength>"
+            "<d:getlastmodified>Mon, 16 Nov 2026 06:00:00 GMT</d:getlastmodified></d:prop>"
+            "<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+            "</d:multistatus>";
+        fx.server.rawBodies["/remote.php/dav/files/agent/Talk/Recording/"] =
+            "<d:multistatus xmlns:d=\"DAV:\">"
+            "<d:response><d:href>/remote.php/dav/files/agent/Talk/Recording/</d:href>"
+            "<d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop>"
+            "<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+            "<d:response><d:href>/remote.php/dav/files/agent/Talk/Recording/d7vv2vaa/</d:href>"
+            "<d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop>"
+            "<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+            "</d:multistatus>";
+        fx.server.rawBodies["/remote.php/dav/calendars/agent/personal/"] =
+            "<d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">"
+            "<d:response><d:href>/remote.php/dav/calendars/agent/personal/standup-1.ics</d:href>"
+            "<d:propstat><d:prop><cal:calendar-data>BEGIN:VCALENDAR\n"
+            "VERSION:2.0\nBEGIN:VEVENT\nUID:standup-1\nSUMMARY:Standup\n"
+            "DTSTART:20261116T080000Z\nEND:VEVENT\nEND:VCALENDAR</cal:calendar-data></d:prop>"
+            "<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+            "</d:multistatus>";
+        fx.server.rawBodies["/remote.php/dav/calendars/agent/empty/"] =
+            "<d:multistatus xmlns:d=\"DAV:\"/>";
+    }
+
+    // connect: validates against OCS cloud/user, stores user + auth_header.
+    Json::Value ca;
+    ca["user"] = "agent";
+    ca["app_password"] = "apw-123";
+    auto r = fx.runtime->ExecuteAction("testpkg", "connect", "agent", ca);
+    Assert(r["success"].asBool(), "connect succeeds against OCS cloud/user shape");
+
+    // files list dir: dir + file rows parse.
+    Json::Value fa;
+    fa["path"] = "sub/";
+    r = fx.runtime->ExecuteAction("testpkg", "files list dir", "agent", fa);
+    Assert(r["success"].asBool() && r["data"].size() == 2,
+           "files list dir: 2 rows");
+    Assert(r["data"][1]["name"].asString() == "notes.txt" &&
+               r["data"][1]["size"].asInt() == 20,
+           "files list dir: file row name+size");
+
+    // recordings list: room dirs only, root row skipped.
+    r = fx.runtime->ExecuteAction("testpkg", "recordings list", "agent",
+                                  Json::Value());
+    Assert(r["success"].asBool() && r["data"].size() == 1 &&
+               r["data"][0]["room"].asString() == "d7vv2vaa",
+           "recordings list: room dir parsed, root skipped");
+
+    // share list: OCS rows.
+    r = fx.runtime->ExecuteAction("testpkg", "share list", "agent",
+                                  Json::Value());
+    Assert(r["success"].asBool() && r["data"].size() == 1 &&
+               r["data"][0]["token"].asString() == "abc123",
+           "share list: OCS share row parsed");
+
+    // share delete: script-composed OCS DELETE (default 200 body tolerated).
+    Json::Value sd;
+    sd["id"] = "12";
+    r = fx.runtime->ExecuteAction("testpkg", "share delete", "agent", sd);
+    Assert(r["success"].asBool(), "share delete executed");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "DELETE" &&
+                   fx.server.lastPath.find("/shares/12") != std::string::npos,
+               "share delete wire: DELETE /shares/12");
+    }
+
+    // deck boards / stacks.
+    r = fx.runtime->ExecuteAction("testpkg", "deck boards", "agent",
+                                  Json::Value());
+    Assert(r["success"].asBool() && r["data"].size() == 2 &&
+               r["data"][0]["title"].asString() == "Roadmap",
+           "deck boards: 2 boards parsed");
+    Json::Value ds;
+    ds["board"] = "7";
+    r = fx.runtime->ExecuteAction("testpkg", "deck stacks", "agent", ds);
+    Assert(r["success"].asBool() && r["data"].size() == 2 &&
+               r["data"][0]["cards"].size() == 1 &&
+               r["data"][0]["cards"][0]["title"].asString() == "Ship v0.4.0",
+           "deck stacks: nested cards parsed");
+
+    // deck card create: script-composed POST with json.encode body.
+    Json::Value dcc;
+    dcc["board"] = "7";
+    dcc["stack"] = "21";
+    dcc["title"] = "Test card";
+    r = fx.runtime->ExecuteAction("testpkg", "deck card create", "agent", dcc);
+    Assert(r["success"].asBool() &&
+               r["output"].asString().find("card 102") != std::string::npos,
+           "deck card create: id+title echoed");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "POST" &&
+                   fx.server.lastBody.find("Test card") != std::string::npos,
+               "deck card create wire: POST + json body");
+    }
+
+    // deck card update: loud fail on no fields; title-only PUT.
+    Json::Value du;
+    du["board"] = "7";
+    du["stack"] = "21";
+    du["card"] = "101";
+    r = fx.runtime->ExecuteAction("testpkg", "deck card update", "agent", du);
+    Assert(!r["success"].asBool() &&
+               r["output"].asString().find("nothing to update") !=
+                   std::string::npos,
+           "deck card update: loud fail when no fields");
+    du["title"] = "Renamed";
+    r = fx.runtime->ExecuteAction("testpkg", "deck card update", "agent", du);
+    Assert(r["success"].asBool(), "deck card update executed");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "PUT" &&
+                   fx.server.lastBody.find("Renamed") != std::string::npos,
+               "deck card update wire: PUT + field");
+    }
+
+    // deck card move: PUT with stackId.
+    Json::Value dm;
+    dm["board"] = "7";
+    dm["stack"] = "21";
+    dm["card"] = "101";
+    dm["to_stack"] = "22";
+    r = fx.runtime->ExecuteAction("testpkg", "deck card move", "agent", dm);
+    Assert(r["success"].asBool(), "deck card move executed");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastBody.find("stackId") != std::string::npos,
+               "deck card move wire: stackId body");
+    }
+
+    // deck card delete (clean args — unknown-arg validation rejects to_stack).
+    Json::Value dcd;
+    dcd["board"] = "7";
+    dcd["stack"] = "21";
+    dcd["card"] = "101";
+    r = fx.runtime->ExecuteAction("testpkg", "deck card delete", "agent", dcd);
+    Assert(r["success"].asBool(), "deck card delete executed");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "DELETE", "deck card delete wire");
+    }
+
+    // note get.
+    Json::Value ng;
+    ng["id"] = "42";
+    r = fx.runtime->ExecuteAction("testpkg", "note get", "agent", ng);
+    Assert(r["success"].asBool() &&
+               r["data"]["content"].asString() == "hello note",
+           "note get: content parsed");
+
+    // note update: loud fail on no fields; title-only PUT.
+    Json::Value nu;
+    nu["id"] = "42";
+    r = fx.runtime->ExecuteAction("testpkg", "note update", "agent", nu);
+    Assert(!r["success"].asBool() &&
+               r["output"].asString().find("nothing to update") !=
+                   std::string::npos,
+           "note update: loud fail when no fields");
+    nu["title"] = "Renamed note";
+    r = fx.runtime->ExecuteAction("testpkg", "note update", "agent", nu);
+    Assert(r["success"].asBool(), "note update executed");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "PUT", "note update wire: PUT");
+    }
+
+    // note delete (uncanned path -> default 200 body tolerated).
+    Json::Value nd;
+    nd["id"] = "43";
+    r = fx.runtime->ExecuteAction("testpkg", "note delete", "agent", nd);
+    Assert(r["success"].asBool(), "note delete executed (200-tolerant)");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "DELETE" &&
+                   fx.server.lastPath.find("/notes/43") != std::string::npos,
+               "note delete wire");
+    }
+
+    // event query: REPORT verb + interpolated time-range XML; ics parsed.
+    Json::Value eq;
+    eq["calendar"] = "personal";
+    eq["start"] = "20261116T000000Z";
+    eq["end"] = "20261116T235959Z";
+    r = fx.runtime->ExecuteAction("testpkg", "event query", "agent", eq);
+    Assert(r["success"].asBool() && r["data"].size() == 1 &&
+               r["data"][0]["summary"].asString() == "Standup" &&
+               r["data"][0]["uid"].asString() == "standup-1" &&
+               r["data"][0]["dtstart"].asString() == "20261116T080000Z",
+           "event query: uid/summary/dtstart parsed from calendar-data");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "REPORT",
+               "event query wire: REPORT verb");
+        Assert(fx.server.lastBody.find("start=\"20261116T000000Z\"") !=
+                   std::string::npos &&
+                   fx.server.lastBody.find("end=\"20261116T235959Z\"") !=
+                       std::string::npos,
+               "event query wire: time-range interpolated into XML body");
+    }
+
+    // event query: zero responses -> loud fail, not empty success.
+    eq["calendar"] = "empty";
+    r = fx.runtime->ExecuteAction("testpkg", "event query", "agent", eq);
+    Assert(!r["success"].asBool() &&
+               r["output"].asString().find("no response rows") !=
+                   std::string::npos,
+           "event query: loud fail on empty multistatus");
+
+    // event delete: declarative DELETE on the .ics resource.
+    Json::Value ed;
+    ed["calendar"] = "personal";
+    ed["uid"] = "standup-1";
+    r = fx.runtime->ExecuteAction("testpkg", "event delete", "agent", ed);
+    Assert(r["success"].asBool(), "event delete executed");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "DELETE" &&
+                   fx.server.lastPath.find("standup-1.ics") !=
+                       std::string::npos,
+               "event delete wire: .ics path");
+    }
+
+    // activity feed: OCS rows parsed.
+    Json::Value af;
+    af["limit"] = 20;
+    r = fx.runtime->ExecuteAction("testpkg", "activity feed", "agent", af);
+    Assert(r["success"].asBool() && r["data"].size() == 1 &&
+               r["data"][0]["subject"].asString() == "You attended a call",
+           "activity feed: OCS row parsed");
+
+    return 0;
+}
+
 int main() {
     std::cerr << "ApiRuntime tests:\n";
     TestInterpolation();
@@ -1828,6 +2105,7 @@ int main() {
     TestArgsValidation();
     TestPrimaryTransport();
     TestNextcloudRecordingCommands();
+    TestNextcloudOfficeCommands();
     TestSandboxStateAndSecrets();
     TestEgressControl();
     TestSandboxGlobals();
