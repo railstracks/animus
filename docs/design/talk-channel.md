@@ -1,6 +1,6 @@
 # Talk Channel — Design (DRAFT)
 
-**Status:** design conversation in flight. Not for merge until sign-off.
+**Status:** APPROVED Nov 16 (Melvin) — frame signed off same evening. Implementation sequencing underway: step 1 (tts package v0.1.0) merged, deployed and accepted live (PR #316).
 **Decisions so far (Nov 16, Melvin):** Option A (voice notes) for v1 · local Piper TTS (hosted backend later, config-selectable) · **channel-first framing: this is a *channel*, not a notetaker feature** — input/output is a mixture of speech and text, reconciled structurally. Voice: default now, per-agent choice later.
 **Parked:** Option B (true in-call WebRTC audio) — separate doc, 0.6+ shape.
 
@@ -27,7 +27,7 @@ Spike (a) first; (b) is the fallback. Segment producer feeds the adapter's wake 
 - `talk send` — text message into room chat.
 - `talk say` — voice note: TTS render → upload → share, caption always attached.
 - **Phrase cap ~300 chars (≈20–25s audio).** The cap is a *backstop*: the cadence comes from the session protocol — compose in phrases, one `say` per thought. **No mechanical slicing of long text** — mid-sentence chunk breaks produce a voicemail machine, not conversation.
-- **Pacing:** min-interval between phrase emissions (configurable, default ~2s) so the floor genuinely reopens between phrases.
+- **Pacing:** min-interval between phrase emissions (configurable, default ~2s) so the floor genuinely reopens between phrases. Measured Nov 16 (live service on the overlay): short phrase 0.14s, cap-length phrase 0.86s — synthesis is nowhere near latency-bound, so the gap can stay short without slowing the lane.
 - **Interjection:** new inbound segment during an outbound sequence wakes the session with the remaining outbox visible → re-plan instead of finishing the monologue. Turn-taking emerges from phrase cap + wake-on-inbound; no central conversation manager.
 - **v1 honest limit:** interruption granularity = one phrase. Already-shared notes cannot be recalled. True barge-in belongs to Option B.
 
@@ -39,7 +39,7 @@ Spike (a) first; (b) is the fallback. Segment producer feeds the adapter's wake 
 
 ## 5. Sequencing
 
-1. `tts` package 0.1.0 — Piper service on Swarm + `tts synthesize` (text → OGG in store). Mirrors stt 0.1.1.
+1. **DONE Nov 16** — `tts` package 0.1.0 (PR #316 merged): service `tts` (image animus-tts:0.1.0, Swarm service on `animus-generic_default`) live; package accepted 3/3 on the real instance (synth + determinism + cap loud-fail). Output is PCM WAV, not OGG — transcode stays downstream.
 2. Channel hardening — readback/history on wake (#263 dispatch pattern), agent_id routing audit, config-key allowlist; unified event stream + ordering guarantee.
 3. `talk send` (text) → `talk say` (voice note: cap, pacing, caption).
 4. Inbound speech — chunk spike (a) → whisper-on-segments → stream integration; fallback (b) rolling windows.
