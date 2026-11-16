@@ -1,0 +1,50 @@
+{
+  "kind": "api_package",
+  "name": "tts",
+  "version": "0.1.0",
+  "description": "Text-to-speech via the internal Piper server (Swarm service `tts` on the animus overlay; piper1-gpl HTTP API - POST /synthesize returns WAV). Writes only to the tts files area; writes_gated off by design (side-effect-free beyond the files area, same rationale as stt) and the egress allowlist (host `tts` only) is the boundary. Phrase cap: 300 chars, loud fail over cap - the cap bounds synthesis latency AND keeps the conversational floor open for interjection (A2 Talk-channel design, docs/design/talk-channel.md); split longer text into phrases, never slice.",
+  "keywords": [
+    "speech",
+    "tts",
+    "piper",
+    "voice",
+    "synthesis",
+    "talk"
+  ],
+  "dispatch_cooldown_ms": 10000,
+  "files_quota_mb": 64,
+  "egress_hosts": [
+    "tts"
+  ],
+  "state_schema": {
+    "base_url": {
+      "type": "string",
+      "default": "http://tts:5000"
+    },
+    "voice": {
+      "type": "string",
+      "default": "en_US-lessac-medium"
+    }
+  },
+  "commands": [
+    {
+      "name": "synthesize",
+      "kind": "action",
+      "description": "Synthesize a phrase to WAV via the Piper server (POST /synthesize). text is capped at 300 chars (phrase cap - loud fail over cap; split into phrases, never slice). voice optionally overrides the state default (e.g. de_DE-thorsten-medium). filename optional slug; defaults to tts-<sha256-10-of-text>.wav (deterministic: same phrase -> same file). The WAV persists to the tts files area; returns {file, bytes, chars}. Output is PCM WAV; transcode downstream where OGG is wanted.",
+      "parameters": {
+        "text": {
+          "type": "string",
+          "required": true
+        },
+        "voice": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        }
+      },
+      "script": "function run(ctx) local text = ctx.args.text or '' if #text == 0 then return {success = false, output = 'synthesize failed: text required'} end if #text > 300 then return {success = false, output = 'synthesize failed: phrase cap is 300 chars (keep the floor open - split into phrases, never slice) - got '..#text} end local t = {text = text} local v = ctx.args.voice or ctx.package.get_state('voice') or '' if v ~= '' then t.voice = v end local base = ctx.package.get_state('base_url') local r = ctx.http.post(base..'/synthesize', {headers = {['Content-Type'] = 'application/json'}, body = json.encode(t), timeout_s = 120}) if r.status ~= 200 then return {success = false, output = 'synthesize failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local body = r.body or '' if #body < 44 or body:sub(1, 4) ~= 'RIFF' then return {success = false, output = 'synthesize failed: no WAV returned ('..#body..' bytes) - service error?'} end local stem = ctx.args.filename if not stem then local d = ctx.crypto.sha256(text) stem = 'tts-'..(d and d:sub(1, 10) or 'phrase') end local fn = stem..'.wav' local ok, werr = ctx.fs.write(fn, body) if not ok then return {success = false, output = 'synthesize failed: persist: '..tostring(werr)} end return {output = 'synthesized '..#text..' chars -> '..fn..' ('..#body..' bytes)', data = {file = fn, bytes = #body, chars = #text}} end"
+    }
+  ],
+  "connections": []
+}
