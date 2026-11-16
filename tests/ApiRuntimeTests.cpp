@@ -1761,6 +1761,77 @@ int TestSttPackage() {
     return 0;
 }
 
+// A2 tts package v0.1.0: synthesize - JSON body against the piper1-gpl
+// /synthesize contract, WAV response persisted byte-exact to the files
+// area (binary body -> ctx.fs.write round-trip), phrase cap loud-fails,
+// non-WAV responses fail loudly.
+int TestTtsPackage() {
+    std::cerr << "  [runtime] tts package: synthesize...\n";
+    const std::string extra =
+        R"({"name": "synthesize", "kind": "action", "description": "Synthesize phrase to WAV",
+         "parameters": {"text": {"type": "string", "required": true},
+                        "voice": {"type": "string"},
+                        "filename": {"type": "string"}},
+         "script": "function run(ctx) local text = ctx.args.text or '' if #text == 0 then return {success = false, output = 'synthesize failed: text required'} end if #text > 300 then return {success = false, output = 'synthesize failed: phrase cap is 300 chars (keep the floor open - split into phrases, never slice) - got '..#text} end local t = {text = text} local v = ctx.args.voice or ctx.package.get_state('voice') or '' if v ~= '' then t.voice = v end local base = ctx.package.get_state('base_url') local r = ctx.http.post(base..'/synthesize', {headers = {['Content-Type'] = 'application/json'}, body = json.encode(t), timeout_s = 120}) if r.status ~= 200 then return {success = false, output = 'synthesize failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local body = r.body or '' if #body < 44 or body:sub(1, 4) ~= 'RIFF' then return {success = false, output = 'synthesize failed: no WAV returned ('..#body..' bytes) - service error?'} end local stem = ctx.args.filename if not stem then local d = ctx.crypto.sha256(text) stem = 'tts-'..(d and d:sub(1, 10) or 'phrase') end local fn = stem..'.wav' local ok, werr = ctx.fs.write(fn, body) if not ok then return {success = false, output = 'synthesize failed: persist: '..tostring(werr)} end return {output = 'synthesized '..#text..' chars -> '..fn..' ('..#body..' bytes)', data = {file = fn, bytes = #body, chars = #text}} end"})";
+    Fixture fx;
+    std::string wav = "RIFF";
+    wav += std::string("\x28\x00\x00\x00", 4);
+    wav += "WAVEfmt ";
+    wav.append(28, 'A');
+    fx.server.rawBodies["/synthesize"] = wav;
+    InstallFixturePkg(fx, extra, R"(["127.0.0.1"])", true, false);
+    const std::string phrase = "He said \"go\" then listened.";
+    Json::Value args;
+    args["text"] = phrase;
+    args["voice"] = "en_US-lessac-medium";
+    auto r = fx.runtime->ExecuteAction("testpkg", "synthesize", "agent", args);
+    Assert(r["output"].asString().find("synthesized " + std::to_string(phrase.size()) +
+                                        " chars") != std::string::npos,
+           "tts synthesize output char count");
+    Assert(fx.server.lastMethod == "POST" && fx.server.lastPath == "/synthesize",
+           "tts request verb+path");
+    Assert(fx.server.lastBody.find("\"text\"") != std::string::npos,
+           "tts JSON text field");
+    Assert(fx.server.lastBody.find("He said \\\"go\\\"") != std::string::npos,
+           "tts phrase escaped through json.encode");
+    Assert(fx.server.lastBody.find("lessac") != std::string::npos,
+           "tts voice in payload");
+    const std::string fname = r["data"]["file"].asString();
+    Assert(fname.size() == 18 && fname.substr(0, 4) == "tts-" &&
+               fname.substr(14) == ".wav",
+           "tts derived filename shape");
+    std::ifstream wf(std::filesystem::path(fx.filesRoot) / "testpkg" / fname,
+                     std::ios::binary);
+    std::string persisted((std::istreambuf_iterator<char>(wf)),
+                          std::istreambuf_iterator<char>());
+    Assert(persisted == wav, "tts WAV persisted byte-exact (binary fs round-trip)");
+    Assert(r["data"]["bytes"].asInt() == static_cast<int>(wav.size()),
+           "tts bytes surfaced in data");
+    args["filename"] = "reply-01";
+    r = fx.runtime->ExecuteAction("testpkg", "synthesize", "agent", args);
+    Assert(r["data"]["file"].asString() == "reply-01.wav",
+           "tts explicit filename honored");
+    args.removeMember("filename");
+    args.removeMember("voice");
+    args["text"] = std::string(301, 'a');
+    r = fx.runtime->ExecuteAction("testpkg", "synthesize", "agent", args);
+    Assert(!r["success"].asBool() &&
+               r["output"].asString().find("phrase cap") != std::string::npos,
+           "tts over-cap phrase fails loudly");
+    args["text"] = "";
+    r = fx.runtime->ExecuteAction("testpkg", "synthesize", "agent", args);
+    Assert(!r["success"].asBool() &&
+               r["output"].asString().find("text required") != std::string::npos,
+           "tts empty text fails loudly");
+    args["text"] = "short phrase";
+    fx.server.rawBodies["/synthesize"] = "Internal Server Error";
+    r = fx.runtime->ExecuteAction("testpkg", "synthesize", "agent", args);
+    Assert(!r["success"].asBool() &&
+               r["output"].asString().find("no WAV returned") != std::string::npos,
+           "tts non-WAV response fails loudly");
+    return 0;
+}
+
 // #69 notetaker handoff: files_from — declared sibling reads resolve
 // kernel-side against the sibling's files area ("<pkg>/<slug>" refs),
 // undeclared siblings are denied loudly egress-style, traversal via the
@@ -2101,6 +2172,7 @@ int main() {
     TestInterpolation();
     TestScriptHttpUpload();
     TestSttPackage();
+    TestTtsPackage();
     TestScriptHttpUploadFilesFrom();
     TestArgsValidation();
     TestPrimaryTransport();
