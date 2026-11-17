@@ -202,6 +202,7 @@ ApiPackage InstallFixturePkg(Fixture& fx, const std::string& extra = "",
         "base_url": {"type": "string", "default": "http://127.0.0.1:PORT"},
         "user": {"type": "string", "default": "agent"},
         "auth_header": {"type": "string", "secret": true},
+        "tts_url": {"type": "string", "default": "http://127.0.0.1:PORT"},
         "_cursor": {"type": "string"}
       },
       "commands": [
@@ -2231,6 +2232,96 @@ int TestNextcloudTalkSend() {
     return 0;
 }
 
+// v0.6.0 (A2): talk say — voice note: TTS render -> WebDAV upload -> room
+// share with talkMetaData (voice-message + caption, caption defaults to the
+// text). talk say + connect VERBATIM from packages/nextcloud/manifest.json;
+// tts_url rides the fixture state schema (loopback default). Pins all three hops, the always-attached caption, the
+// phrase-cap loud fail, and the RIFF magic guard.
+int TestNextcloudTalkSay() {
+    Fixture fx;
+    const std::string extra = R"nk({"name":"connect","kind":"action","description":"Validate an app password against the instance and store the precomputed Authorization header. Get the app password from the animus-agent account (Settings \u2192 Security \u2192 Devices & sessions).","parameters":{"user":{"type":"string","required":true},"app_password":{"type":"string","required":true,"secret":true}},"script":"function run(ctx) local h = 'Basic '..b64.encode(ctx.args.user..':'..ctx.args.app_password) local r = ctx.http.get(ctx.package.get_state('base_url')..'/ocs/v2.php/cloud/user?format=json', {headers = {['Authorization'] = h, ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json'}}) if r.status ~= 200 then return {success = false, output = 'connect failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local o = r.json and r.json.ocs if not o or not o.data or not o.data.id then return {success = false, output = 'connect failed: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end local ok1 = ctx.package.set_state('user', ctx.args.user) local ok2 = ctx.package.set_state('auth_header', h) if not ok1 or not ok2 then return {success = false, output = 'connect failed: state persist error'} end return {output = 'connected as '..o.data.id..' ('..tostring(o.data['display-name'])..')', data = {user_id = o.data.id}} end"},{"name":"talk say","kind":"action","description":"Send a voice note into a Talk room: TTS render (Piper at tts_url) -> upload (WebDAV, Talk/ root) -> room share with talkMetaData voice-message + caption (defaults to the text - caption always attached). Phrase cap 300 chars, loud fail over - split into phrases, never slice. Write - per-invocation #126 approval applies.","parameters":{"token":{"type":"string","required":true},"text":{"type":"string","required":true},"caption":{"type":"string"},"voice":{"type":"string"}},"script":"function run(ctx) local token = ctx.args.token or '' if token == '' then return {success = false, output = 'talk say failed: token required'} end local text = ctx.args.text or '' if #text == 0 then return {success = false, output = 'talk say failed: text required'} end if #text > 300 then return {success = false, output = 'talk say failed: phrase cap is 300 chars (keep the floor open - split into phrases, never slice) - got '..#text} end local cap = ctx.args.caption or text local t = {text = text} local v = ctx.args.voice or ctx.package.get_state('tts_voice') or '' if v ~= '' then t.voice = v end local r1 = ctx.http.post(ctx.package.get_state('tts_url')..'/synthesize', {headers = {['Content-Type'] = 'application/json'}, body = json.encode(t), timeout_s = 120}) if r1.status ~= 200 then return {success = false, output = 'talk say failed: tts HTTP '..tostring(r1.status)..(r1.error and (' - '..tostring(r1.error)) or '')} end local wav = r1.body or '' if #wav < 44 or wav:sub(1, 4) ~= 'RIFF' then return {success = false, output = 'talk say failed: no WAV returned ('..#wav..' bytes) - service error?'} end local dg = ctx.crypto.sha256(text) local fn = 'tts-'..(dg and dg:sub(1, 10) or 'phrase')..'.wav' local path = 'Talk/'..fn local r2 = ctx.http.put(ctx.package.get_state('base_url')..'/remote.php/dav/files/'..ctx.package.get_state('user')..'/'..path, {headers = {['Authorization'] = ctx.package.get_state('auth_header')}, body = wav}) if r2.status ~= 200 and r2.status ~= 201 and r2.status ~= 204 then return {success = false, output = 'talk say failed: upload HTTP '..tostring(r2.status)} end local body = json.encode({path = path, shareType = 10, shareWith = token, talkMetaData = json.encode({messageType = 'voice-message', caption = cap})}) local r3 = ctx.http.post(ctx.package.get_state('base_url')..'/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json', {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = body}) if r3.status ~= 200 and r3.status ~= 201 then return {success = false, output = 'talk say failed: share HTTP '..tostring(r3.status)..(r3.error and (' - '..tostring(r3.error)) or '')} end local sd = r3.json and r3.json.ocs and r3.json.ocs.data if not sd or sd.id == nil then return {success = false, output = 'talk say: unexpected share payload (HTTP '..tostring(r3.status)..')'} end return {output = 'voice note '..tostring(sd.id)..' sent to room '..token..' ('..#wav..' bytes, '..#text..' chars)', data = {id = sd.id, token = token, file = path, bytes = #wav, caption = cap}} end"})nk";
+    InstallFixturePkg(fx, extra);
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        fx.server.rawBodies["/ocs/v2.php/cloud/user"] =
+            "{\"ocs\":{\"meta\":{\"status\":\"ok\",\"statuscode\":200},"
+            "\"data\":{\"id\":\"agent\",\"displayname\":\"Agent\"}}}";
+        fx.server.rawBodies["/synthesize"] =
+            std::string("RIFF") + std::string(60, 'x');
+        fx.server.rawBodies["/ocs/v2.php/apps/files_sharing/api/v1/shares"] =
+            "{\"ocs\":{\"meta\":{\"status\":\"ok\",\"statuscode\":201},"
+            "\"data\":{\"id\":\"55\",\"share_type\":10,"
+            "\"uid_owner\":\"agent\",\"shareWith\":\"d7vv2vaa\","
+            "\"path\":\"/Talk\",\"token\":\"vwxyz\"}}}";
+    }
+
+    // connect (auth_header) + point tts_url at the fixture server.
+    Json::Value ca;
+    ca["user"] = "agent";
+    ca["app_password"] = "apw-123";
+    auto r = fx.runtime->ExecuteAction("testpkg", "connect", "agent", ca);
+    Assert(r["success"].asBool(), "connect succeeds (auth_header state)");
+
+    // happy path: render -> upload -> share, caption defaults to the text.
+    Json::Value ts;
+    ts["token"] = "d7vv2vaa";
+    ts["text"] = "hello room";
+    r = fx.runtime->ExecuteAction("testpkg", "talk say", "agent", ts);
+    Assert(r["success"].asBool(), "talk say executed");
+    Assert(r["output"].asString().find("voice note 55 sent to room d7vv2vaa") !=
+               std::string::npos,
+           "talk say output names share id + room");
+    Assert(r["data"]["id"].asString() == "55", "talk say data.id parsed");
+    const std::string file = r["data"]["file"].asString();
+    Assert(file.rfind("Talk/tts-", 0) == 0 &&
+               file.rfind(".wav") == file.size() - 4,
+           "talk say data.file is a deterministic Talk/ wav path");
+    Assert(r["data"]["bytes"].asInt() == 64, "talk say data.bytes is the wav size");
+    Assert(r["data"]["caption"].asString() == "hello room",
+           "talk say caption defaults to the text");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "POST" &&
+                   fx.server.lastPath.find(
+                       "/ocs/v2.php/apps/files_sharing/api/v1/shares") !=
+                       std::string::npos,
+               "talk say final hop: POST to shares API");
+        Assert(fx.server.lastBody.find("voice-message") != std::string::npos &&
+                   fx.server.lastBody.find("d7vv2vaa") != std::string::npos &&
+                   fx.server.lastBody.find("hello room") != std::string::npos,
+               "talk say share body: voice-message + room + caption");
+        Assert(fx.server.lastBody.find("Talk/tts-") != std::string::npos,
+               "talk say share body carries the uploaded path");
+        Assert(fx.server.hits == 4,
+               "talk say hit the server exactly 4 times (connect + 3 hops)");
+    }
+
+    // phrase cap: loud fail BEFORE any network for the phrase.
+    Json::Value over;
+    over["token"] = "d7vv2vaa";
+    over["text"] = std::string(301, 'x');
+    r = fx.runtime->ExecuteAction("testpkg", "talk say", "agent", over);
+    Assert(!r["success"].asBool(), "talk say fails over the 300-char cap");
+    Assert(r["output"].asString().find("phrase cap") != std::string::npos,
+           "talk say cap failure names the phrase cap");
+    Assert(fx.server.hits == 4, "cap loud-fail touched no network");
+
+    // RIFF magic guard: non-WAV synthesize response fails by name.
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        fx.server.rawBodies["/synthesize"] = "no-wav-here";
+    }
+    Json::Value bad;
+    bad["token"] = "d7vv2vaa";
+    bad["text"] = "short";
+    r = fx.runtime->ExecuteAction("testpkg", "talk say", "agent", bad);
+    Assert(!r["success"].asBool(), "talk say fails on non-WAV body");
+    Assert(r["output"].asString().find("no WAV") != std::string::npos,
+           "talk say failure names the missing WAV");
+    Assert(fx.server.hits == 5, "RIFF-guard run made exactly one tts call");
+    return 0;
+}
+
 int main() {
     std::cerr << "ApiRuntime tests:\n";
     TestInterpolation();
@@ -2243,6 +2334,7 @@ int main() {
     TestNextcloudRecordingCommands();
     TestNextcloudOfficeCommands();
     TestNextcloudTalkSend();
+    TestNextcloudTalkSay();
     TestSandboxStateAndSecrets();
     TestEgressControl();
     TestSandboxGlobals();
