@@ -303,7 +303,7 @@ void TestNextcloudVoiceDetection() {
       "systemMessage": "", "messageType": "voice-message"
     })";
     std::string name, mime;
-    Json::Value voice = ParseJson(voiceFixture);
+    Json::Value voice = channel_detail::ParseJson(voiceFixture);
     Assert(NextcloudAdapter::DetectVoiceNote(voice, name, mime),
            "live voice-message fixture must detect as voice");
     Assert(name == "tts-9536e16ca1.wav",
@@ -329,7 +329,7 @@ void TestNextcloudVoiceDetection() {
            "text/plain file share must NOT detect as voice");
 
     // Plain text with the PHP empty-array quirk ([] params) — not voice.
-    Json::Value text = ParseJson(R"({
+    Json::Value text = channel_detail::ParseJson(R"({
       "id": 170, "actorType": "users", "actorId": "melvin",
       "message": "hello room", "messageParameters": [],
       "systemMessage": "", "messageType": "comment"
