@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC -O3 -DNDEBUG -shared -Wl,-soname,libanimus_module_example_hello.so -o /home/claw/.openclaw/workspace/projects/animus/dist/modules/libanimus_module_example_hello.so CMakeFiles/animus_module_example_hello.dir/modules/example/hello/hello_module.cpp.o 

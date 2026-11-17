@@ -1,0 +1,18 @@
+{
+  "interfaces" : 
+  [
+    {
+      "config" : 
+      {
+        "api_key" : "sk-super-secret",
+        "channel" : "C123"
+      },
+      "connected" : true,
+      "enabled" : true,
+      "last_event_unix_ms" : 1794707301049,
+      "module_id" : "example.hello",
+      "name" : "example.hello",
+      "type" : "generic"
+    }
+  ]
+}

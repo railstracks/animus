@@ -23,6 +23,8 @@
 
 #include "animus_kernel/ChannelManager.h"
 #include "animus_kernel/ChannelState.h"
+#include "animus_kernel/ChannelAdapters.h"
+#include "animus_kernel/ChannelHelpers.h"
 #include "animus_kernel/AgentConfigStore.h"
 #include "animus_kernel/SqliteDataStore.h"
 #include "animus_kernel/tools/HttpClient.h"
@@ -270,6 +272,7 @@ void TestNextcloudConfigAllowlist() {
     good["group_mention_trigger"] = "@animus";
     good["agent_id"] = "a1b2c3";
     good["poll_interval"] = "30";
+    good["stt_url"] = "http://stt:8080";
     Assert(ChannelManager::ValidateConfig("nextcloud", good, &err),
            "full known key set should validate: " + err);
 
@@ -282,6 +285,59 @@ void TestNextcloudConfigAllowlist() {
            "rejection must name the gap, got: " + err);
 }
 
+// #324 voice inbound: DetectVoiceNote against the live Talk 25 payload
+// captured Nov 17 (petrel's voice note id 166 in animus-lab) plus the
+// variants that must NOT wake the voice path.
+void TestNextcloudVoiceDetection() {
+    const char* voiceFixture = R"({
+      "id": 166, "actorType": "users", "actorId": "petrel",
+      "actorDisplayName": "Petrel", "message": "Petrel",
+      "messageParameters": {
+        "actor": {"type": "user", "id": "petrel", "name": "Petrel",
+                  "mention-id": "petrel"},
+        "file": {"type": "file", "id": "652",
+                 "name": "tts-9536e16ca1.wav", "size": "208940",
+                 "path": "Talk/tts-9536e16ca1.wav",
+                 "mimetype": "audio/wav", "preview-available": "no"}
+      },
+      "systemMessage": "", "messageType": "voice-message"
+    })";
+    std::string name, mime;
+    Json::Value voice = ParseJson(voiceFixture);
+    Assert(NextcloudAdapter::DetectVoiceNote(voice, name, mime),
+           "live voice-message fixture must detect as voice");
+    Assert(name == "tts-9536e16ca1.wav",
+           "voice file name must carry through, got: " + name);
+    Assert(mime == "audio/wav",
+           "voice mimetype must carry through, got: " + mime);
+
+    // Audio file share (no voice-message marker) — same treatment.
+    Json::Value share = voice;
+    share["messageType"] = "comment";
+    name.clear(); mime.clear();
+    Assert(NextcloudAdapter::DetectVoiceNote(share, name, mime),
+           "audio/* file share must detect as voice");
+    Assert(name == "tts-9536e16ca1.wav",
+           "share file name must carry through, got: " + name);
+
+    // Non-audio file share — not voice.
+    Json::Value doc = share;
+    doc["messageParameters"]["file"]["mimetype"] = "text/plain";
+    doc["messageParameters"]["file"]["name"] = "notes.txt";
+    name.clear();
+    Assert(!NextcloudAdapter::DetectVoiceNote(doc, name, mime),
+           "text/plain file share must NOT detect as voice");
+
+    // Plain text with the PHP empty-array quirk ([] params) — not voice.
+    Json::Value text = ParseJson(R"({
+      "id": 170, "actorType": "users", "actorId": "melvin",
+      "message": "hello room", "messageParameters": [],
+      "systemMessage": "", "messageType": "comment"
+    })");
+    Assert(!NextcloudAdapter::DetectVoiceNote(text, name, mime),
+           "plain text ([] params quirk) must NOT detect as voice");
+}
+
 } // namespace
 
 int main() {
@@ -291,6 +347,7 @@ int main() {
     TestProbelessManagerWarnsOnUnknownType();
     TestChannelConfigSecretStrip();
     TestNextcloudConfigAllowlist();
+    TestNextcloudVoiceDetection();
 
     if (g_failures == 0) {
         std::cout << "ChannelManagerTests: ALL PASSED\n";

@@ -15,6 +15,7 @@
 #include "animus_kernel/social/TelegramBotApi.h"
 #include "animus_kernel/whatsapp/WABinary.h"
 
+#include <cctype>
 #include <drogon/WebSocketClient.h>
 #include <drogon/HttpRequest.h>
 #include <trantor/net/EventLoop.h>
@@ -1141,6 +1142,13 @@ void NextcloudAdapter::RunLoop() {
     bool respondInGroupOnMention = GetString(rt->config, "respond_in_group_on_mention", "true") != "false";
     std::string mentionTrigger = GetString(rt->config, "group_mention_trigger", "@" + username);
 
+    // #324 voice inbound: STT endpoint (e.g. http://stt:8080). Empty means
+    // voice notes still wake the session, but as failure markers — the gap
+    // stays visible in the wake and the log instead of audio silently
+    // skipping.
+    std::string sttUrl = GetString(rt->config, "stt_url");
+    while (!sttUrl.empty() && sttUrl.back() == '/') sttUrl.pop_back();
+
     // Parse watch_tokens
     std::vector<std::string> watchTokens;
     std::string watchTokensJson = GetString(rt->config, "watch_tokens");
@@ -1337,8 +1345,22 @@ void NextcloudAdapter::RunLoop() {
                         }
                     }
 
+                    // #324: voice-note detection. Voice notes carry no text
+                    // (the raw message renders the actor name) and cannot
+                    // carry mentions — the file parameter is the signal.
+                    std::string voiceFile, voiceMime;
+                    const bool isVoiceNote =
+                        DetectVoiceNote(msg, voiceFile, voiceMime);
+
                     bool shouldDispatch = false;
-                    if (isDm(conv.type) && respondInDm) {
+                    if (isVoiceNote) {
+                        // A voice note cannot carry a mention trigger: DMs
+                        // wake like text; group rooms wake only in
+                        // all-message mode (#306). Mention-only rooms stay
+                        // quiet on voice — documented MVP limitation.
+                        shouldDispatch = (isDm(conv.type) && respondInDm)
+                            || (!isDm(conv.type) && !respondInGroupOnMention);
+                    } else if (isDm(conv.type) && respondInDm) {
                         shouldDispatch = true;
                     } else if (!isDm(conv.type) && respondInGroupOnMention) {
                         if (mentionedViaParams
@@ -1378,6 +1400,36 @@ void NextcloudAdapter::RunLoop() {
                             cleanText.erase(0, 1);
                     }
 
+                    // #324: replace the body with the transcript — the
+                    // voice note's raw text is the actor name, not content.
+                    // Every failure stays loud: the wake carries a marker so
+                    // the session and the log both see the gap.
+                    if (isVoiceNote) {
+                        std::string transcript;
+                        if (sttUrl.empty()) {
+                            ALOG_WARNING("nextcloud", "Voice note '"
+                                        << voiceFile << "' from " << actorName
+                                        << " but stt_url is unset - "
+                                           "dispatching marker");
+                        } else {
+                            const std::string audio =
+                                FetchSharedFileBytes(serverUrl, authHeader,
+                                                     username, voiceFile);
+                            if (audio.empty()) {
+                                ALOG_WARNING("nextcloud", "Voice note '"
+                                            << voiceFile << "' not fetchable "
+                                               "via received shares");
+                            } else {
+                                transcript = TranscribeAudio(
+                                    sttUrl, voiceFile, voiceMime, audio);
+                            }
+                        }
+                        cleanText = transcript.empty()
+                            ? "[voice note '" + voiceFile
+                              + "' - transcription unavailable]"
+                            : transcript;
+                    }
+
                     // A2 readback-on-wake: the waking session sees the
                     // recent room transcript, not a lone fragment.
                     std::string history = FetchRoomHistory(token, authHeader,
@@ -1387,6 +1439,7 @@ void NextcloudAdapter::RunLoop() {
                     std::string prompt = "[Nextcloud Talk message from " + actorName;
                     prompt += " in \"" + conv.displayName + "\"";
                     if (isDm(conv.type)) prompt += " (direct message)";
+                    if (isVoiceNote) prompt += " [voice note, transcribed]";
                     prompt += "]\n";
                     if (!history.empty())
                         prompt += "--- Recent conversation (oldest first) ---\n"
@@ -1403,7 +1456,7 @@ void NextcloudAdapter::RunLoop() {
                     Json::Value origin;
                     origin["user"] = actorName;
                     origin["user_id"] = actorId;
-                    origin["modality"] = "text";  // A2: STT segments join as "voice"
+                    origin["modality"] = isVoiceNote ? "voice" : "text";  // A2
                     if (!isDm(conv.type)) origin["channel"] = conv.displayName;
                     dispatchMeta["origin"] = origin;
                     dispatchMeta["room_token"] = token;
@@ -1442,6 +1495,162 @@ void NextcloudAdapter::RunLoop() {
     }
 
     ALOG_INFO("nextcloud", "Talk poll loop stopped for " << rt->channel_name);
+}
+
+namespace {
+// #324: percent-encode a DAV path byte-wise, keeping '/' structure and the
+// unreserved set. channel_detail::UrlEncode encodes whole strings — it
+// would mangle '-' in usernames and '/' in paths.
+std::string EncodeDavPath(const std::string& path) {
+    static const char* kHex = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(path.size());
+    for (const char c : path) {
+        const unsigned char u = static_cast<unsigned char>(c);
+        if (std::isalnum(u) || c == '/' || c == '-' || c == '_'
+            || c == '.' || c == '~') {
+            out += c;
+        } else {
+            out += '%';
+            out += kHex[u >> 4];
+            out += kHex[u & 0x0F];
+        }
+    }
+    return out;
+}
+}  // namespace
+
+// static
+bool NextcloudAdapter::DetectVoiceNote(const Json::Value& msg,
+                                       std::string& fileName,
+                                       std::string& mimetype) {
+    // Live shape (Talk 25, Nov 17 probe): voice notes arrive as
+    // messageType=voice-message with parameters {actor, file}; audio file
+    // shares carry the same file-parameter shape. messageParameters is []
+    // when empty (PHP empty-array quirk).
+    const Json::Value noParams(Json::arrayValue);
+    const Json::Value& params =
+        (msg.isMember("messageParameters")
+         && msg["messageParameters"].isObject())
+            ? msg["messageParameters"] : noParams;
+    if (!params.isObject()) return false;
+
+    const bool voiceMessage =
+        msg.get("messageType", "").asString() == "voice-message";
+    for (const auto& key : params.getMemberNames()) {
+        const Json::Value& p = params[key];
+        if (!p.isObject() || p.get("type", "").asString() != "file") continue;
+        const std::string mime = p.get("mimetype", "").asString();
+        if (!voiceMessage && mime.rfind("audio/", 0) != 0) continue;
+        fileName = p.get("name", "").asString();
+        mimetype = mime.empty() ? "application/octet-stream" : mime;
+        return !fileName.empty();
+    }
+    return false;
+}
+
+std::string NextcloudAdapter::FetchSharedFileBytes(
+        const std::string& serverUrl, const std::string& authHeader,
+        const std::string& username, const std::string& fileName) {
+    // Route proven live Nov 17 (#324 probe): room file shares appear in the
+    // recipient's received-shares list with file_target in the RECIPIENT's
+    // own DAV namespace; a direct GET on the sharer's path 404s.
+    HttpClient::Request list;
+    list.method = "GET";
+    list.url = serverUrl + "/ocs/v2.php/apps/files_sharing/api/v1/shares"
+               "?format=json&shared_with_me=true&limit=100";
+    list.headers["Accept"] = "application/json";
+    list.headers["OCS-APIREQUEST"] = "true";
+    list.headers["Authorization"] = authHeader;
+    list.follow_redirects = false;
+    list.timeout_seconds = 15;
+
+    auto resp = m_ctx.httpClient.Execute(list);
+    if (resp.status_code != 200) {
+        ALOG_WARNING("nextcloud", "Received-shares list failed ("
+                     << resp.status_code << ") as " << username);
+        return {};
+    }
+    auto data = ParseJson(resp.body);
+    if (!data.isMember("ocs") || !data["ocs"]["data"].isArray()) {
+        ALOG_WARNING("nextcloud", "Received-shares: unexpected payload as "
+                     << username);
+        return {};
+    }
+
+    std::string target;
+    for (const auto& share : data["ocs"]["data"]) {
+        const std::string ft = GetString(share, "file_target");
+        if (ft.empty()) continue;
+        const size_t slash = ft.find_last_of('/');
+        const std::string base =
+            (slash == std::string::npos) ? ft : ft.substr(slash + 1);
+        if (base == fileName) { target = ft; break; }  // MVP: basename match
+    }
+    if (target.empty()) {
+        ALOG_WARNING("nextcloud", "No received share matches '" << fileName
+                     << "' for " << username);
+        return {};
+    }
+
+    HttpClient::Request get;
+    get.method = "GET";
+    get.url = serverUrl + "/remote.php/dav/files/"
+              + EncodeDavPath("/" + username + target);
+    get.headers["Accept"] = "application/octet-stream";
+    get.headers["Authorization"] = authHeader;
+    get.follow_redirects = false;
+    get.timeout_seconds = 30;
+
+    auto file = m_ctx.httpClient.Execute(get);
+    if (file.status_code != 200) {
+        ALOG_WARNING("nextcloud", "Shared-file DAV GET failed ("
+                     << file.status_code << ") for " << target);
+        return {};
+    }
+    return file.body;
+}
+
+std::string NextcloudAdapter::TranscribeAudio(
+        const std::string& sttUrl, const std::string& fileName,
+        const std::string& mimetype, const std::string& audioBytes) {
+    // Whisper server contract — the same service the stt package calls:
+    // multipart POST /inference, file field + response_format=json. The
+    // server converts formats (ffmpeg), so the stored mimetype rides along.
+    const std::string boundary = "----animus-kernel-7b3d324";
+    std::string body;
+    body.reserve(audioBytes.size() + 256);
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"file\"; filename=\""
+            + fileName + "\"\r\n";
+    body += "Content-Type: " + mimetype + "\r\n\r\n";
+    body += audioBytes;
+    body += "\r\n--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"response_format\"\r\n\r\n";
+    body += "json\r\n";
+    body += "--" + boundary + "--\r\n";
+
+    HttpClient::Request req;
+    req.method = "POST";
+    req.url = sttUrl + "/inference";
+    req.headers["Content-Type"] =
+        "multipart/form-data; boundary=" + boundary;
+    req.body = std::move(body);
+    // Long notes on CPU whisper — matches the stt package's 300s ceiling.
+    req.timeout_seconds = 300;
+
+    auto resp = m_ctx.httpClient.Execute(req);
+    if (resp.status_code != 200) {
+        ALOG_ERROR("nextcloud", "STT inference failed (" << resp.status_code
+                   << "): " << resp.body.substr(0, 200));
+        return {};
+    }
+    auto out = ParseJson(resp.body);
+    const std::string text = GetString(out, "text");
+    if (text.empty())
+        ALOG_WARNING("nextcloud", "STT returned empty transcript for "
+                     << fileName);
+    return text;
 }
 
 std::string NextcloudAdapter::FetchRoomHistory(const std::string& token,

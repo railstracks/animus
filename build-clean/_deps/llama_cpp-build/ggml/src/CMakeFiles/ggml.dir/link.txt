@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC -O3 -DNDEBUG -shared -Wl,-soname,libggml.so.0 -o ../../../../bin/libggml.so.0.15.1 "CMakeFiles/ggml.dir/ggml-backend-dl.cpp.o" "CMakeFiles/ggml.dir/ggml-backend-reg.cpp.o"  -Wl,-rpath,/home/claw/.openclaw/workspace/projects/animus/build-clean/bin: -ldl ../../../../bin/libggml-cpu.so.0.15.1 ../../../../bin/libggml-base.so.0.15.1 

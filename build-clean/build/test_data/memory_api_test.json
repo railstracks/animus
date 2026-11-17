@@ -1,0 +1,169 @@
+{
+  "consolidation" : 
+  {
+    "active_job_id" : 0,
+    "last_error" : "",
+    "last_job_id" : 8,
+    "last_run_unix_ms" : 1794707301062,
+    "last_summary" : 
+    {
+      "archived" : 0,
+      "demoted" : 0,
+      "promoted" : 0
+    },
+    "running" : false
+  },
+  "layers" : 
+  [
+    {
+      "consolidation_interval" : "1h",
+      "description" : "Day layer",
+      "horizon" : "1d",
+      "name" : "day",
+      "perspective_current" : "current-day picture",
+      "perspective_future" : "next-day expectation",
+      "perspective_past" : "past-day retrospective",
+      "retention_policy" : "48h"
+    },
+    {
+      "consolidation_interval" : "6h",
+      "description" : "Week layer",
+      "horizon" : "1w",
+      "name" : "week",
+      "perspective_current" : "Current-week momentum, blockers, and execution posture.",
+      "perspective_future" : "Expectations and strategy for the next week.",
+      "perspective_past" : "Retrospective on the previous week and persistent themes.",
+      "retention_policy" : "14d"
+    },
+    {
+      "consolidation_interval" : "1d",
+      "description" : "Month layer",
+      "horizon" : "1mo",
+      "name" : "month",
+      "perspective_current" : "Current-month posture and trajectory assessment.",
+      "perspective_future" : "Monthly outlook and strategic adjustments.",
+      "perspective_past" : "Monthly review and trend identification.",
+      "retention_policy" : "60d"
+    },
+    {
+      "consolidation_interval" : "never",
+      "description" : "Cold storage for observations removed from active layers.",
+      "horizon" : "archive",
+      "name" : "archive",
+      "perspective_current" : "Inactive archival layer.",
+      "perspective_future" : "No forward horizon; archived data is retrospective only.",
+      "perspective_past" : "Historical archive of superseded observations.",
+      "retention_policy" : "permanent"
+    }
+  ],
+  "observations" : 
+  [
+    {
+      "created_in_layer" : "day",
+      "decay_rate" : 0.94999999999999996,
+      "demotion_reason" : null,
+      "demotion_timestamp" : null,
+      "demotion_timestamp_unix_ms" : null,
+      "id" : "obs_capture_3",
+      "layer" : "day",
+      "tags" : 
+      [
+        "ws_chat",
+        "captured"
+      ],
+      "text" : "Obs-stream trigger message",
+      "timestamp" : 1794707301861,
+      "timestamp_unix_ms" : 1794707301861,
+      "weight" : 1.0
+    },
+    {
+      "created_in_layer" : "day",
+      "decay_rate" : 0.94999999999999996,
+      "demotion_reason" : null,
+      "demotion_timestamp" : null,
+      "demotion_timestamp_unix_ms" : null,
+      "id" : "obs_capture_2",
+      "layer" : "day",
+      "tags" : 
+      [
+        "ws_chat",
+        "captured"
+      ],
+      "text" : "Follow-up",
+      "timestamp" : 1794707301197,
+      "timestamp_unix_ms" : 1794707301197,
+      "weight" : 1.0
+    },
+    {
+      "created_in_layer" : "day",
+      "decay_rate" : 0.94999999999999996,
+      "demotion_reason" : null,
+      "demotion_timestamp" : null,
+      "demotion_timestamp_unix_ms" : null,
+      "id" : "obs_capture_1",
+      "layer" : "day",
+      "tags" : 
+      [
+        "ws_chat",
+        "captured"
+      ],
+      "text" : "Hello via websocket",
+      "timestamp" : 1794707301153,
+      "timestamp_unix_ms" : 1794707301153,
+      "weight" : 1.0
+    },
+    {
+      "created_in_layer" : "day",
+      "decay_rate" : 0.94999999999999996,
+      "demotion_reason" : "removed_via_api",
+      "demotion_timestamp" : 1794707301061,
+      "demotion_timestamp_unix_ms" : 1794707301061,
+      "id" : "obs_week",
+      "layer" : "archive",
+      "tags" : 
+      [
+        "planning"
+      ],
+      "text" : "Week layer observation",
+      "timestamp" : 1690000000000,
+      "timestamp_unix_ms" : 1690000000000,
+      "weight" : 1.3999999999999999
+    },
+    {
+      "created_in_layer" : "day",
+      "decay_rate" : 0.96999999999999997,
+      "demotion_reason" : null,
+      "demotion_timestamp" : null,
+      "demotion_timestamp_unix_ms" : null,
+      "id" : "obs_day_low",
+      "layer" : "day",
+      "tags" : 
+      [
+        "ops",
+        "triaged"
+      ],
+      "text" : "Low-weight day observation",
+      "timestamp" : 1700000200000,
+      "timestamp_unix_ms" : 1700000200000,
+      "weight" : 1.8999999999999999
+    },
+    {
+      "created_in_layer" : "day",
+      "decay_rate" : 0.92000000000000004,
+      "demotion_reason" : null,
+      "demotion_timestamp" : null,
+      "demotion_timestamp_unix_ms" : null,
+      "id" : "obs_day_high",
+      "layer" : "day",
+      "tags" : 
+      [
+        "ops",
+        "priority"
+      ],
+      "text" : "High-weight day observation",
+      "timestamp" : 1700000100000,
+      "timestamp_unix_ms" : 1700000100000,
+      "weight" : 2.5
+    }
+  ]
+}

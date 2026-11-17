@@ -1,0 +1,76 @@
+{
+  "adaptation" : 
+  {
+    "interaction_style" : 
+    {
+      "tone" : "balanced",
+      "verbosity" : "high"
+    },
+    "retrieval_preference" : 
+    {
+      "weight_recency" : 0.59999999999999998,
+      "weight_relevance" : 0.29999999999999999
+    }
+  },
+  "audit_log" : 
+  [
+    {
+      "action" : "patch_adaptation",
+      "after" : 
+      {
+        "interaction_style" : 
+        {
+          "tone" : "balanced",
+          "verbosity" : "high"
+        },
+        "retrieval_preference" : 
+        {
+          "weight_recency" : 0.59999999999999998,
+          "weight_relevance" : 0.29999999999999999
+        }
+      },
+      "before" : 
+      {
+        "interaction_style" : 
+        {
+          "tone" : "balanced",
+          "verbosity" : "medium"
+        },
+        "retrieval_preference" : 
+        {
+          "weight_recency" : 0.59999999999999998,
+          "weight_relevance" : 0.40000000000000002
+        }
+      },
+      "patch" : 
+      {
+        "interaction_style" : 
+        {
+          "verbosity" : "high"
+        },
+        "retrieval_preference" : 
+        {
+          "weight_relevance" : 0.29999999999999999
+        }
+      },
+      "source" : "api",
+      "timestamp_unix_ms" : 1794707301062
+    }
+  ],
+  "contracts" : 
+  [
+    {
+      "approval_requirement" : "governance_approved",
+      "id" : "contract.test"
+    }
+  ],
+  "core" : 
+  {
+    "identity" : "animus-test",
+    "invariants" : 
+    [
+      "protect_core_identity"
+    ]
+  },
+  "updated_at_unix_ms" : 1794707301062
+}

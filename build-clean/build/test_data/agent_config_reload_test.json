@@ -1,0 +1,15 @@
+{
+  "model" : {
+    "provider" : "openai",
+    "model_id" : "gpt-4.1",
+    "context_window" : 222222,
+    "api_key" : "sk-reload-token"
+  },
+  "temperature" : 0.9,
+  "identity" : "loaded from disk",
+  "budget" : {
+    "max_chain_steps" : 44,
+    "max_tool_calls_per_chain" : 11,
+    "timeout_seconds" : 1900,
+  }
+}

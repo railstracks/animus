@@ -1,0 +1,14 @@
+# Target labels
+ drogon-populate
+# Source files and their labels
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/drogon-subbuild/CMakeFiles/drogon-populate
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/drogon-subbuild/CMakeFiles/drogon-populate.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/drogon-subbuild/CMakeFiles/drogon-populate-complete.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/drogon-subbuild/drogon-populate-prefix/src/drogon-populate-stamp/drogon-populate-build.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/drogon-subbuild/drogon-populate-prefix/src/drogon-populate-stamp/drogon-populate-configure.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/drogon-subbuild/drogon-populate-prefix/src/drogon-populate-stamp/drogon-populate-download.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/drogon-subbuild/drogon-populate-prefix/src/drogon-populate-stamp/drogon-populate-install.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/drogon-subbuild/drogon-populate-prefix/src/drogon-populate-stamp/drogon-populate-mkdir.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/drogon-subbuild/drogon-populate-prefix/src/drogon-populate-stamp/drogon-populate-patch.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/drogon-subbuild/drogon-populate-prefix/src/drogon-populate-stamp/drogon-populate-test.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/drogon-subbuild/drogon-populate-prefix/src/drogon-populate-stamp/drogon-populate-update.rule

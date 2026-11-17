@@ -1,0 +1,17 @@
+{
+  "default_provider": "openai",
+  "providers": {
+    "openai": {
+      "provider_type": "openai",
+      "base_url": "http://127.0.0.1:9/v1",
+      "api_key": "sk-test",
+      "default_model": "gpt-4.1-mini",
+      "default_context_window": 128000,
+      "auth_type": "api_key",
+      "concurrency": 1,
+      "extra": {
+        "retry_max_attempts": "1"
+      }
+    }
+  }
+}
