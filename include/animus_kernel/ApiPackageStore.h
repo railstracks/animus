@@ -69,6 +69,10 @@ struct ApiPackageCommand {
     std::string parameters;          // JSON object (actions only), default "{}"
     std::string request;             // JSON object or "" (script-only actions)
     std::string script;              // Lua; defines run(ctx)
+    bool writesStanding{false};      // "writes":"standing" — conversational output
+                                     // class: script writes pass the #126
+                                     // per-invocation gate (consent = manifest
+                                     // approval at install; digest audit-logged)
 };
 
 struct ApiPackageConnection {

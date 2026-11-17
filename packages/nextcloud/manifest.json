@@ -1,7 +1,7 @@
 {
   "kind": "api_package",
   "name": "nextcloud",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Nextcloud office connector — Files (WebDAV), Notes, Calendar (CalDAV), Shares, Deck, Activity, Talk recording control, Talk chat send (talk send), voice notes (talk say). Read + write lanes; writes_gated (declared writes are #106-bound, script-composed writes take per-invocation #126 approvals).",
   "keywords": [
     "nextcloud",
@@ -635,7 +635,8 @@
     {
       "name": "talk say",
       "kind": "action",
-      "description": "Send a voice note into a Talk room: TTS render (Piper at tts_url) -> upload (WebDAV, Talk/ root) -> room share with talkMetaData voice-message + caption (defaults to the text - caption always attached). Phrase cap 300 chars, loud fail over - split into phrases, never slice. Write - per-invocation #126 approval applies.",
+      "description": "Send a voice note into a Talk room: TTS render (Piper at tts_url) -> upload (WebDAV, Talk/ root) -> room share with talkMetaData voice-message + caption (defaults to the text - caption always attached). Phrase cap 300 chars, loud fail over - split into phrases, never slice. Writes: standing consent (conversational output class - voice substitutes text chat) - #126 per-invocation hold does not apply, audit-logged with digest.",
+      "writes": "standing",
       "parameters": {
         "token": {
           "type": "string",

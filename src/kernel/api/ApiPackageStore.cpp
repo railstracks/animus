@@ -239,10 +239,18 @@ void ApiPackageStore::EnsureSchema() {
             parameters TEXT NOT NULL DEFAULT '{}',
             request TEXT NOT NULL DEFAULT '',
             script TEXT NOT NULL,
+            writes_standing INTEGER NOT NULL DEFAULT 0,
             created_at_unix_ms INTEGER NOT NULL,
             UNIQUE (package_id, name)
         );
     )");
+
+    // "writes":"standing" (conversational output class). Column addition is
+    // backward-safe: existing rows read as 0 (per-invocation gating, the
+    // pre-standing default); commands declaring standing re-install anyway.
+    if (!schema::ColumnExists(m_store, "api_package_commands", "writes_standing"))
+        schema::CreateTable(m_store,
+            "ALTER TABLE api_package_commands ADD COLUMN writes_standing INTEGER NOT NULL DEFAULT 0");
 
     schema::CreateTable(m_store, R"(
         CREATE TABLE IF NOT EXISTS api_package_connections (
@@ -533,6 +541,7 @@ std::string ApiPackageStore::ComputeContentHash(const ApiPackage& pkg,
                                           Json::Value(Json::objectValue));
         o["request"] = c.request;
         o["script"] = c.script;
+        if (c.writesStanding) o["writes"] = "standing";
         jc.append(o);
     }
     j["commands"] = jc;
@@ -586,6 +595,7 @@ std::string ApiPackageStore::ComputeContentHashLegacy(const ApiPackage& pkg,
         o["parameters"] = c.parameters.empty() ? "{}" : c.parameters;
         o["request"] = c.request;
         o["script"] = c.script;
+        if (c.writesStanding) o["writes"] = "standing";
         jc.append(o);
     }
     j["commands"] = jc;
@@ -672,11 +682,12 @@ ApiPackageCommand RowToCommand(const std::unique_ptr<IStatement>& stmt) {
     c.parameters = stmt->ColumnText(6);
     c.request = stmt->ColumnText(7);
     c.script = stmt->ColumnText(8);
+    c.writesStanding = stmt->ColumnInt64(9) != 0;
     return c;
 }
 
 const char* kCommandColumns =
-    "id, package_id, name, kind, event, description, parameters, request, script";
+    "id, package_id, name, kind, event, description, parameters, request, script, writes_standing";
 
 ApiPackageConnection RowToConnection(const std::unique_ptr<IStatement>& stmt) {
     ApiPackageConnection c;
@@ -918,8 +929,8 @@ ApiPackageCommand ApiPackageStore::AddCommand(const ApiPackageCommand& cmd) {
 
     auto stmt = m_store->Prepare(
         "INSERT INTO api_package_commands (id, package_id, name, kind, event, "
-        "description, parameters, request, script, created_at_unix_ms) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        "description, parameters, request, script, created_at_unix_ms, writes_standing) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     if (!stmt) throw std::runtime_error("api_package_commands insert prepare failed");
     ApiPackageCommand stored = cmd;
     stored.id = cmd.id.empty() ? GenerateId() : cmd.id;
@@ -933,6 +944,7 @@ ApiPackageCommand ApiPackageStore::AddCommand(const ApiPackageCommand& cmd) {
     stmt->BindText(8, stored.request);
     stmt->BindText(9, stored.script);
     stmt->BindInt64(10, NowUnixMs());
+    stmt->BindInt64(11, stored.writesStanding ? 1 : 0);
     stmt->ExecDML();
     stmt->Finalize();
     return stored;
@@ -1483,6 +1495,9 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
                     lint.Add("hook '" + cmd.name + "': hooks must not declare parameters");
                 if (c.isMember("request"))
                     lint.Add("hook '" + cmd.name + "': hooks must not declare request");
+                if (c.isMember("writes"))
+                    lint.Add("hook '" + cmd.name +
+                             "': hooks must not declare writes (actions only)");
                 cmd.parameters = "{}";
                 cmd.request = "";
             } else if (cmd.kind == "action") {
@@ -1515,6 +1530,16 @@ ApiPackage ApiPackageStore::InstallFromManifest(const std::string& manifestJson,
                     }
                 }
                 cmd.event = "";
+                // "writes":"standing" — conversational output class: the
+                // command's script writes skip the #126 per-invocation hold
+                // (consent = owner-approved manifest at install; STANDING
+                // audit line carries the digest instead).
+                if (c.isMember("writes")) {
+                    const std::string w = c["writes"].asString();
+                    if (w == "standing") cmd.writesStanding = true;
+                    else lint.Add("action '" + cmd.name +
+                                  "': writes must be \"standing\" if present (got '" + w + "')");
+                }
             } else {
                 lint.Add("command '" + cmd.name + "': kind must be 'action' or 'hook'");
             }

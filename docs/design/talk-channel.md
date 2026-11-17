@@ -26,6 +26,7 @@ Spike (a) first; (b) is the fallback. Segment producer feeds the adapter's wake 
 
 - `talk send` — text message into room chat.
 - `talk say` — voice note: TTS render → upload → share, caption always attached.
+- **Standing consent for `talk say` writes (`"writes": "standing"`, v0.6.2):** voice notes are conversational output — the same class as text chat, substituting IRC-DM / group-call participation where the user typically has no terminal. Per-invocation #126 approval would break the channel: one phrase is three writes (synthesis POST, WebDAV upload, room share), retries re-hold earlier hops (approvals are one-shot), and byte-nondeterministic TTS output rotates the upload digest. The manifest field moves consent to install time — the owner approves the package content once, script writes then pass the per-invocation hold, and a STANDING audit line (method, masked URL, digest) preserves the trail. Scope: per-command declaration, actions only (hooks lint-rejected), only meaningful inside a `writes_gated` package — everything else holds as before.
 - **Phrase cap ~300 chars (≈20–25s audio).** The cap is a *backstop*: the cadence comes from the session protocol — compose in phrases, one `say` per thought. **No mechanical slicing of long text** — mid-sentence chunk breaks produce a voicemail machine, not conversation.
 - **Pacing:** min-interval between phrase emissions (configurable, default ~2s) so the floor genuinely reopens between phrases. Measured Nov 16 (live service on the overlay): short phrase 0.14s, cap-length phrase 0.86s — synthesis is nowhere near latency-bound, so the gap can stay short without slowing the lane.
 - **Interjection:** new inbound segment during an outbound sequence wakes the session with the remaining outbox visible → re-plan instead of finishing the monologue. Turn-taking emerges from phrase cap + wake-on-inbound; no central conversation manager.
@@ -41,7 +42,7 @@ Spike (a) first; (b) is the fallback. Segment producer feeds the adapter's wake 
 
 1. **DONE Nov 16** — `tts` package 0.1.0 (PR #316 merged): service `tts` (image animus-tts:0.1.0, Swarm service on `animus-generic_default`) live; package accepted 3/3 on the real instance (synth + determinism + cap loud-fail). Output is PCM WAV, not OGG — transcode stays downstream.
 2. Channel hardening — readback/history on wake (#263 dispatch pattern), agent_id routing audit, config-key allowlist; unified event stream + ordering guarantee.
-3. `talk send` (text) → `talk say` (voice note: cap, pacing, caption).
+3. `talk send` (text) → `talk say` (voice note: cap, pacing, caption) — standing write-consent shipped with it (0.6.2).
 4. Inbound speech — chunk spike (a) → whisper-on-segments → stream integration; fallback (b) rolling windows.
 5. Attribution/group — per-room agent config, caption prefix, one voice per agent.
 6. (v2) `live_transcription` ExApp (c); Option B in-call audio — own doc.
