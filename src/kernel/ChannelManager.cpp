@@ -1250,6 +1250,20 @@ bool ChannelManager::ValidateConfig(const std::string& type,
             if (error) *error = "Nextcloud app password is required";
             return false;
         }
+        // A2 allowlist: unknown keys fail loudly - a typo'd key that rides
+        // the config row doing nothing is the bug class this prevents.
+        // Adapter-read set + framework keys (agent_id injected at creation,
+        // poll_interval read by the base poller).
+        static const std::set<std::string> kNextcloudKeys = {
+            "server_url", "username", "app_password", "watch_tokens",
+            "respond_in_dm", "respond_in_group_on_mention",
+            "group_mention_trigger", "agent_id", "poll_interval"};
+        for (const auto& key : config.getMemberNames()) {
+            if (!kNextcloudKeys.count(key)) {
+                if (error) *error = "Unknown nextcloud channel config key: " + key;
+                return false;
+            }
+        }
     }
     return true;
 }
