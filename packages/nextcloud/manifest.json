@@ -1,8 +1,8 @@
 {
   "kind": "api_package",
   "name": "nextcloud",
-  "version": "0.4.0",
-  "description": "Nextcloud office connector — Files (WebDAV), Notes, Calendar (CalDAV), Shares, Deck, Activity, Talk recording control. Read + write lanes; writes_gated (declared writes are #106-bound, script-composed writes take per-invocation #126 approvals).",
+  "version": "0.5.0",
+  "description": "Nextcloud office connector — Files (WebDAV), Notes, Calendar (CalDAV), Shares, Deck, Activity, Talk recording control, Talk chat send (talk send). Read + write lanes; writes_gated (declared writes are #106-bound, script-composed writes take per-invocation #126 approvals).",
   "keywords": [
     "nextcloud",
     "office",
@@ -13,7 +13,8 @@
     "caldav",
     "shares",
     "deck",
-    "activity"
+    "activity",
+    "talk"
   ],
   "dispatch_cooldown_ms": 2000,
   "files_quota_mb": 128,
@@ -605,6 +606,22 @@
         }
       },
       "script": "function run(ctx) local r = ctx.request local j = r.json or {} local meta = (j.ocs and j.ocs.meta) or {} local d = (j.ocs and j.ocs.data) or {} if meta.statuscode and meta.statuscode ~= 200 then return {success = false, output = 'activity feed failed: OCS '..tostring(meta.statuscode)..' '..tostring(meta.message or '')} end if type(d) ~= 'table' then return {success = false, output = 'activity feed: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end local rows = {} for _, a in ipairs(d) do table.insert(rows, {id = a.activity_id, app = a.app, type = a.type, user = a.user, subject = a.subject, when = a.datetime}) end return {output = #rows..' activity rows', data = rows} end"
+    },
+    {
+      "name": "talk send",
+      "kind": "action",
+      "description": "Send a text message into a Talk room (OCS spreed chat API). token is the room token (watch_tokens, recordings list, or share rows). Write - per-invocation #126 approval applies.",
+      "parameters": {
+        "token": {
+          "type": "string",
+          "required": true
+        },
+        "message": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "script": "function run(ctx) local r = ctx.http.post(ctx.package.get_state('base_url')..'/ocs/v2.php/apps/spreed/api/v1/chat/'..tostring(ctx.args.token)..'?format=json', {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = json.encode({message = ctx.args.message})}) if r.status ~= 200 and r.status ~= 201 then return {success = false, output = 'talk send failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local d = r.json and r.json.ocs and r.json.ocs.data if not d or d.id == nil then return {success = false, output = 'talk send: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end return {output = 'message '..tostring(d.id)..' sent to room '..tostring(ctx.args.token), data = {id = d.id, token = d.token or ctx.args.token, actor = d.actorId, timestamp = d.timestamp}} end"
     }
   ],
   "connections": []

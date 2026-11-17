@@ -2167,6 +2167,70 @@ int TestNextcloudOfficeCommands() {
     return 0;
 }
 
+// v0.5.0 (A2): talk send — text into a Talk room via the OCS spreed chat
+// API. Scripts VERBATIM from packages/nextcloud/manifest.json (connect +
+// talk send). Pins the wire truth (POST + chat path + body carrying the
+// message), the OCS envelope parse, and the loud failure on a non-OCS body.
+int TestNextcloudTalkSend() {
+    Fixture fx;
+    const std::string extra = R"nk({"name":"connect","kind":"action","description":"Validate an app password against the instance and store the precomputed Authorization header. Get the app password from the animus-agent account (Settings \u2192 Security \u2192 Devices & sessions).","parameters":{"user":{"type":"string","required":true},"app_password":{"type":"string","required":true,"secret":true}},"script":"function run(ctx) local h = 'Basic '..b64.encode(ctx.args.user..':'..ctx.args.app_password) local r = ctx.http.get(ctx.package.get_state('base_url')..'/ocs/v2.php/cloud/user?format=json', {headers = {['Authorization'] = h, ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json'}}) if r.status ~= 200 then return {success = false, output = 'connect failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local o = r.json and r.json.ocs if not o or not o.data or not o.data.id then return {success = false, output = 'connect failed: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end local ok1 = ctx.package.set_state('user', ctx.args.user) local ok2 = ctx.package.set_state('auth_header', h) if not ok1 or not ok2 then return {success = false, output = 'connect failed: state persist error'} end return {output = 'connected as '..o.data.id..' ('..tostring(o.data['display-name'])..')', data = {user_id = o.data.id}} end"},{"name":"talk send","kind":"action","description":"Send a text message into a Talk room (OCS spreed chat API). token is the room token (watch_tokens, recordings list, or share rows). Write - per-invocation #126 approval applies.","parameters":{"token":{"type":"string","required":true},"message":{"type":"string","required":true}},"script":"function run(ctx) local r = ctx.http.post(ctx.package.get_state('base_url')..'/ocs/v2.php/apps/spreed/api/v1/chat/'..tostring(ctx.args.token)..'?format=json', {headers = {['Authorization'] = ctx.package.get_state('auth_header'), ['OCS-APIREQUEST'] = 'true', ['Accept'] = 'application/json', ['Content-Type'] = 'application/json'}, body = json.encode({message = ctx.args.message})}) if r.status ~= 200 and r.status ~= 201 then return {success = false, output = 'talk send failed: HTTP '..tostring(r.status)..(r.error and (' - '..tostring(r.error)) or '')} end local d = r.json and r.json.ocs and r.json.ocs.data if not d or d.id == nil then return {success = false, output = 'talk send: unexpected OCS payload (HTTP '..tostring(r.status)..')'} end return {output = 'message '..tostring(d.id)..' sent to room '..tostring(ctx.args.token), data = {id = d.id, token = d.token or ctx.args.token, actor = d.actorId, timestamp = d.timestamp}} end"})nk";
+    InstallFixturePkg(fx, extra);
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        fx.server.rawBodies["/ocs/v2.php/cloud/user"] =
+            "{\"ocs\":{\"meta\":{\"status\":\"ok\",\"statuscode\":200},"
+            "\"data\":{\"id\":\"agent\",\"displayname\":\"Agent\"}}}";
+        fx.server.rawBodies["/ocs/v2.php/apps/spreed/api/v1/chat/d7vv2vaa"] =
+            "{\"ocs\":{\"meta\":{\"status\":\"ok\",\"statuscode\":201},"
+            "\"data\":{\"id\":321,\"token\":\"d7vv2vaa\","
+            "\"actorId\":\"animus-agent\",\"actorType\":\"users\","
+            "\"timestamp\":1795000000,\"message\":\"hello room\"}}}";
+        fx.server.rawBodies["/ocs/v2.php/apps/spreed/api/v1/chat/blank"] =
+            "not-json";
+    }
+
+    // connect first: stores auth_header (office-test pattern).
+    Json::Value ca;
+    ca["user"] = "agent";
+    ca["app_password"] = "apw-123";
+    auto r = fx.runtime->ExecuteAction("testpkg", "connect", "agent", ca);
+    Assert(r["success"].asBool(), "connect succeeds (auth_header state)");
+
+    // happy path: executes, parses the envelope, wire carries the message.
+    Json::Value ts;
+    ts["token"] = "d7vv2vaa";
+    ts["message"] = "hello room";
+    r = fx.runtime->ExecuteAction("testpkg", "talk send", "agent", ts);
+    Assert(r["success"].asBool(), "talk send executed");
+    Assert(r["output"].asString().find("message 321 sent to room d7vv2vaa") !=
+               std::string::npos,
+           "talk send output names message id + room");
+    Assert(r["data"]["id"].asInt() == 321, "talk send data.id parsed");
+    Assert(r["data"]["token"].asString() == "d7vv2vaa",
+           "talk send data.token echoed");
+    {
+        std::lock_guard<std::mutex> lock(fx.server.mutex);
+        Assert(fx.server.lastMethod == "POST" &&
+                   fx.server.lastPath.find(
+                       "/ocs/v2.php/apps/spreed/api/v1/chat/d7vv2vaa") !=
+                       std::string::npos,
+               "talk send wire: POST to chat path");
+        Assert(fx.server.lastBody.find("hello room") != std::string::npos,
+               "talk send wire: body carries the message");
+    }
+
+    // loud failure: non-OCS body -> named error, never silent success.
+    Json::Value bad;
+    bad["token"] = "blank";
+    bad["message"] = "x";
+    r = fx.runtime->ExecuteAction("testpkg", "talk send", "agent", bad);
+    Assert(!r["success"].asBool(), "talk send fails on non-OCS body");
+    Assert(r["output"].asString().find("unexpected OCS payload") !=
+               std::string::npos,
+           "talk send failure names the payload problem");
+    return 0;
+}
+
 int main() {
     std::cerr << "ApiRuntime tests:\n";
     TestInterpolation();
@@ -2178,6 +2242,7 @@ int main() {
     TestPrimaryTransport();
     TestNextcloudRecordingCommands();
     TestNextcloudOfficeCommands();
+    TestNextcloudTalkSend();
     TestSandboxStateAndSecrets();
     TestEgressControl();
     TestSandboxGlobals();
