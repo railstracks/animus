@@ -27,6 +27,7 @@ Spike (a) first; (b) is the fallback. Segment producer feeds the adapter's wake 
 - `talk send` — text message into room chat.
 - `talk say` — voice note: TTS render → upload → share, caption always attached.
 - **Standing consent for `talk say` writes (`"writes": "standing"`, v0.6.2):** voice notes are conversational output — the same class as text chat, substituting IRC-DM / group-call participation where the user typically has no terminal. Per-invocation #126 approval would break the channel: one phrase is three writes (synthesis POST, WebDAV upload, room share), retries re-hold earlier hops (approvals are one-shot), and byte-nondeterministic TTS output rotates the upload digest. The manifest field moves consent to install time — the owner approves the package content once, script writes then pass the per-invocation hold, and a STANDING audit line (method, masked URL, digest) preserves the trail. Scope: per-command declaration, actions only (hooks lint-rejected), only meaningful inside a `writes_gated` package — everything else holds as before.
+- **Caption default = display name (v0.6.3, A.4 ruling):** in group rooms with multiple agents the caption *is* the attribution surface — `talk say` defaults it to the speaker's NC display name (`display_name` state, captured at `connect` from the OCS `cloud/user` payload), falling back to the user id, then the full text. Explicit `caption` args still win. Fresh-account note: the first `say` 404s on WebDAV upload until `/Talk/` exists in Files (one-time `MKCOL remote.php/dav/files/<user>/Talk`; done manually for both accounts). `ctx.http` exposes get/post/put/delete/upload only — an auto-create needs a kernel Lua-surface verb; docketed.
 - **Phrase cap ~300 chars (≈20–25s audio).** The cap is a *backstop*: the cadence comes from the session protocol — compose in phrases, one `say` per thought. **No mechanical slicing of long text** — mid-sentence chunk breaks produce a voicemail machine, not conversation.
 - **Pacing:** min-interval between phrase emissions (configurable, default ~2s) so the floor genuinely reopens between phrases. Measured Nov 16 (live service on the overlay): short phrase 0.14s, cap-length phrase 0.86s — synthesis is nowhere near latency-bound, so the gap can stay short without slowing the lane.
 - **Interjection:** new inbound segment during an outbound sequence wakes the session with the remaining outbox visible → re-plan instead of finishing the monologue. Turn-taking emerges from phrase cap + wake-on-inbound; no central conversation manager.
@@ -44,7 +45,7 @@ Spike (a) first; (b) is the fallback. Segment producer feeds the adapter's wake 
 2. Channel hardening — readback/history on wake (#263 dispatch pattern), agent_id routing audit, config-key allowlist; unified event stream + ordering guarantee.
 3. `talk send` (text) → `talk say` (voice note: cap, pacing, caption) — standing write-consent shipped with it (0.6.2).
 4. Inbound speech — chunk spike (a) → whisper-on-segments → stream integration; fallback (b) rolling windows.
-5. Attribution/group — per-room agent config, caption prefix, one voice per agent.
+5. **Attribution/group — LIVE Nov 17:** per-agent NC accounts (`animus-agent`, `petrel`), shared room `animus-lab`, one voice each (en_US-lessac-medium / de_DE-thorsten-medium), caption default shipped in 0.6.3, trigger mode `respond_in_group_on_mention=false` on both watch channels (Melvin's "All" ruling) — first agent-to-agent exchange validated end-to-end (sessions 20/223, reply message 129).
 6. (v2) `live_transcription` ExApp (c); Option B in-call audio — own doc.
 
 ## Open questions
@@ -52,5 +53,5 @@ Spike (a) first; (b) is the fallback. Segment producer feeds the adapter's wake 
 - Chunk readability/cadence while a call is live (spike)
 - Exact phrase cap (300 chars? sentence-based instead?)
 - Pacing default interval
-- Default Piper voice pick
+- Default Piper voice pick — settled Nov 17: en_US-lessac-medium (animus-agent) + de_DE-thorsten-medium (petrel); the tts service carries exactly these two voices
 - Where the segment producer lives (adapter-internal vs package-level polling)
