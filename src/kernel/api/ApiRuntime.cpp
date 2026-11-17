@@ -227,6 +227,9 @@ struct BridgeContext {
     std::vector<std::string> egressHosts;  // #25: package egress scope
     std::set<std::string> filesFrom;  // #69: sibling files areas uploads may read
     bool writesGated{false};               // #126: write methods need approval
+    bool writesStanding{false};            // "writes":"standing" — conversational
+                                           // output class: writes bypass the #126
+                                           // hold, audit-logged with digest instead
     ApiPackageStore* store{nullptr};
     HttpClient* http{nullptr};
     ApiRuntime* runtime{nullptr};  // owns ExecuteScoped (per-hop redirect gate)
@@ -457,7 +460,17 @@ bool IsReadVerb(const std::string& m) {
 // redirect-chained egress execution and the response shape (status,
 // headers, body, auto-parsed json).
 Json::Value DispatchScriptRequest(BridgeContext* bc, HttpClient::Request&& req) {
-    if (bc->writesGated && !IsReadVerb(req.method) && bc->runtime) {
+    if (bc->writesGated && !IsReadVerb(req.method) && bc->writesStanding) {
+        // Standing consent (manifest-declared, owner-approved at install):
+        // conversational output never queues per-invocation approval — but
+        // the digest audit trail survives, same shape as HELD/PASSED lines.
+        const std::string sDigest =
+            ApiRuntime::WriteDigest(bc->packageId, req.method, req.url, req.body);
+        const std::string sUrl = ApiRuntime::MaskSecrets(req.url, bc->secretValues);
+        ALOG_INFO("api", "[writes-gate] STANDING " << bc->logPrefix << " "
+                  << req.method << " " << sUrl << " digest "
+                  << sDigest.substr(0, 12));
+    } else if (bc->writesGated && !IsReadVerb(req.method) && bc->runtime) {
         const std::string digest =
             ApiRuntime::WriteDigest(bc->packageId, req.method, req.url, req.body);
         const std::string maskedUrl = ApiRuntime::MaskSecrets(req.url, bc->secretValues);
@@ -1718,6 +1731,7 @@ Json::Value ApiRuntime::ExecuteInternal(const std::string& packageName,
     bc.egressHosts = egressScope;
     bc.filesFrom = ParseFilesFromSet(pkg->files_from);
     bc.writesGated = pkg->writes_gated;
+    bc.writesStanding = cmd->writesStanding;
     bc.runtime = this;
     bc.store = m_store;
     bc.http = m_http;
