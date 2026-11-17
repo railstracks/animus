@@ -236,6 +236,15 @@ public:
 
 protected:
     void RunLoop() override;
+
+private:
+    // A2 readback-on-wake: newest-N room history for the dispatch prompt
+    // (lookIntoFuture=0 read; best-effort - empty string on any failure).
+    std::string FetchRoomHistory(const std::string& token,
+                                 const std::string& authHeader,
+                                 const std::string& chatApiBase,
+                                 const std::string& username,
+                                 int skipMsgId);
 };
 
 // ============================================================================

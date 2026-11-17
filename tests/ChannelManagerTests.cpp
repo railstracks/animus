@@ -254,6 +254,34 @@ void TestChannelConfigSecretStrip() {
            "stripped channel re-merges its credential on load");
 }
 
+// A2 channel hardening: unknown nextcloud config keys fail loudly — a
+// typo'd key riding the config row while doing nothing was the gap.
+// ValidateConfig is a static public seam: no manager or store needed.
+void TestNextcloudConfigAllowlist() {
+    std::string err;
+
+    Json::Value good;
+    good["server_url"] = "https://nextcloud.example.com";
+    good["username"] = "agent";
+    good["app_password"] = "app-tok";
+    good["watch_tokens"] = "d7vv2vaa";
+    good["respond_in_dm"] = "true";
+    good["respond_in_group_on_mention"] = "true";
+    good["group_mention_trigger"] = "@animus";
+    good["agent_id"] = "a1b2c3";
+    good["poll_interval"] = "30";
+    Assert(ChannelManager::ValidateConfig("nextcloud", good, &err),
+           "full known key set should validate: " + err);
+
+    Json::Value typo = good;
+    typo["serverurl"] = "https://nextcloud.example.com";  // typo'd key
+    err.clear();
+    Assert(!ChannelManager::ValidateConfig("nextcloud", typo, &err),
+           "typo'd key must be rejected");
+    Assert(err.find("Unknown nextcloud channel config key") != std::string::npos,
+           "rejection must name the gap, got: " + err);
+}
+
 } // namespace
 
 int main() {
@@ -262,6 +290,7 @@ int main() {
     TestPluginBackedTypeWithPluginAbsentWarns();
     TestProbelessManagerWarnsOnUnknownType();
     TestChannelConfigSecretStrip();
+    TestNextcloudConfigAllowlist();
 
     if (g_failures == 0) {
         std::cout << "ChannelManagerTests: ALL PASSED\n";
