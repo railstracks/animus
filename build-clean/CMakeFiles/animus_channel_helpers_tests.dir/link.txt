@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/animus_channel_helpers_tests.dir/tests/ChannelHelpersTests.cpp.o -o /home/claw/.openclaw/workspace/projects/animus/dist/bin/animus_channel_helpers_tests  -Wl,-rpath,/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/jsoncpp-build/src/lib_json _deps/jsoncpp-build/src/lib_json/libjsoncpp.so.1.9.6 

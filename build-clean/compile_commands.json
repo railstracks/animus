@@ -1,0 +1,1130 @@
+[
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/cc -DGGML_BUILD -DGGML_COMMIT=\\\"3a3edc9ac\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_base_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -fPIC -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -fopenmp -o CMakeFiles/ggml-base.dir/ggml.c.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml.c",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml.c",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-base.dir/ggml.c.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BUILD -DGGML_COMMIT=\\\"3a3edc9ac\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_base_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -fopenmp -o CMakeFiles/ggml-base.dir/ggml.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-base.dir/ggml.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/cc -DGGML_BUILD -DGGML_COMMIT=\\\"3a3edc9ac\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_base_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -fPIC -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -fopenmp -o CMakeFiles/ggml-base.dir/ggml-alloc.c.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-alloc.c",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-alloc.c",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-base.dir/ggml-alloc.c.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BUILD -DGGML_COMMIT=\\\"3a3edc9ac\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_base_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -fopenmp -o CMakeFiles/ggml-base.dir/ggml-backend.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-backend.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-backend.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-base.dir/ggml-backend.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BUILD -DGGML_COMMIT=\\\"3a3edc9ac\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_base_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -fopenmp -o CMakeFiles/ggml-base.dir/ggml-backend-meta.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-backend-meta.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-backend-meta.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-base.dir/ggml-backend-meta.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BUILD -DGGML_COMMIT=\\\"3a3edc9ac\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_base_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -fopenmp -o CMakeFiles/ggml-base.dir/ggml-opt.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-opt.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-opt.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-base.dir/ggml-opt.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BUILD -DGGML_COMMIT=\\\"3a3edc9ac\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_base_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -fopenmp -o CMakeFiles/ggml-base.dir/ggml-threading.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-threading.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-threading.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-base.dir/ggml-threading.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/cc -DGGML_BUILD -DGGML_COMMIT=\\\"3a3edc9ac\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_base_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -fPIC -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -fopenmp -o CMakeFiles/ggml-base.dir/ggml-quants.c.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-quants.c",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-quants.c",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-base.dir/ggml-quants.c.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BUILD -DGGML_COMMIT=\\\"3a3edc9ac\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_base_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -fopenmp -o CMakeFiles/ggml-base.dir/gguf.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/gguf.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/gguf.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-base.dir/gguf.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/cc -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -fPIC -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/ggml-cpu.c.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/ggml-cpu.c",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/ggml-cpu.c",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ggml-cpu.c.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/ggml-cpu.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/ggml-cpu.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/ggml-cpu.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ggml-cpu.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/repack.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/repack.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/repack.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/repack.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/hbm.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/hbm.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/hbm.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/hbm.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/cc -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -fPIC -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/quants.c.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/quants.c",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/quants.c",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/quants.c.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/traits.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/traits.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/traits.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/traits.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/amx/amx.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/amx/amx.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/amx/amx.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/amx/amx.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/amx/mmq.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/amx/mmq.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/amx/mmq.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/amx/mmq.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/binary-ops.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/binary-ops.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/binary-ops.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/binary-ops.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/unary-ops.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/unary-ops.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/unary-ops.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/unary-ops.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/vec.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/vec.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/vec.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/vec.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/ops.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/ops.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/ops.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ops.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/llamafile/sgemm.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/llamafile/sgemm.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/llamafile/sgemm.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/llamafile/sgemm.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/cc -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -fPIC -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/arch/x86/quants.c.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/arch/x86/quants.c",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/arch/x86/quants.c",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/arch/x86/quants.c.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU_REPACK -DGGML_USE_LLAMAFILE -DGGML_USE_OPENMP -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_cpu_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/.. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -march=native -fopenmp -o CMakeFiles/ggml-cpu.dir/ggml-cpu/arch/x86/repack.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/arch/x86/repack.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-cpu/arch/x86/repack.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/arch/x86/repack.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_BUILD -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml.dir/ggml-backend-dl.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-backend-dl.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-backend-dl.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml.dir/ggml-backend-dl.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_BUILD -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_CPU -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -Dggml_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++17 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml.dir/ggml-backend-reg.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-backend-reg.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/ggml-backend-reg.cpp",
+  "output": "_deps/llama_cpp-build/ggml/src/CMakeFiles/ggml.dir/ggml-backend-reg.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-adapter.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-adapter.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-adapter.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-adapter.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-arch.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-arch.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-arch.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-arch.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-batch.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-batch.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-batch.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-batch.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-chat.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-chat.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-chat.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-chat.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-context.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-context.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-context.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-context.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-cparams.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-cparams.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-cparams.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-cparams.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-grammar.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-grammar.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-grammar.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-grammar.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-graph.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-graph.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-graph.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-graph.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-hparams.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-hparams.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-hparams.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-hparams.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-impl.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-impl.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-impl.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-impl.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-io.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-io.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-io.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-io.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-kv-cache.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-kv-cache.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-kv-cache.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-kv-cache.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-kv-cache-iswa.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-kv-cache-iswa.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-kv-cache-iswa.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-kv-cache-iswa.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-kv-cache-dsa.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-kv-cache-dsa.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-kv-cache-dsa.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-kv-cache-dsa.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-memory.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-memory.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-memory.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-memory.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-memory-hybrid.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-memory-hybrid.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-memory-hybrid.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-memory-hybrid.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-memory-hybrid-iswa.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-memory-hybrid-iswa.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-memory-hybrid-iswa.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-memory-hybrid-iswa.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-memory-recurrent.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-memory-recurrent.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-memory-recurrent.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-memory-recurrent.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-mmap.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-mmap.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-mmap.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-mmap.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-model-loader.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-model-loader.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-model-loader.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-model-loader.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-model-saver.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-model-saver.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-model-saver.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-model-saver.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-model.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-model.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-model.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-model.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-quant.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-quant.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-quant.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-quant.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-sampler.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-sampler.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-sampler.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-sampler.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/llama-vocab.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-vocab.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/llama-vocab.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/llama-vocab.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/unicode-data.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/unicode-data.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/unicode-data.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/unicode-data.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/unicode.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/unicode.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/unicode.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/unicode.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/afmoe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/afmoe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/afmoe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/afmoe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/apertus.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/apertus.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/apertus.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/apertus.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/arcee.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/arcee.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/arcee.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/arcee.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/arctic.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/arctic.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/arctic.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/arctic.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/arwkv7.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/arwkv7.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/arwkv7.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/arwkv7.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/baichuan.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/baichuan.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/baichuan.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/baichuan.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/bailingmoe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/bailingmoe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/bailingmoe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/bailingmoe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/bailingmoe2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/bailingmoe2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/bailingmoe2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/bailingmoe2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/bert.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/bert.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/bert.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/bert.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/bitnet.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/bitnet.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/bitnet.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/bitnet.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/bloom.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/bloom.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/bloom.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/bloom.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/chameleon.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/chameleon.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/chameleon.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/chameleon.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/chatglm.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/chatglm.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/chatglm.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/chatglm.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/codeshell.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/codeshell.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/codeshell.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/codeshell.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/cogvlm.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/cogvlm.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/cogvlm.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/cogvlm.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/cohere2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/cohere2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/cohere2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/cohere2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/cohere2moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/cohere2moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/cohere2moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/cohere2moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/command-r.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/command-r.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/command-r.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/command-r.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/dbrx.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/dbrx.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/dbrx.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/dbrx.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/deci.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/deci.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/deci.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/deci.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/deepseek.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/deepseek.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/deepseek.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/deepseek.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/deepseek2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/deepseek2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/deepseek2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/deepseek2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/deepseek2ocr.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/deepseek2ocr.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/deepseek2ocr.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/deepseek2ocr.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/deepseek32.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/deepseek32.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/deepseek32.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/deepseek32.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/delta-net-base.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/delta-net-base.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/delta-net-base.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/delta-net-base.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/dots1.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/dots1.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/dots1.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/dots1.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/dream.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/dream.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/dream.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/dream.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/eagle3.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/eagle3.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/eagle3.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/eagle3.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/ernie4-5-moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/ernie4-5-moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/ernie4-5-moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/ernie4-5-moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/ernie4-5.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/ernie4-5.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/ernie4-5.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/ernie4-5.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/eurobert.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/eurobert.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/eurobert.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/eurobert.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/exaone-moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/exaone-moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/exaone-moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/exaone-moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/exaone.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/exaone.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/exaone.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/exaone.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/exaone4.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/exaone4.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/exaone4.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/exaone4.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/falcon-h1.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/falcon-h1.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/falcon-h1.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/falcon-h1.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/falcon.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/falcon.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/falcon.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/falcon.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/gemma-embedding.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma-embedding.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma-embedding.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/gemma-embedding.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/gemma.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/gemma.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/gemma2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/gemma2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/gemma3.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma3.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma3.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/gemma3.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/gemma3n.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma3n.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma3n.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/gemma3n.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/gemma4-assistant.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma4-assistant.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma4-assistant.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/gemma4-assistant.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/gemma4.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma4.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gemma4.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/gemma4.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/glm-dsa.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/glm-dsa.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/glm-dsa.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/glm-dsa.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/glm4-moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/glm4-moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/glm4-moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/glm4-moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/glm4.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/glm4.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/glm4.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/glm4.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/gpt2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gpt2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gpt2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/gpt2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/gptneox.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gptneox.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/gptneox.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/gptneox.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/granite-hybrid.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/granite-hybrid.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/granite-hybrid.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/granite-hybrid.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/granite-moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/granite-moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/granite-moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/granite-moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/granite.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/granite.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/granite.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/granite.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/grok.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/grok.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/grok.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/grok.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/grovemoe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/grovemoe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/grovemoe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/grovemoe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/hunyuan-dense.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/hunyuan-dense.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/hunyuan-dense.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/hunyuan-dense.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/hunyuan-moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/hunyuan-moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/hunyuan-moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/hunyuan-moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/hunyuan-vl.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/hunyuan-vl.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/hunyuan-vl.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/hunyuan-vl.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/internlm2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/internlm2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/internlm2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/internlm2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/jais.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/jais.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/jais.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/jais.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/jais2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/jais2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/jais2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/jais2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/jamba.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/jamba.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/jamba.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/jamba.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/jina-bert-v2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/jina-bert-v2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/jina-bert-v2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/jina-bert-v2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/jina-bert-v3.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/jina-bert-v3.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/jina-bert-v3.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/jina-bert-v3.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/kimi-linear.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/kimi-linear.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/kimi-linear.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/kimi-linear.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/lfm2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/lfm2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/lfm2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/lfm2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/lfm2moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/lfm2moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/lfm2moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/lfm2moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/llada-moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/llada-moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/llada-moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/llada-moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/llada.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/llada.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/llada.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/llada.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/llama-embed.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/llama-embed.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/llama-embed.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/llama-embed.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/llama.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/llama.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/llama.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/llama.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/llama4.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/llama4.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/llama4.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/llama4.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/maincoder.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/maincoder.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/maincoder.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/maincoder.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/mamba-base.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mamba-base.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mamba-base.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/mamba-base.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/mamba.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mamba.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mamba.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/mamba.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/mamba2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mamba2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mamba2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/mamba2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/mellum.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mellum.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mellum.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/mellum.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/mimo2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mimo2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mimo2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/mimo2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/minicpm.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/minicpm.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/minicpm.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/minicpm.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/minicpm3.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/minicpm3.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/minicpm3.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/minicpm3.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/minimax-m2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/minimax-m2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/minimax-m2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/minimax-m2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/mistral3.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mistral3.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mistral3.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/mistral3.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/mistral4.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mistral4.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mistral4.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/mistral4.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/modern-bert.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/modern-bert.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/modern-bert.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/modern-bert.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/mpt.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mpt.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/mpt.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/mpt.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/nemotron-h-moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/nemotron-h-moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/nemotron-h-moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/nemotron-h-moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/nemotron-h.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/nemotron-h.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/nemotron-h.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/nemotron-h.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/nemotron.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/nemotron.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/nemotron.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/nemotron.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/neo-bert.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/neo-bert.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/neo-bert.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/neo-bert.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/nomic-bert-moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/nomic-bert-moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/nomic-bert-moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/nomic-bert-moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/nomic-bert.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/nomic-bert.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/nomic-bert.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/nomic-bert.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/olmo.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/olmo.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/olmo.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/olmo.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/olmo2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/olmo2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/olmo2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/olmo2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/olmoe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/olmoe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/olmoe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/olmoe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/openai-moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/openai-moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/openai-moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/openai-moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/openelm.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/openelm.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/openelm.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/openelm.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/orion.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/orion.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/orion.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/orion.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/paddleocr.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/paddleocr.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/paddleocr.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/paddleocr.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/pangu-embed.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/pangu-embed.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/pangu-embed.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/pangu-embed.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/phi2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/phi2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/phi2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/phi2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/phi3.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/phi3.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/phi3.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/phi3.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/phimoe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/phimoe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/phimoe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/phimoe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/plamo.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/plamo.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/plamo.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/plamo.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/plamo2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/plamo2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/plamo2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/plamo2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/plamo3.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/plamo3.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/plamo3.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/plamo3.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/plm.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/plm.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/plm.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/plm.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/qwen.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/qwen.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/qwen2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/qwen2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/qwen2moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen2moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen2moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/qwen2moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/qwen2vl.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen2vl.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen2vl.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/qwen2vl.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/qwen3.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen3.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen3.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/qwen3.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/qwen35.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen35.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen35.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/qwen35.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/qwen35moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen35moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen35moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/qwen35moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/qwen3moe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen3moe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen3moe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/qwen3moe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/qwen3next.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen3next.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen3next.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/qwen3next.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/qwen3vl.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen3vl.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen3vl.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/qwen3vl.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/qwen3vlmoe.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen3vlmoe.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/qwen3vlmoe.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/qwen3vlmoe.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/refact.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/refact.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/refact.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/refact.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/rnd1.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rnd1.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rnd1.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/rnd1.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/rwkv6-base.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rwkv6-base.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rwkv6-base.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/rwkv6-base.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/rwkv6.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rwkv6.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rwkv6.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/rwkv6.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/rwkv6qwen2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rwkv6qwen2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rwkv6qwen2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/rwkv6qwen2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/rwkv7-base.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rwkv7-base.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rwkv7-base.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/rwkv7-base.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/rwkv7.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rwkv7.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/rwkv7.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/rwkv7.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/seed-oss.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/seed-oss.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/seed-oss.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/seed-oss.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/smallthinker.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/smallthinker.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/smallthinker.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/smallthinker.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/smollm3.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/smollm3.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/smollm3.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/smollm3.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/stablelm.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/stablelm.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/stablelm.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/stablelm.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/starcoder.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/starcoder.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/starcoder.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/starcoder.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/starcoder2.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/starcoder2.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/starcoder2.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/starcoder2.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/step35.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/step35.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/step35.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/step35.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/t5.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/t5.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/t5.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/t5.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/t5encoder.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/t5encoder.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/t5encoder.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/t5encoder.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/talkie.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/talkie.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/talkie.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/talkie.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/wavtokenizer-dec.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/wavtokenizer-dec.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/wavtokenizer-dec.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/wavtokenizer-dec.cpp.o"
+},
+{
+  "directory": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-build/src",
+  "command": "/usr/bin/c++ -DGGML_BACKEND_SHARED -DGGML_SHARED -DGGML_USE_CPU -DLLAMA_BUILD -DLLAMA_SHARED -Dllama_EXPORTS -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/. -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/../include -I/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/ggml/src/../include -O3 -DNDEBUG -std=c++20 -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/llama.dir/models/xverse.cpp.o -c /home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/xverse.cpp",
+  "file": "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/llama_cpp-src/src/models/xverse.cpp",
+  "output": "_deps/llama_cpp-build/src/CMakeFiles/llama.dir/models/xverse.cpp.o"
+}
+]

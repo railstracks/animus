@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/CMakeFiles/lua-populate"
+		},
+		{
+			"file" : "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/CMakeFiles/lua-populate.rule"
+		},
+		{
+			"file" : "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/CMakeFiles/lua-populate-complete.rule"
+		},
+		{
+			"file" : "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-build.rule"
+		},
+		{
+			"file" : "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-configure.rule"
+		},
+		{
+			"file" : "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-download.rule"
+		},
+		{
+			"file" : "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-install.rule"
+		},
+		{
+			"file" : "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-mkdir.rule"
+		},
+		{
+			"file" : "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-patch.rule"
+		},
+		{
+			"file" : "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-test.rule"
+		},
+		{
+			"file" : "/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"lua-populate"
+		],
+		"name" : "lua-populate"
+	}
+}

@@ -1,0 +1,14 @@
+# Target labels
+ lua-populate
+# Source files and their labels
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/CMakeFiles/lua-populate
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/CMakeFiles/lua-populate.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/CMakeFiles/lua-populate-complete.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-build.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-configure.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-download.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-install.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-mkdir.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-patch.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-test.rule
+/home/claw/.openclaw/workspace/projects/animus/build-clean/_deps/lua-subbuild/lua-populate-prefix/src/lua-populate-stamp/lua-populate-update.rule

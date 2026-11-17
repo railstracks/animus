@@ -1257,7 +1257,7 @@ bool ChannelManager::ValidateConfig(const std::string& type,
         static const std::set<std::string> kNextcloudKeys = {
             "server_url", "username", "app_password", "watch_tokens",
             "respond_in_dm", "respond_in_group_on_mention",
-            "group_mention_trigger", "agent_id", "poll_interval"};
+            "group_mention_trigger", "agent_id", "poll_interval", "stt_url"};
         for (const auto& key : config.getMemberNames()) {
             if (!kNextcloudKeys.count(key)) {
                 if (error) *error = "Unknown nextcloud channel config key: " + key;

@@ -1,0 +1,140 @@
+Start testing: Nov 15 02:55 CET
+----------------------------------------------------------
+2/62 Testing: JobsTests
+2/62 Test: JobsTests
+Command: "/home/claw/.openclaw/workspace/projects/animus/dist/bin/animus_jobs_tests"
+Directory: /home/claw/.openclaw/workspace/projects/animus/build-clean
+"JobsTests" start time: Nov 15 02:55 CET
+Output:
+----------------------------------------------------------
+
+=== Basic Tests (from Luminal) ===
+[PASS] cancel-pending shutdown semantics
+[PASS] failure propagation and group aggregation
+[PASS] dependency-chain cancellation behavior
+
+=== Animus-Specific Tests ===
+[PASS] basic enqueue and WaitIdle
+[PASS] priority ordering
+[PASS] lane statistics
+[PASS] TaskGroup barrier
+
+<end of output>
+Test time =   0.22 sec
+----------------------------------------------------------
+Test Passed.
+"JobsTests" end time: Nov 15 02:55 CET
+"JobsTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+30/62 Testing: ConnectionSupervisorTests
+30/62 Test: ConnectionSupervisorTests
+Command: "/home/claw/.openclaw/workspace/projects/animus/dist/bin/animus_connection_supervisor_tests"
+Directory: /home/claw/.openclaw/workspace/projects/animus/build-clean
+"ConnectionSupervisorTests" start time: Nov 15 02:55 CET
+Output:
+----------------------------------------------------------
+ConnectionSupervisor tests:
+  [supervisor] connect + resubscribe-on-reconnect + message...
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] starting: host=ws://127.0.0.1:20539/v0
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] disabled→connecting reason=start
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting (repeat) reason=connect attempt
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting→connected reason=handshake ok
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connected→backoff reason=connection closed
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] reconnect #1 (closed) in 50 ms
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] backoff→connecting reason=connect attempt
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting→connected reason=handshake ok
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connected→disabled reason=stopped
+  [supervisor] server down at start, recovers when it appears...
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] starting: host=ws://127.0.0.1:27953/v0
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] disabled→connecting reason=start
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting (repeat) reason=connect attempt
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting→backoff reason=connect failed: network failure
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] reconnect #1 (network failure) in 50 ms
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] backoff→connecting reason=connect attempt
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting→backoff reason=connect failed: network failure
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] reconnect #2 (network failure) in 100 ms
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] backoff→connecting reason=connect attempt
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting→connected reason=handshake ok
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connected→disabled reason=stopped
+  [supervisor] Stop is bounded (no hang)...
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] starting: host=ws://127.0.0.1:25813/v0
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] disabled→connecting reason=start
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting (repeat) reason=connect attempt
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting→connected reason=handshake ok
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connected→disabled reason=stopped
+  [supervisor] empty host = terminal error, Run returns...
+[2026-11-15T01:55:10Z] [ERROR] [conn-supervisor] [bad] config error: host is empty — terminal, not retrying
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [bad] disabled→error reason=config: empty host or name
+  [supervisor] FatalError stops reconnecting (auth rejection)...
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] starting: host=ws://127.0.0.1:32978/v0
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] disabled→connecting reason=start
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting (repeat) reason=connect attempt
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting→connected reason=handshake ok
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connected→error reason=agentmail auth rejected: invalid_api_key
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] error→backoff reason=connection closed
+[2026-11-15T01:55:10Z] [ERROR] [conn-supervisor] [test-conn] terminated: agentmail auth rejected: invalid_api_key
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] backoff→error reason=fatal
+  [supervisor] SendText delivers from on_connected context...
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] starting: host=ws://127.0.0.1:22303/v0
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] disabled→connecting reason=start
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting (repeat) reason=connect attempt
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting→connected reason=handshake ok
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connected→disabled reason=stopped
+  [supervisor] fast-fail server cannot storm (bounded attempt rate)...
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] starting: host=ws://127.0.0.1:39894/v0
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] disabled→connecting reason=start
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting (repeat) reason=connect attempt
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] connecting→backoff reason=connection closed
+[2026-11-15T01:55:10Z] [INFO] [conn-supervisor] [test-conn] reconnect #1 (closed) in 50 ms
+[2026-11-15T01:55:11Z] [INFO] [conn-supervisor] [test-conn] backoff (repeat) reason=connection closed
+[2026-11-15T01:55:11Z] [INFO] [conn-supervisor] [test-conn] reconnect #2 (closed) in 100 ms
+[2026-11-15T01:55:12Z] [INFO] [conn-supervisor] [test-conn] backoff (repeat) reason=connection closed
+[2026-11-15T01:55:12Z] [INFO] [conn-supervisor] [test-conn] reconnect #3 (closed) in 200 ms
+[2026-11-15T01:55:13Z] [INFO] [conn-supervisor] [test-conn] backoff (repeat) reason=connection closed
+[2026-11-15T01:55:13Z] [INFO] [conn-supervisor] [test-conn] reconnect #4 (closed) in 342 ms
+[2026-11-15T01:55:14Z] [INFO] [conn-supervisor] [test-conn] backoff→disabled reason=stopped
+  [supervisor] quiet-but-alive connection is healthy (no silence churn)...
+[2026-11-15T01:55:14Z] [INFO] [conn-supervisor] [test-conn] starting: host=ws://127.0.0.1:32763/v0
+[2026-11-15T01:55:14Z] [INFO] [conn-supervisor] [test-conn] disabled→connecting reason=start
+[2026-11-15T01:55:14Z] [INFO] [conn-supervisor] [test-conn] connecting (repeat) reason=connect attempt
+[2026-11-15T01:55:14Z] [INFO] [conn-supervisor] [test-conn] connecting→connected reason=handshake ok
+[2026-11-15T01:55:17Z] [INFO] [conn-supervisor] [test-conn] connected→disabled reason=stopped
+  [supervisor] pong silence = transport death -> reconnect...
+[2026-11-15T01:55:17Z] [INFO] [conn-supervisor] [test-conn] starting: host=ws://127.0.0.1:31974/v0
+[2026-11-15T01:55:17Z] [INFO] [conn-supervisor] [test-conn] disabled→connecting reason=start
+[2026-11-15T01:55:17Z] [INFO] [conn-supervisor] [test-conn] connecting (repeat) reason=connect attempt
+[2026-11-15T01:55:17Z] [INFO] [conn-supervisor] [test-conn] connecting→connected reason=handshake ok
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] forcing reconnect: transport dead: no pong within timeout
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] connected→backoff reason=transport dead: no pong within timeout
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] backoff (repeat) reason=connection closed
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] reconnect #1 (closed) in 50 ms
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] backoff→connecting reason=connect attempt
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] connecting→connected reason=handshake ok
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] connected→disabled reason=stopped
+  [supervisor] circuit breaker: cooldown throttles a hard-down server...
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] starting: host=ws://127.0.0.1:37215/v0
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] disabled→connecting reason=start
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] connecting (repeat) reason=connect attempt
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] connecting→backoff reason=connection closed
+[2026-11-15T01:55:22Z] [INFO] [conn-supervisor] [test-conn] reconnect #1 (closed) in 50 ms
+[2026-11-15T01:55:23Z] [INFO] [conn-supervisor] [test-conn] backoff (repeat) reason=connection closed
+[2026-11-15T01:55:23Z] [INFO] [conn-supervisor] [test-conn] reconnect #2 (closed) in 100 ms
+[2026-11-15T01:55:24Z] [INFO] [conn-supervisor] [test-conn] backoff (repeat) reason=connection closed
+[2026-11-15T01:55:24Z] [ERROR] [conn-supervisor] [test-conn] degraded: 3 consecutive failures — cooldown probing every 700ms (last: closed)
+[2026-11-15T01:55:24Z] [INFO] [conn-supervisor] [test-conn] reconnect #3 (closed) in 200 ms
+[2026-11-15T01:55:25Z] [INFO] [conn-supervisor] [test-conn] backoff (repeat) reason=connection closed
+[2026-11-15T01:55:25Z] [ERROR] [conn-supervisor] [test-conn] degraded: 4 consecutive failures — cooldown probing every 700ms (last: closed)
+[2026-11-15T01:55:25Z] [INFO] [conn-supervisor] [test-conn] reconnect #4 (closed) in 283 ms
+[2026-11-15T01:55:26Z] [INFO] [conn-supervisor] [test-conn] backoff→disabled reason=stopped
+  [fallback-gate] hysteresis engage/disengage decisions...
+All supervisor tests passed.
+<end of output>
+Test time =  15.49 sec
+----------------------------------------------------------
+Test Passed.
+"ConnectionSupervisorTests" end time: Nov 15 02:55 CET
+"ConnectionSupervisorTests" time elapsed: 00:00:15
+----------------------------------------------------------
+
+End testing: Nov 15 02:55 CET

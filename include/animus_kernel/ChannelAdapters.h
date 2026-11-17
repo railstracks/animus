@@ -234,6 +234,14 @@ public:
     using PollerAdapterBase::PollerAdapterBase;
     void SendReply(const ChannelReplyTarget& target, const std::string& text) override;
 
+    // #324 voice inbound: true when a chat payload is a voice note
+    // (messageType=voice-message) or an audio/* file share. Out-params carry
+    // the file name + mimetype for the fetch/STT path. Public static —
+    // fixture-tested against live Talk 25 payloads (ChannelManagerTests).
+    static bool DetectVoiceNote(const Json::Value& msg,
+                                std::string& fileName,
+                                std::string& mimetype);
+
 protected:
     void RunLoop() override;
 
@@ -245,6 +253,21 @@ private:
                                  const std::string& chatApiBase,
                                  const std::string& username,
                                  int skipMsgId);
+
+    // #324: room-shared file bytes via the received-shares route — the
+    // share's file_target resolves in the RECIPIENT's own DAV namespace
+    // (probe-proven Nov 17; direct sharer-path GETs 404). Empty on failure.
+    std::string FetchSharedFileBytes(const std::string& serverUrl,
+                                     const std::string& authHeader,
+                                     const std::string& username,
+                                     const std::string& fileName);
+    // #324: whisper /inference multipart contract — the same service the
+    // stt package calls (server converts formats via ffmpeg). Empty on
+    // failure; callers decide how loud to be.
+    std::string TranscribeAudio(const std::string& sttUrl,
+                                const std::string& fileName,
+                                const std::string& mimetype,
+                                const std::string& audioBytes);
 };
 
 // ============================================================================

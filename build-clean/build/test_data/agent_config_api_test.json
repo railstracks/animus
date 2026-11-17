@@ -1,0 +1,22 @@
+{
+  "allow_self_identity_edit" : true,
+  "budget" : 
+  {
+    "consolidation_tool_budget" : 100,
+    "episodic_token_budget" : 10000,
+    "max_chain_steps" : 25,
+    "max_tool_calls_per_chain" : 50,
+    "perspectives_token_budget" : 3000,
+    "semantic_token_budget" : 10000,
+    "timeout_seconds" : 1800
+  },
+  "identity" : "hello",
+  "model" : 
+  {
+    "api_key" : "sk-secret-token",
+    "context_window" : 200000,
+    "model_id" : "gpt-4.1",
+    "provider" : "openai"
+  },
+  "temperature" : 1.2
+}
