@@ -370,11 +370,17 @@ void TestNextcloudVoiceShareResolution() {
                "/Talk/animus-lab-xe86d93n/Melvin-Melvin Sommer/" + voiceWav,
            "child path must be mount + file name, got: " + targets[0]);
 
-    // Direct file share: basename match still wins (petrel's TTS notes).
+    // Direct file share: basename match outranks folder children
+    // (petrel's TTS notes). The folder mount still offers a fallback
+    // child candidate — fetched only if the direct GET fails (share
+    // propagation races), so order is the contract, not count.
     targets = NextcloudAdapter::ResolveShareGetTargets(
         shares, "tts-9536e16ca1.wav");
-    Assert(targets.size() == 1 && targets[0] == "/Talk/tts-9536e16ca1.wav",
-           "direct file share must resolve by basename");
+    Assert(targets.size() == 2
+               && targets[0] == "/Talk/tts-9536e16ca1.wav"
+               && targets[1] == "/Talk/animus-lab-xe86d93n/"
+                                "Melvin-Melvin Sommer/tts-9536e16ca1.wav",
+           "direct file share must resolve by basename, ranked first");
 
     // Both shapes at once: direct target first, folder child after.
     Json::Value both = shares;
