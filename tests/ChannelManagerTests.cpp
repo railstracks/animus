@@ -23,6 +23,7 @@
 
 #include "animus_kernel/ChannelManager.h"
 #include "animus_kernel/ChannelState.h"
+#include <vector>
 #include "animus_kernel/ChannelAdapters.h"
 #include "animus_kernel/ChannelHelpers.h"
 #include "animus_kernel/AgentConfigStore.h"
@@ -338,6 +339,53 @@ void TestNextcloudVoiceDetection() {
            "plain text ([] params quirk) must NOT detect as voice");
 }
 
+// #324 acceptance fix: composer voice notes share the sender's per-room
+// FOLDER (room share type 10 + per-user derivations) — the wav is a child
+// of the mount. Fixture captured live Nov 18 (animus-lab acceptance test,
+// received-shares list as animus-agent).
+void TestNextcloudVoiceShareResolution() {
+    const char* sharesFixture = R"([
+      {"id": "14", "share_type": 10, "uid_file_owner": "petrel",
+       "file_target": "/Talk/probe-1794949732.txt",
+       "mimetype": "text/plain"},
+      {"id": "16", "share_type": 10, "uid_file_owner": "petrel",
+       "file_target": "/Talk/tts-9536e16ca1.wav",
+       "mimetype": "audio/wav"},
+      {"id": "21", "share_type": 10, "uid_file_owner": "Melvin Sommer",
+       "file_target": "/Talk/animus-lab-xe86d93n/Melvin-Melvin Sommer",
+       "mimetype": "httpd/unix-directory"}
+    ])";
+    Json::Value shares = channel_detail::ParseJson(sharesFixture);
+
+    // Composer voice note (Nov 18 acceptance): only the folder mount can
+    // serve it — resolution must descend into the mount.
+    const std::string voiceWav =
+        "Voice message 2026-10-03 15-00-55 (animus-lab).wav";
+    std::vector<std::string> targets =
+        NextcloudAdapter::ResolveShareGetTargets(shares, voiceWav);
+    Assert(targets.size() == 1,
+           "folder share must resolve via child path, got "
+           + std::to_string(targets.size()) + " targets");
+    Assert(targets[0] ==
+               "/Talk/animus-lab-xe86d93n/Melvin-Melvin Sommer/" + voiceWav,
+           "child path must be mount + file name, got: " + targets[0]);
+
+    // Direct file share: basename match still wins (petrel's TTS notes).
+    targets = NextcloudAdapter::ResolveShareGetTargets(
+        shares, "tts-9536e16ca1.wav");
+    Assert(targets.size() == 1 && targets[0] == "/Talk/tts-9536e16ca1.wav",
+           "direct file share must resolve by basename");
+
+    // Both shapes at once: direct target first, folder child after.
+    Json::Value both = shares;
+    both[1]["file_target"] = "/Talk/" + voiceWav;
+    both[1]["mimetype"] = "audio/wav";
+    targets = NextcloudAdapter::ResolveShareGetTargets(both, voiceWav);
+    Assert(targets.size() == 2 && targets[0] == "/Talk/" + voiceWav,
+           "direct match must outrank folder child, got "
+           + std::to_string(targets.size()) + " targets");
+}
+
 } // namespace
 
 int main() {
@@ -348,6 +396,7 @@ int main() {
     TestChannelConfigSecretStrip();
     TestNextcloudConfigAllowlist();
     TestNextcloudVoiceDetection();
+    TestNextcloudVoiceShareResolution();
 
     if (g_failures == 0) {
         std::cout << "ChannelManagerTests: ALL PASSED\n";
