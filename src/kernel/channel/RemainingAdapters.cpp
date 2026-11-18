@@ -1,5 +1,6 @@
 #include "animus_kernel/Log.h"
 #include <unordered_map>
+#include <vector>
 #include "animus_kernel/ChannelAdapters.h"
 #include "animus_kernel/ChannelContext.h"
 #include "animus_kernel/ChannelHelpers.h"
@@ -1406,6 +1407,11 @@ void NextcloudAdapter::RunLoop() {
                     // the session and the log both see the gap.
                     if (isVoiceNote) {
                         std::string transcript;
+                        // The rendered body is the sender's caption when one
+                        // was attached (the actor name otherwise, Nov 17
+                        // probe) — keep it as context; the transcript is
+                        // the content.
+                        const std::string caption = cleanText;
                         if (sttUrl.empty()) {
                             ALOG_WARNING("nextcloud", "Voice note '"
                                         << voiceFile << "' from " << actorName
@@ -1428,6 +1434,9 @@ void NextcloudAdapter::RunLoop() {
                             ? "[voice note '" + voiceFile
                               + "' - transcription unavailable]"
                             : transcript;
+                        if (!caption.empty() && caption != actorName)
+                            cleanText += "\n[voice note caption: " + caption
+                                         + "]";
                     }
 
                     // A2 readback-on-wake: the waking session sees the
@@ -1578,37 +1587,66 @@ std::string NextcloudAdapter::FetchSharedFileBytes(
         return {};
     }
 
-    std::string target;
-    for (const auto& share : data["ocs"]["data"]) {
-        const std::string ft = GetString(share, "file_target");
-        if (ft.empty()) continue;
-        const size_t slash = ft.find_last_of('/');
-        const std::string base =
-            (slash == std::string::npos) ? ft : ft.substr(slash + 1);
-        if (base == fileName) { target = ft; break; }  // MVP: basename match
-    }
-    if (target.empty()) {
+    // #324 acceptance fix (Nov 18): composer voice notes ride the sender's
+    // per-room FOLDER share (room share + per-user derivations) — a bare
+    // basename match never sees them. Candidate order: direct basename
+    // matches, then directory-mount children (mount + "/" + file name).
+    const std::vector<std::string> targets =
+        ResolveShareGetTargets(data["ocs"]["data"], fileName);
+    if (targets.empty()) {
         ALOG_WARNING("nextcloud", "No received share matches '" << fileName
                      << "' for " << username);
         return {};
     }
 
-    HttpClient::Request get;
-    get.method = "GET";
-    get.url = serverUrl + "/remote.php/dav/files/"
-              + EncodeDavPath("/" + username + target);
-    get.headers["Accept"] = "application/octet-stream";
-    get.headers["Authorization"] = authHeader;
-    get.follow_redirects = false;
-    get.timeout_seconds = 30;
+    for (size_t i = 0; i < targets.size(); ++i) {
+        HttpClient::Request get;
+        get.method = "GET";
+        get.url = serverUrl + "/remote.php/dav/files/"
+                  + EncodeDavPath("/" + username + targets[i]);
+        get.headers["Accept"] = "application/octet-stream";
+        get.headers["Authorization"] = authHeader;
+        get.follow_redirects = false;
+        get.timeout_seconds = 30;
 
-    auto file = m_ctx.httpClient.Execute(get);
-    if (file.status_code != 200) {
-        ALOG_WARNING("nextcloud", "Shared-file DAV GET failed ("
-                     << file.status_code << ") for " << target);
-        return {};
+        auto file = m_ctx.httpClient.Execute(get);
+        if (file.status_code == 200) return file.body;
+        // A 404 on a directory-child candidate is expected (not every
+        // mount holds the file); the last failure stays loud either way.
+        if (file.status_code != 404 || i + 1 == targets.size()) {
+            ALOG_WARNING("nextcloud", "Shared-file DAV GET failed ("
+                         << file.status_code << ") for " << targets[i]);
+        }
     }
-    return file.body;
+    return {};
+}
+
+// static
+std::vector<std::string> NextcloudAdapter::ResolveShareGetTargets(
+        const Json::Value& shares, const std::string& fileName) {
+    // Live shape (Nov 18 acceptance, Melvin's composer voice note in
+    // animus-lab): direct file shares carry audio/wav with the file name
+    // as the file_target basename; composer voice notes instead share the
+    // sender's per-room folder (httpd/unix-directory) and the wav is a
+    // child of that mount — DAV GET mount + "/" + name returned the full
+    // audio live (200, 751724 bytes).
+    std::vector<std::string> direct, children;
+    if (!shares.isArray()) return direct;
+    for (const auto& share : shares) {
+        const std::string ft = GetString(share, "file_target");
+        if (ft.empty()) continue;
+        const size_t slash = ft.find_last_of('/');
+        const std::string base =
+            (slash == std::string::npos) ? ft : ft.substr(slash + 1);
+        if (base == fileName) {
+            direct.push_back(ft);  // MVP: direct basename match
+        } else if (GetString(share, "mimetype")
+                       == "httpd/unix-directory") {
+            children.push_back(ft + "/" + fileName);  // folder-mount child
+        }
+    }
+    direct.insert(direct.end(), children.begin(), children.end());
+    return direct;
 }
 
 std::string NextcloudAdapter::TranscribeAudio(

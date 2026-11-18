@@ -10,6 +10,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace animus::kernel {
 
@@ -241,6 +242,17 @@ public:
     static bool DetectVoiceNote(const Json::Value& msg,
                                 std::string& fileName,
                                 std::string& mimetype);
+
+    // #324 acceptance fix (Nov 18): DAV GET candidate targets for a shared
+    // file name, from a received-shares JSON array. Composer-sent voice
+    // notes arrive as the sender's per-room FOLDER share (room share type
+    // 10 + per-user derivations, mimetype httpd/unix-directory) — the wav
+    // is a child of the mount, so basename matching alone never sees it.
+    // Direct basename targets come first, then directory-mount children.
+    // Public static — fixture-tested against the live Nov 18 acceptance
+    // shares (ChannelManagerTests).
+    static std::vector<std::string> ResolveShareGetTargets(
+            const Json::Value& shares, const std::string& fileName);
 
 protected:
     void RunLoop() override;
