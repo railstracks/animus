@@ -392,6 +392,55 @@ void TestNextcloudVoiceShareResolution() {
            + std::to_string(targets.size()) + " targets");
 }
 
+// #328: tool-submission default + migration pin resolution (metadata >
+// config delivery_mode > default false) and allowlist acceptance.
+void TestDeliveryModeResolution() {
+    // delivery_mode must pass the strict nextcloud allowlist.
+    std::string err;
+    Json::Value nc;
+    nc["server_url"] = "https://nextcloud.example.com";
+    nc["username"] = "agent";
+    nc["app_password"] = "app-tok";
+    nc["watch_tokens"] = "d7vv2vaa";
+    nc["delivery_mode"] = "auto";
+    Assert(ChannelManager::ValidateConfig("nextcloud", nc, &err),
+           "delivery_mode must pass the nextcloud allowlist: " + err);
+
+    HttpClient http;
+    ChannelManager manager(http, nullptr, {}, {});
+
+    // 1. #328 default: no pin, no metadata -> tool submission.
+    Assert(!manager.ResolveAutoDelivery("main", "{}"),
+           "default must be tool delivery");
+
+    // 2. Channel pin auto -> legacy auto.
+    ChannelState st;
+    st.name = "main";
+    st.type = "irc";
+    st.enabled = false;
+    st.config = Json::Value(Json::objectValue);
+    st.config["host"] = "irc.example.com";
+    st.config["nick"] = "seat";
+    st.config["agent_id"] = "seat";
+    st.config["delivery_mode"] = "auto";
+    err.clear();
+    Assert(manager.CreateChannel(st, &err), "create should succeed: " + err);
+    Assert(manager.ResolveAutoDelivery("main", "{}"),
+           "delivery_mode=auto pin must resolve auto");
+
+    // 3. Metadata tool overrides the pin.
+    Assert(!manager.ResolveAutoDelivery("main", R"({"delivery":"tool"})"),
+           "metadata tool must override the config pin");
+
+    // 4. Metadata auto overrides channel absence.
+    Assert(manager.ResolveAutoDelivery("nosuch", R"({"delivery":"auto"})"),
+           "metadata auto must resolve auto without a channel");
+
+    // 5. Garbage metadata falls through to the config pin.
+    Assert(manager.ResolveAutoDelivery("main", "not-json"),
+           "garbage metadata must fall back to the config pin");
+}
+
 } // namespace
 
 int main() {
@@ -403,6 +452,7 @@ int main() {
     TestNextcloudConfigAllowlist();
     TestNextcloudVoiceDetection();
     TestNextcloudVoiceShareResolution();
+    TestDeliveryModeResolution();
 
     if (g_failures == 0) {
         std::cout << "ChannelManagerTests: ALL PASSED\n";

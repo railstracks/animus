@@ -2207,6 +2207,15 @@ void AgentKernel::ExecuteChannelDispatch(
     }
 
     std::string dispatchAuthor;  // #133: author handle for this trigger, survives the guard block
+    // #328: delivery resolution — non-webchat channels are tool-submission
+    // by default (the chain's text body never auto-returns; replies ride
+    // explicit channel tool calls). delivery_mode:"auto" per-channel pins
+    // the legacy behavior during seat migration; adapter metadata overrides
+    // both. Resolved once here: stamped on the arrival (the context card
+    // renders the reply contract) and used for the assistant callback.
+    const bool autoDeliver = m_channelManager
+        && m_channelManager->ResolveAutoDelivery(replyTarget.channel_name,
+                                                 metadata);
     // Record the trusted arrival (#14) BEFORE the chain runs — single write
     // point covering both direct dispatch and queue-flush (both funnel here).
     // The provider (#15) renders pending arrivals as the channel-context card.
@@ -2217,8 +2226,7 @@ void AgentKernel::ExecuteChannelDispatch(
         arrival.channel_type = replyTarget.channel_type;
         arrival.channel_name = replyTarget.channel_name;
         arrival.platform_id = replyTarget.channel_type + ":" + replyTarget.channel_name;
-        arrival.delivery = (replyTarget.type == ChannelManager::ReplyTarget::Chat)
-                               ? "auto" : "tool";
+        arrival.delivery = autoDeliver ? "auto" : "tool";
         arrival.peer_id = replyTarget.peer_id;
         arrival.post_id = replyTarget.post_id;
         arrival.group_id = replyTarget.group_id;
@@ -2248,38 +2256,26 @@ void AgentKernel::ExecuteChannelDispatch(
         m_channelContextStore->Prune(arrival.session_key, arrival.agent_id);
     }
 
-    // Auto-delivery decision: Chat targets default to auto, but adapters may
-    // declare "tool" delivery in dispatch metadata (see arrival override above).
-    bool autoDeliver = (replyTarget.type == ChannelManager::ReplyTarget::Chat);
-    {
-        Json::Value meta;
-        Json::CharReaderBuilder rb;
-        std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
-        std::string errs;
-        if (reader->parse(metadata.data(), metadata.data() + metadata.size(),
-                          &meta, &errs)
-            && meta.isObject()
-            && meta.get("delivery", "").asString() == "tool") {
-            autoDeliver = false;
-        }
-    }
-
     m_jobs.EnqueueInLane(
         ::animus::jobs::JobLane::Cognition,
         [this, session, sessionKey, message, identity, registryKey, providerId, model, contextWindow, replyTarget, interval, metadata, autoDeliver, dispatchAuthor]() {
-            // Per-message callback: send each assistant message to the channel
-            // immediately rather than only the final response.
-            // Only for Chat (DM) targets — Wall (post reply/mention) targets
-            // require the agent to reply explicitly via the channels tool with
-            // post_id/root_id; auto-posting the final text caused duplicate
-            // and low-quality replies (agent narration leaking to the feed).
-            // Adapters may opt out of auto-delivery entirely (delivery:"tool").
+            // #328: tool-submission is the channel default — the chain's
+            // text body never auto-returns to the channel; replies ride
+            // explicit channel tool calls (reply/send_message actions; the
+            // context card renders the contract via arrival.delivery).
+            // Legacy per-assistant-message delivery remains available via
+            // per-channel delivery_mode:"auto" or adapter metadata.
             ChainAssistantMessageCallback assistantCb;
             if (autoDeliver) {
                 assistantCb = [this, replyTarget](const std::string& text) {
                     SendAutoReply(replyTarget, text);
                 };
             }
+
+            // #328 fail-loud probe: kernel-global send epoch (any channel
+            // send advances it — auto callback or explicit tool call alike).
+            const std::uint64_t sendEpochBefore =
+                m_channelManager ? m_channelManager->SendEpoch() : 0;
 
             auto sessionAccess = SessionAccess(session, SessionAccessMode::ReadWrite);
             auto result = m_chainRunner->ExecuteOnSession(
@@ -2321,6 +2317,17 @@ void AgentKernel::ExecuteChannelDispatch(
             // already sent each message during the chain.
             // result.response holds the last message text, but it was already
             // delivered via the callback.
+            // #328 fail-loud: a tool-delivery chain that never sent anything
+            // is a visible no-reply — the model narrated text bodies that
+            // stayed session-only. Kernel-global epoch: a concurrent send on
+            // another session suppresses the warning (conservative by design).
+            if (result.success && !autoDeliver && m_channelManager
+                    && m_channelManager->SendEpoch() == sendEpochBefore) {
+                ALOG_WARNING("channels:dispatch", "tool-delivery chain ended "
+                          "with no channel send — reply never left the seat "
+                          << "(sessionKey=" << sessionKey
+                          << ", channel=" << replyTarget.channel_name << ")");
+            }
 
             // Chain saw the pending arrivals — mark them consumed (#14).
             if (m_channelContextStore) {
