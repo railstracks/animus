@@ -113,9 +113,10 @@ ToolDefinition ChannelsTool::GetDefinition() const {
         return def;
     }
     auto def = CompositeTool::GetDefinition();
-    // Social tool is excluded from auto-reply sessions (chat/wall) —
-    // the agent should produce plain text replies, and the plumbing
-    // handles delivery via SendAutoReply.
+    // #328: channels tool is excluded from auto-reply sessions (chat/wall) —
+    // channel-dispatch sessions ride the "default" type and keep tool
+    // access, which #328 tool delivery relies on (replies via the
+    // reply/send_message actions; text bodies never auto-return).
     def.session_types = {"consolidation", "default"};
     return def;
 }

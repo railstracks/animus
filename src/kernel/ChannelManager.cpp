@@ -538,6 +538,8 @@ std::string ChannelManager::GetWhatsAppQrUrl(const std::string& name) const {
 }
 
 void ChannelManager::SendAction(const ReplyTarget& target, const std::string& text) {
+    // #328: actions reach the channel too — count as sends for the epoch.
+    m_sendEpoch.fetch_add(1, std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(m_adaptersMutex);
     auto it = m_adapters.find(target.channel_name);
     if (it != m_adapters.end()) {
@@ -577,7 +579,39 @@ bool ChannelManager::PartChannel(const ReplyTarget& target, const std::string& r
     return it->second->PartChannel(target, reason);
 }
 
+// ============================================================================
+// #328 — delivery resolution: tool-submission is the channel default
+// ============================================================================
+bool ChannelManager::ResolveAutoDelivery(const std::string& channelName,
+                                         const std::string& metadata) const {
+    // Adapter dispatch metadata wins ("auto" | "tool").
+    {
+        Json::Value meta;
+        Json::CharReaderBuilder rb;
+        std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+        std::string errs;
+        if (reader->parse(metadata.data(), metadata.data() + metadata.size(),
+                          &meta, &errs)
+                && meta.isObject()) {
+            const std::string d = meta.get("delivery", "").asString();
+            if (d == "auto") return true;
+            if (d == "tool") return false;
+        }
+    }
+    // Per-channel migration pin (delivery_mode:"auto") — legacy behavior.
+    auto ch = GetChannel(channelName);
+    if (ch && ch->config.get("delivery_mode", "").asString() == "auto") {
+        return true;
+    }
+    // #328 default: tool-submission — text bodies never auto-return.
+    return false;
+}
+
 void ChannelManager::SendReply(const ReplyTarget& target, const std::string& text) {
+    // #328: every outbound send advances the epoch — the dispatch lane's
+    // fail-loud check uses it to detect tool-delivery chains that ended
+    // without any send.
+    m_sendEpoch.fetch_add(1, std::memory_order_relaxed);
     // --- Adapter-based dispatch ---
     // For connectors migrated to IChannelAdapter, delegate directly.
     {
@@ -1257,7 +1291,8 @@ bool ChannelManager::ValidateConfig(const std::string& type,
         static const std::set<std::string> kNextcloudKeys = {
             "server_url", "username", "app_password", "watch_tokens",
             "respond_in_dm", "respond_in_group_on_mention",
-            "group_mention_trigger", "agent_id", "poll_interval", "stt_url"};
+            "group_mention_trigger", "agent_id", "poll_interval", "stt_url",
+            "delivery_mode"};  // #328 framework-read key
         for (const auto& key : config.getMemberNames()) {
             if (!kNextcloudKeys.count(key)) {
                 if (error) *error = "Unknown nextcloud channel config key: " + key;

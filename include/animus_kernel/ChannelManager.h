@@ -144,6 +144,21 @@ public:
     // --- Channel CRUD ---
     std::vector<ChannelState> ListChannels() const;
     std::optional<ChannelState> GetChannel(const std::string& name) const;
+    // #328: delivery resolution for channel dispatch — tool-submission vs
+    // auto-delivery. Non-webchat channels are tool-submission by default:
+    // the chain's text body never auto-returns to the channel; replies ride
+    // explicit channel tool calls. Per-channel delivery_mode:"auto" pins the
+    // legacy auto behavior during seat migration; adapter dispatch metadata
+    // overrides both ("auto" | "tool"). Precedence: metadata > config > default.
+    bool ResolveAutoDelivery(const std::string& channelName,
+                             const std::string& metadata) const;
+
+    // #328: monotonic send epoch — every outbound channel send advances it.
+    // The dispatch lane snapshots it around the chain to fail loud when a
+    // tool-delivery chain ends without any send (silent no-reply).
+    std::uint64_t SendEpoch() const {
+        return m_sendEpoch.load(std::memory_order_relaxed);
+    }
     bool CreateChannel(const ChannelState& state, std::string* error);
     bool UpdateChannelConfig(const std::string& name,
                              const Json::Value& config,
@@ -308,6 +323,7 @@ private:
         ChannelState state;
     };
     std::mutex m_restartMutex;
+    mutable std::atomic<std::uint64_t> m_sendEpoch{0};  // #328
     std::vector<PendingRestart> m_pendingRestarts;
     std::atomic<bool> m_restartThreadRunning{false};
     void EnqueueRestart(const std::string& name, const ChannelState& state);
