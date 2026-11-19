@@ -67,26 +67,38 @@ VAD. Isolated audio thread with queue handoff — 20 ms pacing never rides the
 drogor event loop. ARM compatibility carries over from voice.md's provider
 decision.
 
-## Protocol shape (client side)
+## Protocol shape (client side — Phase 0 leg 1 PROVEN Nov 19)
 
-Documented API v1 (nextcloud-spreed-signaling readthedocs); confirmed message
-envelopes:
+Validated against production (deployed signaling 2.1.1) by the Phase 0 spike:
+welcome → hello (internal client type: `auth: {type: "internal", params:
+{random, token: HMAC-SHA256(random, internalsecret), backend: <NC url>}}`)
+→ room join `{roomid, sessionid?}` → join/participants events → bye.
+The server runs the full feature set (`mcu`, `hello-v2`, `simulcast`,
+`virtual-sessions`, …); janus (SFU) is internal to the talk container
+(`ws://127.0.0.1:8188`) and hidden from clients; media is DTLS-SRTP direct
+to the gateway or TURN-relayed (3478).
 
-```
-welcome (server) → hello v1.0 {auth: {url, params: {ticket, ...}}}
-  → room {roomid, sessionid}   (sessionid+ticket from OCS signaling/settings)
-  → message relay (SDP offer/answer, ICE candidates — janus hidden behind it)
-  → media: DTLS-SRTP direct to gateway (or TURN-relayed)
-```
+Findings that reshaped the plan:
+- **Talk 25 removed the v1 OCS signaling-settings route** (998 on v1, 404 on
+  bare v2/v3; the browser gets settings server-rendered). Ticket hello v1.0
+  as a named client is therefore not directly reachable headless.
+- **Internal-client auth is the service path** and works today — but carries
+  no NC user identity (`userid: ""` in join events): fine for the spike and
+  backend services, wrong for production seats that must appear as themselves.
+- **Production auth = hello v2.0 JWT** (ES256 keypair already in appconfig;
+  `hello-v2` in server features). The token-minting surface for headless
+  clients is open question 9.
 
-`bye`/resume for graceful leave and reconnect. Phase 0 validates every hop
-against production and records the actual media path (direct UDP vs TURN).
+`bye`/resume for graceful leave and reconnect. Phase 0 leg 2 validates the
+media path (direct UDP vs TURN) with a live two-party call.
 
 ## Phases
 
 - **Phase 0 — spike (throwaway client, no kernel changes).** Exit: solo
   hello+room join on the test room; two-party call with the owner → PCM on
   disk, speaker-attributed; media path documented. Findings fold into this doc.
+  **Status: leg 1 (solo control plane) PROVEN Nov 19** — see protocol
+  section; leg 2 (two-party media) pending a ~10-minute window with the owner.
 - **Phase 1 — listen-only adapter.** Join on tool call / owner invite;
   per-participant decode+VAD+STT; utterance events land in the thread;
   `call.status`; post-call summary via the existing chat lane. Exit: agent
@@ -159,6 +171,12 @@ against production and records the actual media path (direct UDP vs TURN).
    read, never logged).
 8. **Mixed-version behavior.** **Rec:** feature-flagged adapter; older
    images keep chat + voice-note lane; no manifest break.
+9. **Production seat authentication.** Internal auth proves the plane but has
+   no user identity; production seats must join as themselves. **Rec:** use
+   hello-v2 JWTs minted for the seat accounts (minting surface: Talk's
+   SignalingController — exact headless route to pin during Phase 1; occ or
+   a small authenticated OCS call are candidates); keep internal auth for
+   infrastructure services only (recording-class).
 
 ## Migration
 
