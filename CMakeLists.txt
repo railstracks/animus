@@ -162,6 +162,60 @@ if(ANIMUS_DROGON_TARGET STREQUAL "")
 endif()
 
 # ============================================================================
+# Calls lane (Tier 1) — WebRTC media, Opus codec, WebRTC VAD
+# ============================================================================
+# docs/design/calls-tier1.md, ticket sketch #1: dependencies land first,
+# the adapter follows. Signaling rides drogon's WebSocketClient, so
+# libdatachannel's own WebSocket and SCTP (data channels) stay off — the
+# lane is audio media only (DTLS-SRTP + ICE via libjuice). libdatachannel
+# uses the OpenSSL backend (already a kernel dependency; no second TLS
+# stack). fvad is the standalone extraction of the WebRTC C VAD whose
+# behavior the Phase 0 leg-3 reference validated (aggressiveness 2 default).
+# ARM note: fvad's extracted subset is plain C (no NEON sources); opus
+# intrinsics and libjuice build on armhf — no cross-build blocker known.
+
+option(ANIMUS_WITH_CALLS "Enable calls-lane dependencies (libdatachannel, opus, libfvad)" ON)
+
+if(ANIMUS_WITH_CALLS)
+  include(FetchContent)
+
+  set(NO_WEBSOCKET ON CACHE BOOL "" FORCE)
+  set(NO_SCTP ON CACHE BOOL "" FORCE)
+  set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
+  set(NO_TESTS ON CACHE BOOL "" FORCE)
+  FetchContent_Declare(
+    libdatachannel
+    GIT_REPOSITORY https://github.com/paullouisageneau/libdatachannel.git
+    GIT_TAG v0.24.6
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(libdatachannel)
+
+  set(OPUS_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+  set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+  set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+  set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+  set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(
+    opus
+    GIT_REPOSITORY https://github.com/xiph/opus.git
+    GIT_TAG v1.5.2
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(opus)
+
+  # Upstream has no usable release tag on the current layout; pin the
+  # master commit (project version 1.0.1 on that tree).
+  FetchContent_Declare(
+    fvad
+    GIT_REPOSITORY https://github.com/dpirch/libfvad.git
+    GIT_TAG 532ab666c20d3cfda38bca63abbb0f152706c369
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(fvad)
+endif()
+
+# ============================================================================
 # Admin UI Embedding
 # ============================================================================
 
@@ -801,6 +855,19 @@ if(ANIMUS_BUILD_TESTS)
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
     )
     add_test(NAME ChannelContextStoreTests COMMAND animus_channel_context_store_tests)
+
+    # Calls-lane dependency probe (ticket sketch #1): proves libdatachannel,
+    # opus, and fvad resolve, link, and behave on every platform we build.
+    if(ANIMUS_WITH_CALLS)
+      add_executable(animus_call_deps_tests
+        tests/CallDepsTests.cpp
+      )
+      target_link_libraries(animus_call_deps_tests PRIVATE datachannel opus fvad)
+      set_target_properties(animus_call_deps_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+      )
+      add_test(NAME CallDepsTests COMMAND animus_call_deps_tests)
+    endif()
 
     add_executable(animus_media_vault_tests
       tests/MediaVaultTests.cpp
