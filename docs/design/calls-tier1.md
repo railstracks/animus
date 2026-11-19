@@ -104,13 +104,34 @@ duration capture → whisper_stt word-accurate). The internal client appears
 in the browser participant list (session-visible, empty userid — the owner
 read it aloud as "the spike call"), reinforcing the identity finding above.
 
+**Leg 3 (inbound pipeline unit, offline replay) PROVEN Nov 19** — the leg-2
+capture replayed through the Phase-1 inbound shape (48k→16k resample →
+webrtc VAD → bounded segmentation → chunked whisper_stt):
+- webrtcvad aggressiveness 1 and 2 produced identical boundaries on real
+  speech; 3 shredded sentences (31.7% voiced, 11 fragments). **Use 2.**
+- The 0.4/1.2 s bounds behave; the 15 s hard-max split is time-blind — it
+  cut mid-sentence ("…reporting that now to on | the finalization…").
+  **Ref:** split at the last unvoiced gap inside the window, and coalesce
+  consecutive chunk events at the thread boundary.
+- Chunk vs whole-file STT: one sentence garbled at 15 s grain that the 78 s
+  whole-file pass had correct — context helps; keep chunks at the full
+  hard-max and treat split boundaries as suspect.
+- **VAD passes music** (TV tail segmented 4/4 as speech). whisper self-labeled
+  3 of 4 music chunks `[BLANK_AUDIO]` but hallucinated a 3-word phrase on
+  the fourth — tag-matching alone is not a junk filter. **Rec:** require a
+  minimum voiced-frame ratio per event (the VAD already ran — the ratio is
+  free), drop tagged/empty texts.
+- Latency: 0.61–0.87 s per ≤15 s chunk → utterance events land ~2 s after
+  speech ends (1.2 s end-silence + STT). Phase 1 cadence budget holds.
+
 ## Phases
 
 - **Phase 0 — spike (throwaway client, no kernel changes).** Exit: solo
   hello+room join on the test room; two-party call with the owner → PCM on
   disk, speaker-attributed; media path documented. Findings fold into this doc.
-  **Status: PROVEN Nov 19, both legs** — solo control plane + two-party
-  media (owner's live speech transcribed verbatim); see protocol section.
+  **Status: PROVEN Nov 19, both legs + leg 3** — solo control plane, two-party
+  media (owner's live speech transcribed verbatim), and the resample→VAD→
+  chunked-STT inbound pipeline on real capture; see protocol section.
 - **Phase 1 — listen-only adapter.** Join on tool call / owner invite;
   per-participant decode+VAD+STT; utterance events land in the thread;
   `call.status`; post-call summary via the existing chat lane. Exit: agent
