@@ -1405,6 +1405,7 @@ void NextcloudAdapter::RunLoop() {
                     // voice note's raw text is the actor name, not content.
                     // Every failure stays loud: the wake carries a marker so
                     // the session and the log both see the gap.
+                    bool voiceTranscribed = false;
                     if (isVoiceNote) {
                         std::string transcript;
                         // The rendered body is the sender's caption when one
@@ -1428,6 +1429,7 @@ void NextcloudAdapter::RunLoop() {
                             } else {
                                 transcript = TranscribeAudio(
                                     sttUrl, voiceFile, voiceMime, audio);
+                                voiceTranscribed = !transcript.empty();
                             }
                         }
                         cleanText = transcript.empty()
@@ -1439,20 +1441,21 @@ void NextcloudAdapter::RunLoop() {
                                          + "]";
                     }
 
-                    // A2 readback-on-wake: the waking session sees the
-                    // recent room transcript, not a lone fragment.
-                    std::string history = FetchRoomHistory(token, authHeader,
-                                                           chatApiBase, username,
-                                                           msgId);
-
+                    // #324 follow-up (Melvin, Nov 19): no bundled history.
+                    // The session's own chronology covers the room log —
+                    // the poll loop dispatches each new message oldest-first
+                    // as its own user message (the messages API returns
+                    // ascending), so the old "Recent conversation" block
+                    // re-posted context the session already held, including
+                    // its own replies.
                     std::string prompt = "[Nextcloud Talk message from " + actorName;
                     prompt += " in \"" + conv.displayName + "\"";
                     if (isDm(conv.type)) prompt += " (direct message)";
-                    if (isVoiceNote) prompt += " [voice note, transcribed]";
+                    if (isVoiceNote)
+                        prompt += voiceTranscribed
+                                      ? " [voice note, transcribed]"
+                                      : " [voice note]";
                     prompt += "]\n";
-                    if (!history.empty())
-                        prompt += "--- Recent conversation (oldest first) ---\n"
-                                  + history + "\n--- End history ---\n";
                     prompt += cleanText;
 
                     // Dispatch metadata (#150): origin feeds author_handle for
@@ -1689,58 +1692,6 @@ std::string NextcloudAdapter::TranscribeAudio(
         ALOG_WARNING("nextcloud", "STT returned empty transcript for "
                      << fileName);
     return text;
-}
-
-std::string NextcloudAdapter::FetchRoomHistory(const std::string& token,
-                                               const std::string& authHeader,
-                                               const std::string& chatApiBase,
-                                               const std::string& username,
-                                               int skipMsgId) {
-    // A2 readback-on-wake (#263 pattern, Vk-mirror): newest-N room
-    // transcript for the dispatch prompt. lookIntoFuture=0 without
-    // lastKnownMessageId returns the most recent N messages, oldest
-    // first; the triggering message arrives in the response and is
-    // skipped by id (it is appended to the prompt separately). Best
-    // effort by design: any failure -> empty string, dispatch proceeds
-    // without context (history is context, not a gate). Own messages
-    // are KEPT - the agent's earlier replies are context too.
-    (void)username;
-    HttpClient::Request req;
-    req.method = "GET";
-    req.url = chatApiBase + "/chat/" + token +
-              "?lookIntoFuture=0&limit=10&format=json";
-    req.headers["Accept"] = "application/json";
-    req.headers["OCS-APIREQUEST"] = "true";
-    req.headers["Authorization"] = authHeader;
-    req.follow_redirects = false;
-    req.timeout_seconds = 10;
-
-    auto resp = m_ctx.httpClient.Execute(req);
-    if (resp.status_code == 304) return {};  // nothing older to show
-    if (resp.status_code != 200) {
-        ALOG_WARNING("nextcloud", "History fetch failed (" << resp.status_code
-                     << ") for " << token << " - dispatching without context");
-        return {};
-    }
-    auto root = ParseJson(resp.body);
-    if (!root.isMember("ocs") || !root["ocs"]["data"].isArray()) {
-        ALOG_WARNING("nextcloud", "History: unexpected payload for " << token);
-        return {};
-    }
-    std::string history;
-    for (const auto& m : root["ocs"]["data"]) {
-        if (!GetString(m, "systemMessage").empty()) continue;
-        if (GetString(m, "actorType") == "bots") continue;
-        const int id = m.isMember("id") ? m["id"].asInt() : 0;
-        if (id > 0 && id == skipMsgId) continue;
-        std::string name = GetString(m, "actorDisplayName");
-        if (name.empty()) name = GetString(m, "actorId");
-        std::string text = GetString(m, "message");
-        if (text.empty()) continue;
-        if (!history.empty()) history += "\n";
-        history += name + ": " + text;
-    }
-    return history;
 }
 
 void NextcloudAdapter::SendReply(const ChannelReplyTarget& target, const std::string& text) {

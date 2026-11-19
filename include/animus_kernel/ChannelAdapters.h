@@ -258,14 +258,6 @@ protected:
     void RunLoop() override;
 
 private:
-    // A2 readback-on-wake: newest-N room history for the dispatch prompt
-    // (lookIntoFuture=0 read; best-effort - empty string on any failure).
-    std::string FetchRoomHistory(const std::string& token,
-                                 const std::string& authHeader,
-                                 const std::string& chatApiBase,
-                                 const std::string& username,
-                                 int skipMsgId);
-
     // #324: room-shared file bytes via the received-shares route — the
     // share's file_target resolves in the RECIPIENT's own DAV namespace
     // (probe-proven Nov 17; direct sharer-path GETs 404). Empty on failure.
