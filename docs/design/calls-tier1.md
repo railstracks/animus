@@ -89,16 +89,28 @@ Findings that reshaped the plan:
   `hello-v2` in server features). The token-minting surface for headless
   clients is open question 9.
 
-`bye`/resume for graceful leave and reconnect. Phase 0 leg 2 validates the
-media path (direct UDP vs TURN) with a live two-party call.
+`bye`/resume for graceful leave and reconnect.
+
+**Leg 2 (two-party media) PROVEN Nov 19** — live call with the owner:
+`requestoffer` → offer → answer → candidates completed in ~5 s; the active
+media path was **TURN relay** (eturnal, REST credential scheme:
+username=unix-expiry, password=base64(HMAC-SHA1(secret, username))) — the
+selected pair was `typ relay` through the published 3478; iceConnectionState
+`completed`. Audio arrives as **Opus 48 kHz stereo** (3,840 bytes per 20 ms
+frame = 2 ch × 960 × 2): naive flatten-as-mono halves playback speed and
+whisper hallucinates `[Music]` on the slowed audio; deinterleave-to-mono
+first yields verbatim transcription of the owner's speech (78.4 s true-
+duration capture → whisper_stt word-accurate). The internal client appears
+in the browser participant list (session-visible, empty userid — the owner
+read it aloud as "the spike call"), reinforcing the identity finding above.
 
 ## Phases
 
 - **Phase 0 — spike (throwaway client, no kernel changes).** Exit: solo
   hello+room join on the test room; two-party call with the owner → PCM on
   disk, speaker-attributed; media path documented. Findings fold into this doc.
-  **Status: leg 1 (solo control plane) PROVEN Nov 19** — see protocol
-  section; leg 2 (two-party media) pending a ~10-minute window with the owner.
+  **Status: PROVEN Nov 19, both legs** — solo control plane + two-party
+  media (owner's live speech transcribed verbatim); see protocol section.
 - **Phase 1 — listen-only adapter.** Join on tool call / owner invite;
   per-participant decode+VAD+STT; utterance events land in the thread;
   `call.status`; post-call summary via the existing chat lane. Exit: agent
