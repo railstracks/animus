@@ -23,7 +23,7 @@ overlapped), and per-speaker attribution from the SFU.
 
 | Surface | State | Classification |
 |---|---|---|
-| Standalone signaling server | **Live, authoritative** (`signaling_servers` → `https://nextcloud.steadyfort.com/standalone-signaling/`, welcome 200 outside *and* inside seat containers at ~21 ms) | **Keep.** Client speaks only the documented v1 protocol; no internal-signaling fallback needed |
+| Standalone signaling server | **Live, authoritative** (`signaling_servers` → the production signaling endpoint, welcome 200 outside *and* inside seat containers at ~21 ms) | **Keep.** Client speaks only the documented v1 protocol; no internal-signaling fallback needed |
 | Janus SFU behind signaling | Running (AIO talk stack); protocol docs confirm **all gateway details are hidden from clients** — signaling relays everything, only media goes direct | **Keep.** Per-participant forwarding preserves speaker attribution |
 | TURN/STUN | Configured (`turn_servers`/`stun_servers` in spreed appconfig; 3478 tcp/udp published) | **Keep.** NAT story has infrastructure; remaining question is container vantage, resolved by the Phase 0 spike |
 | Recording backend lane | Container live; moderator-gate ruled Nov 15 (service account promoted) | **Complementary, unchanged.** Replay/captions; not this doc's path |
@@ -178,38 +178,41 @@ webrtc VAD → bounded segmentation → chunked whisper_stt):
   phrase-grain interruption arrives in Phase 2; sample-grain barge-in
   (stopping mid-phrase) remains out of scope for v1.
 
-## Open questions (each staged with a recommendation)
+## Decisions (red-lined by the owner, 2026-11-20)
 
-1. **Pipeline placement: adapter-native vs cortex-first.** Cortex virtual
-   audio devices don't exist yet. **Rec:** adapter-native pipeline behind
-   cortex-shaped seams — ship Tier 1 unblocked; migrate the same pipeline
-   behind `audio_input`/`audio_output` devices when the cortex lands. No
-   parallel policy brain either way.
-2. **Join policy.** **Rec:** auto-accept invites/rings from the owner's
-   account; `call.join` tool-call for anything else; no self-initiated calls
-   in v1.
-3. **VAD bounds.** **Rec:** min-utterance 0.4 s; end-of-utterance silence
-   1.2 s; hard max 15 s (split long speech). Fold into per-device config per
-   voice.md; these are defaults.
-4. **Barge-in scope.** **Rec:** full model-mediated per voice.md
-   (interjection + `audio.cancel()`); no heuristic mid-TTS kill. The
-   never-hear-oneself gate stays structural.
-5. **Interjection granularity in calls.** **Rec:** every utterance event is
-   its own thread message (interjection doc's framing); long-call digest
-   coalescing is Phase 3 config, not v1 behavior.
-6. **Codec/transport.** **Rec:** Opus voip mode, 48 kHz mono, 20 ms frames;
-   direct UDP preferred, TURN fallback permitted.
-7. **Test room & credentials.** **Rec:** sacrifice room `vkyct946` for
-   Phase 0; seat identity via the vaulted `auth_header` state (admin API
-   read, never logged).
-8. **Mixed-version behavior.** **Rec:** feature-flagged adapter; older
-   images keep chat + voice-note lane; no manifest break.
-9. **Production seat authentication.** Internal auth proves the plane but has
-   no user identity; production seats must join as themselves. **Rec:** use
-   hello-v2 JWTs minted for the seat accounts (minting surface: Talk's
-   SignalingController — exact headless route to pin during Phase 1; occ or
-   a small authenticated OCS call are candidates); keep internal auth for
-   infrastructure services only (recording-class).
+1. **Pipeline placement: adapter-native.** The pipeline lives in its own
+   component behind cortex-shaped `audio_input`/`audio_output` seams; audio
+   state never leaks into signaling code. When the cortex lands, the same
+   pipeline migrates behind its devices unchanged — a move, not a rewrite.
+   The adapter is the first device host.
+2. **Join policy (a config setting).** 0.5 default: auto-accept
+   invites/rings from the owner's account; `call.join` tool-call for
+   anything else; no self-initiated calls. Agent-arranged/invited calls
+   arrive post-0.5 as settings on the same knob, not new architecture.
+3. **VAD bounds as recommended** (min 0.4 s; end silence 1.2 s; hard max
+   15 s, split at the last unvoiced gap). Defaults, config-exposed for
+   later tuning.
+4. **Barge-in: model-mediated policy, structural echo gate.** The
+   never-hear-oneself gate stays kernel-structural; no heuristic mid-TTS
+   kill.
+5. **Interjection granularity: per-utterance thread messages for v1.**
+   Tuning deliberately deferred until a functioning call exists; digest
+   coalescing remains Phase 3 config.
+6. **Codec/transport as recommended** (Opus VOIP mode, 48 kHz mono, 20 ms
+   frames; direct UDP preferred, TURN fallback — media path already proven
+   both ways).
+7. **Test room & credentials: workspace-internal.** A dedicated sacrifice
+   room per environment; seat identity via the vaulted `auth_header`
+   state (admin API read, never logged). Workspace specifics (room IDs,
+   hosts) do not belong in the repo.
+8. **Mixed versions: feature-flagged adapter.** Older images keep the
+   chat + voice-note lane untouched; no manifest break.
+9. **Seat authentication: hello-v2 JWTs for production seats.** Minting
+   route pinned during Phase 1 (occ or an authenticated OCS call against
+   Talk's SignalingController); internal auth reserved for infrastructure
+   services (recording-class). **0.5.0 acceptance pair: the owner plus a
+   seat instance** — the seat joins a live call as itself and audio flows
+   into its session via the existing thread path.
 
 ## Migration
 
