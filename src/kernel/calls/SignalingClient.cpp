@@ -142,6 +142,17 @@ std::string SignalingClient::BuildHelloInternal(const std::string& random,
     return ToJsonString(v);
 }
 
+std::string SignalingClient::BuildHelloResume(const std::string& resume_id,
+                                              const std::string& id) {
+    Json::Value v;
+    v["id"] = id;
+    v["type"] = "hello";
+    v["hello"]["version"] = "1.0";
+    v["hello"]["auth"]["type"] = "resume";
+    v["hello"]["auth"]["resumeid"] = resume_id;
+    return ToJsonString(v);
+}
+
 std::string SignalingClient::BuildRoomJoin(const std::string& room_id,
                                            const std::string& session_id,
                                            const std::string& id) {
@@ -273,6 +284,11 @@ struct SignalingClient::Impl {
     std::map<std::string, Participant> participants;
     std::string session_id;
 
+    // Server-issued resume token from the last hello response. Empty on
+    // servers without resume support. Loop-thread confined: written in
+    // the hello handler, read in SendHello, cleared in the queued close.
+    std::string resume_id;
+
     drogon::WebSocketClientPtr ws;
     drogon::WebSocketConnectionPtr conn;
     int reconnect_attempt = 0;
@@ -368,6 +384,15 @@ struct SignalingClient::Impl {
     }
 
     void SendHello() {
+        if (!resume_id.empty()) {
+            // Reconnect after an abrupt drop: re-attach the prior session
+            // by its resumeid instead of minting a fresh one. Rejected
+            // resumes clear the token (error handler) and fall back to
+            // internal auth on the next attempt.
+            SetState(State::Authenticating);
+            SendText(BuildHelloResume(resume_id, NewId()));
+            return;
+        }
         const std::string random = RandomHex(32);
         if (random.empty()) {
             ScheduleReconnect();
@@ -397,6 +422,7 @@ struct SignalingClient::Impl {
                     session_id =
                         frame["hello"].get("sessionid", "").asString();
                 }
+                resume_id = frame["hello"].get("resumeid", "").asString();
                 SetState(State::Joining);
                 std::string resume_id;
                 {
@@ -418,9 +444,12 @@ struct SignalingClient::Impl {
             return;
         }
         if (type == "error") {
-            // Fatal during handshake (bad auth, room rejected): recycle.
+            // Fatal during handshake (bad auth, expired resume, room
+            // rejected): recycle. A failed RESUME must not loop — clear
+            // the token so the next attempt is fresh internal auth.
             if (state.load() == State::Authenticating ||
                 state.load() == State::Joining) {
+                resume_id.clear();
                 std::cerr << "[calls-sig] handshake error frame\n";
                 if (conn) conn->shutdown();
                 ScheduleReconnect();
@@ -471,6 +500,7 @@ void SignalingClient::Close() {
     trantor::EventLoop* loop = impl_->loop;
     if (loop) {
         loop->queueInLoop([loop, this] {
+            impl_->resume_id.clear(); // session is released by bye
             if (impl_->conn) {
                 impl_->SendText(BuildBye(impl_->NewId()));
                 impl_->conn->shutdown();

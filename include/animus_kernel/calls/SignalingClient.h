@@ -42,6 +42,11 @@ struct SignalingConfig {
 ///
 /// Protocol shape proven by Phase 0 leg 1 against production:
 /// welcome → hello (internal auth, HMAC-SHA256) → room join → events → bye.
+/// Resume is server-mediated (signaling ≥2.1): hello responses carry a
+/// resumeid; reconnection replays it as hello.auth.type="resume", which
+/// re-attaches the PRIOR session id, falling back to fresh internal
+/// auth when the server rejects or omits it. Live-proven by
+/// tools/calls_probe.cpp (#335 gate).
 class SignalingClient {
 public:
     enum class State {
@@ -124,6 +129,13 @@ public:
                                           const std::string& token,
                                           const std::string& backend_url,
                                           const std::string& id);
+    /// Resume hello: re-attach a prior session after an abrupt drop by
+    /// its server-issued resumeid (hello.auth.type = "resume"). Used by
+    /// the reconnect path when the previous hello response carried a
+    /// resumeid; a server that rejects it (or never issued one) falls
+    /// back to fresh internal auth on the next attempt.
+    static std::string BuildHelloResume(const std::string& resume_id,
+                                        const std::string& id);
     /// Fresh join passes an empty session id; resume passes the prior one.
     static std::string BuildRoomJoin(const std::string& room_id,
                                      const std::string& session_id,
