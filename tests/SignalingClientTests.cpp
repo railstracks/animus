@@ -182,6 +182,22 @@ int main() {
               "ApplyParticipantEvent: update overwrites");
     }
 
+    // --- DropTransport: safe no-op before Start (no worker loop yet).
+    // The live-path proof (drop → reconnect → resume) is
+    // tools/calls_probe.cpp against production signaling; this pins
+    // only the degenerate case.
+    {
+        animus::kernel::calls::SignalingConfig cfg;
+        cfg.server_url = "wss://sig.example.invalid";
+        cfg.backend_url = "https://nc.example.invalid/";
+        cfg.internal_secret = "s3cret";
+        cfg.room_id = "room1";
+        SignalingClient client(cfg);
+        client.DropTransport();
+        check(client.state() == SignalingClient::State::Idle,
+              "DropTransport: safe no-op before Start");
+    }
+
     if (failures > 0) {
         std::cout << "SIGNALING CLIENT TESTS FAILED (" << failures << ")\n";
         return 1;

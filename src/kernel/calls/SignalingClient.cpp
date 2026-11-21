@@ -482,6 +482,19 @@ void SignalingClient::Close() {
     if (impl_->worker.joinable()) impl_->worker.join();
 }
 
+void SignalingClient::DropTransport() {
+    // All connection state lives on the loop thread; queue the drop so it
+    // serializes with the close handler it is about to trigger.
+    trantor::EventLoop* loop = impl_->loop;
+    if (!loop) return;
+    loop->queueInLoop([this] {
+        if (impl_->conn) {
+            impl_->conn->forceClose(); // no WS close frame — network loss
+            impl_->conn.reset();
+        }
+    });
+}
+
 SignalingClient::State SignalingClient::state() const {
     return impl_->state.load();
 }

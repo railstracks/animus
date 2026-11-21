@@ -546,6 +546,29 @@ target_include_directories(animus_kernel PRIVATE
 target_link_libraries(animus_kernel PUBLIC animus_sdk jsoncpp_lib)
 target_link_libraries(animus_kernel PRIVATE ${ANIMUS_DROGON_TARGET})
 
+# Live signaling probe (tools/calls_probe.cpp) — operational gate tool,
+# not a test suite: drives the kernel's SignalingClient against a real
+# standalone-signaling server (#335 live solo-join + mid-connection
+# resume). Secrets arrive via --secret-file / env, never argv. Links the
+# protocol layer directly (drogon/jsoncpp/OpenSSL); no kernel-lib link.
+if(ANIMUS_WITH_CALLS)
+  find_package(OpenSSL REQUIRED)
+  add_executable(animus_calls_probe
+    tools/calls_probe.cpp
+    src/kernel/calls/SignalingClient.cpp
+  )
+  target_link_libraries(animus_calls_probe PRIVATE
+    jsoncpp_lib OpenSSL::Crypto ${ANIMUS_DROGON_TARGET})
+  target_include_directories(animus_calls_probe PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${JSONCPP_INCLUDE_DIRS}
+  )
+  set_target_properties(animus_calls_probe PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+  )
+endif()
+
 if(NOT ANIMUS_USE_SYSTEM_DROGON)
   # Whole-archive: a static archive linked into a shared library only pulls
   # objects referenced at .so link time, leaving partial-coverage undefined

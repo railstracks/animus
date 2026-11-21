@@ -79,6 +79,12 @@ public:
     /// Graceful terminal shutdown: sends bye, closes, joins the worker.
     void Close();
 
+    /// Abrupt transport drop WITHOUT bye — the live-probe/recovery-drill
+    /// hook (#335 live gate). Closes the underlying WS connection the
+    /// same way an unannounced network loss would, riding the ordinary
+    /// reconnect + room-resume path. Safe no-op when not connected.
+    void DropTransport();
+
     State state() const;
     std::string session_id() const;
     std::vector<Participant> participants() const;
