@@ -92,8 +92,9 @@ int main() {
                   v["id"].asString() == "id-1b" &&
                   v["hello"]["version"].asString() == "1.0" &&
                   v["hello"]["auth"]["type"].asString() == "resume" &&
-                  v["hello"]["auth"]["resumeid"].asString() == "rs-1",
-              "BuildHelloResume: resume-auth shape");
+                  v["hello"]["auth"]["params"]["resumeid"].asString() ==
+                      "rs-1",
+              "BuildHelloResume: resume-auth shape (params nesting)");
     }
 
     // --- BuildRoomJoin: fresh (empty session) and resume (prior id)

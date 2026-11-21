@@ -149,7 +149,7 @@ std::string SignalingClient::BuildHelloResume(const std::string& resume_id,
     v["type"] = "hello";
     v["hello"]["version"] = "1.0";
     v["hello"]["auth"]["type"] = "resume";
-    v["hello"]["auth"]["resumeid"] = resume_id;
+    v["hello"]["auth"]["params"]["resumeid"] = resume_id;
     return ToJsonString(v);
 }
 

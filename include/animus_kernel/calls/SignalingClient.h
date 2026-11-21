@@ -130,10 +130,11 @@ public:
                                           const std::string& backend_url,
                                           const std::string& id);
     /// Resume hello: re-attach a prior session after an abrupt drop by
-    /// its server-issued resumeid (hello.auth.type = "resume"). Used by
-    /// the reconnect path when the previous hello response carried a
-    /// resumeid; a server that rejects it (or never issued one) falls
-    /// back to fresh internal auth on the next attempt.
+    /// its server-issued resumeid (hello.auth.type = "resume", payload
+    /// nested under hello.auth.params — the shape this server accepts
+    /// for every auth type; the direct-field form is rejected
+    /// invalid_format). Falls back to fresh internal auth when the
+    /// server rejects or never issued a resumeid.
     static std::string BuildHelloResume(const std::string& resume_id,
                                         const std::string& id);
     /// Fresh join passes an empty session id; resume passes the prior one.
