@@ -144,12 +144,15 @@ std::string SignalingClient::BuildHelloInternal(const std::string& random,
 
 std::string SignalingClient::BuildHelloResume(const std::string& resume_id,
                                               const std::string& id) {
+    // Wire shape per server source (strukturag/nextcloud-spreed-signaling,
+    // processHello): the resumeid rides directly on hello and is checked
+    // BEFORE any auth handling — there is no auth.type="resume". A
+    // well-formed but expired/unknown token answers no_such_session.
     Json::Value v;
     v["id"] = id;
     v["type"] = "hello";
     v["hello"]["version"] = "1.0";
-    v["hello"]["auth"]["type"] = "resume";
-    v["hello"]["auth"]["params"]["resumeid"] = resume_id;
+    v["hello"]["resumeid"] = resume_id;
     return ToJsonString(v);
 }
 
