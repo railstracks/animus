@@ -84,6 +84,18 @@ int main() {
               "BuildHelloInternal: v1.0 internal-auth shape");
     }
 
+    // --- BuildHelloResume (reconnect re-attach; resumeid on hello)
+    {
+        const auto v = Parse(
+            SignalingClient::BuildHelloResume("rs-1", "id-1b"));
+        check(v["type"].asString() == "hello" &&
+                  v["id"].asString() == "id-1b" &&
+                  v["hello"]["version"].asString() == "1.0" &&
+                  v["hello"]["resumeid"].asString() == "rs-1" &&
+                  !v["hello"].isMember("auth"),
+              "BuildHelloResume: resumeid rides on hello, no auth");
+    }
+
     // --- BuildRoomJoin: fresh (empty session) and resume (prior id)
     {
         const auto fresh = Parse(
