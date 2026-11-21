@@ -215,6 +215,14 @@ if(ANIMUS_WITH_CALLS)
   FetchContent_MakeAvailable(fvad)
 endif()
 
+if(ANIMUS_WITH_CALLS)
+  set(ANIMUS_CALLS_SOURCES
+    src/kernel/calls/SignalingClient.cpp
+  )
+else()
+  set(ANIMUS_CALLS_SOURCES "")
+endif()
+
 # ============================================================================
 # Admin UI Embedding
 # ============================================================================
@@ -348,6 +356,7 @@ endif()
 add_library(animus_kernel
   ${ANIMUS_ADMIN_UI_RESOURCE_SOURCE}
   ${ANIMUS_TEMPLATES_RESOURCE_SOURCE}
+  ${ANIMUS_CALLS_SOURCES}
   src/core/Jobs.cpp
   src/kernel/admin/AdminServer.cpp
   src/kernel/admin/AdminServerRoutes.cpp
@@ -867,6 +876,22 @@ if(ANIMUS_BUILD_TESTS)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
       )
       add_test(NAME CallDepsTests COMMAND animus_call_deps_tests)
+
+      add_executable(animus_signaling_client_tests
+        tests/SignalingClientTests.cpp
+        src/kernel/calls/SignalingClient.cpp
+      )
+      find_package(OpenSSL REQUIRED)
+      target_link_libraries(animus_signaling_client_tests PRIVATE
+        animus_kernel jsoncpp_lib OpenSSL::Crypto ${ANIMUS_DROGON_TARGET})
+      target_include_directories(animus_signaling_client_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${JSONCPP_INCLUDE_DIRS}
+      )
+      set_target_properties(animus_signaling_client_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+      )
+      add_test(NAME SignalingClientTests COMMAND animus_signaling_client_tests)
     endif()
 
     add_executable(animus_media_vault_tests
