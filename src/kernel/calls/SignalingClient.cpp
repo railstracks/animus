@@ -9,6 +9,7 @@
 
 #include <drogon/HttpRequest.h>
 #include <drogon/WebSocketClient.h>
+#include <json/json.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
