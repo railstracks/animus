@@ -447,6 +447,19 @@ struct SignalingClient::Impl {
             return;
         }
         if (type == "error") {
+            // A resumed session is still in its room: the unconditional
+            // re-join answers already_joined, which IS the join ack for
+            // our purposes (live-proven, run 4). The server stays the
+            // arbiter of room membership for fresh joins and resumes
+            // alike.
+            if (frame["error"]["code"].asString() == "already_joined" &&
+                state.load() == State::Joining) {
+                join_acked = true;
+                reconnect_attempt = 0;
+                SetState(State::Joined);
+                if (frame_cb) frame_cb(frame);
+                return;
+            }
             // Fatal during handshake (bad auth, expired resume, room
             // rejected): recycle. A failed RESUME must not loop — clear
             // the token so the next attempt is fresh internal auth.

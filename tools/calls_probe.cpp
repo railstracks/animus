@@ -55,6 +55,8 @@ double ElapsedS() {
 }
 
 void Log(const std::string& line) {
+    static std::mutex log_mu;
+    std::lock_guard<std::mutex> lk(log_mu);
     std::cout << "[+" << ElapsedS() << "s] " << line << std::endl;
 }
 
