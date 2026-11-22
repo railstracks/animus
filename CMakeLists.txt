@@ -939,6 +939,26 @@ if(ANIMUS_BUILD_TESTS)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
       )
       add_test(NAME CallAdapterTests COMMAND animus_call_adapter_tests)
+
+      # #336 live acceptance gate: drives the real CallAdapter through
+      # join -> status -> leave against production (secrets via --config
+      # file, never argv). Operational tool, not a ctest (needs a live
+      # signaling server + seat credentials).
+      add_executable(animus_call_adapter_probe
+        tools/call_adapter_probe.cpp
+        src/kernel/channel/CallAdapter.cpp
+        src/kernel/calls/SignalingClient.cpp
+      )
+      target_link_libraries(animus_call_adapter_probe PRIVATE
+        animus_kernel jsoncpp_lib OpenSSL::Crypto ${ANIMUS_DROGON_TARGET})
+      target_include_directories(animus_call_adapter_probe PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${JSONCPP_INCLUDE_DIRS}
+      )
+      set_target_properties(animus_call_adapter_probe PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+      )
     endif()
 
     add_executable(animus_media_vault_tests
