@@ -40,6 +40,7 @@
 #include <string>
 #include <thread>
 
+using animus::kernel::calls::SignalingAuthMode;
 using animus::kernel::calls::SignalingClient;
 using animus::kernel::calls::SignalingConfig;
 
@@ -81,6 +82,8 @@ struct Args {
     std::string backend;
     std::string room;
     std::string secret_file;
+    std::string token_file;      // hello-v2: Talk-minted JWT from OCS settings
+    std::string room_session_file;  // hello-v2: REST-pre-created Talk session
     double timeout_s = 25.0;
     double settle_s = 4.0;
 };
@@ -90,6 +93,7 @@ void Usage() {
         << "usage: animus_calls_probe --url wss://HOST[:port][/path]\n"
         << "  --backend https://NEXTCLOUD/ --room ROOMID\n"
         << "  (--secret-file PATH | env ANIMUS_SIGNALING_INTERNAL_SECRET)\n"
+        << "  or --v2 --token-file PATH --room-session-file PATH\n"
         << "  [--timeout SECS] [--settle SECS]\n";
 }
 
@@ -118,6 +122,12 @@ int main(int argc, char** argv) {
             args.room = argv[++i];
         } else if (flag == "--secret-file" && has_value) {
             args.secret_file = argv[++i];
+        } else if (flag == "--v2") {
+            // hello-v2 seat mode; token + room session via files
+        } else if (flag == "--token-file" && has_value) {
+            args.token_file = argv[++i];
+        } else if (flag == "--room-session-file" && has_value) {
+            args.room_session_file = argv[++i];
         } else if (flag == "--timeout" && has_value) {
             args.timeout_s = std::atof(argv[++i]);
         } else if (flag == "--settle" && has_value) {
@@ -132,8 +142,29 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    const bool v2_mode = !args.token_file.empty();
     std::string secret;
-    if (!args.secret_file.empty()) {
+    std::string room_session;
+    if (v2_mode) {
+        std::ifstream tf(args.token_file, std::ios::binary);
+        if (!tf) {
+            Log("FAIL cannot open --token-file");
+            return 2;
+        }
+        secret = Trim(std::string((std::istreambuf_iterator<char>(tf)),
+                                  std::istreambuf_iterator<char>()));
+        std::ifstream rsf(args.room_session_file, std::ios::binary);
+        if (!rsf) {
+            Log("FAIL cannot open --room-session-file");
+            return 2;
+        }
+        room_session = Trim(std::string((std::istreambuf_iterator<char>(rsf)),
+                                         std::istreambuf_iterator<char>()));
+        if (secret.empty() || room_session.empty()) {
+            Log("FAIL empty token or room session");
+            return 2;
+        }
+    } else if (!args.secret_file.empty()) {
         std::ifstream f(args.secret_file, std::ios::binary);
         if (!f) {
             Log("FAIL cannot open --secret-file");
@@ -150,14 +181,21 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    Log("animus_calls_probe (#335 live gate) room=" + args.room +
-        " url=" + args.url + " backend=" + args.backend);
+    Log("animus_calls_probe (#335/#336 gate) room=" + args.room +
+        " url=" + args.url + " backend=" + args.backend +
+        (v2_mode ? " auth=hello-v2" : " auth=internal"));
 
     SignalingConfig cfg;
     cfg.server_url = args.url;
     cfg.backend_url = args.backend;
-    cfg.internal_secret = std::move(secret);
     cfg.room_id = args.room;
+    if (v2_mode) {
+        cfg.auth_mode = SignalingAuthMode::HelloV2;
+        cfg.hello_v2_token = std::move(secret);
+        cfg.room_session_id = std::move(room_session);
+    } else {
+        cfg.internal_secret = std::move(secret);
+    }
     cfg.reconnect_base_s = 1.0;
     cfg.reconnect_max_s = 5.0; // probe wants a fast resume, not patience
     cfg.hello_timeout_s = 10.0;

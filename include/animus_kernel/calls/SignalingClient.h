@@ -11,18 +11,40 @@
 
 namespace animus::kernel::calls {
 
-/// Configuration for the standalone-signaling client. The internal secret
-/// is vaulted upstream (adapter/admin state, decision 7) and never logged.
+/// Authentication mode for the signaling hello.
+enum class SignalingAuthMode {
+    /// Infrastructure-service auth: HMAC-SHA256 over the server's
+    /// `[clients] internalsecret`. Carries no NC user identity.
+    Internal,
+    /// Production-seat auth (decision 9): hello version 2.0 with a JWT
+    /// minted by Talk (authenticated OCS signaling/settings call),
+    /// verified server-side against Talk's published key.
+    HelloV2,
+};
+
+/// Configuration for the standalone-signaling client. Secrets are
+/// vaulted upstream (adapter/admin state, decision 7) and never logged.
 struct SignalingConfig {
     /// Signaling server URL: wss://host[:port][/path].
     std::string server_url;
-    /// Nextcloud base URL sent in hello params (backend the server
-    /// associates the client with).
+    /// Nextcloud base URL sent in hello params / auth.url.
     std::string backend_url;
-    /// Server-side `[clients] internalsecret`.
+    /// Server-side `[clients] internalsecret` (Internal mode).
     std::string internal_secret;
+    /// Hello-v2 JWT from Talk's OCS signaling/settings (HelloV2 mode).
+    /// Replaceable at runtime via SetHelloV2Token (adapter refreshes on
+    /// expiry); never logged.
+    std::string hello_v2_token;
+    /// Auth mode selects the hello shape; see SignalingAuthMode.
+    SignalingAuthMode auth_mode{SignalingAuthMode::Internal};
     /// Room token joined after hello.
     std::string room_id;
+    /// HelloV2 seat joins: the Talk room session pre-created via the REST
+    /// room-join (`participants/active`). Talk's backend resolves room
+    /// joins by THIS id, not the signaling session id — pinning the
+    /// signaling id answers no_such_room (live-proven, Q9). Empty in
+    /// Internal mode (backend sessions need no REST pre-join).
+    std::string room_session_id;
     /// Exponential reconnect backoff: base delay and cap (seconds).
     double reconnect_base_s = 1.0;
     double reconnect_max_s = 30.0;
@@ -31,10 +53,11 @@ struct SignalingConfig {
 };
 
 /// Standalone-signaling (Nextcloud Talk) WebSocket client — the protocol
-/// layer of the calls lane (#335). Mechanical by design: it owns transport,
-/// authentication, room join/resume, reconnect, and participant bookkeeping;
-/// it applies no policy. Join/offer policy belongs to the call adapter
-/// (#336); media to libdatachannel; nothing here touches audio.
+/// layer of the calls lane (#335, #336). Mechanical by design: it owns transport,
+/// authentication (internal HMAC or hello-v2 JWT), room join/resume,
+/// reconnect, and participant bookkeeping; it applies no policy. Join/offer
+/// policy belongs to the call adapter (#336); media to libdatachannel;
+/// nothing here touches audio.
 ///
 /// Threading: the client owns one worker thread running a trantor event
 /// loop. All public methods may be called from any thread; work is
@@ -106,6 +129,11 @@ public:
     /// entry, per Phase 0 leg 2). Returns false if not Joined.
     bool RequestOffer(const std::string& session_id);
 
+    /// Replace the hello-v2 token at runtime (adapter refreshes it on
+    /// expiry; the next hello attempt uses the new value). Thread-safe;
+    /// no-op in Internal mode.
+    void SetHelloV2Token(const std::string& token);
+
     void SetFrameCallback(FrameCallback cb);
     void SetStateChangedCallback(StateChangedCallback cb);
 
@@ -129,6 +157,12 @@ public:
                                           const std::string& token,
                                           const std::string& backend_url,
                                           const std::string& id);
+    /// Hello-v2 seat auth: version 2.0, auth.type "client",
+    /// auth.params.token = Talk-minted JWT, auth.url = backend. Wire shape
+    /// live-proven against production (Q9 pin, #335).
+    static std::string BuildHelloV2(const std::string& token,
+                                    const std::string& backend_url,
+                                    const std::string& id);
     /// Resume hello: re-attach a prior session after an abrupt drop by
     /// its server-issued resumeid, which rides directly on hello
     /// (hello.resumeid, no auth object — checked before auth handling in

@@ -156,6 +156,22 @@ std::string SignalingClient::BuildHelloResume(const std::string& resume_id,
     return ToJsonString(v);
 }
 
+std::string SignalingClient::BuildHelloV2(const std::string& token,
+                                         const std::string& backend_url,
+                                         const std::string& id) {
+    // Wire shape per Talk's SignalingController + live proof (Q9, #335):
+    // version 2.0, auth.type "client", JWT in auth.params.token,
+    // backend in auth.url.
+    Json::Value v;
+    v["id"] = id;
+    v["type"] = "hello";
+    v["hello"]["version"] = "2.0";
+    v["hello"]["auth"]["type"] = "client";
+    v["hello"]["auth"]["params"]["token"] = token;
+    v["hello"]["auth"]["url"] = backend_url;
+    return ToJsonString(v);
+}
+
 std::string SignalingClient::BuildRoomJoin(const std::string& room_id,
                                            const std::string& session_id,
                                            const std::string& id) {
@@ -396,6 +412,21 @@ struct SignalingClient::Impl {
             SendText(BuildHelloResume(resume_id, NewId()));
             return;
         }
+        if (cfg.auth_mode == SignalingAuthMode::HelloV2) {
+            // Seat auth: Talk-minted JWT in auth.params.token. Missing or
+            // expired tokens are the adapter's to refresh (SetHelloV2Token);
+            // an empty token here is a config error — recycle loudly,
+            // never guess an auth.
+            if (cfg.hello_v2_token.empty()) {
+                std::cerr << "[calls-sig] hello-v2 mode with no token\n";
+                ScheduleReconnect();
+                return;
+            }
+            SetState(State::Authenticating);
+            SendText(BuildHelloV2(cfg.hello_v2_token, cfg.backend_url,
+                                  NewId()));
+            return;
+        }
         const std::string random = RandomHex(32);
         if (random.empty()) {
             ScheduleReconnect();
@@ -427,12 +458,18 @@ struct SignalingClient::Impl {
                 }
                 resume_id = frame["hello"].get("resumeid", "").asString();
                 SetState(State::Joining);
-                std::string resume_id;
+                std::string join_sid;
                 {
                     std::lock_guard<std::mutex> lk(mu);
-                    resume_id = session_id;
+                    // Seat joins pin the REST-pre-created Talk room session:
+                    // Talk's backend resolves room joins by that id, not the
+                    // signaling session id (live-proven, Q9). Internal
+                    // clients use their own signaling session id (leg-1).
+                    join_sid = cfg.auth_mode == SignalingAuthMode::HelloV2
+                                   ? cfg.room_session_id
+                                   : session_id;
                 }
-                SendText(BuildRoomJoin(cfg.room_id, resume_id, NewId()));
+                SendText(BuildRoomJoin(cfg.room_id, join_sid, NewId()));
             }
             if (frame_cb) frame_cb(frame);
             return;
@@ -494,8 +531,13 @@ SignalingClient::~SignalingClient() {
 }
 
 void SignalingClient::Start() {
-    if (impl_->cfg.server_url.empty() || impl_->cfg.room_id.empty() ||
-        impl_->cfg.internal_secret.empty()) {
+    const bool cfg_ok =
+        !impl_->cfg.server_url.empty() && !impl_->cfg.room_id.empty() &&
+        (impl_->cfg.auth_mode == SignalingAuthMode::Internal
+             ? !impl_->cfg.internal_secret.empty()
+             : !impl_->cfg.hello_v2_token.empty() &&
+                   !impl_->cfg.room_session_id.empty());
+    if (!cfg_ok) {
         std::cerr << "[calls-sig] Start refused: incomplete config\n";
         impl_->SetState(State::Closed);
         return;
@@ -539,6 +581,12 @@ void SignalingClient::DropTransport() {
             impl_->conn.reset();
         }
     });
+}
+
+void SignalingClient::SetHelloV2Token(const std::string& token) {
+    // Adapter-driven refresh on expiry; no-op outside hello-v2 mode.
+    if (impl_->cfg.auth_mode != SignalingAuthMode::HelloV2) return;
+    impl_->cfg.hello_v2_token = token;
 }
 
 SignalingClient::State SignalingClient::state() const {
