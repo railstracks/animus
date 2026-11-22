@@ -84,6 +84,22 @@ int main() {
               "BuildHelloInternal: v1.0 internal-auth shape");
     }
 
+    // --- BuildHelloV2 (seat auth: JWT in auth.params.token, backend in
+    //     auth.url — wire shape live-proven, Q9 pin)
+    {
+        const auto v = Parse(SignalingClient::BuildHelloV2(
+            "jwt-abc", "https://nextcloud/", "id-1a"));
+        check(v["type"].asString() == "hello" &&
+                  v["id"].asString() == "id-1a" &&
+                  v["hello"]["version"].asString() == "2.0" &&
+                  v["hello"]["auth"]["type"].asString() == "client" &&
+                  v["hello"]["auth"]["params"]["token"].asString() ==
+                      "jwt-abc" &&
+                  v["hello"]["auth"]["url"].asString() ==
+                      "https://nextcloud/",
+              "BuildHelloV2: seat-auth shape");
+    }
+
     // --- BuildHelloResume (reconnect re-attach; resumeid on hello)
     {
         const auto v = Parse(
