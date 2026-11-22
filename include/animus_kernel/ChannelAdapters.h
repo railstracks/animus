@@ -18,6 +18,7 @@ namespace animus::kernel {
 namespace telegram { struct Message; struct Update; class TelegramBotApi; }
 class IrcInterfaceRuntime;
 struct ChannelState;
+namespace calls { class SignalingClient; }
 
 // ============================================================================
 // PollerAdapterBase — common lifecycle for poller-based connectors
@@ -289,5 +290,61 @@ protected:
 private:
     void ProcessNotification(const Json::Value& n);
 };
+
+#ifdef ANIMUS_WITH_CALLS
+// ============================================================================
+// CallAdapter — Nextcloud Talk calls lane (#336, Calls Tier 1)
+// ============================================================================
+// Event-driven (owns a calls::SignalingClient; NOT a poller). v1 lifecycle:
+// ring → join → attend → leave; one live call per seat. Join = the Q9-proven
+// seat flow (OCS settings → v2 JWT, REST room join → Talk room session,
+// signaling join pinned to that session). Audio-in/out ride later tickets;
+// this adapter owns transport, verbs, policy, and truth.
+
+class CallAdapter : public IChannelAdapter {
+public:
+    explicit CallAdapter(ChannelContext& ctx) : m_ctx(ctx) {}
+    ~CallAdapter() override;
+
+    bool Start(const ChannelState& state, std::string* error) override;
+    void Stop() override;
+    void SendReply(const ChannelReplyTarget& target,
+                   const std::string& text) override;
+    bool IsConnected() const override;
+
+    // --- Calls-lane verbs ---
+    bool JoinCall(const std::string& roomToken, std::string* error) override;
+    bool LeaveCall(std::string* error) override;
+    Json::Value CallStatus() const override;
+
+    /// Ring/invite hook: evaluate the join policy (decision 2) for an
+    /// inbound invite and auto-join only when it allows. The invite event
+    /// source (nextcloud poller's call-activity dispatch) calls this.
+    bool TryAutoJoin(const std::string& roomToken, const std::string& fromUser);
+
+    // --- Join policy (decision 2) — pure, unit-tested ---
+    enum class JoinDecision { AutoAccept, RequireToolCall };
+    /// "auto_owner" (0.5 default): auto-accept invites from the owner's
+    /// account only; everything else needs the call.join tool verb.
+    /// "manual": everything needs the tool verb. Unknown policies fail
+    /// closed to manual. Self-initiated calls are structurally absent in
+    /// v1 — no join path exists without an invite or a tool call.
+    static JoinDecision EvaluateJoinPolicy(const std::string& policy,
+                                            bool fromOwner);
+
+    /// Config shape check for channel type "calls" (offline-testable).
+    static bool ValidateConfigShape(const Json::Value& config,
+                                    std::string* error);
+
+private:
+    ChannelContext& m_ctx;
+    mutable std::mutex m_mutex;
+    std::string m_channelName;
+    std::string m_agentId;
+    Json::Value m_config;
+    std::shared_ptr<calls::SignalingClient> m_client; // one live call (v1)
+    std::string m_activeRoom;
+};
+#endif // ANIMUS_WITH_CALLS
 
 } // namespace animus::kernel

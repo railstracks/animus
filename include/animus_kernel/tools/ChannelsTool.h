@@ -38,6 +38,12 @@ class ChannelsTool : public CompositeTool {
 public:
     ChannelsTool();
 
+#ifdef ANIMUS_WITH_CALLS
+    /// #336: register the calls verb surface (call.join/leave/status) as a
+    /// C++ composite plugin routed through ChannelManager.
+    void RegisterCallsPlugin();
+#endif
+
     /// Set the config store for instance enumeration in list action.
     void SetConfigStore(AgentConfigStore* store) { m_configStore = store; }
 

@@ -118,6 +118,29 @@ public:
         return false;
     }
 
+    // --- Calls lane (#336). Default: unsupported on non-call adapters. ---
+
+    /// Join a live room call on this adapter's seat (mints credentials,
+    /// joins the signaling room, sets in-call flags). Returns false with
+    /// *error set when the adapter has no calls surface or the join fails.
+    virtual bool JoinCall(const std::string& roomToken, std::string* error) {
+        (void)roomToken;
+        if (error) *error = "calls not supported on this adapter";
+        return false;
+    }
+
+    /// Leave the live call (in-call flags down, graceful signaling bye).
+    virtual bool LeaveCall(std::string* error) {
+        if (error) *error = "calls not supported on this adapter";
+        return false;
+    }
+
+    /// Truth about the seat's call state (JSON: in_call, room, state,
+    /// session_id, participants). Empty object when unsupported.
+    virtual Json::Value CallStatus() const {
+        return Json::Value(Json::objectValue);
+    }
+
     /// Check if the connector is currently connected/active.
     virtual bool IsConnected() const = 0;
 
