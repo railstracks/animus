@@ -958,6 +958,24 @@ if(ANIMUS_BUILD_TESTS)
       )
       add_test(NAME AudioInPipelineTests COMMAND animus_audio_in_pipeline_tests)
 
+      # #337 leg-3 replay gate: real fvad over the Phase-0 capture vs the
+      # Python reference manifest (operational tool — audio is
+      # workspace-internal, never in the repo).
+      add_executable(animus_audio_in_replay
+        tools/audio_in_replay.cpp
+        src/kernel/calls/AudioInPipeline.cpp
+      )
+      target_link_libraries(animus_audio_in_replay PRIVATE
+        jsoncpp_lib fvad)
+      target_include_directories(animus_audio_in_replay PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${JSONCPP_INCLUDE_DIRS}
+      )
+      set_target_properties(animus_audio_in_replay PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+      )
+
       # #336 live acceptance gate: drives the real CallAdapter through
       # join -> status -> leave against production (secrets via --config
       # file, never argv). Operational tool, not a ctest (needs a live
