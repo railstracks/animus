@@ -553,6 +553,9 @@ target_link_libraries(animus_kernel PRIVATE ${ANIMUS_DROGON_TARGET})
 # as the kernel build (option ANIMUS_WITH_CALLS).
 if(ANIMUS_WITH_CALLS)
   target_compile_definitions(animus_kernel PUBLIC ANIMUS_WITH_CALLS)
+  # #337 media wiring: CallAdapter uses libdatachannel (peer connections,
+  # tracks), opus (decode), fvad (VAD seam impl).
+  target_link_libraries(animus_kernel PRIVATE datachannel opus fvad)
 endif()
 
 # Live signaling probe (tools/calls_probe.cpp) — operational gate tool,

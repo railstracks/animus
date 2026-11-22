@@ -18,7 +18,7 @@ namespace animus::kernel {
 namespace telegram { struct Message; struct Update; class TelegramBotApi; }
 class IrcInterfaceRuntime;
 struct ChannelState;
-namespace calls { class SignalingClient; }
+namespace calls { class SignalingClient; struct Utterance; }
 
 // ============================================================================
 // PollerAdapterBase — common lifecycle for poller-based connectors
@@ -333,6 +333,8 @@ public:
                                             bool fromOwner);
 
     /// Config shape check for channel type "calls" (offline-testable).
+    /// stt_url/stun/turn are optional (media-less listen probes work;
+    /// media needs them).
     static bool ValidateConfigShape(const Json::Value& config,
                                     std::string* error);
 
@@ -344,6 +346,25 @@ private:
     Json::Value m_config;
     std::shared_ptr<calls::SignalingClient> m_client; // one live call (v1)
     std::string m_activeRoom;
+
+    // #337 media wiring: per-call media state (peer connections, opus
+    // decoders, per-publisher pipelines) — defined in the .cpp; the
+    // adapter owns teardown with the call.
+    struct MediaState;
+    std::shared_ptr<MediaState> m_media; // shared_ptr: incomplete in header TUs
+    PollerRuntime m_dispatchRt;  // dispatch identity for ChannelDispatch
+
+    // Signaling-frame router (offers/candidates/events → media layer).
+    void HandleSignalFrame(const Json::Value& frame);
+    void HandleOffer(const std::string& senderSid, const Json::Value& data);
+    void HandleCandidate(const std::string& senderSid,
+                         const Json::Value& data);
+    void RequestOffersFromInCall();
+    void FeedOpusFrame(const std::string& senderSid, const uint8_t* data,
+                       size_t len);
+    void OnUtterance(const calls::Utterance& u);
+    std::string TranscribePcm16k(const std::vector<int16_t>& pcm);
+    void TearDownMedia();
 };
 #endif // ANIMUS_WITH_CALLS
 
