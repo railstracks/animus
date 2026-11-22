@@ -85,7 +85,80 @@ ChannelsTool::ChannelsTool()
         "Use 'list' to see available instances. Use 'describe' to see "
         "which actions a specific adapter supports. Platform availability "
         "depends on configuration.")
-{}
+{
+#ifdef ANIMUS_WITH_CALLS
+    RegisterCallsPlugin();
+#endif
+}
+
+#ifdef ANIMUS_WITH_CALLS
+void ChannelsTool::RegisterCallsPlugin() {
+    CompositePlugin cp;
+    cp.id = "calls";
+    cp.name = "Nextcloud Talk calls";
+    cp.capabilities = {"join", "leave", "status"};
+
+    ToolParameter room;
+    room.name = "room";
+    room.type = "string";
+    room.description = "Talk room token to join (from an invite or a "
+                       "call notification).";
+    room.required = true;
+    cp.actionSchemas["join"] = {room};
+    cp.actionSchemas["leave"] = {};
+    cp.actionSchemas["status"] = {};
+
+    // Handler reads m_channelManager at CALL time (wired in Initialize,
+    // after the ctor).
+    cp.handler = [this](const ToolCall& call) -> ToolResult {
+        ToolResult result;
+        result.call_id = call.id;
+        auto args = ParseArgs(call.arguments);
+        if (args.isNull()) {
+            result.success = false;
+            result.error = "failed to parse arguments";
+            return result;
+        }
+        const std::string action = GetStringField(args, "action");
+        const std::string instance =
+            ExtractInstanceName(GetStringField(args, "platform_id"));
+        if (instance.empty()) {
+            result.success = false;
+            result.error = "platform_id is required for action: " + action;
+            return result;
+        }
+        if (!m_channelManager) {
+            result.success = false;
+            result.error = "channel manager not wired";
+            return result;
+        }
+        std::string err;
+        if (action == "join") {
+            const std::string room = GetStringField(args, "room");
+            result.success = m_channelManager->JoinCall(instance, room, &err);
+            result.output = result.success
+                ? "Joined call in room " + room
+                : "";
+        } else if (action == "leave") {
+            result.success = m_channelManager->LeaveCall(instance, &err);
+            result.output = result.success ? "Left the call" : "";
+        } else if (action == "status") {
+            const Json::Value status = m_channelManager->CallStatus(instance);
+            result.success = status.get("in_call", false).asBool()
+                ? true : !status.empty();
+            result.output = ResultToJsonString(status);
+        } else {
+            result.success = false;
+            result.error = "unknown calls action: " + action;
+            return result;
+        }
+        if (!result.success) result.error = err;
+        return result;
+    };
+
+    RegisterPlugin(cp);
+}
+#endif // ANIMUS_WITH_CALLS
 
 
 // ── Secret masking for channel config in tool output (#15 hardening) ──

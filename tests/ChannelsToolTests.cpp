@@ -125,9 +125,13 @@ void TestChannelsToolPluginRegistration() {
     auto listData = ParseResult(listResult.output);
     Assert(listData["status"].asInt() == 200, "list status should be 200");
     Assert(listData["data"].isArray(), "list data should be array");
-    Assert(listData["data"].size() == 1, "should list 1 plugin");
-    Assert(listData["data"][0]["type"].asString() == "bluesky",
-           "listed plugin type should be bluesky");
+    // #336: builtin C++ plugins (calls) may also register — assert the
+    // registered plugin is LISTED, not an exact count.
+    bool blueskyListed = false;
+    for (const auto& entry : listData["data"]) {
+        if (entry.get("type", "").asString() == "bluesky") blueskyListed = true;
+    }
+    Assert(blueskyListed, "registered bluesky plugin should be listed");
 
     std::cerr << " done\n";
 }
@@ -385,7 +389,13 @@ return "registered"
 
     Assert(listResult.success, "list should succeed");
     auto listData = ParseResult(listResult.output);
-    Assert(listData["data"].size() == 1, "should list 1 adapter");
+    // #336: builtin C++ plugins (calls) may also register — assert the
+    // Lua-backed adapter is LISTED, not an exact count.
+    bool luaAdapterListed = false;
+    for (const auto& entry : listData["data"]) {
+        if (entry.get("type", "").asString() == "bluesky") luaAdapterListed = true;
+    }
+    Assert(luaAdapterListed, "registered Lua-backed adapter should be listed");
 
     std::cerr << " done\n";
 }

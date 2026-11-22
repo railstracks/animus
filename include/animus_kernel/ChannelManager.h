@@ -194,6 +194,17 @@ public:
     bool JoinChannel(const ReplyTarget& target, const std::string& key);
     bool PartChannel(const ReplyTarget& target, const std::string& reason);
 
+    // --- Calls lane (#336): verb delegation to the calls adapter ---
+    /// Join a room call on the named calls channel. False + *error when
+    /// the channel is not a calls adapter or the join fails.
+    bool JoinCall(const std::string& channelName, const std::string& roomToken,
+                  std::string* error);
+    /// Leave the live call on the named calls channel.
+    bool LeaveCall(const std::string& channelName, std::string* error);
+    /// Live call truth (JSON) for the named calls channel; empty object
+    /// when the channel is not a calls adapter.
+    Json::Value CallStatus(const std::string& channelName) const;
+
     // --- Migration ---
     // Migrate from legacy interfaces.json + social.* keys
     int MigrateFromLegacy();

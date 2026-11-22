@@ -580,6 +580,52 @@ bool ChannelManager::PartChannel(const ReplyTarget& target, const std::string& r
 }
 
 // ============================================================================
+// Calls lane (#336) — verb delegation
+// ============================================================================
+bool ChannelManager::JoinCall(const std::string& channelName,
+                              const std::string& roomToken,
+                              std::string* error) {
+    // Resolve under the lock, join OUTSIDE it: JoinCall performs
+    // synchronous network work (OCS + REST + WS, bounded 15s) and must
+    // not block every adapter operation meanwhile. The raw pointer is
+    // safe for the manager's lifetime: adapters are destroyed only in
+    // Stop()/Shutdown, which cannot run concurrently with a tool call.
+    IChannelAdapter* adapter = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_adaptersMutex);
+        auto it = m_adapters.find(channelName);
+        if (it == m_adapters.end()) {
+            if (error) *error = "channel not found: " + channelName;
+            return false;
+        }
+        if (m_adapterTypes[channelName] != "calls") {
+            if (error) *error = "not a calls channel: " + channelName;
+            return false;
+        }
+        adapter = it->second.get();
+    }
+    return adapter->JoinCall(roomToken, error);
+}
+
+bool ChannelManager::LeaveCall(const std::string& channelName,
+                               std::string* error) {
+    std::lock_guard<std::mutex> lock(m_adaptersMutex);
+    auto it = m_adapters.find(channelName);
+    if (it == m_adapters.end()) {
+        if (error) *error = "channel not found: " + channelName;
+        return false;
+    }
+    return it->second->LeaveCall(error);
+}
+
+Json::Value ChannelManager::CallStatus(const std::string& channelName) const {
+    std::lock_guard<std::mutex> lock(m_adaptersMutex);
+    auto it = m_adapters.find(channelName);
+    if (it == m_adapters.end()) return Json::Value(Json::objectValue);
+    return it->second->CallStatus();
+}
+
+// ============================================================================
 // #328 — delivery resolution: tool-submission is the channel default
 // ============================================================================
 bool ChannelManager::ResolveAutoDelivery(const std::string& channelName,
@@ -904,7 +950,8 @@ void ChannelManager::StartChannel(const ChannelState& state) {
     // Discord and WhatsApp still use the legacy poller path (deep coupling).
     if (state.type == "irc" || state.type == "telegram" || state.type == "vk" ||
         state.type == "email" || state.type == "slack" ||
-        state.type == "nextcloud" || state.type == "moltbook") {
+        state.type == "nextcloud" || state.type == "moltbook" ||
+        state.type == "calls") {
 
         // Ensure channel context is initialized
         if (!m_channelCtx) {
@@ -938,6 +985,10 @@ void ChannelManager::StartChannel(const ChannelState& state) {
             adapter = std::make_unique<NextcloudAdapter>(*m_channelCtx);
         } else if (state.type == "moltbook") {
             adapter = std::make_unique<MoltbookAdapter>(*m_channelCtx);
+#ifdef ANIMUS_WITH_CALLS
+        } else if (state.type == "calls") {
+            adapter = std::make_unique<CallAdapter>(*m_channelCtx);
+#endif
         }
 
         if (adapter && adapter->Start(state, &err)) {
@@ -1299,6 +1350,15 @@ bool ChannelManager::ValidateConfig(const std::string& type,
                 return false;
             }
         }
+    } else if (type == "calls") {
+#ifdef ANIMUS_WITH_CALLS
+        // Adapter-owned key set (A2 allowlist discipline: unknown keys
+        // fail loudly) — the shape check lives with the adapter.
+        return CallAdapter::ValidateConfigShape(config, error);
+#else
+        if (error) *error = "calls support not compiled into this build";
+        return false;
+#endif
     }
     return true;
 }

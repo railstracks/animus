@@ -218,6 +218,7 @@ endif()
 if(ANIMUS_WITH_CALLS)
   set(ANIMUS_CALLS_SOURCES
     src/kernel/calls/SignalingClient.cpp
+    src/kernel/channel/CallAdapter.cpp
   )
 else()
   set(ANIMUS_CALLS_SOURCES "")
@@ -545,6 +546,13 @@ target_include_directories(animus_kernel PRIVATE
 
 target_link_libraries(animus_kernel PUBLIC animus_sdk jsoncpp_lib)
 target_link_libraries(animus_kernel PRIVATE ${ANIMUS_DROGON_TARGET})
+
+# Calls lane (#336): CallAdapter + its ChannelAdapters.h guard ride this
+# PUBLIC define — test targets including the header see the same surface
+# as the kernel build (option ANIMUS_WITH_CALLS).
+if(ANIMUS_WITH_CALLS)
+  target_compile_definitions(animus_kernel PUBLIC ANIMUS_WITH_CALLS)
+endif()
 
 # Live signaling probe (tools/calls_probe.cpp) — operational gate tool,
 # not a test suite: drives the kernel's SignalingClient against a real
@@ -915,6 +923,42 @@ if(ANIMUS_BUILD_TESTS)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
       )
       add_test(NAME SignalingClientTests COMMAND animus_signaling_client_tests)
+
+      # #336: offline unit gates for the call adapter (policy + config
+      # shape + verb error paths; live verbs ride the calls probe).
+      add_executable(animus_call_adapter_tests
+        tests/CallAdapterTests.cpp
+      )
+      target_link_libraries(animus_call_adapter_tests PRIVATE
+        animus_kernel jsoncpp_lib)
+      target_include_directories(animus_call_adapter_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${JSONCPP_INCLUDE_DIRS}
+      )
+      set_target_properties(animus_call_adapter_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+      )
+      add_test(NAME CallAdapterTests COMMAND animus_call_adapter_tests)
+
+      # #336 live acceptance gate: drives the real CallAdapter through
+      # join -> status -> leave against production (secrets via --config
+      # file, never argv). Operational tool, not a ctest (needs a live
+      # signaling server + seat credentials).
+      add_executable(animus_call_adapter_probe
+        tools/call_adapter_probe.cpp
+        src/kernel/channel/CallAdapter.cpp
+        src/kernel/calls/SignalingClient.cpp
+      )
+      target_link_libraries(animus_call_adapter_probe PRIVATE
+        animus_kernel jsoncpp_lib OpenSSL::Crypto ${ANIMUS_DROGON_TARGET})
+      target_include_directories(animus_call_adapter_probe PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${JSONCPP_INCLUDE_DIRS}
+      )
+      set_target_properties(animus_call_adapter_probe PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+      )
     endif()
 
     add_executable(animus_media_vault_tests
