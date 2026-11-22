@@ -219,6 +219,7 @@ if(ANIMUS_WITH_CALLS)
   set(ANIMUS_CALLS_SOURCES
     src/kernel/calls/SignalingClient.cpp
     src/kernel/channel/CallAdapter.cpp
+    src/kernel/calls/AudioInPipeline.cpp
   )
 else()
   set(ANIMUS_CALLS_SOURCES "")
@@ -939,6 +940,23 @@ if(ANIMUS_BUILD_TESTS)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
       )
       add_test(NAME CallAdapterTests COMMAND animus_call_adapter_tests)
+
+      # #337: audio-in pipeline offline gates (pure helpers, segmentation
+      # state machine, junk filters — deterministic VAD/STT stubs).
+      add_executable(animus_audio_in_pipeline_tests
+        tests/AudioInPipelineTests.cpp
+        src/kernel/calls/AudioInPipeline.cpp
+      )
+      target_link_libraries(animus_audio_in_pipeline_tests PRIVATE
+        animus_kernel jsoncpp_lib)
+      target_include_directories(animus_audio_in_pipeline_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${JSONCPP_INCLUDE_DIRS}
+      )
+      set_target_properties(animus_audio_in_pipeline_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+      )
+      add_test(NAME AudioInPipelineTests COMMAND animus_audio_in_pipeline_tests)
 
       # #336 live acceptance gate: drives the real CallAdapter through
       # join -> status -> leave against production (secrets via --config
