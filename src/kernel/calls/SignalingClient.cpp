@@ -177,9 +177,15 @@ std::string SignalingClient::BuildRoomJoin(const std::string& room_id,
                                            const std::string& id) {
     Json::Value v;
     v["id"] = id;
+    // Standalone-protocol room join IS the "room" message (server:
+    // RoomClientMessage{roomid, sessionid}). A "type":"join" frame does
+    // NOT exist here — it produced a silent handshake deadline (vkyct946
+    // run 3). Entering the CALL partition is a separate step: the
+    // internal incall message (see BuildInCall) triggers
+    // addSessionToCall -> "joined call" (room.go:899).
     v["type"] = "room";
     v["room"]["roomid"] = room_id;
-    v["room"]["sessionid"] = session_id;
+    if (!session_id.empty()) v["room"]["sessionid"] = session_id;
     return ToJsonString(v);
 }
 
@@ -438,6 +444,19 @@ struct SignalingClient::Impl {
     }
 
     void HandleFrame(const Json::Value& frame) {
+        // One malformed frame must never kill the seat: the WS reader
+        // funnels everything through here on the loop thread, and a Json
+        // throw escaping here is std::terminate (observed live in
+        // vkyct946 run 8, right after answering the first real offer).
+        try {
+            HandleFrameImpl(frame);
+        } catch (const std::exception& e) {
+            std::cerr << "[calls-sig] frame dropped (handler error, seat "
+                         "alive): " << e.what() << "\n";
+        }
+    }
+
+    void HandleFrameImpl(const Json::Value& frame) {
         const std::string type = frame.get("type", "").asString();
 
         if (type == "welcome") {
@@ -461,10 +480,13 @@ struct SignalingClient::Impl {
                 std::string join_sid;
                 {
                     std::lock_guard<std::mutex> lk(mu);
-                    // Seat joins pin the REST-pre-created Talk room session:
-                    // Talk's backend resolves room joins by that id, not the
-                    // signaling session id (live-proven, Q9). Internal
-                    // clients use their own signaling session id (leg-1).
+                    // The pinned REST room session is MANDATORY for
+                    // hello-v2 joins: an empty sessionid is rejected with
+                    // a handshake error frame (server logs "User did not
+                    // send a room session id, assuming session ..." then
+                    // the backend rejects it — vkyct946 runs 4/5).
+                    // Internal clients use their own signaling session
+                    // id (leg-1).
                     join_sid = cfg.auth_mode == SignalingAuthMode::HelloV2
                                    ? cfg.room_session_id
                                    : session_id;
