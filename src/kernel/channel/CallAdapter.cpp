@@ -24,6 +24,7 @@
 #include <opus.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <condition_variable>
 #include <deque>
 #include <map>
@@ -66,7 +67,10 @@ bool CallAdapter::ValidateConfigShape(const Json::Value& config,
     static const std::set<std::string> kCallsKeys = {
         "nextcloud_url", "username", "app_password", "owner_users",
         "join_policy", "agent_id", "stt_url", "stun_server",
-        "turn_server", "turn_user", "turn_password"};
+        "turn_server", "turn_user", "turn_password",
+        // Internal-lane fields (spike leg2): auth_mode "internal"
+        // bypasses OCS mint/REST join and HMAC-hellos directly.
+        "auth_mode", "server_url", "backend_url", "internal_secret"};
     for (const auto& key : config.getMemberNames()) {
         if (!kCallsKeys.count(key)) {
             if (error) *error = "Unknown calls channel config key: " + key;
@@ -150,6 +154,12 @@ struct CallAdapter::MediaState {
     struct Publisher {
         std::shared_ptr<rtc::PeerConnection> pc;
         std::shared_ptr<rtc::Track> track;
+        // Per-mid track references: the single-slot assignment in onTrack
+        // dropped the audio track's last external reference when the video
+        // track arrived, libdatachannel then marked the m-line removed
+        // (m=audio 0) and the MCU never sent audio — run-14/15 root cause,
+        // reproduced offline in animus-calls-spike/answer_test Nov 23 2026.
+        std::map<std::string, std::shared_ptr<rtc::Track>> tracks;
         OpusDecoder* decoder = nullptr; // 48 kHz stereo decode
         std::unique_ptr<calls::AudioInPipeline> pipeline;
         std::string userId; // Tier-0 speaker label
@@ -161,8 +171,23 @@ struct CallAdapter::MediaState {
 bool CallAdapter::JoinCall(const std::string& roomToken, std::string* error) {
     // MediaState (defined above): one peer connection + decoder +
     // pipeline per publishing session; created with the call.
+    // Opt-in libdatachannel logging for live gates: ANIMUS_RTC_LOG=debug
+    // turns on ICE gathering/STUN/TURN/DTLS visibility on stderr; off by
+    // default (run-9 lesson: ICE failures were invisible without it).
+    static bool rtcLogArmed = false;
+    if (!rtcLogArmed && getenv("ANIMUS_RTC_LOG") != nullptr) {
+        rtcLogArmed = true;
+        rtc::InitLogger(rtc::LogLevel::Debug);
+    }
+
     std::string authHeader;
     std::string nextcloudUrl;
+    // Two auth lanes: "internal" (spike leg2 — HMAC hello, call-capable
+    // today) and hello-v2 (Q9 OCS-minted seat — REST joinCall is closed
+    // to API clients on this Talk: InjectionMiddleware resolves the
+    // participant session from the PHP session store, cookies only).
+    const bool internalMode =
+        GetString(m_config, "auth_mode") == "internal";
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_client) {
@@ -171,82 +196,114 @@ bool CallAdapter::JoinCall(const std::string& roomToken, std::string* error) {
             return false;
         }
         nextcloudUrl = GetString(m_config, "nextcloud_url");
-        const std::string user = GetString(m_config, "username");
-        const std::string pass = GetString(m_config, "app_password");
-        if (nextcloudUrl.empty() || user.empty() || pass.empty()) {
-            if (error) *error = "adapter config incomplete";
+        if (nextcloudUrl.empty()) {
+            if (error) *error = "adapter config incomplete (nextcloud_url)";
             return false;
         }
-        authHeader = "Basic " + Base64EncodeStr(user + ":" + pass);
+        if (!internalMode) {
+            const std::string user = GetString(m_config, "username");
+            const std::string pass = GetString(m_config, "app_password");
+            if (user.empty() || pass.empty()) {
+                if (error) *error =
+                    "adapter config incomplete (username/app_password)";
+                return false;
+            }
+            authHeader = "Basic " + Base64EncodeStr(user + ":" + pass);
+        }
     }
     if (roomToken.empty()) {
         if (error) *error = "room token required";
         return false;
     }
 
-    // 1) OCS settings → hello-v2 JWT + signaling server URL (v3 route —
-    //    v1 is gone in Talk 25+, live-proven #335).
-    HttpClient::Request settingsReq;
-    settingsReq.method = "GET";
-    settingsReq.url = nextcloudUrl +
-        "/ocs/v2.php/apps/spreed/api/v3/signaling/settings";
-    settingsReq.headers["OCS-APIRequest"] = "true";
-    settingsReq.headers["Accept"] = "application/json";
-    settingsReq.headers["Authorization"] = authHeader;
-    auto settingsResp = m_ctx.httpClient.Execute(settingsReq);
-    if (settingsResp.status_code != 200) {
-        if (error) *error = "OCS settings failed (" +
-                            std::to_string(settingsResp.status_code) + ")";
-        return false;
-    }
-    const Json::Value settings = OcsData(ParseJson(settingsResp.body));
-    const std::string token =
-        settings["helloAuthParams"]["2.0"]["token"].asString();
-    std::string server = GetString(settings, "server");
-    if (token.empty() || server.empty()) {
-        if (error) *error = "no hello-v2 token or signaling server in settings";
-        return false;
-    }
+    std::string server;       // signaling server base (both lanes)
+    std::string roomSession;  // v2: REST-pinned Talk room session
+    std::string v2Token;      // v2: OCS-minted hello-2.0 JWT
+    if (!internalMode) {
+        // 1) OCS settings → hello-v2 JWT + signaling server URL (v3
+        //    route — v1 is gone in Talk 25+, live-proven #335).
+        HttpClient::Request settingsReq;
+        settingsReq.method = "GET";
+        settingsReq.url = nextcloudUrl +
+            "/ocs/v2.php/apps/spreed/api/v3/signaling/settings";
+        settingsReq.headers["OCS-APIRequest"] = "true";
+        settingsReq.headers["Accept"] = "application/json";
+        settingsReq.headers["Authorization"] = authHeader;
+        auto settingsResp = m_ctx.httpClient.Execute(settingsReq);
+        if (settingsResp.status_code != 200) {
+            if (error) *error = "OCS settings failed (" +
+                                std::to_string(settingsResp.status_code) + ")";
+            return false;
+        }
+        const Json::Value settings = OcsData(ParseJson(settingsResp.body));
+        v2Token = settings["helloAuthParams"]["2.0"]["token"].asString();
+        server = GetString(settings, "server");
+        if (v2Token.empty() || server.empty()) {
+            if (error) *error =
+                "no hello-v2 token or signaling server in settings";
+            return false;
+        }
 
-    // 2) REST room join → Talk room session (the signaling join pins THIS;
-    //    the signaling session id answers no_such_room — live-proven, Q9).
-    HttpClient::Request joinReq;
-    joinReq.method = "POST";
-    joinReq.url = nextcloudUrl + "/ocs/v2.php/apps/spreed/api/v4/room/" +
-                  UrlEncode(roomToken) + "/participants/active";
-    joinReq.headers["OCS-APIRequest"] = "true";
-    joinReq.headers["Accept"] = "application/json";
-    joinReq.headers["Authorization"] = authHeader;
-    auto joinResp = m_ctx.httpClient.Execute(joinReq);
-    if (joinResp.status_code != 200) {
-        if (error) *error = "REST room join failed (" +
-                            std::to_string(joinResp.status_code) + ")";
-        return false;
-    }
-    const std::string roomSession =
-        OcsData(ParseJson(joinResp.body)).get("sessionId", "").asString();
-    if (roomSession.empty()) {
-        if (error) *error = "no room session from REST join";
-        return false;
+        // 2) REST room join → Talk room session (the signaling join pins
+        //    THIS; the signaling session id answers no_such_room —
+        //    live-proven, Q9).
+        HttpClient::Request joinReq;
+        joinReq.method = "POST";
+        joinReq.url = nextcloudUrl + "/ocs/v2.php/apps/spreed/api/v4/room/" +
+                      UrlEncode(roomToken) + "/participants/active";
+        joinReq.headers["OCS-APIRequest"] = "true";
+        joinReq.headers["Accept"] = "application/json";
+        joinReq.headers["Authorization"] = authHeader;
+        auto joinResp = m_ctx.httpClient.Execute(joinReq);
+        if (joinResp.status_code != 200) {
+            if (error) *error = "REST room join failed (" +
+                                std::to_string(joinResp.status_code) + ")";
+            return false;
+        }
+        roomSession =
+            OcsData(ParseJson(joinResp.body)).get("sessionId", "").asString();
+        if (roomSession.empty()) {
+            if (error) *error = "no room session from REST join";
+            return false;
+        }
+    } else {
+        // Internal lane (spike leg2, live-proven): direct HMAC hello —
+        // no OCS mint, no REST join; the backend resolves the seat by
+        // its internalsecret identity. server_url carries the base URL
+        // (…/standalone-signaling), normalized with the v2 lane below.
+        server = GetString(m_config, "server_url");
+        if (server.empty() ||
+            GetString(m_config, "internal_secret").empty() ||
+            GetString(m_config, "backend_url").empty()) {
+            if (error) *error =
+                "internal auth config incomplete (server_url/"
+                "internal_secret/backend_url)";
+            return false;
+        }
     }
 
     // 3) Signaling client in seat mode, joined to the room.
     calls::SignalingConfig cfg;
     cfg.server_url = server;
-    // Normalize: settings server is https://host/standalone-signaling/;
+    // Normalize: server base is https://host/standalone-signaling;
     // the WS endpoint appends /spreed (ParseServerUrl maps https→wss).
-    while (!cfg.server_url.empty() && cfg.server_url.back() == '/') {
-        cfg.server_url.pop_back();
-    }
-    cfg.server_url += "/spreed";
-    cfg.backend_url = nextcloudUrl;
-    cfg.hello_v2_token = token;
-    cfg.auth_mode = SignalingAuthMode::HelloV2;
+    while (!server.empty() && server.back() == '/') server.pop_back();
+    server += "/spreed";
+    cfg.server_url = server;
     cfg.room_id = roomToken;
-    cfg.room_session_id = roomSession;
     cfg.reconnect_base_s = 1.0;
     cfg.reconnect_max_s = 30.0;
     cfg.hello_timeout_s = 10.0;
+    if (internalMode) {
+        cfg.auth_mode = SignalingAuthMode::Internal;
+        cfg.backend_url = GetString(m_config, "backend_url");
+        cfg.internal_secret = GetString(m_config, "internal_secret");
+    } else {
+        cfg.backend_url = nextcloudUrl;
+        cfg.hello_v2_token = v2Token;
+        cfg.auth_mode = SignalingAuthMode::HelloV2;
+        cfg.room_session_id = roomSession;
+    }
 
     auto client = std::make_shared<SignalingClient>(std::move(cfg));
 
@@ -300,8 +357,39 @@ bool CallAdapter::JoinCall(const std::string& roomToken, std::string* error) {
         return false;
     }
 
-    // 4) In-call flags up: the seat is attending.
-    m_client->SetInCall(1);
+    // 4) Enter the CALL partition — lane-dependent.
+    //    Internal (spike leg2, live-proven): the internal incall WS
+    //    message IS honored for HelloClientTypeInternal sessions
+    //    (hub.go:2995 session.SetInCall); flags 3 = IN_CALL|WITH_AUDIO.
+    //    Internal sessions also auto-enter in-call at hello time
+    //    (clientsession.go:195) unless they declare internal-incall.
+    //    Hello-v2: REST joinCall (browser path) — CLOSED to API seats
+    //    on this Talk: InjectionMiddleware resolves the participant
+    //    session from the PHP session store (TalkSession::
+    //    getSessionForRoom, cookies only); Basic auth can never satisfy
+    //    it, so joinCall 404s at the !Session check. Kept as
+    //    documentation; the seat joins the ROOM but not the call.
+    if (internalMode) {
+        m_client->SetInCall(3);
+    } else {
+        HttpClient::Request callReq;
+        callReq.method = "POST";
+        callReq.url = nextcloudUrl +
+            "/ocs/v2.php/apps/spreed/api/v4/call/" + UrlEncode(roomToken);
+        callReq.headers["OCS-APIRequest"] = "true";
+        callReq.headers["Accept"] = "application/json";
+        callReq.headers["Authorization"] = authHeader;
+        callReq.headers["Content-Type"] = "application/json";
+        callReq.body = "{\"flags\":3}";
+        auto callResp = m_ctx.httpClient.Execute(callReq);
+        if (callResp.status_code != 200) {
+            ALOG_WARNING("calls", "REST joinCall failed ("
+                        << callResp.status_code
+                        << ") — seat stays room-only: " << roomToken);
+        } else {
+            ALOG_INFO("calls", "Call entered via REST joinCall (flags=3)");
+        }
+    }
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (!m_media) m_media = std::make_shared<MediaState>();
@@ -385,10 +473,16 @@ bool CallAdapter::TryAutoJoin(const std::string& roomToken,
 
 void CallAdapter::HandleSignalFrame(const Json::Value& frame) {
     const std::string type = frame.get("type", "").asString();
+    if (type == "event") {
+        // Participants changed under us (publisher joined/toggled after
+        // our join snapshot): re-request offers from in-call seats.
+        RequestOffersFromInCall();
+        return;
+    }
     if (type != "message") return; // offers/candidates arrive as messages
     const Json::Value& msg = frame["message"];
-    const std::string senderSid =
-        msg["sender"]["sessionid"].asString();
+    const Json::Value& sidNode = msg["sender"]["sessionid"];
+    const std::string senderSid = sidNode.isString() ? sidNode.asString() : "";
     const Json::Value& data = msg["data"];
     const std::string dtype = data.get("type", "").asString();
     if (dtype == "offer") {
@@ -400,8 +494,26 @@ void CallAdapter::HandleSignalFrame(const Json::Value& frame) {
 
 void CallAdapter::HandleOffer(const std::string& senderSid,
                                const Json::Value& data) {
-    const std::string sdp = data["payload"]["sdp"].asString();
-    if (sdp.empty() || senderSid.empty()) return;
+    const Json::Value& sdpNode = data["payload"]["sdp"];
+    const std::string sdp = sdpNode.isString() ? sdpNode.asString() : "";
+    if (sdp.empty() || senderSid.empty()) {
+        ALOG_WARNING("calls", "Offer without sdp/sender dropped (sender="
+                    << senderSid.substr(0, 8) << ")");
+        return;
+    }
+    {
+        // Duplicate-offer guard: a live track means the first offer's
+        // media path is up; re-request storms get ignored.
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_media) {
+            auto it = m_media->pubs.find(senderSid);
+            if (it != m_media->pubs.end() && it->second.track) {
+                ALOG_INFO("calls", "Duplicate offer from "
+                          << senderSid.substr(0, 8) << " ignored");
+                return;
+            }
+        }
+    }
 
     std::string mySid;
     std::string roomType = data.get("roomType", "video").asString();
@@ -428,9 +540,16 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
                 colon == std::string::npos ? turn : turn.substr(0, colon);
             const std::string service =
                 colon == std::string::npos ? "3478" : turn.substr(colon + 1);
-            rtcCfg.iceServers.emplace_back(
-                host, service, GetString(m_config, "turn_user", ""),
-                GetString(m_config, "turn_password", ""));
+            const std::string turnUser = GetString(m_config, "turn_user", "");
+            const std::string turnPass = GetString(m_config, "turn_password", "");
+            // Leg-2's proven shape: BOTH relay transports. UDP relay
+            // preferred; TCP carries media when server→host UDP is
+            // filtered (run-9 ICE failure shape — both sides Failed with
+            // no working candidate pair).
+            rtcCfg.iceServers.emplace_back(host, service, turnUser, turnPass,
+                                           rtc::IceServer::RelayType::TurnUdp);
+            rtcCfg.iceServers.emplace_back(host, service, turnUser, turnPass,
+                                           rtc::IceServer::RelayType::TurnTcp);
         }
     }
 
@@ -488,7 +607,8 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
         if (!m_media) return;
         auto it = m_media->pubs.find(senderSid);
         if (it == m_media->pubs.end() || !track) return;
-        it->second.track = track;
+        it->second.tracks[track->mid()] = track; // keep every m-line alive
+        it->second.track = track; // legacy slot (audio ref survives in tracks)
         // RTP → depacketized Opus payloads (48 kHz clock rate).
         track->setMediaHandler(std::make_shared<rtc::OpusRtpDepacketizer>());
         auto decoder = it->second.decoder;
@@ -510,38 +630,64 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
         payload["type"] = "candidate";
         payload["sid"] = recvSid;
         payload["roomType"] = roomType;
-        payload["payload"]["candidate"] = std::string(cand);
+        // hub.go:2196 rejects "a="-prefixed candidate payloads, and
+        // rtc::Candidate's string operator emits exactly that prefix
+        // (libdatachannel candidate.cpp: "line << \"a=\" << candidate()").
+        // Send the bare candidate() form browsers use (run-14 root cause,
+        // Nov 23 2026: every trickled candidate was born dead).
+        payload["payload"]["candidate"] = cand.candidate();
         payload["payload"]["sdpMid"] = cand.mid();
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_client) m_client->SendToSession(senderSid, payload);
     });
 
-    pc->onStateChange([senderSid](rtc::PeerConnection::State s) {
+    pc->onStateChange([this, senderSid](rtc::PeerConnection::State s) {
         if (s == rtc::PeerConnection::State::Failed ||
             s == rtc::PeerConnection::State::Closed) {
             ALOG_WARNING("calls", "Peer connection to "
                         << senderSid.substr(0, 8) << " state "
                         << static_cast<int>(s));
         }
+        // A dead pc must not wedge the seat: the duplicate-offer guard
+        // keys on the pub entry, so drop it on failure — event-driven
+        // re-requests can then rebuild from a fresh offer (run-9
+        // witness: 23:46:17 re-request blocked by the stale entry).
+        if (s == rtc::PeerConnection::State::Failed) {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_media) m_media->pubs.erase(senderSid);
+        }
     });
 
     try {
+        // Send the answer from the application-time callback: libdatachannel
+        // fires onLocalDescription with type=answer when the answer is
+        // applied, then (v0.24.6, libnice builds) re-offers internally
+        // ~16ms later — later localDescription() reads return that offer
+        // (setup:actpass), which the MCU silently rejects (run-14..17
+        // root cause #4; answer_test offline proof Nov 23 2026). The
+        // re-offer callback is filtered out here. Candidates arrive via
+        // the bare-format trickle path (hub rejects "a=" prefixes).
+        pc->onLocalDescription(
+            [this, senderSid, mySid, roomType, recvSid](rtc::Description desc) {
+                if (desc.type() != rtc::Description::Type::Answer)
+                    return;
+                Json::Value payload;
+                payload["type"] = "answer";
+                payload["to"] = senderSid;
+                payload["from"] = mySid;
+                payload["sid"] = recvSid;
+                payload["roomType"] = roomType;
+                payload["payload"]["type"] = "answer";
+                payload["payload"]["nick"] =
+                    GetString(m_config, "username", "animus");
+                payload["payload"]["sdp"] = std::string(desc);
+                std::lock_guard<std::mutex> lock(m_mutex);
+                if (m_client) m_client->SendToSession(senderSid, payload);
+                ALOG_INFO("calls", "Answered offer from "
+                            << senderSid.substr(0, 8));
+            });
         pc->setRemoteDescription(rtc::Description(sdp, "offer"));
-        pc->setLocalDescription(); // answer
-        const auto answer = pc->localDescription();
-        Json::Value payload;
-        payload["type"] = "answer";
-        payload["to"] = senderSid;
-        payload["from"] = mySid;
-        payload["sid"] = recvSid;
-        payload["roomType"] = roomType;
-        payload["payload"]["type"] = "answer";
-        payload["payload"]["nick"] =
-            GetString(m_config, "username", "animus");
-        payload["payload"]["sdp"] = std::string(*answer);
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if (m_client) m_client->SendToSession(senderSid, payload);
-        ALOG_INFO("calls", "Answered offer from " << senderSid.substr(0, 8));
+        pc->setLocalDescription(); // answer; delivered via onLocalDescription
     } catch (const std::exception& e) {
         ALOG_WARNING("calls", "Offer handling failed: " << e.what());
     }
@@ -549,8 +695,10 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
 
 void CallAdapter::HandleCandidate(const std::string& senderSid,
                                    const Json::Value& data) {
-    std::string cand = data["payload"]["candidate"].asString();
-    if (cand.empty()) cand = data["payload"]["candiate"].asString(); // leg-2: seen typo
+    const Json::Value& c1 = data["payload"]["candidate"];
+    const Json::Value& c2 = data["payload"]["candiate"];
+    std::string cand = c1.isString() ? c1.asString() : "";
+    if (cand.empty() && c2.isString()) cand = c2.asString();
     if (cand.empty() || senderSid.empty()) return;
     std::shared_ptr<rtc::PeerConnection> pc;
     {
@@ -575,12 +723,13 @@ void CallAdapter::RequestOffersFromInCall() {
         if (!m_client) return;
         mySid = m_client->session_id();
         for (const auto& p : m_client->participants()) {
-            if (p.session_id != mySid && (p.in_call & 1)) {
+            if (p.session_id != mySid && p.in_call != 0) {
                 publishers.push_back(p.session_id);
             }
         }
     }
     for (const auto& sid : publishers) {
+        ALOG_INFO("calls", "Requesting offer from " << sid.substr(0, 8));
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_client) m_client->RequestOffer(sid);
     }
