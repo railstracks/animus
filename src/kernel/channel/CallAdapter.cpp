@@ -24,10 +24,12 @@
 #include <fvad.h>
 #include <opus.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -185,6 +187,155 @@ const char* JsonTypeName(Json::ValueType t) {
     }
     return "?";
 }
+
+// Live-gate observability for the audio-in path (#337). Run 19 was the
+// first run with media connected and ended at 0 utterances with no line
+// saying which stage dropped the speech. Call-wide totals: one human
+// speaker is the gate's shape.
+struct AudioInCounters {
+    std::atomic<uint64_t> vadFrames{0};   // 10 ms frames through the VAD
+    std::atomic<uint64_t> vadVoiced{0};   // ... flagged as speech
+    std::atomic<uint64_t> packets{0};     // Opus frames handed to a decoder
+    std::atomic<uint64_t> decoded{0};
+    std::atomic<uint64_t> rejected{0};
+    std::atomic<uint64_t> trackPackets{0}; // log-only track path (run 22)
+};
+AudioInCounters g_audioIn;
+
+// #337 run 20: with a browser speaking in the room, the speech decoder
+// was handed exactly one packet per second for the whole call. Before
+// blaming the sender, count everything the transport hands to the peer
+// connection, grouped by SSRC — the library drops RTP whose SSRC matches
+// no track without logging it (PeerConnection::dispatchMedia).
+class MediaCensus final : public rtc::MediaHandler {
+public:
+    // Run 21 verdict: the browser's speech RTP arrives with an SSRC the
+    // negotiation never announced, so PeerConnection::dispatchMedia drops
+    // every packet before a track can see it — while the audio track only
+    // ever delivered the browser's 1/s RTCP sender reports. This hook runs
+    // BEFORE that routing: the one place the probe sees every decrypted
+    // media packet. Opus payloads feed the speech pipeline from here; the
+    // audio track's onMessage is demoted to a drained, log-only counter.
+    std::function<void(const uint8_t* payload, size_t len)> onAudioRtp;
+
+    void incoming(rtc::message_vector& messages,
+                  const rtc::message_callback& send) override {
+        (void)send; // nothing is ever sent back
+        for (const auto& m : messages) {
+            if (!m) continue;
+            Tally(*m);
+            if (onAudioRtp && m->type == rtc::Message::Binary) {
+                const size_t off = RtpPayloadOffset(*m);
+                if (off < m->size()) {
+                    onAudioRtp(
+                        reinterpret_cast<const uint8_t*>(m->data()) + off,
+                        m->size() - off);
+                }
+            }
+        }
+    }
+
+private:
+    // Byte offset of the opus payload in an audio RTP packet, or the
+    // packet size when there is nothing to feed (not RTP, not opus):
+    // fixed header + CSRCs + one header extension. Talk/Chrome opus is
+    // payload type 111 (from the offer); the census log prints the pt of
+    // every SSRC, so a change would be visible in one run.
+    static size_t RtpPayloadOffset(const rtc::Message& m) {
+        const size_t size = m.size();
+        if (size < 12) return size;
+        const auto* d = reinterpret_cast<const uint8_t*>(m.data());
+        if ((d[0] >> 6) != 2 || (d[1] & 0x7f) != 111) return size;
+        size_t off = 12 + 4 * (d[0] & 0x0f);
+        if (d[0] & 0x10) { // one header extension: 2B profile, 2B words
+            if (size < off + 4) return size;
+            off += 4 + 4 * ((uint32_t(d[off + 2]) << 8) | d[off + 3]);
+        }
+        return off;
+    }
+
+    struct Stat {
+        uint64_t packets = 0;
+        uint64_t bytes = 0;
+        bool rtp = false;
+        unsigned pt = 0;
+        unsigned firstSeq = 0;
+        unsigned lastSeq = 0;
+    };
+    using Key = std::pair<bool, uint32_t>;
+
+    static std::mutex& Mutex() {
+        static std::mutex m;
+        return m;
+    }
+    static std::map<Key, Stat>& Table() {
+        static std::map<Key, Stat> t;
+        return t;
+    }
+    static std::chrono::steady_clock::time_point& WindowStart() {
+        static std::chrono::steady_clock::time_point start{};
+        return start;
+    }
+    static std::string Hex(uint32_t v) {
+        static const char* kDigits = "0123456789abcdef";
+        std::string out(8, '0');
+        for (int i = 7; i >= 0; --i) {
+            out[static_cast<size_t>(i)] = kDigits[v & 0xf];
+            v >>= 4;
+        }
+        return out;
+    }
+
+    // One line per second of media, e.g.
+    //   media-in: ssrc=1a2b3c4d rtp pt=111 n=50 bytes=11230 seq=4012..4061
+    //             | rtcp pt=200 n=1 bytes=71
+    static void Tally(const rtc::Message& m) {
+        const size_t size = m.size();
+        const auto* d = reinterpret_cast<const uint8_t*>(m.data());
+        const bool rtp = m.type == rtc::Message::Binary;
+        uint32_t ssrc = m.stream;
+        unsigned pt = 0;
+        unsigned seq = 0;
+        if (size >= 2) pt = rtp ? unsigned(d[1] & 0x7f) : unsigned(d[1]);
+        if (rtp && size >= 12) {
+            ssrc = (uint32_t(d[8]) << 24) | (uint32_t(d[9]) << 16) |
+                   (uint32_t(d[10]) << 8) | uint32_t(d[11]);
+            seq = unsigned((d[2] << 8) | d[3]);
+        }
+        std::ostringstream line;
+        {
+            std::lock_guard<std::mutex> lock(Mutex());
+            const auto now = std::chrono::steady_clock::now();
+            auto& start = WindowStart();
+            if (start == std::chrono::steady_clock::time_point{}) start = now;
+            Stat& s = Table()[Key(rtp, ssrc)];
+            if (s.packets == 0) {
+                s.rtp = rtp;
+                s.pt = pt;
+                s.firstSeq = seq;
+            }
+            ++s.packets;
+            s.bytes += size;
+            s.lastSeq = seq;
+            if (now - start >= std::chrono::seconds(1)) {
+                for (const auto& entry : Table()) {
+                    const Stat& v = entry.second;
+                    line << (line.tellp() ? " | " : " ")
+                         << (v.rtp ? "ssrc=" + Hex(entry.first.second)
+                                   : std::string("rtcp"))
+                         << " pt=" << v.pt << " n=" << v.packets
+                         << " bytes=" << v.bytes;
+                    if (v.rtp) {
+                        line << " seq=" << v.firstSeq << ".." << v.lastSeq;
+                    }
+                }
+                Table().clear();
+                start = now;
+            }
+        }
+        if (line.tellp() > 0) ALOG_INFO("calls", "media-in:" << line.str());
+    }
+};
 
 } // namespace
 
@@ -672,7 +823,16 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
                     fvad_set_sample_rate(v, 16000);
                     fvad_set_mode(v, 2); // leg-3: use 2
                 }
-                return fvad_process(v, frame, samples) == 1;
+                const bool voiced = fvad_process(v, frame, samples) == 1;
+                if (voiced) ++g_audioIn.vadVoiced;
+                const uint64_t frames = ++g_audioIn.vadFrames;
+                if (frames % 500 == 0) { // one line per 5 s of timeline
+                    ALOG_INFO("calls", "audio-in: " << frames / 100
+                              << " s through the VAD, voiced "
+                              << g_audioIn.vadVoiced.load() * 100 / frames
+                              << "%");
+                }
+                return voiced;
             },
             [self, sttUrl](const std::vector<int16_t>& pcm) -> std::string {
                 return self->TranscribePcm16k(pcm);
@@ -707,6 +867,13 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
         return m_client ? m_client->SendToSession(senderSid, payload) : false;
     };
 
+    // Sees every incoming media packet before the library routes it to a
+    // track (or silently drops it): see MediaCensus.
+    auto census = std::make_shared<MediaCensus>();
+    census->onAudioRtp = [this, senderSid](const uint8_t* payload, size_t len) {
+        FeedOpusFrame(senderSid, payload, len);
+    };
+    pc->setMediaHandler(census);
     pc->onTrack([this, senderSid, isLive](std::shared_ptr<rtc::Track> track) {
         if (!isLive()) return;
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -714,21 +881,40 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
         auto it = m_media->pubs.find(senderSid);
         if (it == m_media->pubs.end() || !track) return;
         it->second.tracks[track->mid()] = track; // keep every m-line alive
+        const std::string kind = track->description().type();
+        ALOG_INFO("calls", "Media track up from " << senderSid.substr(0, 8)
+                  << " mid=" << track->mid() << " kind=" << kind);
+        // Only the audio m-line carries speech. The audio depacketizer
+        // does no more than strip the RTP header, so wiring it to the
+        // video m-line handed video bytes to the speaker's Opus decoder;
+        // some parse as valid frames and decode to noise spliced into the
+        // speech timeline (run 19: media connected, 0 utterances). Video
+        // is held in `tracks` and decoded nowhere. It is still read and
+        // discarded: an unread track fills its 1024-message receive queue
+        // and the library logs a drop warning every second (run 20).
+        if (kind != "audio") {
+            track->onMessage([](rtc::binary) {}, nullptr);
+            return;
+        }
         it->second.track = track; // legacy slot (audio ref survives in tracks)
-        // RTP → depacketized Opus payloads (48 kHz clock rate).
+        // Run 21: keep the depacketizer (the queue must still be drained)
+        // but feed nothing from here — the SSRC-unregistered speech RTP
+        // never reaches this track, and what it did deliver was the
+        // browser's 1/s RTCP sender reports decoded as Opus. Speech feeds
+        // from MediaCensus::onAudioRtp; this path only counts what the
+        // library routes to the track (log-only, drained).
         track->setMediaHandler(std::make_shared<rtc::OpusRtpDepacketizer>());
-        auto decoder = it->second.decoder;
         track->onMessage(
-            [this, senderSid, decoder](rtc::binary b) {
-                if (!b.empty() && decoder) {
-                    FeedOpusFrame(senderSid,
-                                  reinterpret_cast<const uint8_t*>(b.data()),
-                                  b.size());
+            [senderSid](rtc::binary b) {
+                (void)b;
+                const uint64_t n = ++g_audioIn.trackPackets;
+                if (n <= 3 || n % 250 == 0) {
+                    ALOG_INFO("calls", "audio-in: track path log-only, "
+                              << n << " packets from "
+                              << senderSid.substr(0, 8));
                 }
             },
             nullptr);
-        ALOG_INFO("calls", "Media track up from " << senderSid.substr(0, 8)
-                  << " mid=" << track->mid());
     });
 
     pc->onLocalCandidate([this, senderSid, sdp, isLive, sendTrickle](
@@ -943,13 +1129,42 @@ void CallAdapter::FeedOpusFrame(const std::string& senderSid,
     }
     // Decode stereo 48k (leg-2: 3,840 B/20ms = 2ch x 960) → pipeline
     // intake deinterleaves + decimates to 16k mono + VAD-segments.
+    // frame_size is samples PER CHANNEL of capacity: the buffer holds
+    // 2x960 interleaved samples, so the honest capacity is 960. Passing
+    // 2x960 let a >20 ms frame write up to twice the buffer — the
+    // leading suspect for the teardown heap-corruption family (run 19
+    // decoded video bytes here; a 40/60 ms TOC overflows). Larger frames
+    // now return BUFFER_TOO_SMALL and land in the rejected counter.
     std::vector<opus_int16> pcm(2 * 960);
+    const uint64_t packet = ++g_audioIn.packets;
     const int n = opus_decode(pub->decoder, data,
                               static_cast<opus_int32>(len), pcm.data(),
-                              2 * 960, 0);
-    if (n <= 0) return; // DTX/comfort-noise frames decode to nothing
+                              960, 0);
+    if (n <= 0) { // DTX/comfort-noise frames decode to nothing
+        const uint64_t rejected = ++g_audioIn.rejected;
+        if (rejected <= 3) { // a rejected frame is not speech: log the shape
+            ALOG_INFO("calls", "audio-in: frame rejected by the Opus "
+                      "decoder, code=" << n << " bytes=" << len);
+        }
+        return;
+    }
+    ++g_audioIn.decoded;
+    if (packet <= 3) { // the shape of what the audio track really delivers
+        ALOG_INFO("calls", "audio-in: packet " << packet << " bytes=" << len
+                  << " toc=" << static_cast<int>(data[0])
+                  << " decoded_samples=" << n);
+    }
+    // opus_decode returns samples PER CHANNEL (the interleaved buffer
+    // holds 2n) and the intake takes samples per channel — the replay
+    // tool passes 960 for 20 ms. n/2 fed it half of every packet.
     pub->pipeline->FeedStereo48k(pcm.data(),
-                                 static_cast<size_t>(n) / 2);
+                                 static_cast<size_t>(n));
+    if (packet % 250 == 0) { // one line per 5 s of audio
+        ALOG_INFO("calls", "audio-in: " << packet
+                  << " frames to the decoder, decoded="
+                  << g_audioIn.decoded.load() << " rejected="
+                  << g_audioIn.rejected.load());
+    }
 }
 
 void CallAdapter::OnUtterance(const calls::Utterance& u) {
@@ -1027,7 +1242,12 @@ std::string CallAdapter::TranscribePcm16k(
         "multipart/form-data; boundary=" + boundary;
     req.body = std::move(body);
     const auto resp = m_ctx.httpClient.Execute(req);
-    if (resp.status_code != 200) return "";
+    if (resp.status_code != 200) {
+        ALOG_WARNING("calls", "audio-in: STT refused a "
+                    << (pcm.size() / 1600) / 10.0 << " s utterance (HTTP "
+                    << resp.status_code << ")");
+        return "";
+    }
     const Json::Value j = ParseJson(resp.body);
     return j.get("text", "").asString();
 }
