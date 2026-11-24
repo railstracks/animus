@@ -6,6 +6,7 @@
 
 #include "animus_kernel/ChannelAdapters.h"
 #include "animus_kernel/ChannelState.h"
+#include "animus_kernel/calls/SignalingWire.h"
 
 #include <json/json.h>
 
@@ -95,6 +96,91 @@ int main() {
         withAgent["agent_id"] = "default";
         check(CallAdapter::ValidateConfigShape(withAgent, &err),
               "config shape: agent_id (framework key) accepted");
+    }
+
+    // --- SignalingWire: the trickle-candidate shapes that blocked runs
+    // 11-18 (#337). `hubAccepts` mirrors the deployed hub's parse rule
+    // (api/signaling.go CheckValid): payload.candidate must be a nested
+    // object holding a string.
+    {
+        namespace wire = animus::kernel::calls;
+        const auto hubAccepts = [](const Json::Value& payload) {
+            const Json::Value& c = payload["candidate"];
+            return c.isObject() && c["candidate"].isString();
+        };
+        const std::string text =
+            "candidate:1 1 udp 2130706431 10.0.11.4 54321 typ host";
+
+        const Json::Value env = wire::CandidateEnvelope(text, "1", 1);
+        check(env.isObject() && env["candidate"].asString() == text,
+              "candidate envelope: nested object holding the candidate string");
+        check(env["sdpMid"].asString() == "1" &&
+                  env["sdpMLineIndex"].asInt() == 1,
+              "candidate envelope: carries sdpMid + sdpMLineIndex for the MCU");
+
+        Json::Value payload(Json::objectValue);
+        payload["candidate"] = env;
+        check(hubAccepts(payload), "hub rule: the envelope is accepted");
+
+        Json::Value endPayload(Json::objectValue);
+        endPayload["candidate"] = wire::EndOfCandidatesEnvelope();
+        check(hubAccepts(endPayload) &&
+                  endPayload["candidate"]["candidate"].asString().empty(),
+              "hub rule: end-of-candidates is the object with an empty string");
+
+        // Regression witness: the shape runs 11-18 actually sent.
+        Json::Value bare(Json::objectValue);
+        bare["candidate"] = text;
+        check(!hubAccepts(bare),
+              "hub rule: the bare-string shape of runs 11-18 is rejected");
+
+        wire::RemoteCandidate rc;
+        const Json::Value fromMcu = Parse(
+            R"({"type":"candidate","payload":{"type":"candidate","candidate":)"
+            R"({"sdpMid":"0","sdpMLineIndex":0,)"
+            R"("candidate":"candidate:1 1 udp 1 10.0.0.16 50000 typ host"}}})");
+        check(wire::ParseRemoteCandidate(fromMcu, &rc) &&
+                  !rc.endOfCandidates && rc.mid == "0" &&
+                  rc.candidate ==
+                      "candidate:1 1 udp 1 10.0.0.16 50000 typ host",
+              "inbound: MCU bridge object form is read (dropped unread before)");
+
+        const Json::Value fromPeer = Parse(
+            R"({"payload":{"candidate":)"
+            R"("candidate:2 1 udp 1 10.0.0.16 50001 typ host",)"
+            R"("sdpMid":"1"}})");
+        check(wire::ParseRemoteCandidate(fromPeer, &rc) && rc.mid == "1" &&
+                  rc.candidate.rfind("candidate:2", 0) == 0,
+              "inbound: plain-string peer form is read");
+
+        const Json::Value prefixed = Parse(
+            R"({"payload":{"candidate":{"sdpMid":"0",)"
+            R"("candidate":" a=candidate:3 1 udp 1 10.0.0.16 50002 typ host "}}})");
+        check(wire::ParseRemoteCandidate(prefixed, &rc) &&
+                  rc.candidate ==
+                      "candidate:3 1 udp 1 10.0.0.16 50002 typ host",
+              "inbound: a= prefix and padding are stripped");
+
+        const Json::Value end = Parse(
+            R"({"payload":{"type":"candidate","candidate":{"candidate":""}}})");
+        check(wire::ParseRemoteCandidate(end, &rc) && rc.endOfCandidates &&
+                  rc.candidate.empty(),
+              "inbound: empty candidate reads as end-of-candidates");
+
+        const Json::Value none = Parse(R"({"payload":{"type":"candidate"}})");
+        check(!wire::ParseRemoteCandidate(none, &rc),
+              "inbound: missing candidate reports unusable (logged, not silent)");
+
+        const std::string sdp =
+            "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n"
+            "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:0\r\n"
+            "m=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:1\r\n";
+        check(wire::MidToMlineIndex(sdp, "0") == 0 &&
+                  wire::MidToMlineIndex(sdp, "1") == 1,
+              "m-line index: resolved by mid over CRLF SDP");
+        check(wire::MidToMlineIndex(sdp, "7") == -1 &&
+                  wire::MidToMlineIndex("", "0") == -1,
+              "m-line index: unknown mid / empty SDP -> -1");
     }
 
     if (failures > 0) {

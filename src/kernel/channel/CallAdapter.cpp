@@ -17,6 +17,7 @@
 #include "animus_kernel/Log.h"
 #include "animus_kernel/calls/AudioInPipeline.h"
 #include "animus_kernel/calls/SignalingClient.h"
+#include "animus_kernel/calls/SignalingWire.h"
 #include "animus_kernel/tools/HttpClient.h"
 
 #include <rtc/rtc.hpp>
@@ -30,6 +31,8 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <sstream>
+#include <vector>
 
 namespace animus::kernel {
 
@@ -144,6 +147,45 @@ Json::Value OcsData(const Json::Value& root) {
     return root["ocs"]["data"];
 }
 
+const char* PcStateName(rtc::PeerConnection::State s) {
+    switch (s) {
+        case rtc::PeerConnection::State::New: return "new";
+        case rtc::PeerConnection::State::Connecting: return "connecting";
+        case rtc::PeerConnection::State::Connected: return "connected";
+        case rtc::PeerConnection::State::Disconnected: return "disconnected";
+        case rtc::PeerConnection::State::Failed: return "failed";
+        case rtc::PeerConnection::State::Closed: return "closed";
+    }
+    return "?";
+}
+
+const char* IceStateName(rtc::PeerConnection::IceState s) {
+    switch (s) {
+        case rtc::PeerConnection::IceState::New: return "new";
+        case rtc::PeerConnection::IceState::Checking: return "checking";
+        case rtc::PeerConnection::IceState::Connected: return "connected";
+        case rtc::PeerConnection::IceState::Completed: return "completed";
+        case rtc::PeerConnection::IceState::Failed: return "failed";
+        case rtc::PeerConnection::IceState::Disconnected: return "disconnected";
+        case rtc::PeerConnection::IceState::Closed: return "closed";
+    }
+    return "?";
+}
+
+const char* JsonTypeName(Json::ValueType t) {
+    switch (t) {
+        case Json::nullValue: return "null";
+        case Json::intValue: return "int";
+        case Json::uintValue: return "uint";
+        case Json::realValue: return "real";
+        case Json::stringValue: return "string";
+        case Json::booleanValue: return "bool";
+        case Json::arrayValue: return "array";
+        case Json::objectValue: return "object";
+    }
+    return "?";
+}
+
 } // namespace
 
 // MediaState: one peer connection per publishing session (leg-2 shape),
@@ -163,6 +205,8 @@ struct CallAdapter::MediaState {
         OpusDecoder* decoder = nullptr; // 48 kHz stereo decode
         std::unique_ptr<calls::AudioInPipeline> pipeline;
         std::string userId; // Tier-0 speaker label
+        std::string lastOfferSdp; // replay guard for re-offers
+        std::chrono::steady_clock::time_point offerAt{}; // stalled-guard clock
     };
     std::map<std::string, Publisher> pubs; // by signaling session id
     std::string stt_url;
@@ -501,18 +545,42 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
                     << senderSid.substr(0, 8) << ")");
         return;
     }
+
+    // Offer for a subscription we already hold? (run-18 lesson, Nov 24
+    // 2026: the old guard keyed on "a track exists", but onTrack fires
+    // at SDP-apply time — before ICE — so a negotiation that never
+    // connected looked "up", the MCU's retry offer was discarded as a
+    // "duplicate", and the seat stayed wedged on a peer connection that
+    // could not even fail: with no remote candidates its ICE agent
+    // never started a check.)
+    //   identical SDP -> replay of what is already applied: ignore
+    //   any other SDP  -> replace: the MCU re-offers only when the old
+    //                     negotiation is dead or was superseded
+    std::shared_ptr<rtc::PeerConnection> stalePc;
+    std::string staleState;
     {
-        // Duplicate-offer guard: a live track means the first offer's
-        // media path is up; re-request storms get ignored.
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_media) {
             auto it = m_media->pubs.find(senderSid);
-            if (it != m_media->pubs.end() && it->second.track) {
-                ALOG_INFO("calls", "Duplicate offer from "
-                          << senderSid.substr(0, 8) << " ignored");
-                return;
+            if (it != m_media->pubs.end() && it->second.pc) {
+                if (it->second.lastOfferSdp == sdp) {
+                    ALOG_INFO("calls", "Duplicate offer (identical SDP) from "
+                              << senderSid.substr(0, 8) << " ignored");
+                    return;
+                }
+                staleState = PcStateName(it->second.pc->state());
+                stalePc = std::move(it->second.pc);
+                it->second.pc.reset();
+                it->second.track.reset();
+                it->second.tracks.clear();
             }
         }
+    }
+    if (stalePc) {
+        ALOG_WARNING("calls", "Replacing subscription to "
+                    << senderSid.substr(0, 8) << " (old state "
+                    << staleState << ")");
+        try { stalePc->close(); } catch (...) {}
     }
 
     std::string mySid;
@@ -570,13 +638,23 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
     }
     MediaState::Publisher& pub = *pubPtr;
     pub.pc = pc;
+    pub.lastOfferSdp = sdp;
+    pub.offerAt = std::chrono::steady_clock::now();
     pub.userId = publisherUserId.empty() ? senderSid : publisherUserId;
 
-    // The leg-2 anti-flatten evidence lives in the pipeline's intake;
-    // the decoder is created stereo (Talk publishes Opus 48k stereo).
-    int opusErr = 0;
-    pub.decoder = opus_decoder_create(48000, 2, &opusErr);
-    {
+    // The decoder is created stereo (Talk publishes Opus 48k stereo).
+    // It and the pipeline outlive a replaced peer connection: a re-offer
+    // must not drop an utterance in flight, and building a fresh decoder
+    // here would leak the old one.
+    if (!pub.decoder) {
+        int opusErr = 0;
+        pub.decoder = opus_decoder_create(48000, 2, &opusErr);
+        if (!pub.decoder) {
+            ALOG_WARNING("calls", "Opus decoder create failed (err="
+                        << opusErr << ")");
+        }
+    }
+    if (!pub.pipeline) {
         calls::AudioInConfig pipeCfg; // decision-3 defaults
         std::string speaker = pub.userId;
         std::string sttUrl;
@@ -602,7 +680,35 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
             [self](const calls::Utterance& u) { self->OnUtterance(u); });
     }
 
-    pc->onTrack([this, senderSid](std::shared_ptr<rtc::Track> track) {
+    const std::weak_ptr<rtc::PeerConnection> selfRef = pc;
+    // A callback acts only while its peer connection is still the live
+    // subscription for this sender; events from a replaced connection
+    // (a late candidate, its own teardown, a stale track) stop here.
+    auto isLive = [this, senderSid, selfRef]() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_media) return false;
+        auto it = m_media->pubs.find(senderSid);
+        return it != m_media->pubs.end() && it->second.pc &&
+               it->second.pc == selfRef.lock();
+    };
+
+    // One trickle message in the shape the hub accepts (SignalingWire.h:
+    // a bare candidate string is rejected before it reaches the MCU —
+    // the runs-11-18 failure).
+    auto sendTrickle = [this, senderSid, recvSid, roomType](
+                           const Json::Value& envelope) -> bool {
+        Json::Value payload;
+        payload["type"] = "candidate";
+        payload["sid"] = recvSid;
+        payload["roomType"] = roomType;
+        payload["payload"]["type"] = "candidate";
+        payload["payload"]["candidate"] = envelope;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_client ? m_client->SendToSession(senderSid, payload) : false;
+    };
+
+    pc->onTrack([this, senderSid, isLive](std::shared_ptr<rtc::Track> track) {
+        if (!isLive()) return;
         std::lock_guard<std::mutex> lock(m_mutex);
         if (!m_media) return;
         auto it = m_media->pubs.find(senderSid);
@@ -621,73 +727,111 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
                 }
             },
             nullptr);
-        ALOG_INFO("calls", "Media track up from " << senderSid.substr(0, 8));
+        ALOG_INFO("calls", "Media track up from " << senderSid.substr(0, 8)
+                  << " mid=" << track->mid());
     });
 
-    pc->onLocalCandidate([this, senderSid, mySid, roomType, recvSid](
+    pc->onLocalCandidate([this, senderSid, sdp, isLive, sendTrickle](
                              rtc::Candidate cand) {
-        Json::Value payload;
-        payload["type"] = "candidate";
-        payload["sid"] = recvSid;
-        payload["roomType"] = roomType;
-        // hub.go:2196 rejects "a="-prefixed candidate payloads, and
-        // rtc::Candidate's string operator emits exactly that prefix
-        // (libdatachannel candidate.cpp: "line << \"a=\" << candidate()").
-        // Send the bare candidate() form browsers use (run-14 root cause,
-        // Nov 23 2026: every trickled candidate was born dead).
-        payload["payload"]["candidate"] = cand.candidate();
-        payload["payload"]["sdpMid"] = cand.mid();
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if (m_client) m_client->SendToSession(senderSid, payload);
+        if (!isLive()) return;
+        const std::string text = cand.candidate();
+        if (text.empty()) return;
+        // The answer mirrors the offer's mids in order, so the offer
+        // locates the m-line this candidate belongs to.
+        const int idx = calls::MidToMlineIndex(sdp, cand.mid());
+        ALOG_INFO("calls", "Trickle -> " << senderSid.substr(0, 8)
+                  << " mid=" << cand.mid() << " idx=" << idx << ' ' << text);
+        if (!sendTrickle(calls::CandidateEnvelope(text, cand.mid(), idx))) {
+            ALOG_WARNING("calls", "Trickle to " << senderSid.substr(0, 8)
+                        << " not queued (signaling not joined)");
+        }
     });
 
-    pc->onStateChange([this, senderSid](rtc::PeerConnection::State s) {
-        if (s == rtc::PeerConnection::State::Failed ||
-            s == rtc::PeerConnection::State::Closed) {
-            ALOG_WARNING("calls", "Peer connection to "
-                        << senderSid.substr(0, 8) << " state "
-                        << static_cast<int>(s));
-        }
-        // A dead pc must not wedge the seat: the duplicate-offer guard
+    pc->onGatheringStateChange([this, senderSid, isLive, sendTrickle](
+                                   rtc::PeerConnection::GatheringState g) {
+        if (g != rtc::PeerConnection::GatheringState::Complete) return;
+        if (!isLive()) return;
+        ALOG_INFO("calls", "Gathering complete for "
+                  << senderSid.substr(0, 8) << " — end-of-candidates sent");
+        sendTrickle(calls::EndOfCandidatesEnvelope());
+    });
+
+    pc->onIceStateChange([this, senderSid, isLive](
+                             rtc::PeerConnection::IceState s) {
+        if (!isLive()) return;
+        ALOG_INFO("calls", "ICE state for " << senderSid.substr(0, 8)
+                  << ": " << IceStateName(s));
+    });
+
+    pc->onStateChange([this, senderSid, isLive](rtc::PeerConnection::State s) {
+        if (!isLive()) return; // a replaced connection's own end is expected
+        ALOG_INFO("calls", "Peer connection to " << senderSid.substr(0, 8)
+                  << " state " << PcStateName(s));
+        // A dead pc must not wedge the seat: the subscription guard
         // keys on the pub entry, so drop it on failure — event-driven
         // re-requests can then rebuild from a fresh offer (run-9
         // witness: 23:46:17 re-request blocked by the stale entry).
-        if (s == rtc::PeerConnection::State::Failed) {
+        if (s != rtc::PeerConnection::State::Failed) return;
+        std::shared_ptr<rtc::PeerConnection> dead;
+        std::unique_ptr<calls::AudioInPipeline> pipeline;
+        OpusDecoder* decoder = nullptr;
+        {
             std::lock_guard<std::mutex> lock(m_mutex);
-            if (m_media) m_media->pubs.erase(senderSid);
+            if (!m_media) return;
+            auto it = m_media->pubs.find(senderSid);
+            if (it == m_media->pubs.end()) return;
+            pipeline = std::move(it->second.pipeline);
+            decoder = it->second.decoder;
+            it->second.decoder = nullptr;
+            dead = std::move(it->second.pc);
+            m_media->pubs.erase(it);
         }
+        // Outside the mutex: Flush() runs the utterance callback, which
+        // re-enters this adapter and takes m_mutex itself.
+        if (pipeline) pipeline->Flush();
+        if (decoder) opus_decoder_destroy(decoder);
+    });
+
+    pc->onLocalDescription(
+        [this, senderSid, mySid, roomType, recvSid, isLive](rtc::Description desc) {
+            if (!isLive()) return;
+            if (desc.type() != rtc::Description::Type::Answer) {
+                // Anything but the answer here is an internal re-offer;
+                // the MCU silently rejects offers from a subscriber and
+                // re-offers forever (runs 14-17).
+                ALOG_WARNING("calls", "Local description of unexpected type "
+                            << static_cast<int>(desc.type()) << " for "
+                            << senderSid.substr(0, 8) << " not sent");
+                return;
+            }
+            Json::Value payload;
+            payload["type"] = "answer";
+            payload["to"] = senderSid;
+            payload["from"] = mySid;
+            payload["sid"] = recvSid;
+            payload["roomType"] = roomType;
+            payload["payload"]["type"] = "answer";
+            payload["payload"]["nick"] =
+                GetString(m_config, "username", "animus");
+            const std::string answerSdp(desc);
+            payload["payload"]["sdp"] = answerSdp;
+            std::lock_guard<std::mutex> lock(m_mutex);
+            const bool queued =
+                m_client ? m_client->SendToSession(senderSid, payload) : false;
+            ALOG_INFO("calls", "Answer " << (queued ? "sent" : "NOT queued")
+                      << " to " << senderSid.substr(0, 8) << " ("
+                      << answerSdp.size()
+                      << " bytes; candidates follow on the trickle path)");
     });
 
     try {
-        // Send the answer from the application-time callback: libdatachannel
-        // fires onLocalDescription with type=answer when the answer is
-        // applied, then (v0.24.6, libnice builds) re-offers internally
-        // ~16ms later — later localDescription() reads return that offer
-        // (setup:actpass), which the MCU silently rejects (run-14..17
-        // root cause #4; answer_test offline proof Nov 23 2026). The
-        // re-offer callback is filtered out here. Candidates arrive via
-        // the bare-format trickle path (hub rejects "a=" prefixes).
-        pc->onLocalDescription(
-            [this, senderSid, mySid, roomType, recvSid](rtc::Description desc) {
-                if (desc.type() != rtc::Description::Type::Answer)
-                    return;
-                Json::Value payload;
-                payload["type"] = "answer";
-                payload["to"] = senderSid;
-                payload["from"] = mySid;
-                payload["sid"] = recvSid;
-                payload["roomType"] = roomType;
-                payload["payload"]["type"] = "answer";
-                payload["payload"]["nick"] =
-                    GetString(m_config, "username", "animus");
-                payload["payload"]["sdp"] = std::string(desc);
-                std::lock_guard<std::mutex> lock(m_mutex);
-                if (m_client) m_client->SendToSession(senderSid, payload);
-                ALOG_INFO("calls", "Answered offer from "
-                            << senderSid.substr(0, 8));
-            });
+        // setRemoteDescription(offer) generates and applies the answer
+        // itself and fires onLocalDescription with it (libdatachannel
+        // v0.24.6 auto-negotiation). The explicit setLocalDescription()
+        // that used to follow produced a SECOND local description — an
+        // offer, parked on the connection and never sent (run-18
+        // finding, Nov 24 2026).
         pc->setRemoteDescription(rtc::Description(sdp, "offer"));
-        pc->setLocalDescription(); // answer; delivered via onLocalDescription
     } catch (const std::exception& e) {
         ALOG_WARNING("calls", "Offer handling failed: " << e.what());
     }
@@ -695,38 +839,87 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
 
 void CallAdapter::HandleCandidate(const std::string& senderSid,
                                    const Json::Value& data) {
-    const Json::Value& c1 = data["payload"]["candidate"];
-    const Json::Value& c2 = data["payload"]["candiate"];
-    std::string cand = c1.isString() ? c1.asString() : "";
-    if (cand.empty() && c2.isString()) cand = c2.asString();
-    if (cand.empty() || senderSid.empty()) return;
+    calls::RemoteCandidate rc;
+    if (!calls::ParseRemoteCandidate(data, &rc)) {
+        // Every drop is logged: the runs-11-18 handler returned here
+        // silently for every candidate the MCU sent.
+        ALOG_WARNING("calls", "Candidate from " << senderSid.substr(0, 8)
+                    << " dropped: no usable payload.candidate (json type "
+                    << JsonTypeName(data["payload"]["candidate"].type())
+                    << ")");
+        return;
+    }
     std::shared_ptr<rtc::PeerConnection> pc;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (!m_media) return;
         auto it = m_media->pubs.find(senderSid);
-        if (it == m_media->pubs.end() || !it->second.pc) return;
+        if (it == m_media->pubs.end() || !it->second.pc) {
+            ALOG_WARNING("calls", "Candidate from "
+                        << senderSid.substr(0, 8)
+                        << " dropped: no subscription (end-of-candidates="
+                        << rc.endOfCandidates << ")");
+            return;
+        }
         pc = it->second.pc;
     }
+    if (rc.endOfCandidates) {
+        ALOG_INFO("calls", "Trickle <- " << senderSid.substr(0, 8)
+                  << " end-of-candidates");
+        return;
+    }
     try {
-        pc->addRemoteCandidate(rtc::Candidate(cand));
+        pc->addRemoteCandidate(rtc::Candidate(rc.candidate, rc.mid));
+        ALOG_INFO("calls", "Trickle <- " << senderSid.substr(0, 8)
+                  << " mid=" << rc.mid << ' ' << rc.candidate);
     } catch (const std::exception& e) {
-        ALOG_WARNING("calls", "Candidate add failed: " << e.what());
+        ALOG_WARNING("calls", "Candidate add failed (" << rc.candidate
+                    << "): " << e.what());
     }
 }
 
 void CallAdapter::RequestOffersFromInCall() {
     std::vector<std::string> publishers;
     std::string mySid;
+    int held = 0;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (!m_client) return;
         mySid = m_client->session_id();
+        const auto now = std::chrono::steady_clock::now();
         for (const auto& p : m_client->participants()) {
-            if (p.session_id != mySid && p.in_call != 0) {
-                publishers.push_back(p.session_id);
+            if (p.session_id == mySid || p.in_call == 0) continue;
+            // Ask only for subscriptions we do not already hold. Each
+            // request makes the MCU build a fresh subscriber handle and
+            // offer, so re-asking for a live one tears working media
+            // down (every participants-changed event used to re-ask for
+            // all of them). A subscription that never left "New" is not
+            // one we hold: re-ask after a grace period.
+            if (m_media) {
+                auto it = m_media->pubs.find(p.session_id);
+                if (it != m_media->pubs.end() && it->second.pc) {
+                    const auto st = it->second.pc->state();
+                    const bool live =
+                        st != rtc::PeerConnection::State::Failed &&
+                        st != rtc::PeerConnection::State::Closed;
+                    const bool stalled =
+                        st == rtc::PeerConnection::State::New &&
+                        now - it->second.offerAt > std::chrono::seconds(15);
+                    if (live && !stalled) {
+                        ++held;
+                        continue;
+                    }
+                }
             }
+            publishers.push_back(p.session_id);
         }
+    }
+    if (publishers.empty()) {
+        if (held > 0) {
+            ALOG_INFO("calls", "Offers already held for " << held
+                      << " participant(s) — none requested");
+        }
+        return;
     }
     for (const auto& sid : publishers) {
         ALOG_INFO("calls", "Requesting offer from " << sid.substr(0, 8));
