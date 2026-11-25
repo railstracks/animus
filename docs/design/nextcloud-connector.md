@@ -2,6 +2,7 @@
 
 **Status:** v4 — 2026-11-16: office depth shipped (package v0.4.0 — Deck, Notes completion, Shares completion, `event query`/`event delete`, `activity feed`, `files list dir`, `recordings list`); recording control live e2e Nov 15. v3 — 2026-11-15: #69 open questions answered (live capability probe + installed-source pass on recording gates & transcription). v2 owner rulings 2026-11-12 folded.
 **Tickets:** #293 (office package) + #69 (Talk adapter) — one connector effort, **two artifacts**
+**Package source:** the `nextcloud` api package lives in its own repository, [railstracks/animus-package-nextcloud](https://github.com/railstracks/animus-package-nextcloud), and is installed from the Animus registry under the name `nextcloud` — it is no longer shipped in-tree under `packages/`. The Talk channel adapter (kernel `NextcloudAdapter` + `scripts/nextcloud.lua`) stays in this repo.
 **Evidence:** probe pass on #162 (comment 6772647442) and #293 (comment 6782390182); ✅ items live-verified against `https://nextcloud.steadyfort.com` (NC 35.0.2.2, Collabora 26.04.5.2, spreed 25.0.7); Talk API ground truth read from installed source Nov 12; second source pass + unauth capability probe Nov 15 (recording gates, bot actor model, live-transcription contract).
 
 ## 1. The split (owner ruling, Nov 12)
