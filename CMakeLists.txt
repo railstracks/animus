@@ -167,7 +167,7 @@ endif()
 # docs/design/calls-tier1.md, ticket sketch #1: dependencies land first,
 # the adapter follows. Signaling rides drogon's WebSocketClient, so
 # libdatachannel's own WebSocket and SCTP (data channels) stay off — the
-# lane is audio media only (DTLS-SRTP + ICE via libjuice). libdatachannel
+# lane is audio media only (DTLS-SRTP + ICE via libnice). libdatachannel
 # uses the OpenSSL backend (already a kernel dependency; no second TLS
 # stack). fvad is the standalone extraction of the WebRTC C VAD whose
 # behavior the Phase 0 leg-3 reference validated (aggressiveness 2 default).
@@ -183,6 +183,12 @@ if(ANIMUS_WITH_CALLS)
   set(NO_SCTP ON CACHE BOOL "" FORCE)
   set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
   set(NO_TESTS ON CACHE BOOL "" FORCE)
+  # ICE via libnice, not libjuice: the steadyfort media leg needs
+  # TURN-over-TCP — the Swarm's UDP ingress NAT drops relayed return
+  # traffic from non-allocation addresses, and libjuice cannot do TCP
+  # relays (live-gate runs 11-12, Nov 23 2026). libnice requires system
+  # libnice-dev (glib/gnutls), unlike the vendored libjuice.
+  set(USE_NICE ON CACHE BOOL "" FORCE)
   FetchContent_Declare(
     libdatachannel
     GIT_REPOSITORY https://github.com/paullouisageneau/libdatachannel.git

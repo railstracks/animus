@@ -609,13 +609,26 @@ bool ChannelManager::JoinCall(const std::string& channelName,
 
 bool ChannelManager::LeaveCall(const std::string& channelName,
                                std::string* error) {
-    std::lock_guard<std::mutex> lock(m_adaptersMutex);
-    auto it = m_adapters.find(channelName);
-    if (it == m_adapters.end()) {
-        if (error) *error = "channel not found: " + channelName;
-        return false;
+    // Resolve under the lock, leave OUTSIDE it - as JoinCall does. Since
+    // the leave-time flush, LeaveCall does synchronous network work: one
+    // STT request per publisher with an open segment (up to 30 s each),
+    // then a dispatch that can wait on the provider throttle. Under this
+    // mutex that stalled every adapter send, and deadlocked outright
+    // with a chain that held the throttle slot and then sent to a
+    // channel (a send needs this mutex). The raw pointer is safe for the
+    // manager's lifetime: adapters are destroyed only in Stop()/
+    // Shutdown, which cannot run concurrently with a tool call.
+    IChannelAdapter* adapter = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_adaptersMutex);
+        auto it = m_adapters.find(channelName);
+        if (it == m_adapters.end()) {
+            if (error) *error = "channel not found: " + channelName;
+            return false;
+        }
+        adapter = it->second.get();
     }
-    return it->second->LeaveCall(error);
+    return adapter->LeaveCall(error);
 }
 
 Json::Value ChannelManager::CallStatus(const std::string& channelName) const {

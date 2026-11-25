@@ -246,6 +246,38 @@ int main() {
               "Flush: open segment closed and emitted at leave");
     }
 
+    // --- Leave landing during an in-flight transcription emits the
+    //     speech once, not twice. The leaving thread calls Flush() while
+    //     the audio thread is still inside the STT callback; driven here
+    //     re-entrantly from that callback.
+    {
+        FrameVad vad;
+        std::vector<int> voiced;
+        for (int i = 0; i < 60; ++i) voiced.push_back(i);
+        vad.voiced_frames = voiced;
+        Sink sink;
+        AudioInPipeline* pipe = nullptr;
+        int sttCalls = 0;
+        AudioInPipeline p(TestConfig(), "s", vad,
+                          [&](const std::vector<int16_t>&) {
+                              // The leave lands inside the FIRST
+                              // transcription only. A second one is the
+                              // bug; recursing from it would overflow
+                              // the stack instead of failing the test.
+                              if (++sttCalls == 1) pipe->Flush();
+                              return "once";
+                          },
+                          std::ref(sink));
+        pipe = &p;
+        FeedFrames(p, 60 + 120); // voiced run + end silence -> close
+        check(sttCalls == 1,
+              "Leave during in-flight STT: one transcription");
+        check(sink.got.size() == 1 && sink.got[0].text == "once",
+              "Leave during in-flight STT: utterance emitted once");
+        check(!p.SegmentOpen(),
+              "Leave during in-flight STT: segment stays closed");
+    }
+
     if (failures > 0) {
         std::cout << "AUDIO IN PIPELINE TESTS FAILED (" << failures << ")\n";
         return 1;

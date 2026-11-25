@@ -5,9 +5,11 @@
 // service state lives here; signaling code never sees audio.
 
 #include "animus_kernel/calls/AudioInPipeline.h"
+#include "animus_kernel/Log.h"
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 namespace animus::kernel::calls {
 
@@ -228,29 +230,58 @@ void AudioInPipeline::CloseSegment(bool split_bound) {
     size_t voiced = 0;
     for (size_t i = 0; i < emit_frames; ++i) voiced += current_flags_[i];
 
+    std::vector<int16_t> pcm;
     if (emit_frames > 0 && voiced >= min_frames) {
-        std::vector<int16_t> pcm(current_.begin(),
-                                 current_.begin() + emit_frames * AudioInConfig::kFrameSamples);
-        const double ratio = static_cast<double>(voiced) / emit_frames;
-        Emit(pcm, ratio, seg_start_s_,
-             seg_start_s_ + emit_frames * kFrameS, split_bound);
+        pcm.assign(current_.begin(),
+                   current_.begin() + emit_frames * AudioInConfig::kFrameSamples);
+    } else if (emit_frames > 0) { // voiced run below the minimum
+        ALOG_INFO("calls", "audio-in: " << emit_frames * kFrameS
+                  << " s segment closed with " << voiced
+                  << " voiced frames (minimum " << min_frames << "): dropped");
     }
-    // else: voiced run below min (or silence-only) — dropped silently.
+    // else: silence-only — dropped silently.
 
+    // The segment is closed BEFORE it is emitted. Emitting runs the STT
+    // callback inline, and a call leave can land while that is in
+    // flight: the leaving thread calls Flush(), and with the segment
+    // still open here it transcribed and emitted the same speech a
+    // second time. Closed first, that flush finds nothing, and the
+    // utterance in flight stays the only one.
+    const double start_s = seg_start_s_;
     current_.clear();
     current_flags_.clear();
     current_frames_ = 0;
     voiced_frames_ = 0;
     trailing_silence_ = 0;
+
+    if (!pcm.empty()) {
+        Emit(pcm, static_cast<double>(voiced) / emit_frames, start_s,
+             start_s + emit_frames * kFrameS, split_bound);
+    }
 }
 
 void AudioInPipeline::Emit(const std::vector<int16_t>& pcm,
                            double voiced_ratio, double start_s,
                            double end_s, bool split_bound) {
-    if (!VoicedRatioPasses(voiced_ratio)) return; // junk (music) filter
-    if (!stt_) return;
+    // Every drop below used to be silent: run 19 ended at 0 utterances
+    // with no line to say where the speech went.
+    if (!VoicedRatioPasses(voiced_ratio)) { // junk (music) filter
+        ALOG_INFO("calls", "audio-in: " << end_s - start_s
+                  << " s segment dropped before STT: voiced ratio "
+                  << voiced_ratio << " below " << cfg_.min_voiced_ratio);
+        return;
+    }
+    if (!stt_) {
+        ALOG_WARNING("calls", "audio-in: " << end_s - start_s
+                     << " s segment reached STT with no STT callback: dropped");
+        return;
+    }
     const std::string text = stt_(pcm);
-    if (!TextIsSpeech(text, !cfg_.drop_tagged_texts)) return;
+    if (!TextIsSpeech(text, !cfg_.drop_tagged_texts)) {
+        ALOG_INFO("calls", "audio-in: STT returned no speech for a "
+                  << end_s - start_s << " s segment: dropped");
+        return;
+    }
     Utterance u;
     u.speaker = speaker_;
     u.text = text;
