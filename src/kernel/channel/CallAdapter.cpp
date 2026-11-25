@@ -808,10 +808,18 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
     if (!pub.pipeline) {
         calls::AudioInConfig pipeCfg; // decision-3 defaults
         std::string speaker = pub.userId;
+        // The STT endpoint and the room are fixed for the call's lifetime,
+        // and the pipeline's callbacks carry them from here. A flush that
+        // looked them up on the adapter found neither: TearDownMedia
+        // detaches the media state before it flushes, and LeaveCall clears
+        // the room before it calls TearDownMedia — so trailing speech was
+        // dropped twice over (no STT endpoint, then no room to dispatch to).
         std::string sttUrl;
+        std::string room;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             sttUrl = m_media->stt_url;
+            room = m_activeRoom;
         }
         CallAdapter* self = this;
         pub.pipeline = std::make_unique<calls::AudioInPipeline>(
@@ -835,9 +843,11 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
                 return voiced;
             },
             [self, sttUrl](const std::vector<int16_t>& pcm) -> std::string {
-                return self->TranscribePcm16k(pcm);
+                return self->TranscribePcm16k(pcm, sttUrl);
             },
-            [self](const calls::Utterance& u) { self->OnUtterance(u); });
+            [self, room](const calls::Utterance& u) {
+                self->OnUtterance(u, room);
+            });
     }
 
     const std::weak_ptr<rtc::PeerConnection> selfRef = pc;
@@ -1167,15 +1177,13 @@ void CallAdapter::FeedOpusFrame(const std::string& senderSid,
     }
 }
 
-void CallAdapter::OnUtterance(const calls::Utterance& u) {
+void CallAdapter::OnUtterance(const calls::Utterance& u,
+                              const std::string& room) {
     // Decision 5: every utterance lands as its own thread message —
     // a call segment and a chat message are indistinguishable to the
-    // session (one wake path).
-    std::string room;
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        room = m_activeRoom;
-    }
+    // session (one wake path). The room is the call's own, captured when
+    // the pipeline was built: trailing speech flushed at leave still lands
+    // in the room it was spoken in.
     if (room.empty()) return;
     const std::string prompt =
         "[Call speech from " + u.speaker +
@@ -1194,14 +1202,11 @@ void CallAdapter::OnUtterance(const calls::Utterance& u) {
                                prompt, "default", JsonCompact(meta));
 }
 
-std::string CallAdapter::TranscribePcm16k(
-        const std::vector<int16_t>& pcm) {
-    std::string sttUrl;
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if (!m_media) return "";
-        sttUrl = m_media->stt_url;
-    }
+std::string CallAdapter::TranscribePcm16k(const std::vector<int16_t>& pcm,
+                                          const std::string& sttUrl) {
+    // The endpoint is the one the pipeline captured at build time, not a
+    // lookup on the media state: the leave-time flush runs after
+    // TearDownMedia has detached it.
     if (sttUrl.empty()) return ""; // no STT configured: audio drops here
 
     // WAV-wrap the 16k mono PCM (whisper's multipart contract — the
@@ -1243,9 +1248,15 @@ std::string CallAdapter::TranscribePcm16k(
     req.body = std::move(body);
     const auto resp = m_ctx.httpClient.Execute(req);
     if (resp.status_code != 200) {
+        // Status 0 is a transport verdict, not a server answer, and the
+        // named cause rides resp.error — the SSRF guard that silenced
+        // every transcription in run 22 reads "URL blocked by security
+        // policy" here. Logging the status alone says only "HTTP 0".
+        const std::string why =
+            resp.error.empty() ? std::string() : " - " + resp.error;
         ALOG_WARNING("calls", "audio-in: STT refused a "
                     << (pcm.size() / 1600) / 10.0 << " s utterance (HTTP "
-                    << resp.status_code << ")");
+                    << resp.status_code << why << ")");
         return "";
     }
     const Json::Value j = ParseJson(resp.body);
@@ -1259,7 +1270,12 @@ void CallAdapter::TearDownMedia() {
         media = std::move(m_media);
     }
     if (!media) return;
-    // Flush pipelines first — trailing speech emits before teardown.
+    // Flush pipelines first — trailing speech emits before teardown. The
+    // media state is detached BEFORE this flush on purpose: that is what
+    // makes in-flight packet callbacks bail (FeedOpusFrame), so nothing
+    // feeds a pipeline while it is being flushed. The flush must therefore
+    // not read the adapter's call state; it runs on what its pipeline
+    // captured (STT endpoint, room).
     for (auto& [sid, pub] : media->pubs) {
         if (pub.pipeline) pub.pipeline->Flush();
         if (pub.pc) {

@@ -362,8 +362,11 @@ private:
     void RequestOffersFromInCall();
     void FeedOpusFrame(const std::string& senderSid, const uint8_t* data,
                        size_t len);
-    void OnUtterance(const calls::Utterance& u);
-    std::string TranscribePcm16k(const std::vector<int16_t>& pcm);
+    // Both take the call context the pipeline captured at build time: the
+    // leave-time flush runs after the adapter's media state is detached.
+    void OnUtterance(const calls::Utterance& u, const std::string& room);
+    std::string TranscribePcm16k(const std::vector<int16_t>& pcm,
+                                 const std::string& sttUrl);
     void TearDownMedia();
 };
 #endif // ANIMUS_WITH_CALLS
