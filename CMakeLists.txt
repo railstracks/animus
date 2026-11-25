@@ -579,6 +579,26 @@ if(ANIMUS_WITH_CALLS)
   set_target_properties(animus_calls_probe PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
   )
+
+  # #336/#337 live media gate (tools/calls_media_probe.cpp): drives the
+  # FULL CallAdapter — OCS seat auth, REST pre-join, signaling, per-
+  # publisher WebRTC, Opus decode, VAD, STT, utterance dispatch — against
+  # a real deployment. Acceptance: speaker-attributed utterance events
+  # while a human speaks on the other seat. Config (secrets) via
+  # --config file, never argv. Unlike calls_probe (protocol-layer only),
+  # links the kernel library.
+  add_executable(animus_calls_media_probe
+    tools/calls_media_probe.cpp
+  )
+  target_link_libraries(animus_calls_media_probe PRIVATE
+    animus_kernel jsoncpp_lib)
+  target_include_directories(animus_calls_media_probe PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${JSONCPP_INCLUDE_DIRS}
+  )
+  set_target_properties(animus_calls_media_probe PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist/bin"
+  )
 endif()
 
 if(NOT ANIMUS_USE_SYSTEM_DROGON)
