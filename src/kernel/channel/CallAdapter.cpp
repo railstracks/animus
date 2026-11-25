@@ -740,7 +740,14 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         mySid = m_client ? m_client->session_id() : "";
+        // An offer can be handled before JoinCall reaches its media
+        // setup: the client is started, and the seat marked in-call,
+        // first. A media state created here therefore carries the STT
+        // endpoint from the start - the pipeline built below captures it
+        // once, for the call, and an empty capture would silence every
+        // utterance from this publisher.
         if (!m_media) m_media = std::make_shared<MediaState>();
+        m_media->stt_url = GetString(m_config, "stt_url");
     }
 
     rtc::Configuration rtcCfg;
@@ -983,7 +990,9 @@ void CallAdapter::HandleOffer(const std::string& senderSid,
             m_media->pubs.erase(it);
         }
         // Outside the mutex: Flush() runs the utterance callback, which
-        // re-enters this adapter and takes m_mutex itself.
+        // does network I/O (STT) and dispatches - never under m_mutex. It
+        // does not re-enter this adapter: the pipeline carries the call's
+        // STT endpoint and room itself.
         if (pipeline) pipeline->Flush();
         if (decoder) opus_decoder_destroy(decoder);
     });
@@ -1271,10 +1280,11 @@ void CallAdapter::TearDownMedia() {
     }
     if (!media) return;
     // Flush pipelines first — trailing speech emits before teardown. The
-    // media state is detached BEFORE this flush on purpose: that is what
-    // makes in-flight packet callbacks bail (FeedOpusFrame), so nothing
-    // feeds a pipeline while it is being flushed. The flush must therefore
-    // not read the adapter's call state; it runs on what its pipeline
+    // media state is detached BEFORE this flush on purpose: packet
+    // callbacks that start after the detach bail (FeedOpusFrame). One
+    // already past that check still holds its publisher and can feed a
+    // frame into this flush (pre-existing). The flush must therefore not
+    // read the adapter's call state; it runs on what its pipeline
     // captured (STT endpoint, room).
     for (auto& [sid, pub] : media->pubs) {
         if (pub.pipeline) pub.pipeline->Flush();
