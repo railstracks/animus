@@ -423,8 +423,11 @@ check("discord degrade: url rides content", b and b.content and b.content:find(U
 reset_posts()
 r = call("mastodon", "post", { content = "degrade test", link_card = URLONLY })
 b = first_posted_body()
-check("mastodon degrade: url anchor in status",
-    r.success and b and b.status and b.status:find('<a href="https://example.com/bare"', 1, true) ~= nil,
+-- #351: `status` is plain text. The card URL rides as a bare URL, which
+-- Mastodon counts as one link and previews server-side.
+check("mastodon degrade: card url rides status as plain text",
+    r.success and b and b.status == "degrade test\n\nhttps://example.com/bare"
+        and b.status:find("<a ", 1, true) == nil,
     b and b.status)
 
 reset_posts()
@@ -512,15 +515,19 @@ r = call("mastodon", "post", { content = weighted_content })
 check("mastodon weighted: single toot for link-heavy text",
     r.success and #posted == 1, "posts=" .. #posted .. " err=" .. tostring(r.error))
 local mbody = first_posted_body()
-check("mastodon weighted: all three anchors ride the toot",
-    mbody and mbody.status and mbody.status:find("ref 1") and mbody.status:find("ref 3")
-        and select(2, mbody.status:gsub("<a ", "")) == 3,
-    mbody and mbody.status)
+-- #351: each link rides as `label (url)` plain text.
+local mstatus = mbody and mbody.status
+check("mastodon weighted: all three links ride the toot",
+    mstatus ~= nil and mstatus:find("ref 1", 1, true) ~= nil
+        and mstatus:find("ref 3", 1, true) ~= nil
+        and select(2, mstatus:gsub("https://example.com/aaaa", "")) == 3,
+    mstatus)
 check("mastodon weighted: no mask debris on the wire",
-    mbody and mbody.status and mbody.status:find("\1", 1, true) == nil and mbody.status:find("\2", 1, true) == nil)
-check("mastodon weighted: anchor labels not duplicated after restore",
-    mbody and mbody.status and mbody.status:find("</a>ref", 1, true) == nil,
-    mbody and mbody.status)
+    mstatus and mstatus:find("\1", 1, true) == nil and mstatus:find("\2", 1, true) == nil)
+check("mastodon weighted: link labels not duplicated after restore",
+    mstatus and select(2, mstatus:gsub("ref 1", "")) == 1
+        and select(2, mstatus:gsub("for detail.", "")) == 3,
+    mstatus)
 
 -- Control: same volume of PLAIN text (no links) still splits.
 local plain_long = string.rep("word ", 130)

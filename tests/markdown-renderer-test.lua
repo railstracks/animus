@@ -16,8 +16,9 @@
 --   4. Lock-ins      — regressions for the bugs found while building this
 --   5. Facet safety  — Bluesky URLs stay contiguous (the #36 facet pass
 --                      byte-indexes the final text)
---   6. Integration   — the REAL mastodon adapter, markdown present, posts
---                      rendered HTML through a mocked kernel
+--   6. Integration   — the REAL mastodon adapter, markdown present, puts
+--                      PLAIN TEXT on the wire (#351): Mastodon's `status`
+--                      is text, so the render is flattened before the send
 -- ============================================================================
 
 local REGEN = arg and arg[1] == "--regen"
@@ -265,12 +266,45 @@ local res = registration.handler({
 check("integration: post succeeds", res ~= nil and res.success == true, res and res.error)
 check("integration: one wire call", #captured == 1, #captured)
 local wire = captured[1] and captured[1].body or ""
-check("integration: wire carries rendered HTML",
-    wire:find("<p>", 1, true) ~= nil and wire:find("<b>bold</b>", 1, true) ~= nil, wire)
+-- #351: `status` is PLAIN TEXT (the server escapes it and wraps the
+-- paragraphs itself), so the wire carries the flattened render: emphasis
+-- drops, paragraph breaks survive, a link keeps its target in the text.
+-- Asserted on the raw JSON body: the mock encoder's escapes are
+-- deterministic (newline -> \n, quote -> \"), and each field is matched
+-- whole, closing quote included, so no trailing content can hide.
+local STATUS1 = '"status":"Heading\\n\\nSome bold and code with a link (https://example.com/x)."'
+check("integration: wire carries plain text",
+    wire:find(STATUS1, 1, true) ~= nil, wire)
+check("integration: no markup on the wire",
+    wire:find("<p>", 1, true) == nil and wire:find("<b>", 1, true) == nil
+    and wire:find("<a ", 1, true) == nil and wire:find("&lt;", 1, true) == nil, wire)
 check("integration: no raw markdown on the wire",
     wire:find("%*%*", 1) == nil and wire:find("`", 1, true) == nil, wire)
-check("integration: link rendered native",
+check("integration: link target reachable",
     wire:find("https://example.com/x", 1, true) ~= nil, wire)
+
+-- Typed markup is TEXT: the agent's own angle brackets and ampersands come
+-- back as the characters typed (decoded exactly once), so the server shows
+-- them literally instead of the adapter smuggling tags of its own.
+captured = {}
+res = registration.handler({
+    action = "post", platform_id = PID,
+    content = 'typed & "q" <b>not bold</b> [T&J](https://example.com/e)'
+})
+local wire2 = captured[1] and captured[1].body or ""
+check("integration: entities decode once to the typed characters",
+    wire2:find('"status":"typed & \\"q\\" <b>not bold</b> T&J (https://example.com/e)"', 1, true) ~= nil,
+    wire2)
+
+-- <br> is a line break: lists and code blocks keep their line structure.
+captured = {}
+res = registration.handler({
+    action = "post", platform_id = PID,
+    content = "- alpha\n- beta\n\n```lua\nlocal x = 1\nlocal y = 2\n```"
+})
+local wire3 = captured[1] and captured[1].body or ""
+check("integration: list and code lines survive as line breaks",
+    wire3:find('"status":"• alpha\\n• beta\\n\\nlocal x = 1\\nlocal y = 2"', 1, true) ~= nil, wire3)
 
 -- ---------------------------------------------------------------------------
 print(("RESULT: %d passed, %d failed"):format(PASS, FAIL))

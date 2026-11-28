@@ -670,24 +670,23 @@ local function do_poll(args)
     }
 end
 
---- Post a new toot. Auto-splits over-limit content into a thread
---- (first toot, then replies to it). NO byte-trim sends (#131 family).
--- Canonical Markdown -> Mastodon allowlist HTML (#156). scripts/markdown.lua
--- is Eval'd into the same per-agent VM and sets the `markdown` global;
--- referenced at SEND time so standalone harnesses (which load only this
--- adapter) keep working through the raw fallback. Rendered BEFORE chunk
--- splitting so every chunk stays <= limit on the FINAL text.
-local function render_content(content)
+--- Canonical Markdown -> Mastodon allowlist HTML (#156), or nil when the
+-- shared renderer is absent or fails. scripts/markdown.lua is Eval'd into
+-- the same per-agent VM and sets the `markdown` global; referenced at SEND
+-- time so standalone harnesses (which load only this adapter) keep
+-- working. This is the RENDER, not the wire format: Mastodon has no HTML
+-- input, so callers flatten it before sending (#351, see wire_chunks).
+local function render_html(content)
     if type(markdown) == "table" and type(markdown.render_mastodon) == "function" then
         local ok, out = pcall(markdown.render_mastodon, content)
         if ok and type(out) == "string" and out ~= "" then return out end
         if log and log.warn then log.warn("[mastodon] markdown render failed; sending raw content") end
     end
-    return content
+    return nil
 end
 
 --- #157: link card helpers — markdown module guarded the same way as
---- render_content. Degrade path: plain URL append.
+--- render_html. Degrade path: plain URL append.
 local function get_link_card(card_arg)
     if not card_arg then return nil end
     if type(markdown) == "table" and type(markdown.normalize_card) == "function" then
@@ -712,40 +711,80 @@ local function append_card_url(content, card)
     return content .. "\n\n" .. card.url
 end
 
---- #157: Mastodon counts every link as 23 chars against the toot limit,
---- regardless of URL length, plus the anchor label's real bytes. Mask each
---- rendered anchor as ONE space-free word of exactly that weighted size —
---- \1%04d + \2 padding — split, then restore the original anchors. No
---- spaces anywhere means the boundary matcher can never break inside a
---- token and a label can never separate from its URL; while masked, the
---- byte budget equals the weighted budget. \1/\2 never occur in rendered
---- HTML, so token bytes are unambiguous; any fragment surviving an
---- ultra-rare fallback mid-word break is stripped as debris. Bare
---- (unlinked) URLs stay conservative: full length counted.
-local LINK_WEIGHT = 23
+--- #157/#351: Mastodon counts every URL as 23 characters against the toot
+--- limit, whatever its length (StatusLengthValidator), plus the text around
+--- it verbatim. Mask each rendered link as ONE space-free token of exactly
+--- that counted size — \1%04d + \2 padding — flatten, split, then restore
+--- the link's PLAIN-TEXT form. No spaces anywhere means the boundary matcher
+--- can never break inside a token and a label can never separate from its
+--- URL; while masked, the byte budget equals the server's count. \1/\2 never
+--- occur in renderer output, so token bytes are unambiguous; any fragment
+--- surviving an ultra-rare fallback mid-word break is stripped as debris.
+--- Bare (unlinked) URLs stay conservative: full length counted.
+local LINK_WEIGHT = 23   -- characters the server counts per URL
+local TOKEN_FRAME = 5    -- token bytes that are not padding: \1 + %04d
 
+--- Inverse of the renderer's esc_html, applied ONCE: named entities first,
+--- &amp; last, so the agent's own `&lt;` comes back as the text it typed.
+local function unescape_entities(s)
+    return (s:gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&quot;", '"'):gsub("&amp;", "&"))
+end
+
+--- Canonical renderer HTML -> the plain text that goes on the wire (#351).
+--- Mastodon's `status` is PLAIN TEXT: the server escapes it and wraps the
+--- paragraphs itself (4.7.x TextFormatter#rewrite -> h(), then
+--- simple_format), so markup sent as text is displayed literally. The input
+--- is the renderer's own output with links already masked: only p, br, b, i
+--- remain, and every text segment is entity-escaped at construction. So
+--- <br> is a line break, the other tags drop, and entities decode once.
+local function html_to_wire_text(s)
+    s = s:gsub("<br%s*/?>", "\n")
+    s = s:gsub("<[^>]+>", "")
+    s = unescape_entities(s)
+    s = s:gsub("\n\n\n+", "\n\n")
+    return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+--- Canonical renderer HTML in, plain-text chunks out.
 local function weighted_split(rendered, limit)
-    local anchors = {}
-    local masked = rendered:gsub('<a href="[^"]+"[^>]*>.-</a>', function(m)
-        local label = m:match(">(.-)</a>$") or ""
-        local i = #anchors + 1
-        anchors[i] = { full = m, pad = LINK_WEIGHT - 6 + #label }
-        return "\1" .. string.format("%04d", i) .. string.rep("\2", anchors[i].pad)
+    local links = {}
+    local masked = rendered:gsub('<a href="([^"]+)"[^>]*>(.-)</a>', function(href, label)
+        local url = unescape_entities(href)
+        local text = unescape_entities(label)
+        -- The wire form keeps the target reachable: a URL used as its own
+        -- label stays bare, anything else reads as `label (url)`.
+        local form = (text == "" or text == url) and url or (text .. " (" .. url .. ")")
+        local i = #links + 1
+        links[i] = { form = form, pad = LINK_WEIGHT + (#form - #url) - TOKEN_FRAME }
+        return "\1" .. string.format("%04d", i) .. string.rep("\2", links[i].pad)
     end)
-    local chunks = split_for_limit(masked, limit)
+    local chunks = split_for_limit(html_to_wire_text(masked), limit)
     local out = {}
     for ci, chunk in ipairs(chunks) do
         local c = chunk
-        for i = 1, #anchors do
-            local a = anchors[i]
+        for i = 1, #links do
+            local a = links[i]
             local tok = "\1" .. string.format("%04d", i) .. string.rep("\2", a.pad)
-            c = c:gsub(tok, function() return a.full end)
+            c = c:gsub(tok, function() return a.form end)
         end
         out[ci] = c:gsub("[\1\2]", "")
     end
     return out
 end
 
+--- The send seam: agent Markdown -> plain-text chunks, each within the
+--- instance limit as the server counts it. Rendered BEFORE chunk splitting
+--- so every chunk stays within limit on the FINAL text. Raw fallback (the
+--- markdown module is absent, or the render failed): the bytes go out
+--- untouched — they are not renderer HTML, so nothing may be stripped.
+local function wire_chunks(content, limit)
+    local html = render_html(content)
+    if html then return weighted_split(html, limit) end
+    return split_for_limit(content, limit)
+end
+
+--- Post a new toot. Auto-splits over-limit content into a thread
+--- (first toot, then replies to it). NO byte-trim sends (#131 family).
 local function do_post(args)
     local platform_id = args.platform_id
     local content = args.content
@@ -767,9 +806,8 @@ local function do_post(args)
     end
     if card then content = append_card_url(content, card) end
 
-    content = render_content(content)
     local limit = get_char_limit(platform_id)
-    local chunks = weighted_split(content, limit)
+    local chunks = wire_chunks(content, limit)
 
     local first_id, first_url
     for idx, chunk in ipairs(chunks) do
@@ -830,9 +868,8 @@ local function do_reply(args)
     end
     if card then content = append_card_url(content, card) end
 
-    content = render_content(content)
     local limit = get_char_limit(platform_id)
-    local chunks = weighted_split(content, limit)
+    local chunks = wire_chunks(content, limit)
 
     local reply_id, reply_url
     for idx, chunk in ipairs(chunks) do
@@ -1328,13 +1365,13 @@ animus.register_channel({
             -- No required params; platform_id is implicit per-instance
         },
         post = {
-            { name = "content", type = "string", required = true, description = "Toot text (auto-split into a thread if over the instance limit)" },
+            { name = "content", type = "string", required = true, description = "Toot text (auto-split into a thread if over the instance limit). Mastodon shows plain text: Markdown is accepted and flattened — bold/italic drop, links keep their URL, line breaks stay" },
             { name = "visibility", type = "string", required = false, description = "public (default), unlisted, private, direct" },
             { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — url rides the toot text (server-side preview); links count 23 chars against the instance limit" }
         },
         reply = {
             { name = "status_id", type = "string", required = true, description = "Status ID to reply to" },
-            { name = "content", type = "string", required = true, description = "Reply text (auto-split if over limit)" },
+            { name = "content", type = "string", required = true, description = "Reply text (auto-split if over limit). Mastodon shows plain text: Markdown is accepted and flattened — bold/italic drop, links keep their URL, line breaks stay" },
             { name = "visibility", type = "string", required = false, description = "public (default), unlisted, private, direct" },
             { name = "link_card", type = "object", required = false, description = "Link card {url, title?, description?, image?} — url rides the toot text (server-side preview); links count 23 chars against the instance limit" }
         },
