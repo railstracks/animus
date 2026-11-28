@@ -51,7 +51,9 @@ mkdir -p "${CONTEXT_DIR}/dist/lib"
 # Copy the binary
 cp "${ROOT_DIR}/dist/bin/animusd" "${CONTEXT_DIR}/dist/bin/"
 
-# Copy shared libraries that animusd depends on (custom-built ones)
+# Copy shared libraries that animusd depends on (custom-built ones).
+# Keep this list in step with what animusd links: the Dockerfile below runs
+# the loader on the binary and fails the image build if one is missing.
 BUILD_DIR="${ROOT_DIR}/build"
 DROGON_DIR="${BUILD_DIR}/_deps/drogon-build"
 TRANTOR_DIR="${DROGON_DIR}/trantor"
@@ -62,6 +64,8 @@ for lib in \
     "${DROGON_DIR}/libdrogon.so.1" \
     "${TRANTOR_DIR}/libtrantor.so.1" \
     "${JSONCPP_DIR}/libjsoncpp.so.26" \
+    "${BUILD_DIR}/_deps/libdatachannel-build/libdatachannel.so.0.24" \
+    "${BUILD_DIR}/_deps/opus-build/libopus.so.0" \
     "${BUILD_DIR}/bin/libllama.so.0" \
     "${BUILD_DIR}/bin/libggml.so.0" \
     "${BUILD_DIR}/bin/libggml-base.so.0" \
@@ -80,6 +84,9 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Runtime dependencies (node client only needs curl + core libs)
+# libnice10: libnice, which the calls lane's libdatachannel needs for ICE.
+# apt resolves its chain (glib, gUPnP, libsoup, glib-networking, D-Bus,
+# systemd): about 40 packages; the image grows by about 110 MB.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4 \
     libsqlite3-0 \
@@ -90,6 +97,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libuuid1 \
     libbrotli1 \
     libgomp1 \
+    libnice10 \
     git \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -98,6 +106,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY dist/bin/animusd /usr/local/bin/animusd
 COPY dist/lib/ /usr/local/lib/
 RUN ldconfig
+# Fail the image BUILD, not the first start, when a library animusd needs is
+# missing from the image. (#337: libdatachannel + libopus were linked but
+# never copied into dist/lib, and the daemon died at launch with
+# "cannot open shared object file".)
+RUN if ldd /usr/local/bin/animusd 2>&1 | grep -q 'not found'; then \
+        echo 'ERROR: libraries missing from the image for animusd:'; \
+        ldd /usr/local/bin/animusd 2>&1 | grep 'not found'; \
+        exit 1; \
+    fi
 
 # Environment variables for node configuration
 # Required: SERVER_URL, NODE_TOKEN, NODE_NAME
