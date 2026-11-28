@@ -846,6 +846,175 @@ check("abort posts nothing", #send_posts == 1, tostring(#send_posts))
 media_poll_status = "processed"
 
 -- ---------------------------------------------------------------------------
+print("== plain-text wire (#351) ==")
+-- ---------------------------------------------------------------------------
+-- Mastodon's `status` is PLAIN TEXT: the server escapes it and wraps the
+-- paragraphs itself, so markup sent as text is displayed literally. With
+-- the shared renderer present (the per-agent VM shape the kernel produces),
+-- the adapter flattens its HTML render before the send. Every other section
+-- of this harness runs WITHOUT the renderer and exercises only the raw
+-- fallback covered at the bottom of this section.
+
+local LIMIT = 500   -- instance endpoint 404s below -> adapter default
+local LONG_URL = "https://example.com/" .. string.rep("b", 100) .. "/end"
+
+-- Model of Mastodon's StatusLengthValidator: every URL counts as 23
+-- characters, everything else counts by codepoint.
+local URL_PAT = "https?://[^%s<>\"()]+"
+local function server_count(s)
+    local n = 0
+    for _ in s:gmatch(URL_PAT) do n = n + 23 end
+    local rest = s:gsub(URL_PAT, "")
+    return n + utf8.len(rest)
+end
+local function first_body()
+    return #posted >= 1 and json.decode(posted[1].body) or {}
+end
+local function only_status()
+    if #posted ~= 1 then return nil end
+    return json.decode(posted[1].body).status
+end
+
+mock_clear()
+posted = {}
+mock_add({
+    matcher = function(url) return url:find("/api/v1/statuses", 1, true) ~= nil
+        and not url:find("/context", 1, true) end,
+    respond = function(url, headers, body)
+        posted[#posted + 1] = { url = url, headers = headers, body = body }
+        local data = body and json.decode(body) or {}
+        return {
+            status = 200, headers = {},
+            body = json.encode({
+                id = tostring(3000 + #posted),
+                url = "https://mastodon.social/@agent/" .. tostring(3000 + #posted),
+                content = data.status or ""
+            })
+        }
+    end
+})
+-- Char limit fetch: both endpoints 404 -> adapter defaults to 500
+mock_add({
+    matcher = function(url) return url:find("/api/v%d/instance", 1, false) ~= nil end,
+    respond = function() return { status = 404, headers = {}, body = '{}' } end
+})
+reset_config()
+
+dofile("scripts/markdown.lua")
+check("markdown renderer present for this section", type(markdown) == "table")
+
+r = call("post", { content = "# Title\n\nSome **bold**, *italic* and `code` with a [link](https://example.com/x)." })
+local s = only_status()
+check("markdown -> plain text on the wire", r.success == true
+    and s == "Title\n\nSome bold, italic and code with a link (https://example.com/x).", s)
+check("no markup on the wire", s ~= nil
+    and s:find("<", 1, true) == nil and s:find("&lt;", 1, true) == nil, s)
+
+posted = {}
+r = call("reply", { status_id = "7777", content = "**bold** reply" })
+check("reply seam: plain text, still chained", r.success == true
+    and first_body().status == "bold reply" and first_body().in_reply_to_id == "7777",
+    first_body().status)
+
+posted = {}
+r = call("post", { content = 'a < b & c > d; &lt;kept&gt; &amp;amp; "q"' })
+s = only_status()
+check("entities decode once to the typed characters", r.success == true
+    and s == 'a < b & c > d; &lt;kept&gt; &amp;amp; "q"', s)
+
+posted = {}
+r = call("post", { content = "- alpha\n- beta\n\n```lua\nlocal x = 1\nlocal y = 2\n```" })
+s = only_status()
+check("list and code lines survive as line breaks", r.success == true
+    and s == "• alpha\n• beta\n\nlocal x = 1\nlocal y = 2", s)
+
+posted = {}
+r = call("post", { content = "[https://example.com/a](https://example.com/a) trailing" })
+s = only_status()
+check("url used as its own label stays bare", r.success == true
+    and s == "https://example.com/a trailing", s)
+
+posted = {}
+r = call("post", { content = '[Tom & "Jerry"](https://example.com/b)' })
+s = only_status()
+check("link label entities decode", r.success == true
+    and s == 'Tom & "Jerry" (https://example.com/b)', s)
+
+posted = {}
+r = call("post", { content = "ping @peer@inst.example about #animus today" })
+s = only_status()
+check("mention and hashtag pass through as text for the server to link",
+    r.success == true and s == "ping @peer@inst.example about #animus today", s)
+
+-- Link-heavy text: far over the limit in raw bytes, under it in the
+-- server's count (23 per URL) -> ONE toot.
+local heavy = ""
+for i = 1, 4 do heavy = heavy .. "See [ref " .. i .. "](" .. LONG_URL .. ") for detail.\n\n" end
+heavy = heavy .. string.rep("word ", 40)
+posted = {}
+r = call("post", { content = heavy })
+s = only_status()
+check("weighted: link-heavy text within the server count is one toot",
+    r.success == true and s ~= nil and #s > LIMIT and server_count(s) <= LIMIT,
+    "posts=" .. #posted .. " bytes=" .. tostring(s and #s)
+        .. " count=" .. tostring(s and server_count(s)))
+
+-- Over the limit in the server's count too -> a thread in which every
+-- toot fits that count and no link is cut, lost or duplicated.
+local threaded = ""
+for i = 1, 6 do
+    threaded = threaded .. "Point " .. i .. ": see [ref " .. i .. "](" .. LONG_URL
+        .. ") for the full write-up.\n\n"
+end
+threaded = threaded .. string.rep("trailing words here ", 20)
+posted = {}
+r = call("post", { content = threaded })
+local all_fit, links_whole, clean, total_links = true, true, true, 0
+for _, p in ipairs(posted) do
+    local part = json.decode(p.body).status
+    if server_count(part) > LIMIT then all_fit = false end
+    if part:find("\1", 1, true) or part:find("\2", 1, true) then clean = false end
+    -- every URL prefix must belong to a COMPLETE url
+    local whole = select(2, part:gsub(LONG_URL, ""))
+    if select(2, part:gsub("https://example.com/b", "")) ~= whole then links_whole = false end
+    total_links = total_links + whole
+end
+check("threading with links: splits, every toot within the server count",
+    r.success == true and #posted >= 2 and all_fit,
+    "posts=" .. #posted .. " err=" .. tostring(r.error))
+check("threading with links: links ride whole, none lost or duplicated",
+    links_whole and clean and total_links == 6,
+    "links=" .. total_links .. " whole=" .. tostring(links_whole) .. " clean=" .. tostring(clean))
+check("threading with links: chained to the first toot",
+    first_body().in_reply_to_id == nil
+        and json.decode(posted[2].body).in_reply_to_id == "3001",
+    posted[2] and json.decode(posted[2].body).in_reply_to_id)
+
+-- Raw fallback: with NO renderer the bytes go out untouched. They are not
+-- renderer HTML, so nothing may be stripped or decoded.
+markdown = nil
+posted = {}
+local raw = "**bold** <b>x</b> &lt;raw&gt; &amp; [not a link](https://e.example/x)"
+r = call("post", { content = raw })
+s = only_status()
+check("raw fallback: bytes untouched, nothing stripped or decoded",
+    r.success == true and s == raw, s)
+
+-- A renderer that throws degrades to the raw bytes and says so.
+markdown = { render_mastodon = function() error("renderer exploded") end }
+posted = {}
+log_lines = {}
+r = call("post", { content = "**still raw** <i>tag</i>" })
+s = only_status()
+local warned = false
+for _, l in ipairs(log_lines) do
+    if l:find("markdown render failed", 1, true) then warned = true end
+end
+check("renderer failure: raw bytes, loud warning",
+    r.success == true and s == "**still raw** <i>tag</i>" and warned, s)
+markdown = nil
+
+-- ---------------------------------------------------------------------------
 print("== handler contract ==")
 r = registration.handler({})
 check("missing action rejected", r.success == false and r.error:find("action is required") ~= nil)
