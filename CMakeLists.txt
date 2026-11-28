@@ -1014,8 +1014,13 @@ if(ANIMUS_BUILD_TESTS)
         src/kernel/channel/CallAdapter.cpp
         src/kernel/calls/SignalingClient.cpp
       )
+      # This target compiles CallAdapter.cpp itself, so it needs the
+      # calls-lane libs the kernel links PRIVATE — the media wiring gave
+      # CallAdapter.cpp its rtc/ includes, and only the datachannel target
+      # carries that include dir.
       target_link_libraries(animus_call_adapter_probe PRIVATE
-        animus_kernel jsoncpp_lib OpenSSL::Crypto ${ANIMUS_DROGON_TARGET})
+        animus_kernel jsoncpp_lib OpenSSL::Crypto ${ANIMUS_DROGON_TARGET}
+        datachannel opus fvad)
       target_include_directories(animus_call_adapter_probe PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/include
